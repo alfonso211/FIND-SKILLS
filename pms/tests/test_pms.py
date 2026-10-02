@@ -22,6 +22,8 @@ def test_seed(client, admin, ids):
     assert a["SFL"]["num_unidades"] == 325
     assert a["SAE"]["num_unidades"] == 300
     assert a["BAB35"]["num_unidades"] == 53
+    assert (a["SFL"]["num_registro_turistico"], a["SFL"]["direccion"]) == ("AM 265", "Calle Campezo 2")
+    assert (a["SAE"]["num_registro_turistico"], a["SAE"]["direccion"]) == ("AM 259", "Calle Campezo 8")
     bab = client.get(f"/api/unidades?asset_id={a['BAB35']['id']}", headers=admin).json()
     viv = [u for u in bab if u["uso"] == "vivienda"]
     gar = [u for u in bab if u["uso"] == "garaje"]

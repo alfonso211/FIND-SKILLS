@@ -31,10 +31,20 @@ ACTIVOS = [
     dict(codigo="BAB35", nombre="C/ Babilonia 35", modalidad="alquiler_residencial",
          gestora="COMERCIAL DEL CAMPO S.A.", propietaria="COMERCIAL DEL CAMPO S.A.",
          direccion="Calle Babilonia 35", municipio="Madrid", provincia="Madrid"),
+    # Registro de Empresas Turísticas de la Comunidad de Madrid (toma de nota de cambio de titular a
+    # INVERSIETE S.A., presentada el 03/01/2025, resoluciones de 12/03/2025)
     dict(codigo="SFL", nombre="Suite Florida", modalidad="apartamentos_turisticos",
-         gestora="INVERSIETE SA", propietaria="COMERCIAL DEL CAMPO S.A."),
+         gestora="INVERSIETE SA", propietaria="COMERCIAL DEL CAMPO S.A.",
+         direccion="Calle Campezo 2", municipio="Madrid", provincia="Madrid", cp="28022",
+         num_registro_turistico="AM 265",
+         notas="Apartamentos turísticos 1 llave. Cambio de titular a INVERSIETE S.A. con efectos 03/01/2025 "
+               "(Ref. 09/503253.9/25)."),
     dict(codigo="SAE", nombre="Suite Aeropuerto", modalidad="apartamentos_turisticos",
-         gestora="INVERSIETE SA", propietaria="COMERCIAL DEL CAMPO S.A."),
+         gestora="INVERSIETE SA", propietaria="COMERCIAL DEL CAMPO S.A.",
+         direccion="Calle Campezo 8", municipio="Madrid", provincia="Madrid", cp="28022",
+         num_registro_turistico="AM 259",
+         notas="Apartamentos turísticos 1 llave. Cambio de titular a INVERSIETE S.A. con efectos 03/01/2025 "
+               "(Ref. 09/503243.9/25)."),
 ]
 
 # Usuarios iniciales. Todos entran con PASSWORD_INICIAL y deben cambiarla en el primer acceso.
