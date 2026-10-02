@@ -78,6 +78,8 @@ function table(el, cols, rows, actions) {
 let formGen = 0;
 function form(title, fields, init = {}, onSubmit, submitLabel = "Guardar") {
   const dlg = $("#modal"), f = $("#modalForm"), gen = ++formGen;
+  pararCamara();
+  dlg.onclose = pararCamara;
   const input = (fd) => {
     const v = init[fd.k] ?? fd.def ?? "";
     const req = fd.req ? "required" : "";
@@ -263,7 +265,7 @@ async function accommodationContract(r) {
     `<a href="#" data-c="${h.id}">${fdt(h.creado)}${h.usuario ? " · " + esc(h.usuario) : ""}</a>`).join(" · ")}</p>` : "";
   const f = form(`Contrato de alojamiento · ${r.unidad} · ${r.huesped}`, [
     { html: `<p class="muted">Complete todo aquí: al imprimir, el cliente solo tendrá que firmar. Si falta algo, el sistema le avisará antes de imprimir. De la tarjeta solo se anotan los 4 últimos dígitos.</p>${historial}` },
-    { html: scanHtml },
+    { html: scanHtml() },
     { k: "localizador", t: "Localizador" }, { k: "fecha_firma", t: "Fecha de firma", type: "date", req: true },
     { html: "<h4>Cliente</h4>" },
     { k: "cliente_nombre", t: "Nombre y apellidos", wide: true }, { k: "cliente_nacionalidad", t: "Nacionalidad" },
@@ -330,25 +332,119 @@ const guestFields = [
 async function editGuest(id, tipo = "huesped", onSaved) {
   const c = (await get("/api/terceros", { tipo })).find((x) => x.id === id);
   if (!c) return toast("Tercero no encontrado", true);
-  const f = form(`${tipo === "huesped" ? "Huésped" : "Inquilino"}: ${c.nombre}`, [{ html: scanHtml }, ...guestFields, { k: "iban", t: "IBAN" }, { k: "notas", t: "Notas", type: "textarea", wide: true }], c,
+  const f = form(`${tipo === "huesped" ? "Huésped" : "Inquilino"}: ${c.nombre}`, [{ html: scanHtml() }, ...guestFields, { k: "iban", t: "IBAN" }, { k: "notas", t: "Notas", type: "textarea", wide: true }], c,
     async (d) => { await put(`/api/terceros/${id}`, { ...d, company_id: c.company_id, tipo: c.tipo }); toast("Datos guardados"); onSaved && onSaved(); });
-  bindScan(f, id, (lec, t) => {
-    const nom = conTildes(f.elements.nombre.value, lec.nombre), ape = conTildes(f.elements.apellidos.value, lec.apellidos);
-    const dom = lec.domicilio || {};
-    rellena(f, { nombre: nom, apellidos: ape, documento_tipo: lec.documento_tipo, documento_num: lec.documento_num,
-      nacionalidad: lec.nacionalidad, fecha_nacimiento: lec.fecha_nacimiento, sexo: lec.sexo, num_soporte: lec.num_soporte,
-      fecha_caducidad_doc: lec.fecha_caducidad, direccion: dom.direccion, municipio: dom.municipio, pais: dom.pais });
-  });
+  bindScan(f, id, (lec) => rellenaFicha(f, lec));
 }
 
 // ---- escaneo de documentos de identidad
-const scanHtml = `<fieldset class="scan"><legend>Escanear documento de identidad (DNI, NIE/TIE, pasaporte)</legend>
-  <p class="muted">Adjunte la cara con las líneas «&lt;&lt;&lt;» (reverso del DNI/NIE, página de la foto del pasaporte) y, si quiere, la otra cara.
-  Se leen los datos y se guarda una copia cifrada en la ficha del cliente. Desde el móvil puede usar la cámara.</p>
-  <div class="scan-row"><label>Cara 1<input type="file" data-cara="anverso" accept="image/*,application/pdf"></label>
-  <label>Cara 2<input type="file" data-cara="reverso" accept="image/*,application/pdf"></label>
-  <button type="button" class="btn primary" data-scan>Leer y guardar copia</button></div>
+// Al seleccionar el fichero (o capturar con la cámara) el documento se lee solo. Con cliente existente la copia
+// se guarda en su ficha; en un alta (cid = null) queda pendiente y se adjunta al crear la reserva o el cliente.
+const scanHtml = (titulo = "Escanear documento de identidad (DNI, NIE/TIE, pasaporte)") => `<fieldset class="scan"><legend>${esc(titulo)}</legend>
+  <p class="muted">Seleccione el documento escaneado (una o las dos caras, imagen o PDF) o use la cámara: se lee automáticamente y se guarda una copia cifrada en la ficha del cliente.</p>
+  <div class="scan-row">
+    <label>Documento escaneado<input type="file" data-scanfile accept="image/*,application/pdf" multiple></label>
+    <button type="button" class="btn" data-cam>📷 Usar cámara</button>
+  </div>
+  <div data-camzone class="camzone hidden">
+    <video data-video autoplay playsinline muted></video>
+    <div class="toolbar"><button type="button" class="btn primary" data-capturar>Capturar</button>
+      <button type="button" class="btn" data-camoff>Cerrar cámara</button>
+      <label class="check"><input type="checkbox" data-camauto> Abrir la cámara automáticamente</label></div>
+  </div>
   <div data-scanmsg></div><div data-docs class="muted"></div></fieldset>`;
+function pararCamara() {
+  if (S.cam) { S.cam.getTracks().forEach((t) => t.stop()); S.cam = null; }
+}
+async function hayCamara() {
+  try { return (await navigator.mediaDevices.enumerateDevices()).some((d) => d.kind === "videoinput"); } catch { return false; }
+}
+function bindScan(f, cid, aplicar) {
+  const $s = (sel) => f.querySelector(sel);
+  const msg = $s("[data-scanmsg]"), lista = $s("[data-docs]"), zona = $s("[data-camzone]"), video = $s("[data-video]");
+  f._docs = [];  // alta: copias pendientes de adjuntar ({id, tipo, cara, subido})
+  const pinta = (docs) => {
+    lista.innerHTML = docs.length ? "Copias guardadas: " + docs.map((d) => `${esc(d.tipo || "Documento")} · ${esc(d.cara)} (${fdt(d.subido)})
+      <a href="#" data-ver="${d.id}">Ver</a> <a href="#" data-borrar="${d.id}" class="danger">Borrar</a>`).join(" &nbsp;|&nbsp; ") : "";
+    lista.querySelectorAll("[data-ver]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); verDocumento(a.dataset.ver); }));
+    lista.querySelectorAll("[data-borrar]").forEach((a) => (a.onclick = async (e) => {
+      e.preventDefault();
+      if (!confirm("¿Borrar esta copia del documento?")) return;
+      await run(() => api("DELETE", `/api/documentos/${a.dataset.borrar}`), "Copia borrada");
+      f._docs = f._docs.filter((d) => String(d.id) !== a.dataset.borrar);
+      cargar();
+    }));
+  };
+  const cargar = async () => pinta(cid ? await get(`/api/terceros/${cid}/documentos`).catch(() => []) : f._docs);
+  // envía las caras (File[]) y aplica lo leído; devuelve true si se han leído los datos
+  const subir = async (ficheros) => {
+    const fd = new FormData();
+    ficheros.slice(0, 2).forEach((fi, n) => fd.append(n ? "reverso" : "anverso", fi));
+    msg.innerHTML = '<p class="muted">Leyendo el documento… (unos segundos)</p>';
+    try {
+      const res = await fetch(cid ? `/api/terceros/${cid}/documentos` : "/api/documentos/leer",
+        { method: "POST", headers: { Authorization: `Bearer ${S.token}` }, body: fd });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(errMsg(j, res));
+      const lec = j.lectura;
+      if (!cid) f._docs.push(...j.documentos);
+      if (lec.leido) aplicar(lec, j.tercero);
+      const ok = lec.leido ? (lec.mrz_valido ? "✔ Documento leído y validado" : "⚠ Documento leído con dudas")
+        : "✖ En esta cara no están las líneas «<<<». Escanee o capture la otra cara";
+      msg.innerHTML = `<p><b>${esc(ok)}.</b> Copia guardada${cid ? " en la ficha" : " (se adjuntará al cliente)"}. ${lec.leido ? "Revise los campos resaltados." : ""}</p>` +
+        (lec.leido ? (lec.avisos || []) : []).map((a) => `<p class="${a.includes("CADUCADO") ? "error" : "muted"}">• ${esc(a)}</p>`).join("");
+      cargar();
+      return lec.leido;
+    } catch (e) { msg.innerHTML = `<p class="error">${esc(e.message)}</p>`; return false; }
+  };
+  $s("[data-scanfile]").onchange = async (e) => {  // lectura automática al elegir el fichero
+    const fs = [...e.target.files];
+    if (fs.length) await subir(fs);
+    e.target.value = "";
+  };
+  // cámara (webcam de recepción, tablet o móvil)
+  const encender = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) { msg.innerHTML = '<p class="error">Este navegador no permite usar la cámara.</p>'; return; }
+    try {
+      pararCamara();
+      S.cam = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+      video.srcObject = S.cam; zona.classList.remove("hidden");
+      msg.innerHTML = '<p class="muted">Encuadre el documento (mejor la cara con las líneas «<<<») y pulse Capturar.</p>';
+    } catch { msg.innerHTML = '<p class="error">No se ha podido abrir la cámara (permiso denegado o sin cámara).</p>'; }
+  };
+  const apagar = () => { pararCamara(); zona.classList.add("hidden"); };
+  $s("[data-cam]").onclick = encender;
+  $s("[data-camoff]").onclick = apagar;
+  $s("[data-capturar]").onclick = async () => {
+    if (!S.cam) return;
+    const c = document.createElement("canvas");
+    c.width = video.videoWidth; c.height = video.videoHeight;
+    c.getContext("2d").drawImage(video, 0, 0);
+    const blob = await new Promise((ok) => c.toBlob(ok, "image/jpeg", 0.92));
+    if (await subir([new File([blob], "captura.jpg", { type: "image/jpeg" })])) apagar();
+  };
+  const auto = $s("[data-camauto]");
+  let pref = null;
+  try { pref = localStorage.getItem("pms_cam_auto"); } catch {}
+  auto.onchange = () => { try { localStorage.setItem("pms_cam_auto", auto.checked ? "1" : "0"); } catch {} };
+  (async () => {
+    const docs = cid ? await get(`/api/terceros/${cid}/documentos`).catch(() => []) : [];
+    pinta(docs.length ? docs : f._docs);
+    const tiene = await hayCamara();
+    auto.checked = pref ? pref === "1" : tiene;  // por defecto, si el equipo tiene cámara se abre sola
+    if (tiene && auto.checked && !docs.length) encender();  // si ya hay copia del documento, no hace falta
+  })();
+}
+// formulario de alta con escáner: lo leído rellena la ficha y las copias se adjuntan al crear
+const conEscaner = (f) => { bindScan(f, null, (lec) => rellenaFicha(f, lec)); return f; };
+// rellena una ficha de cliente (campos de guestFields) con lo leído del documento
+function rellenaFicha(f, lec) {
+  const dom = lec.domicilio || {};
+  rellena(f, { nombre: conTildes(f.elements.nombre.value, lec.nombre), apellidos: conTildes(f.elements.apellidos.value, lec.apellidos),
+    documento_tipo: lec.documento_tipo, documento_num: lec.documento_num, nacionalidad: lec.nacionalidad,
+    fecha_nacimiento: lec.fecha_nacimiento, sexo: lec.sexo, num_soporte: lec.num_soporte,
+    fecha_caducidad_doc: lec.fecha_caducidad, direccion: dom.direccion, municipio: dom.municipio, pais: dom.pais });
+}
 const sinTildes = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
 // La MRZ no lleva tildes: si lo ya escrito coincide salvo tildes, se conserva lo escrito
 const conTildes = (actual, leido) => (leido && sinTildes(actual) !== sinTildes(leido) ? leido : actual);
@@ -358,38 +454,6 @@ function rellena(f, valores) {
     if (!el || v == null || v === "" || String(el.value) === String(v)) return;
     el.value = v; el.classList.add("auto");
   });
-}
-async function bindScan(f, cid, aplicar) {
-  const msg = f.querySelector("[data-scanmsg]"), lista = f.querySelector("[data-docs]");
-  const cargar = async () => {
-    const docs = await get(`/api/terceros/${cid}/documentos`).catch(() => []);
-    lista.innerHTML = docs.length ? "Copias guardadas: " + docs.map((d) => `${esc(d.tipo || "Documento")} · ${esc(d.cara)} (${fdt(d.subido)})
-      <a href="#" data-ver="${d.id}">Ver</a> <a href="#" data-borrar="${d.id}" class="danger">Borrar</a>`).join(" &nbsp;|&nbsp; ") : "";
-    lista.querySelectorAll("[data-ver]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); verDocumento(a.dataset.ver); }));
-    lista.querySelectorAll("[data-borrar]").forEach((a) => (a.onclick = async (e) => {
-      e.preventDefault();
-      if (confirm("¿Borrar esta copia del documento?")) { await run(() => api("DELETE", `/api/documentos/${a.dataset.borrar}`), "Copia borrada"); cargar(); }
-    }));
-  };
-  f.querySelector("[data-scan]").onclick = async () => {
-    const fd = new FormData();
-    f.querySelectorAll("input[data-cara]").forEach((i) => i.files[0] && fd.append(i.dataset.cara, i.files[0]));
-    if (![...fd.keys()].length) { msg.innerHTML = '<p class="error">Seleccione al menos una cara del documento.</p>'; return; }
-    msg.innerHTML = '<p class="muted">Leyendo el documento… (unos segundos)</p>';
-    try {
-      const res = await fetch(`/api/terceros/${cid}/documentos`, { method: "POST", headers: { Authorization: `Bearer ${S.token}` }, body: fd });
-      const j = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(errMsg(j, res));
-      const lec = j.lectura;
-      if (lec.leido) aplicar(lec, j.tercero);
-      const ok = lec.leido ? (lec.mrz_valido ? "✔ Documento leído y validado" : "⚠ Documento leído con dudas") : "✖ No se han podido leer los datos";
-      msg.innerHTML = `<p><b>${ok}.</b> Copia guardada en la ficha. ${lec.leido ? "Revise los campos resaltados." : ""}</p>` +
-        (lec.avisos || []).map((a) => `<p class="${a.includes("CADUCADO") ? "error" : "muted"}">• ${esc(a)}</p>`).join("");
-      f.querySelectorAll("input[data-cara]").forEach((i) => (i.value = ""));
-      cargar();
-    } catch (e) { msg.innerHTML = `<p class="error">${esc(e.message)}</p>`; }
-  };
-  cargar();
 }
 async function verDocumento(did) {
   const w = window.open("", "_blank");  // se abre ya para que el navegador no lo bloquee
@@ -416,17 +480,20 @@ async function newReservation(reload) {
   ], {}, async (q) => {
     const disp = await get("/api/turistico/disponibilidad", { asset_id: aid, desde: q.fecha_entrada, hasta: q.fecha_salida, capacidad: q.adultos + (q.ninos || 0) });
     if (!disp.libres) throw new Error("No hay unidades disponibles para esas fechas y ocupación");
-    setTimeout(() => form(`Reserva ${fdate(q.fecha_entrada)} → ${fdate(q.fecha_salida)} · ${disp.libres} libres`, [
+    setTimeout(() => conEscaner(form(`Reserva ${fdate(q.fecha_entrada)} → ${fdate(q.fecha_salida)} · ${disp.libres} libres`, [
+      { html: scanHtml("1. Escanee el documento del huésped titular (DNI, NIE/TIE, pasaporte)") },
+      { html: "<h4>Huésped titular</h4>" }, ...guestFields,
+      { html: "<h4>Reserva</h4>" },
       { k: "unit_id", t: "Unidad", type: "select", req: true, options: disp.unidades.map((u) => [u.id, `${u.codigo} ${u.bloque ? "· " + u.bloque : ""} ${u.tipologia ?? ""} ${u.tarifa_base_noche ? "· " + eur(u.tarifa_base_noche) : ""}`]) },
       { k: "canal", t: "Canal", type: "select", req: true, options: list(S.cat.canales), def: "directo" }, { k: "localizador", t: "Localizador" },
       { k: "importe_total", t: "Importe total €", type: "number", def: 0 }, { k: "importe_pagado", t: "Pagado €", type: "number", def: 0 },
-      { html: "<h4>Huésped titular</h4>" }, ...guestFields, { k: "notas", t: "Notas", type: "textarea", wide: true },
-    ], {}, async (d) => {
+      { k: "notas", t: "Notas", type: "textarea", wide: true },
+    ], {}, async (d, fr) => {
       const g = {}; guestFields.filter((f) => f.k).forEach((f) => { g[f.k] = d[f.k]; delete d[f.k]; });
-      const nueva = await post("/api/turistico/reservas", { ...clean(d), ...q, unit_id: Number(d.unit_id), guest: clean(g) });
+      const nueva = await post("/api/turistico/reservas", { ...clean(d), ...q, unit_id: Number(d.unit_id), guest: clean(g), documentos: fr._docs.map((x) => x.id) });
       toast("Reserva creada. Complete ahora el contrato (puede guardarlo e imprimirlo a la llegada)."); reload && reload();
       await accommodationContract(nueva);
-    }, "Crear reserva"), 0);
+    }, "Crear reserva")), 0);
   }, "Buscar disponibilidad");
 }
 
@@ -511,14 +578,17 @@ V.contratos = async (el) => {
     const aid = await pickAsset("alquiler_residencial");
     const units = (await get("/api/unidades", { asset_id: aid })).filter((u) => u.estado !== "fuera_servicio");
     if (!units.length) return toast("El activo no tiene unidades. Dé de alta las viviendas primero.", true);
-    form(`Nuevo contrato · ${assetName(aid)}`, [
+    conEscaner(form(`Nuevo contrato · ${assetName(aid)}`, [
+      { html: scanHtml("1. Escanee el documento del inquilino (DNI, NIE/TIE, pasaporte)") },
+      { html: "<h4>Inquilino</h4>" }, ...guestFields,
+      { html: "<h4>Contrato</h4>" },
       { k: "unit_id", t: "Unidad", type: "select", req: true, options: units.map((u) => [u.id, `${u.codigo} · ${label(u.uso)} · ${label(u.estado)}`]) }, ...leaseFields,
-      { html: "<h4>Inquilino</h4>" }, ...guestFields, { k: "notas", t: "Notas contrato", type: "textarea", wide: true },
-    ], {}, async (d) => {
+      { k: "notas", t: "Notas contrato", type: "textarea", wide: true },
+    ], {}, async (d, fr) => {
       const t = {}; guestFields.filter((f) => f.k).forEach((f) => { t[f.k] = d[f.k]; delete d[f.k]; });
-      await post("/api/alquiler/contratos", { ...clean(d), unit_id: Number(d.unit_id), tenant: clean(t) });
+      await post("/api/alquiler/contratos", { ...clean(d), unit_id: Number(d.unit_id), tenant: clean(t), documentos: fr._docs.map((x) => x.id) });
       toast("Contrato creado"); load();
-    });
+    }));
   };
   load();
 };
@@ -559,8 +629,16 @@ async function contactsView(el, tipo) {
     ? form(c.nombre, fields, c, async (d) => { await put(`/api/terceros/${c.id}`, { ...d, company_id: c.company_id, tipo }); toast("Guardado"); load(); })
     : editGuest(c.id, tipo, load))]] : []);
   $("#q", el).oninput = debounce(load);
-  if ($("#new", el)) $("#new", el).onclick = () => form("Nuevo", [{ k: "company_id", t: "Sociedad", type: "select", req: true, options: opts(S.companies) }, ...fields], {},
-    async (d) => { await post("/api/terceros", clean({ ...d, company_id: Number(d.company_id), tipo })); toast("Creado"); load(); });
+  if ($("#new", el)) $("#new", el).onclick = () => {
+    const conDoc = tipo !== "proveedor";
+    const f = form("Nuevo", [...(conDoc ? [{ html: scanHtml("1. Escanee el documento del cliente (DNI, NIE/TIE, pasaporte)") }] : []),
+      { k: "company_id", t: "Sociedad", type: "select", req: true, options: opts(S.companies) }, ...fields], {},
+      async (d, fr) => {
+        await post("/api/terceros", clean({ ...d, company_id: Number(d.company_id), tipo, documentos: conDoc ? fr._docs.map((x) => x.id) : [] }));
+        toast("Creado"); load();
+      });
+    if (conDoc) conEscaner(f);
+  };
   load();
 }
 

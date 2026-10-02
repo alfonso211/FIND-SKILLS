@@ -264,9 +264,12 @@ def _require_contact(scope: Scope, tipo: str, accion: str, company_id: int):
 @router.post("/terceros", status_code=201)
 def create_contact(data: ContactIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     _require_contact(scope, data.tipo, "editar", data.company_id)
-    c = Contact(**data.model_dump())
+    c = Contact(**data.model_dump(exclude={"documentos"}))
     db.add(c)
     db.flush()
+    if data.documentos:
+        from .documentos import adjuntar_pendientes  # import local: documentos importa este módulo
+        adjuntar_pendientes(db, scope.user, data.documentos, c)
     audit(db, scope.user, "crear", "tercero", c.id, {"tipo": c.tipo, "nombre": c.nombre})
     db.commit()
     return c.to_dict()

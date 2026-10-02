@@ -11,6 +11,7 @@ from ..models import MODALIDADES_RESERVA, AccommodationContract, Contact, Reserv
 from ..schemas import AccommodationContractIn, ReservationIn, ReservationUpdate
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
+from .documentos import adjuntar_pendientes
 
 router = APIRouter(prefix="/api/turistico", tags=["apartamentos turísticos"])
 
@@ -87,7 +88,9 @@ def create_reservation(data: ReservationIn, scope: Scope = Depends(get_scope), d
         db.flush()
     else:
         bad_request("Indique guest_id o los datos del huésped")
-    r = Reservation(**data.model_dump(exclude={"guest", "guest_id"}), guest_id=guest.id)
+    if data.documentos:
+        adjuntar_pendientes(db, scope.user, data.documentos, guest)
+    r = Reservation(**data.model_dump(exclude={"guest", "guest_id", "documentos"}), guest_id=guest.id)
     db.add(r)
     db.flush()
     audit(db, scope.user, "crear", "reserva", r.id,

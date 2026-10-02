@@ -177,7 +177,8 @@ class ContactDocument(Base):
     """Copia escaneada de un documento de identidad. El fichero se guarda cifrado fuera de la base de datos."""
     __tablename__ = "documentos_terceros"
     id: Mapped[int] = mapped_column(primary_key=True)
-    contact_id: Mapped[int] = mapped_column(ForeignKey("terceros.id"), index=True)
+    # NULL mientras el cliente no existe (escaneado al empezar una reserva o un alta); se adjunta al crearlo
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("terceros.id"), index=True)
     tipo: Mapped[str | None] = mapped_column(String(10))  # DNI | NIE | PAS | OTRO
     cara: Mapped[str] = mapped_column(String(10))  # anverso | reverso
     fichero: Mapped[str] = mapped_column(String(64))
