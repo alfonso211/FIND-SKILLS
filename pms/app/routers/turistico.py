@@ -254,12 +254,21 @@ def _prefill(r: Reservation, db: Session) -> dict:
         "cliente_movil": g.telefono,
         "capacidad": u.capacidad, "dormitorios": u.dormitorios,
         "precio_total": float(r.importe_total) if r.importe_total else None,
-        "ocupantes": f"{g.nombre} {g.apellidos or ''} ({g.documento_tipo or 'doc.'} {g.documento_num or '……'})".strip(),
+        "ocupantes": " ".join(x for x in (g.nombre, g.apellidos, f"({g.documento_tipo or 'doc.'} {g.documento_num})"
+                                          if g.documento_num else None) if x),
+        "motivo": [], "acreditacion": [],
     }
-    if ultimo:  # se recuperan los datos tecleados en la última impresión
-        guardado = {k: v for k, v in ultimo.datos.items() if k in AccommodationContractIn.model_fields}
-        base.update({k: v for k, v in guardado.items() if v not in (None, "")})
+    # datos ya tecleados: borrador guardado en la reserva o, si no hay, la última impresión
+    guardado = r.datos_contrato or (ultimo.datos if ultimo else None)
+    if guardado:
+        base.update({k: v for k, v in guardado.items()
+                     if k in AccommodationContractIn.model_fields and v not in (None, "", [])
+                     and k not in ("permitir_huecos", "solo_guardar")})
         base["fecha_firma"] = date.today().isoformat()
+        base["motivo"] = AccommodationContractIn._lista(base.get("motivo"))
+        base["acreditacion"] = AccommodationContractIn._lista(base.get("acreditacion"))
+    if r.importe_total:  # el precio manda la reserva
+        base["precio_total"] = float(r.importe_total)
     return base
 
 
@@ -274,6 +283,9 @@ def _datos_plantilla(r: Reservation, c: AccommodationContractIn) -> dict:
     d["noches"] = (r.fecha_salida - r.fecha_entrada).days
     if c.tarjeta_caducidad:
         d["tarjeta_cad_mes"], d["tarjeta_cad_anio"] = c.tarjeta_caducidad.split("/")
+    # lo que no procede se omite en lugar de dejar puntos
+    d["no_aplica"] = {campo for campo, lista in (("motivo_otro", c.motivo), ("acreditacion_otro", c.acreditacion))
+                      if "otro" not in lista}
     return d
 
 
@@ -306,9 +318,17 @@ def contract_form(rid: int, scope: Scope = Depends(get_scope), db: Session = Dep
 @router.post("/reservas/{rid}/contrato")
 def contract_print(rid: int, data: AccommodationContractIn, scope: Scope = Depends(get_scope),
                    db: Session = Depends(get_db)):
-    """Genera el contrato relleno (.docx), lo guarda en el historial y actualiza la ficha del huésped."""
+    """Guarda los datos del contrato en la reserva y, salvo `solo_guardar`, genera el .docx para imprimir.
+    Si falta algún dato o casilla no se imprime (el cliente solo debe firmar), salvo `permitir_huecos`."""
     r, ruta = _contrato_reserva(rid, "reservas.editar", scope, db)
     contenido, pendientes = contratos.rellenar(ruta, _datos_plantilla(r, data))
+    faltan = contratos.faltan(pendientes)
+    if not data.motivo:
+        faltan.append("Motivo de la estancia (marque al menos una casilla)")
+    if not data.acreditacion:
+        faltan.append("Acreditación del domicilio (marque al menos una casilla)")
+
+    r.datos_contrato = data.model_dump(mode="json", exclude={"permitir_huecos", "solo_guardar"})
     if data.actualizar_huesped:
         g = r.guest
         for campo, valor in (("nacionalidad", data.cliente_nacionalidad), ("documento_num", data.cliente_documento),
@@ -317,11 +337,25 @@ def contract_print(rid: int, data: AccommodationContractIn, scope: Scope = Depen
                              ("email", data.cliente_email), ("telefono", data.cliente_movil)):
             if valor:
                 setattr(g, campo, valor)
-    c = AccommodationContract(reservation_id=r.id, plantilla=ruta.name, datos=data.model_dump(mode="json"),
+    u = r.unit  # capacidad y dormitorios: se completan en la unidad si aún no constaban
+    if data.capacidad and not u.capacidad:
+        u.capacidad = data.capacidad
+    if data.dormitorios is not None and u.dormitorios is None:
+        u.dormitorios = data.dormitorios
+
+    if data.solo_guardar:
+        audit(db, scope.user, "guardar_contrato", "reserva", r.id, {"faltan": faltan})
+        db.commit()
+        return {"guardado": True, "faltan": faltan}
+    if faltan and not data.permitir_huecos:
+        db.commit()  # los datos tecleados no se pierden
+        bad_request("Faltan datos para que el cliente solo tenga que firmar: " + "; ".join(faltan))
+
+    c = AccommodationContract(reservation_id=r.id, plantilla=ruta.name, datos=r.datos_contrato,
                               user_id=scope.user.id)
     db.add(c)
     db.flush()
-    audit(db, scope.user, "imprimir_contrato", "reserva", r.id, {"contrato": c.id, "huecos_a_mano": pendientes})
+    audit(db, scope.user, "imprimir_contrato", "reserva", r.id, {"contrato": c.id, "huecos_a_mano": faltan})
     db.commit()
     resp = _descarga(contenido, r)
     resp.headers["X-Huecos-Pendientes"] = str(len(pendientes))

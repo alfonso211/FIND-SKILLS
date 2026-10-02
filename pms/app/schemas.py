@@ -252,11 +252,24 @@ class AccommodationContractIn(BaseModel):
     tarjeta_terminacion: str | None = Field(default=None, pattern=r"^\d{4}$")
     tarjeta_caducidad: str | None = Field(default=None, pattern=r"^(0[1-9]|1[0-2])/\d{2}$")
     ocupantes: str | None = None
-    motivo: Literal["turismo", "laboral", "medico", "estudios", "obras", "transito", "otro"] | None = None
+    sin_garaje: bool = False
+    # Casillas ☐/☒ (se pueden marcar varias)
+    motivo: list[Literal["turismo", "laboral", "medico", "estudios", "obras", "transito", "otro"]] = []
     motivo_otro: str | None = None
-    acreditacion: Literal["empadronamiento", "dni", "alquiler", "suministro", "residencia_fiscal", "otro"] | None = None
+    acreditacion: list[Literal["empadronamiento", "dni", "alquiler", "suministro", "residencia_fiscal", "otro"]] = []
     acreditacion_otro: str | None = None
     actualizar_huesped: bool = True
+    # Por defecto no se imprime si falta algo: el cliente solo debe firmar
+    permitir_huecos: bool = False
+    # Guardar los datos sin imprimir (p.ej. al hacer la reserva, para imprimir a la llegada)
+    solo_guardar: bool = False
+
+    @field_validator("motivo", "acreditacion", mode="before")
+    @classmethod
+    def _lista(cls, v):  # contratos guardados con una sola casilla
+        if v in (None, ""):
+            return []
+        return [v] if isinstance(v, str) else v
 
 
 # --------------------------------------------------------------------------- mantenimiento

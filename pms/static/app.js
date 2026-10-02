@@ -85,10 +85,15 @@ function form(title, fields, init = {}, onSubmit, submitLabel = "Guardar") {
       return `<select name="${fd.k}" ${req}>${fd.req ? "" : '<option value=""></option>'}${fd.options.map(([o, l]) => `<option value="${esc(o)}" ${String(o) === String(v) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
     if (fd.type === "textarea") return `<textarea name="${fd.k}" ${req}>${esc(v)}</textarea>`;
     if (fd.type === "checkbox") return `<input type="checkbox" name="${fd.k}" ${v ? "checked" : ""}>`;
+    if (fd.type === "checks") {  // varias casillas: el valor es una lista
+      const sel = Array.isArray(v) ? v : v ? [v] : [];
+      return `<div class="checks">${fd.options.map(([o, l]) => `<label class="check"><input type="checkbox" name="${fd.k}" value="${esc(o)}" ${sel.includes(o) ? "checked" : ""}> ${esc(l)}</label>`).join("")}</div>`;
+    }
     return `<input name="${fd.k}" type="${fd.type || "text"}" value="${esc(v)}" ${req} ${fd.step ? `step="${fd.step}"` : fd.type === "number" ? 'step="any"' : ""}>`;
   };
   f.innerHTML = `<h3>${esc(title)}</h3><div class="grid">${fields.map((fd) => fd.html ? `<div class="wide">${fd.html}</div>` :
     fd.type === "checkbox" ? `<label class="check ${fd.wide ? "wide" : ""}">${input(fd)} ${esc(fd.t)}</label>` :
+    fd.type === "checks" ? `<fieldset class="wide"><legend>${esc(fd.t)}</legend>${input(fd)}</fieldset>` :
     `<label class="${fd.wide ? "wide" : ""}">${esc(fd.t)}${fd.req ? " *" : ""}${input(fd)}</label>`).join("")}</div>
     <p class="error" id="formErr"></p>
     <div class="actions"><button type="button" class="btn" id="fCancel">Cancelar</button><button class="btn primary" type="submit">${esc(submitLabel)}</button></div>`;
@@ -99,6 +104,7 @@ function form(title, fields, init = {}, onSubmit, submitLabel = "Guardar") {
     for (const fd of fields) {
       if (!fd.k || fd.html) continue;
       const el = f.elements[fd.k];
+      if (fd.type === "checks") { data[fd.k] = [...f.querySelectorAll(`input[name="${fd.k}"]:checked`)].map((x) => x.value); continue; }
       if (fd.type === "checkbox") data[fd.k] = el.checked;
       else if (el.value === "") data[fd.k] = null;
       else data[fd.k] = fd.type === "number" ? Number(el.value) : el.value;
@@ -256,30 +262,42 @@ async function accommodationContract(r) {
   const historial = info.historial.length ? `<p class="muted">Impresos: ${info.historial.map((h) =>
     `<a href="#" data-c="${h.id}">${fdt(h.creado)}${h.usuario ? " · " + esc(h.usuario) : ""}</a>`).join(" · ")}</p>` : "";
   const f = form(`Contrato de alojamiento · ${r.unidad} · ${r.huesped}`, [
-    { html: `<p class="muted">Lo que se deje vacío se imprime con puntos para rellenar a mano. De la tarjeta solo se anotan los 4 últimos dígitos.</p>${historial}` },
+    { html: `<p class="muted">Complete todo aquí: al imprimir, el cliente solo tendrá que firmar. Si falta algo, el sistema le avisará antes de imprimir. De la tarjeta solo se anotan los 4 últimos dígitos.</p>${historial}` },
     { k: "localizador", t: "Localizador" }, { k: "fecha_firma", t: "Fecha de firma", type: "date", req: true },
     { html: "<h4>Cliente</h4>" },
     { k: "cliente_nombre", t: "Nombre y apellidos", wide: true }, { k: "cliente_nacionalidad", t: "Nacionalidad" },
-    { k: "cliente_documento", t: "DNI / Pasaporte / NIE" }, { k: "cliente_domicilio", t: "Domicilio habitual", wide: true },
-    { k: "cliente_cp", t: "C.P." }, { k: "cliente_municipio", t: "Municipio" }, { k: "cliente_pais", t: "País" },
+    { k: "cliente_documento", t: "DNI / Pasaporte / NIE" },
     { k: "cliente_email", t: "Correo electrónico", type: "email" }, { k: "cliente_movil", t: "Móvil" },
+    { html: "<h4>Domicilio habitual del cliente</h4>" },
+    { k: "cliente_domicilio", t: "Dirección (calle, número, piso, puerta)", wide: true },
+    { k: "cliente_cp", t: "Código postal" }, { k: "cliente_municipio", t: "Municipio" }, { k: "cliente_pais", t: "País" },
     { html: "<h4>Estancia</h4>" },
     { k: "capacidad", t: "Capacidad máxima (plazas)", type: "number", step: 1 }, { k: "dormitorios", t: "Dormitorios", type: "number", step: 1 },
-    { k: "garaje_sotano", t: "Garaje: sótano" }, { k: "garaje_plaza", t: "Garaje: plaza nº" },
     { k: "precio_total", t: "Precio total € (IVA incl.)", type: "number" }, { k: "fianza", t: "Fianza €", type: "number" },
+    { k: "sin_garaje", t: "Sin plaza de garaje (se imprime «No incluido»)", type: "checkbox" },
+    { k: "garaje_sotano", t: "Garaje: sótano" }, { k: "garaje_plaza", t: "Garaje: plaza nº" },
     { k: "tarjeta_titular", t: "Tarjeta: titular" }, { k: "tarjeta_terminacion", t: "Tarjeta: últimos 4 dígitos" },
     { k: "tarjeta_caducidad", t: "Tarjeta: caducidad (MM/AA)" },
-    { k: "ocupantes", t: "Ocupantes autorizados (nombre, apellidos y documento de todos)", type: "textarea", wide: true },
-    { k: "motivo", t: "Motivo de la estancia", type: "select", options: sel(info.motivos) }, { k: "motivo_otro", t: "Motivo: otro" },
-    { k: "acreditacion", t: "Acreditación del domicilio", type: "select", options: sel(info.acreditaciones) }, { k: "acreditacion_otro", t: "Acreditación: otro" },
+    { k: "ocupantes", t: "Ocupantes autorizados (nombre, apellidos y documento de todos, incluidos menores)", type: "textarea", wide: true },
+    { k: "motivo", t: "Motivo de la estancia (marque las que correspondan)", type: "checks", options: sel(info.motivos) },
+    { k: "motivo_otro", t: "Motivo «otro»: detalle", wide: true },
+    { k: "acreditacion", t: "Acreditación del domicilio habitual (se une copia)", type: "checks", options: sel(info.acreditaciones) },
+    { k: "acreditacion_otro", t: "Acreditación «otro»: detalle", wide: true },
     { html: "<h4>Empresa</h4>" },
     { k: "representante", t: "Representante" }, { k: "representante_dni", t: "DNI representante" }, { k: "email_empresa", t: "Correo notificaciones", type: "email" },
+    { html: "<h4>Opciones</h4>" },
     { k: "actualizar_huesped", t: "Guardar los datos del cliente en su ficha de huésped", type: "checkbox", def: true, wide: true },
+    { k: "solo_guardar", t: "Solo guardar (imprimir más tarde, a la llegada del cliente)", type: "checkbox", wide: true },
+    { k: "permitir_huecos", t: "Imprimir aunque falten datos (quedarán puntos para rellenar a mano)", type: "checkbox", wide: true },
   ], info.datos, async (d) => {
-    const res = await download("POST", `/api/turistico/reservas/${r.id}/contrato`, d);
-    const n = Number(res.headers.get("X-Huecos-Pendientes") || 0);
-    toast(n ? `Contrato generado. ${n} hueco(s) quedan para rellenar a mano.` : "Contrato generado. Ábralo e imprima dos copias.");
-  }, "Generar e imprimir");
+    if (d.solo_guardar) {
+      const res = await post(`/api/turistico/reservas/${r.id}/contrato`, d);
+      toast(res.faltan.length ? `Datos guardados. Aún faltan: ${res.faltan.join(", ")}` : "Datos guardados. El contrato está listo para imprimir.");
+      return;
+    }
+    await download("POST", `/api/turistico/reservas/${r.id}/contrato`, d);
+    toast("Contrato generado. Ábralo e imprima dos copias para firmar.");
+  }, "Guardar e imprimir");
   f.querySelectorAll("[data-c]").forEach((a) => (a.onclick = (e) => {
     e.preventDefault(); run(() => download("GET", `/api/turistico/reservas/${r.id}/contrato/${a.dataset.c}`), "Contrato descargado");
   }));
@@ -290,8 +308,10 @@ const guestFields = [
   { k: "documento_tipo", t: "Tipo doc.", type: "select", options: list(["DNI", "NIE", "PAS", "CIF", "OTRO"]) },
   { k: "documento_num", t: "Nº documento" }, { k: "nacionalidad", t: "Nacionalidad" },
   { k: "fecha_nacimiento", t: "Fecha nacimiento", type: "date" }, { k: "email", t: "Email", type: "email" },
-  { k: "telefono", t: "Teléfono" }, { k: "direccion", t: "Domicilio habitual", wide: true },
-  { k: "cp", t: "C.P." }, { k: "municipio", t: "Municipio" }, { k: "pais", t: "País" },
+  { k: "telefono", t: "Teléfono" },
+  { html: "<h4>Domicilio habitual</h4>" },
+  { k: "direccion", t: "Dirección (calle, número, piso, puerta)", wide: true },
+  { k: "cp", t: "Código postal" }, { k: "municipio", t: "Municipio" }, { k: "pais", t: "País" },
 ];
 async function editGuest(id, tipo = "huesped") {
   const c = (await get("/api/terceros", { tipo })).find((x) => x.id === id);
@@ -322,9 +342,10 @@ async function newReservation(reload) {
       { k: "importe_total", t: "Importe total €", type: "number", def: 0 }, { k: "importe_pagado", t: "Pagado €", type: "number", def: 0 },
       { html: "<h4>Huésped titular</h4>" }, ...guestFields, { k: "notas", t: "Notas", type: "textarea", wide: true },
     ], {}, async (d) => {
-      const g = {}; guestFields.forEach((f) => { g[f.k] = d[f.k]; delete d[f.k]; });
-      await post("/api/turistico/reservas", { ...clean(d), ...q, unit_id: Number(d.unit_id), guest: clean(g) });
-      toast("Reserva creada"); reload && reload();
+      const g = {}; guestFields.filter((f) => f.k).forEach((f) => { g[f.k] = d[f.k]; delete d[f.k]; });
+      const nueva = await post("/api/turistico/reservas", { ...clean(d), ...q, unit_id: Number(d.unit_id), guest: clean(g) });
+      toast("Reserva creada. Complete ahora el contrato (puede guardarlo e imprimirlo a la llegada)."); reload && reload();
+      await accommodationContract(nueva);
     }, "Crear reserva"), 0);
   }, "Buscar disponibilidad");
 }
@@ -414,7 +435,7 @@ V.contratos = async (el) => {
       { k: "unit_id", t: "Unidad", type: "select", req: true, options: units.map((u) => [u.id, `${u.codigo} · ${label(u.uso)} · ${label(u.estado)}`]) }, ...leaseFields,
       { html: "<h4>Inquilino</h4>" }, ...guestFields, { k: "notas", t: "Notas contrato", type: "textarea", wide: true },
     ], {}, async (d) => {
-      const t = {}; guestFields.forEach((f) => { t[f.k] = d[f.k]; delete d[f.k]; });
+      const t = {}; guestFields.filter((f) => f.k).forEach((f) => { t[f.k] = d[f.k]; delete d[f.k]; });
       await post("/api/alquiler/contratos", { ...clean(d), unit_id: Number(d.unit_id), tenant: clean(t) });
       toast("Contrato creado"); load();
     });

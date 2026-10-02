@@ -36,7 +36,9 @@ Para añadir activos nuevos: *Activos → Nuevo activo* (se eligen la gestora, l
   *pendiente de limpieza*. Incluye planning por unidad y día, y ficha de huéspedes.
 - **Contrato de alojamiento (MOD-ALOJ-001)**: botón *Contrato* en cada reserva de Suite Florida y Suite Aeropuerto.
   - Rellena el Word original (`pms/app/plantillas/`) con los datos de la reserva, del huésped y del apartamento.
-  - Lo que no se rellene queda con puntos para completarlo a mano.
+  - Se completa todo desde el ordenador al hacer la reserva: casillas ☒ (motivo y acreditación, varias), garaje
+    («No incluido» si no hay) y opción de solo guardar para imprimir a la llegada. Antes de imprimir avisa de lo
+    que falte, para que el cliente solo tenga que firmar (se puede forzar con huecos para rellenar a mano).
   - Cada impresión queda en el historial de la reserva para reimprimirla.
   - De la tarjeta de garantía solo se guardan titular, últimos 4 dígitos y caducidad.
   - El representante, su DNI y el correo de la empresa se configuran en la ficha del activo.

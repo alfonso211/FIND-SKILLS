@@ -163,6 +163,8 @@ class Reservation(Base):
     importe_pagado: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
     estado: Mapped[str] = mapped_column(String(20), default="confirmada")  # confirmada | checkin | checkout | cancelada | no_show
     notas: Mapped[str | None] = mapped_column(Text)
+    # Datos del contrato de alojamiento tecleados en la reserva (se imprimen cuando llega el cliente)
+    datos_contrato: Mapped[dict | None] = mapped_column(JSON)
     creada: Mapped[datetime] = mapped_column(DateTime, default=_now)
     unit: Mapped[Unit] = relationship()
     guest: Mapped[Contact] = relationship()

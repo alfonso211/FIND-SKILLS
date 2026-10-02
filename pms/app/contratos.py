@@ -87,16 +87,27 @@ def _fmt(v) -> str:
     return str(v).strip()
 
 
+NO_APLICA = "\x00"  # marca interna: hueco que no procede (se elimina en lugar de dejar puntos)
+
+
 def rellenar(ruta: Path, datos: dict) -> tuple[bytes, list[str]]:
-    """Devuelve el .docx relleno y la lista de huecos que han quedado sin dato."""
+    """Devuelve el .docx relleno y la lista de huecos que han quedado sin dato.
+    `datos["no_aplica"]`: campos que no proceden (p.ej. «otro» sin marcar): se quitan del texto.
+    `datos["sin_garaje"]`: la línea de garaje se imprime como «No incluido»."""
     doc = docx.Document(str(ruta))
     pendientes: list[str] = []
+    no_aplica = set(datos.get("no_aplica") or ())
     for p in _parrafos(doc):
         texto = p.text.strip()
         spec = next(((ini, campos) for ini, campos in CAMPOS if texto.startswith(ini)), None)
         if not spec:
             continue
         ini, campos = spec
+        if ini == "Garaje:" and datos.get("sin_garaje"):
+            for run in p.runs[1:]:
+                if "…" in run.text:
+                    run.text = " No incluido"
+            continue
         cola = list(campos)
         for run in p.runs:
             t = run.text
@@ -107,12 +118,14 @@ def rellenar(ruta: Path, datos: dict) -> tuple[bytes, list[str]]:
                     if not cola:
                         return m.group(0)
                     campo = cola.pop(0)
+                    if campo in no_aplica:
+                        return NO_APLICA
                     valor = _fmt(datos.get(campo))
                     if not valor:
                         pendientes.append(campo)
                         return m.group(0)
                     return valor
-                t = HUECO.sub(sustituir, t)
+                t = HUECO.sub(sustituir, t).replace(": " + NO_APLICA, "").replace(NO_APLICA, "")
             if t != run.text:
                 run.text = t
         if ini == "Apartamento:" and datos.get("etiqueta_bloque"):
@@ -125,11 +138,44 @@ def rellenar(ruta: Path, datos: dict) -> tuple[bytes, list[str]]:
 
 
 def _marcar(texto: str, campo: str, opciones: dict, datos: dict) -> str:
-    elegido = datos.get(campo)
-    if elegido in opciones:
-        texto = texto.replace(f"☐ {opciones[elegido]}", f"☒ {opciones[elegido]}", 1)
+    elegidos = datos.get(campo) or []
+    if isinstance(elegidos, str):  # contratos guardados antes de admitir varias casillas
+        elegidos = [elegidos]
+    for elegido in elegidos:
+        if elegido in opciones:
+            texto = texto.replace(f"☐ {opciones[elegido]}", f"☒ {opciones[elegido]}", 1)
     return texto
 
 
 def fecha_es(d: date) -> dict:
     return {"dia": d.day, "mes": MESES[d.month - 1], "anio": d.year}
+
+
+# Nombre legible de cada hueco, para avisar de lo que falta antes de imprimir
+ETIQUETAS = {
+    "localizador": "Localizador", "firma_dia": "Fecha de firma", "firma_mes": "Fecha de firma",
+    "firma_anio": "Fecha de firma", "registro_turistico": "Nº de registro turístico (ficha del activo)",
+    "representante": "Representante de la empresa (ficha del activo)",
+    "representante_dni": "DNI del representante (ficha del activo)",
+    "email_empresa": "Correo de notificaciones (ficha del activo)",
+    "cliente_nombre": "Nombre del cliente", "cliente_nacionalidad": "Nacionalidad",
+    "cliente_documento": "DNI / Pasaporte / NIE", "cliente_domicilio": "Dirección del domicilio",
+    "cliente_cp": "Código postal", "cliente_municipio": "Municipio", "cliente_pais": "País",
+    "cliente_email": "Correo del cliente", "cliente_movil": "Móvil del cliente",
+    "portal": "Portal / bloque de la unidad", "planta": "Planta de la unidad", "numero": "Número de la unidad",
+    "capacidad": "Capacidad máxima", "dormitorios": "Dormitorios", "garaje_sotano": "Garaje: sótano",
+    "garaje_plaza": "Garaje: plaza", "noches": "Noches", "precio_total": "Precio total", "fianza": "Fianza",
+    "tarjeta_titular": "Tarjeta: titular", "tarjeta_terminacion": "Tarjeta: últimos 4 dígitos",
+    "tarjeta_cad_mes": "Tarjeta: caducidad", "tarjeta_cad_anio": "Tarjeta: caducidad",
+    "ocupantes": "Ocupantes autorizados", "motivo_otro": "Motivo: otro (detalle)",
+    "acreditacion_otro": "Acreditación: otro (detalle)",
+}
+
+
+def faltan(pendientes: list[str]) -> list[str]:
+    vistos: list[str] = []
+    for c in pendientes:
+        e = ETIQUETAS.get(c, c)
+        if e not in vistos:
+            vistos.append(e)
+    return vistos
