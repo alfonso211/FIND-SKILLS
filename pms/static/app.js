@@ -172,12 +172,15 @@ V.activos = async (el) => {
     ...(isNew ? [{ k: "modalidad", t: "Modalidad", type: "select", req: true, options: kv(S.cat.modalidades) }] : []),
     { k: "direccion", t: "Dirección", wide: true }, { k: "municipio", t: "Municipio" }, { k: "provincia", t: "Provincia" },
     { k: "cp", t: "C.P." }, { k: "ref_catastral", t: "Ref. catastral" }, { k: "num_registro_turistico", t: "Nº registro turístico" },
+    { html: "<h4>Facturación</h4><p class='muted'>Factura la sociedad gestora. Cada activo tiene su serie y la numeración es correlativa por año (p.ej. SF/00001/2026). No cambie la serie de un activo que ya tiene facturas del año en curso.</p>" },
+    { k: "serie_factura", t: "Serie de facturas (p.ej. B35, SF, SA)" },
     { html: "<h4>Datos de la empresa en los contratos de alojamiento</h4>" },
     { k: "contrato_representante", t: "Representante (firma por la empresa)" }, { k: "contrato_representante_dni", t: "DNI del representante" },
     { k: "contrato_email", t: "Correo para notificaciones", type: "email" },
     { k: "activo", t: "Activo en explotación", type: "checkbox", def: true }, { k: "notas", t: "Notas", type: "textarea", wide: true },
   ];
   const edit = (a) => form(a ? `Editar ${a.nombre}` : "Nuevo activo", fields(!a), a || {}, async (d) => {
+    if (d.serie_factura) d.serie_factura = d.serie_factura.trim().toUpperCase();
     if (a) await put(`/api/activos/${a.id}`, d); else await post("/api/activos", clean(d));
     toast("Activo guardado"); await loadAssets(); go("activos");
   });
@@ -185,6 +188,7 @@ V.activos = async (el) => {
   table($("#t", el), [
     { k: "codigo", t: "Código" }, { k: "nombre", t: "Nombre" }, { k: "modalidad_nombre", t: "Modalidad" },
     { k: "sociedad", t: "Gestora" }, { k: "propietaria", t: "Propietaria" }, { k: "municipio", t: "Municipio" }, { k: "num_unidades", t: "Unidades", num: true },
+    { k: "serie_factura", t: "Serie facturas" },
     { k: "activo", t: "Estado", f: (v) => (v ? badge("vigente") : badge("baja")) },
   ], rows, (a) => [["Unidades", () => { setAsset(a.id); go("unidades"); }], can("activos.editar") && ["Editar", () => edit(a)]]);
 };
@@ -246,11 +250,38 @@ const resCols = [
   { k: "localizador", t: "Localizador" }, { k: "asset_id", t: "Activo", f: (v) => esc(assetName(v)) }, { k: "unidad", t: "Unidad" },
   { k: "huesped", t: "Huésped" }, { k: "fecha_entrada", t: "Entrada", f: fdate }, { k: "fecha_salida", t: "Salida", f: fdate },
   { k: "noches", t: "Noches", num: true }, { k: "adultos", t: "Pax", num: true, f: (v, r) => v + r.ninos }, { k: "canal", t: "Canal" },
-  { k: "importe_total", t: "Importe", num: true, f: eur }, { k: "estado", t: "Estado", f: badge },
+  { k: "importe_total", t: "Importe", num: true, f: eur },
+  { k: "importe_pagado", t: "Cobrado", num: true, f: (v, r) => eur(v) + (r.importe_total - v > 0.004 && v > 0 ? ' <span class="badge b-parcial">parcial</span>' : "") },
+  { k: "estado", t: "Estado", f: badge },
 ];
+// ---- cobros y facturas: al registrar un cobro se emite la factura y se descarga en PDF
+const descargarFactura = (id) => download("GET", `/api/facturas/${id}/pdf`).catch((e) => toast(e.message, true));
+function cobroForm(titulo, pendiente, url, reload) {
+  const f = form(titulo, [
+    { k: "importe", t: "Importe cobrado € (IVA incluido)", type: "number", req: true },
+    { k: "fecha_pago", t: "Fecha del cobro", type: "date", def: today() },
+    { k: "forma_pago", t: "Forma de pago", type: "select", options: kv(S.cat.formas_pago) },
+    { k: "otra", t: "Facturar a una empresa u otra persona (no al cliente)", type: "checkbox", wide: true },
+    { k: "fa_nombre", t: "Razón social / nombre" }, { k: "fa_nif", t: "CIF / NIF" }, { k: "fa_domicilio", t: "Domicilio fiscal completo", wide: true },
+    { html: '<p class="muted">Al registrar el cobro se emite la factura con el siguiente número de la serie del activo y se descarga en PDF. Una factura emitida no se puede modificar: si hay un error, Administración emite una rectificativa.</p>' },
+  ], { importe: pendiente }, async (d) => {
+    const body = { importe: d.importe, fecha_pago: d.fecha_pago, forma_pago: d.forma_pago };
+    if (d.otra) body.facturar_a = { nombre: d.fa_nombre, nif: d.fa_nif, domicilio: d.fa_domicilio };
+    const r = await post(url, clean(body));
+    toast(`Cobro registrado · Factura ${r.factura.codigo}`);
+    reload && reload();
+    await descargarFactura(r.factura.id);
+  }, "Registrar cobro y facturar");
+  const sync = () => f.querySelectorAll('[name^="fa_"]').forEach((i) => {
+    i.closest("label").style.display = f.elements.otra.checked ? "" : "none"; i.required = f.elements.otra.checked;
+  });
+  f.elements.otra.onchange = sync; sync();
+}
 function resActions(reload) {
   return (r) => can("reservas.editar") ? [
     ["Contrato", () => accommodationContract(r)],
+    r.importe_total - r.importe_pagado > 0.004 && ["Cobro", () => cobroForm(`Cobro reserva ${r.localizador || r.id} · ${r.unidad} · pendiente ${eur(r.importe_total - r.importe_pagado)}`,
+      Math.round((r.importe_total - r.importe_pagado) * 100) / 100, `/api/turistico/reservas/${r.id}/cobro`, reload)],
     r.estado === "confirmada" && ["Check-in", () => run(() => post(`/api/turistico/reservas/${r.id}/checkin`), "Check-in realizado").then(reload).catch(() => editGuest(r.guest_id))],
     r.estado === "checkin" && ["Check-out", () => run(() => post(`/api/turistico/reservas/${r.id}/checkout`), "Check-out realizado").then(reload)],
     ["Huésped", () => editGuest(r.guest_id)],
@@ -468,7 +499,8 @@ function editReservation(r, reload) {
     { k: "localizador", t: "Localizador" }, { k: "canal", t: "Canal", type: "select", options: list(S.cat.canales) },
     { k: "fecha_entrada", t: "Entrada", type: "date", req: true }, { k: "fecha_salida", t: "Salida", type: "date", req: true },
     { k: "adultos", t: "Adultos", type: "number" }, { k: "ninos", t: "Niños", type: "number" },
-    { k: "importe_total", t: "Importe total €", type: "number" }, { k: "importe_pagado", t: "Pagado €", type: "number" },
+    { k: "importe_total", t: "Importe total € (IVA incluido)", type: "number" },
+    { html: `<p class="muted">Cobrado: ${eur(r.importe_pagado)}. Los cobros se registran con el botón <b>Cobro</b>, que emite la factura.</p>` },
     { k: "notas", t: "Notas", type: "textarea", wide: true },
   ], r, async (d) => { await put(`/api/turistico/reservas/${r.id}`, d); toast("Reserva actualizada"); reload(); });
 }
@@ -486,12 +518,16 @@ async function newReservation(reload) {
       { html: "<h4>Reserva</h4>" },
       { k: "unit_id", t: "Unidad", type: "select", req: true, options: disp.unidades.map((u) => [u.id, `${u.codigo} ${u.bloque ? "· " + u.bloque : ""} ${u.tipologia ?? ""} ${u.tarifa_base_noche ? "· " + eur(u.tarifa_base_noche) : ""}`]) },
       { k: "canal", t: "Canal", type: "select", req: true, options: list(S.cat.canales), def: "directo" }, { k: "localizador", t: "Localizador" },
-      { k: "importe_total", t: "Importe total €", type: "number", def: 0 }, { k: "importe_pagado", t: "Pagado €", type: "number", def: 0 },
+      { k: "importe_total", t: "Importe total € (IVA incluido)", type: "number", def: 0 },
+      { k: "importe_pagado", t: "Cobrado ahora € (se emite factura)", type: "number", def: 0 },
+      { k: "forma_pago", t: "Forma de pago", type: "select", options: kv(S.cat.formas_pago) },
       { k: "notas", t: "Notas", type: "textarea", wide: true },
     ], {}, async (d, fr) => {
       const g = {}; guestFields.filter((f) => f.k).forEach((f) => { g[f.k] = d[f.k]; delete d[f.k]; });
       const nueva = await post("/api/turistico/reservas", { ...clean(d), ...q, unit_id: Number(d.unit_id), guest: clean(g), documentos: fr._docs.map((x) => x.id) });
-      toast("Reserva creada. Complete ahora el contrato (puede guardarlo e imprimirlo a la llegada)."); reload && reload();
+      toast("Reserva creada" + (nueva.factura ? ` · Factura ${nueva.factura.codigo}` : "") + ". Complete ahora el contrato (puede guardarlo e imprimirlo a la llegada).");
+      reload && reload();
+      if (nueva.factura) await descargarFactura(nueva.factura.id);
       await accommodationContract(nueva);
     }, "Crear reserva")), 0);
   }, "Buscar disponibilidad");
@@ -546,12 +582,15 @@ V.planning = async (el) => {
 };
 
 // ---- alquiler residencial
+// IVA del alquiler: vacío = automático (vivienda exenta; garajes, trasteros y locales al 21 %)
+const ivaField = { k: "tipo_iva", t: "IVA (vacío = automático según el uso)", type: "select", options: [["0", "Exento (vivienda, o garaje arrendado con ella)"], ["21", "21 %"]] };
 V.contratos = async (el) => {
   el.innerHTML = `<div class="toolbar"><select id="e"><option value="">Todos</option>${["borrador", "vigente", "finalizado", "rescindido"].map((x) => `<option ${x === "vigente" ? "selected" : ""}>${x}</option>`).join("")}</select>
     <span class="spacer"></span>${can("alquiler.editar") ? '<button class="btn primary" id="new">Nuevo contrato</button>' : ""}</div><div id="t"></div>`;
   const leaseFields = [
     { k: "referencia", t: "Referencia" }, { k: "fecha_inicio", t: "Fecha inicio", type: "date", req: true }, { k: "fecha_fin", t: "Fecha fin", type: "date" },
-    { k: "renta_mensual", t: "Renta mensual €", type: "number", req: true }, { k: "fianza", t: "Fianza €", type: "number" },
+    { k: "renta_mensual", t: "Renta mensual € (sin IVA)", type: "number", req: true }, { k: "fianza", t: "Fianza €", type: "number" },
+    ivaField,
     { k: "garantia_adicional", t: "Garantía adicional €", type: "number" }, { k: "dia_pago", t: "Día de pago", type: "number", def: 5 },
     { k: "indice_actualizacion", t: "Índice actualización", type: "select", options: list(["IRAV", "IPC", "NINGUNO"]), def: "IRAV" },
     { k: "estado", t: "Estado", type: "select", options: list(["borrador", "vigente"]), def: "vigente" },
@@ -559,7 +598,7 @@ V.contratos = async (el) => {
   const load = async () => table($("#t", el), [
     { k: "referencia", t: "Ref." }, { k: "asset_id", t: "Activo", f: (v) => esc(assetName(v)) }, { k: "unidad", t: "Unidad" },
     { k: "inquilino", t: "Inquilino" }, { k: "fecha_inicio", t: "Inicio", f: fdate }, { k: "fecha_fin", t: "Fin", f: fdate },
-    { k: "renta_mensual", t: "Renta", num: true, f: eur }, { k: "fianza", t: "Fianza", num: true, f: eur },
+    { k: "renta_mensual", t: "Renta (sin IVA)", num: true, f: eur }, { k: "fianza", t: "Fianza", num: true, f: eur },
     { k: "indice_actualizacion", t: "Índice" }, { k: "estado", t: "Estado", f: badge },
   ], await get("/api/alquiler/contratos", { asset_id: S.asset, estado: $("#e", el).value }), (l) => can("alquiler.editar") ? [
     ["Inquilino", () => editGuest(l.tenant_id, "inquilino")],
@@ -567,6 +606,7 @@ V.contratos = async (el) => {
       { k: "referencia", t: "Referencia" }, { k: "fecha_fin", t: "Fecha fin", type: "date" }, { k: "fianza", t: "Fianza €", type: "number" },
       { k: "garantia_adicional", t: "Garantía adicional €", type: "number" }, { k: "dia_pago", t: "Día de pago", type: "number" },
       { k: "indice_actualizacion", t: "Índice", type: "select", options: list(["IRAV", "IPC", "NINGUNO"]) },
+      ivaField,
       { k: "estado", t: "Estado", type: "select", options: list(["borrador", "vigente", "finalizado", "rescindido"]) },
       { k: "notas", t: "Notas", type: "textarea", wide: true }], l, async (d) => { await put(`/api/alquiler/contratos/${l.id}`, d); toast("Contrato actualizado"); load(); })],
     l.estado === "vigente" && ["Actualizar renta", () => form(`Actualizar renta (${eur(l.renta_mensual)}) · índice ${l.indice_actualizacion}`, [
@@ -601,16 +641,46 @@ V.recibos = async (el) => {
   const load = async () => table($("#t", el), [
     { k: "periodo", t: "Periodo" }, { k: "asset_id", t: "Activo", f: (v) => esc(assetName(v)) }, { k: "unidad", t: "Unidad" },
     { k: "inquilino", t: "Inquilino" }, { k: "concepto", t: "Concepto" }, { k: "fecha_vencimiento", t: "Vence", f: fdate },
-    { k: "importe", t: "Importe", num: true, f: eur }, { k: "importe_pagado", t: "Cobrado", num: true, f: eur },
+    { k: "importe", t: "Importe", num: true, f: (v, c) => eur(v) + (c.tipo_iva > 0 ? ` <span class="muted">(IVA ${c.tipo_iva} %)</span>` : "") }, { k: "importe_pagado", t: "Cobrado", num: true, f: eur },
     { k: "pendiente", t: "Pendiente", num: true, f: eur }, { k: "estado", t: "Estado", f: badge },
   ], await get("/api/alquiler/recibos", { asset_id: S.asset, periodo: $("#p", el).value, estado: $("#e", el).value }), (c) =>
     can("alquiler.editar") && ["pendiente", "parcial"].includes(c.estado) ? [
-      ["Cobrar", () => form(`Cobro recibo ${c.unidad} ${c.periodo}`, [{ k: "importe", t: "Importe €", type: "number", req: true }, { k: "fecha_pago", t: "Fecha cobro", type: "date", def: today() }],
-        { importe: c.pendiente }, async (d) => { await post(`/api/alquiler/recibos/${c.id}/cobro`, d); toast("Cobro registrado"); load(); })],
+      ["Cobrar", () => cobroForm(`Cobro recibo ${c.unidad} ${c.periodo} · ${c.inquilino}`, c.pendiente, `/api/alquiler/recibos/${c.id}/cobro`, load)],
       c.importe_pagado == 0 && ["Anular", () => confirm("¿Anular recibo?") && run(() => post(`/api/alquiler/recibos/${c.id}/anular`), "Recibo anulado").then(load), "danger"],
     ] : []);
   $("#p", el).onchange = load; $("#e", el).onchange = load;
   if ($("#gen", el)) $("#gen", el).onclick = () => run(() => post("/api/alquiler/recibos/generar", clean({ periodo: $("#p", el).value, asset_id: S.asset ? Number(S.asset) : null })), (r) => `${r.creados} recibos emitidos`).then(load);
+  load();
+};
+
+V.facturas = async (el) => {
+  const series = [...new Set(S.assets.map((a) => a.serie_factura).filter(Boolean))].sort();
+  el.innerHTML = `<div class="toolbar"><label>Año<input type="number" id="y" value="${new Date().getFullYear()}" style="width:90px"></label>
+    <label>Serie<select id="s"><option value="">Todas</option>${series.flatMap((x) => [x, x + "R"]).map((x) => `<option>${esc(x)}</option>`).join("")}</select></label>
+    <label>Buscar<input id="q" placeholder="Nº de factura, cliente, concepto"></label><span class="spacer"></span>
+    <button class="btn" id="csv">Libro de facturas emitidas (Excel)</button></div><div id="t"></div><p id="tot"></p>`;
+  const filtros = () => ({ asset_id: S.asset, anio: $("#y", el).value, serie: $("#s", el).value, q: $("#q", el).value });
+  const load = async () => {
+    const rows = await get("/api/facturas", filtros());
+    table($("#t", el), [
+      { k: "codigo", t: "Factura", f: (v) => `<b>${esc(v)}</b>` }, { k: "fecha_expedicion", t: "Fecha", f: fdate }, { k: "activo", t: "Activo" },
+      { k: "cliente", t: "Cliente", f: (v) => esc(v.nombre) }, { k: "cliente", t: "NIF", f: (v) => esc(v.nif || "") },
+      { k: "concepto", t: "Concepto", f: (v) => `<span title="${esc(v)}">${esc(v.length > 60 ? v.slice(0, 60) + "…" : v)}</span>` },
+      { k: "base_imponible", t: "Base", num: true, f: eur }, { k: "tipo_iva", t: "IVA", num: true, f: (v) => (v == 0 ? "Exento" : v + " %") },
+      { k: "cuota_iva", t: "Cuota", num: true, f: eur }, { k: "total", t: "Total", num: true, f: eur },
+      { k: "tipo", t: "", f: (v, r) => (v === "rectificativa" ? badge("rectificativa") : r.rectificada_por ? `<span class="badge b-rectificada">rectificada por ${esc(r.rectificada_por)}</span>` : "") },
+    ], rows, (r) => [
+      ["PDF", () => descargarFactura(r.id)],
+      can("facturas.rectificar") && r.tipo === "ordinaria" && !r.rectificada_por && ["Rectificar", () => form(`Rectificar la factura ${r.codigo} (${eur(r.total)})`, [
+        { html: `<p>Se emitirá una <b>factura rectificativa</b> por ${eur(-r.total)} en la serie ${esc(r.serie)}R que anula esta factura, y se deshará el cobro (el recibo o la reserva vuelven a quedar pendientes por ese importe).</p>` },
+        { k: "motivo", t: "Motivo de la rectificación", type: "textarea", req: true, wide: true },
+      ], {}, async (d) => { const x = await post(`/api/facturas/${r.id}/rectificar`, d); toast(`Rectificativa ${x.codigo} emitida`); load(); await descargarFactura(x.id); }, "Emitir rectificativa"), "danger"],
+    ]);
+    const sum = (k) => rows.reduce((a, x) => a + Number(x[k]), 0);
+    $("#tot", el).innerHTML = rows.length ? `Base imponible <b>${eur(sum("base_imponible"))}</b> · IVA <b>${eur(sum("cuota_iva"))}</b> · Total <b>${eur(sum("total"))}</b>` : "";
+  };
+  $("#y", el).onchange = load; $("#s", el).onchange = load; $("#q", el).oninput = debounce(load);
+  $("#csv", el).onclick = () => run(() => download("GET", "/api/facturas/libro.csv?" + new URLSearchParams(clean({ ...filtros(), q: null }))));
   load();
 };
 
@@ -789,7 +859,9 @@ V.roles = async (el) => {
 V.sociedades = async (el) => {
   el.innerHTML = `<div class="toolbar"><span class="spacer"></span><button class="btn primary" id="new">Nueva sociedad</button></div><div id="t"></div>`;
   const fields = [{ k: "nombre", t: "Razón social", req: true }, { k: "cif", t: "CIF" },
-    { k: "parent_id", t: "Sociedad matriz", type: "select", options: opts(S.companies) }, { k: "activa", t: "Activa", type: "checkbox", def: true }];
+    { k: "parent_id", t: "Sociedad matriz", type: "select", options: opts(S.companies) }, { k: "activa", t: "Activa", type: "checkbox", def: true },
+    { html: "<h4>Domicilio fiscal</h4><p class='muted'>Obligatorio para emitir facturas. Se imprime en todas las facturas de la sociedad.</p>" },
+    { k: "direccion", t: "Dirección", wide: true }, { k: "cp", t: "C.P." }, { k: "municipio", t: "Municipio" }, { k: "provincia", t: "Provincia" }];
   const save = (c) => form(c ? c.nombre : "Nueva sociedad", fields, c || {}, async (d) => {
     d.parent_id = d.parent_id ? Number(d.parent_id) : null;
     if (c) await put(`/api/sociedades/${c.id}`, d); else await post("/api/sociedades", d);
@@ -797,6 +869,7 @@ V.sociedades = async (el) => {
   });
   $("#new", el).onclick = () => save(null);
   table($("#t", el), [{ k: "nombre", t: "Razón social" }, { k: "cif", t: "CIF" },
+    { k: "direccion", t: "Domicilio fiscal", f: (v, c) => v ? esc([v, c.cp, c.municipio].filter(Boolean).join(", ")) : '<span class="badge b-pendiente">falta (no puede facturar)</span>' },
     { k: "parent_id", t: "Matriz", f: (v) => esc(S.companies.find((c) => c.id === v)?.nombre ?? "") },
     { k: "activa", t: "Estado", f: (v) => (v ? badge("vigente") : badge("baja")) }], S.companies, (c) => [["Editar", () => save(c)]]);
 };
@@ -820,6 +893,7 @@ const MENU = [
   ["General", [["panel", "Panel de control", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
   ["Apartamentos turísticos", [["hoy", "Llegadas / salidas", "reservas.ver"], ["reservas", "Reservas", "reservas.ver"], ["planning", "Planning", "reservas.ver"], ["huespedes", "Huéspedes", "reservas.ver"]]],
   ["Alquiler residencial", [["contratos", "Contratos", "alquiler.ver"], ["recibos", "Recibos y cobros", "alquiler.ver"], ["inquilinos", "Inquilinos", "alquiler.ver"]]],
+  ["Facturación", [["facturas", "Facturas emitidas", "facturas.ver"]]],
   ["Mantenimiento", [["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["proveedores", "Proveedores", "mantenimiento.ver"]]],
   ["Administración", [["usuarios", "Usuarios", "admin"], ["roles", "Roles y permisos", "admin"], ["sociedades", "Sociedades", "admin"], ["auditoria", "Auditoría", "auditoria.ver"]]],
   ["", [["perfil", "Mi perfil", null]]],

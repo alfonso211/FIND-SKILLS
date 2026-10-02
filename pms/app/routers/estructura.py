@@ -4,6 +4,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..facturacion import FORMAS_PAGO
 from ..models import ESTADOS_UNIDAD, MODALIDADES, USOS_UNIDAD, Asset, Company, Contact, Lease, Reservation, Unit
 from ..schemas import AssetIn, AssetUpdate, CompanyIn, ContactIn, UnitBulk, UnitIn, UnitUpdate
 from ..security import PERMISOS, Scope, audit, get_scope
@@ -29,6 +30,7 @@ def catalogos(scope: Scope = Depends(get_scope)):
         "estados_ot": ["abierta", "asignada", "en_curso", "pendiente_material", "trabajo_realizado",
                        "pendiente_cierre", "cerrada", "cancelada"],
         "prioridades": ["baja", "media", "alta", "urgente"],
+        "formas_pago": FORMAS_PAGO,
     }
 
 
@@ -71,6 +73,12 @@ def _asset_out(a: Asset, n_units: int) -> dict:
     return d
 
 
+def _serie_libre(db: Session, serie: str | None, aid: int | None = None) -> None:
+    """Cada activo tiene su propia serie, para que la numeración no se mezcle."""
+    if serie and db.scalar(select(Asset.id).where(Asset.serie_factura == serie, Asset.id != (aid or -1))):
+        bad_request(f"La serie de facturación {serie} ya la usa otro activo")
+
+
 @router.get("/activos")
 def list_assets(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     ids = scope.asset_ids("activos.ver")
@@ -90,6 +98,7 @@ def create_asset(data: AssetIn, scope: Scope = Depends(get_scope), db: Session =
         get_or_404(db, Company, data.propietaria_id)
     if db.scalar(select(Asset).where(Asset.codigo == data.codigo)):
         bad_request("Ya existe un activo con ese código")
+    _serie_libre(db, data.serie_factura)
     a = Asset(**{**data.model_dump(), "propietaria_id": data.propietaria_id or data.company_id})
     db.add(a)
     db.flush()
@@ -108,6 +117,7 @@ def update_asset(aid: int, data: AssetUpdate, scope: Scope = Depends(get_scope),
         get_or_404(db, Company, data.company_id)
     if data.propietaria_id is not None and data.propietaria_id != a.propietaria_id:
         get_or_404(db, Company, data.propietaria_id)
+    _serie_libre(db, data.serie_factura, aid)
     ch = apply(a, data)
     audit(db, scope.user, "editar", "activo", aid, ch)
     db.commit()

@@ -27,6 +27,8 @@ PERMISOS: dict[str, str] = {
     "mantenimiento.editar": "Ejecutar órdenes de trabajo, confirmar trabajo realizado y gestionar preventivo",
     "mantenimiento.cerrar": "Cerrar órdenes de trabajo confirmadas por mantenimiento y limpieza",
     "finanzas.ver": "Ver indicadores económicos del panel (facturación, deuda)",
+    "facturas.ver": "Ver, imprimir y exportar facturas emitidas",
+    "facturas.rectificar": "Emitir facturas rectificativas (anula el cobro facturado)",
     "usuarios.gestionar": "Gestionar usuarios, roles y sociedades",
     "auditoria.ver": "Consultar registro de auditoría",
 }
@@ -38,18 +40,19 @@ ROLES_POR_DEFECTO: dict[str, tuple[str, list[str]]] = {
         "activos.ver", "activos.editar", "alquiler.ver", "alquiler.editar", "reservas.ver", "reservas.editar",
         "limpieza.editar", "limpieza.confirmar_ot", "mantenimiento.ver", "mantenimiento.abrir", "mantenimiento.editar",
         "mantenimiento.cerrar",
-        "finanzas.ver", "auditoria.ver"]),
+        "finanzas.ver", "facturas.ver", "facturas.rectificar", "auditoria.ver"]),
     "Gestor Alquiler Residencial": ("Contratos, inquilinos y cobros", [
-        "activos.ver", "alquiler.ver", "alquiler.editar", "mantenimiento.ver", "finanzas.ver"]),
+        "activos.ver", "alquiler.ver", "alquiler.editar", "mantenimiento.ver", "finanzas.ver", "facturas.ver"]),
     "Recepción": ("Reservas, llegadas y salidas. Abre y cierra órdenes de trabajo", [
-        "activos.ver", "reservas.ver", "reservas.editar", "limpieza.editar", "mantenimiento.ver",
+        "activos.ver", "reservas.ver", "reservas.editar", "facturas.ver", "limpieza.editar", "mantenimiento.ver",
         "mantenimiento.abrir", "mantenimiento.cerrar"]),
     "Gobernanta / Limpieza": ("Limpieza de unidades. Abre OT y confirma la unidad tras la reparación", [
         "activos.ver", "limpieza.editar", "limpieza.confirmar_ot", "mantenimiento.ver", "mantenimiento.abrir"]),
     "Técnico Mantenimiento": ("Ejecuta y confirma órdenes de trabajo; preventivo", [
         "activos.ver", "mantenimiento.ver", "mantenimiento.abrir", "mantenimiento.editar"]),
     "Administración / Finanzas": ("Consulta económica y cobros", [
-        "activos.ver", "alquiler.ver", "alquiler.editar", "reservas.ver", "mantenimiento.ver", "finanzas.ver"]),
+        "activos.ver", "alquiler.ver", "alquiler.editar", "reservas.ver", "mantenimiento.ver", "finanzas.ver",
+        "facturas.ver", "facturas.rectificar"]),
     "Consulta": ("Solo lectura", ["activos.ver", "alquiler.ver", "reservas.ver", "mantenimiento.ver"]),
 }
 

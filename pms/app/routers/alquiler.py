@@ -8,6 +8,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..facturacion import datos_cliente, emitir, iva_contrato, mes_es, serie_activo
 from ..models import MODALIDADES_CONTRATO, Asset, Charge, Contact, Lease, Unit
 from ..schemas import ChargeGenerate, LeaseIn, LeaseUpdate, Payment, RentUpdate
 from ..security import Scope, audit, get_scope
@@ -181,10 +182,11 @@ def generate_charges(data: ChargeGenerate, scope: Scope = Depends(get_scope), db
         start = max(first, lease.fecha_inicio)
         end = min(last, lease.fecha_fin) if lease.fecha_fin else last
         dias = (end - start).days + 1
-        importe = _money(lease.renta_mensual) if dias == days else _money(
+        base = _money(lease.renta_mensual) if dias == days else _money(
             Decimal(str(lease.renta_mensual)) * dias / days)
-        db.add(Charge(lease_id=lease.id, periodo=data.periodo, concepto="Renta", importe=importe,
-                      fecha_vencimiento=date(y, m, min(lease.dia_pago, days))))
+        iva = iva_contrato(lease)  # la renta del contrato es sin IVA; el recibo lo incluye
+        db.add(Charge(lease_id=lease.id, periodo=data.periodo, concepto="Renta", importe=_money(base * (1 + iva / 100)),
+                      tipo_iva=iva, fecha_vencimiento=date(y, m, min(lease.dia_pago, days))))
         created += 1
     audit(db, scope.user, "generar_recibos", "recibo", None, {"periodo": data.periodo, "creados": created})
     db.commit()
@@ -203,9 +205,20 @@ def register_payment(rid: int, data: Payment, scope: Scope = Depends(get_scope),
     c.importe_pagado = pagado
     c.fecha_pago = data.fecha_pago or date.today()
     c.estado = "pagado" if pagado == _money(c.importe) else "parcial"
-    audit(db, scope.user, "cobro", "recibo", rid, {"importe": data.importe})
+    lease, unit = c.lease, c.lease.unit
+    asset = unit.asset
+    concepto = (f"{c.concepto} {mes_es(c.periodo)} · {unit.uso.capitalize()} {unit.codigo} · "
+                f"{asset.direccion or asset.nombre}"
+                + (f" · Contrato {lease.referencia}" if lease.referencia else ""))
+    if c.estado == "parcial" or _money(data.importe) < _money(c.importe):
+        concepto = "Pago parcial · " + concepto
+    f = emitir(db, scope.user, company=asset.company, serie=serie_activo(asset), asset_id=asset.id,
+               cliente=datos_cliente(lease.tenant, data.facturar_a), contact_id=lease.tenant_id, concepto=concepto,
+               total=data.importe, tipo_iva=c.tipo_iva if c.tipo_iva is not None else iva_contrato(lease),
+               fecha_operacion=c.fecha_pago, forma_pago=data.forma_pago, charge_id=c.id)
+    audit(db, scope.user, "cobro", "recibo", rid, {"importe": data.importe, "factura": f.codigo})
     db.commit()
-    return _charge_out(c)
+    return {**_charge_out(c), "factura": {"id": f.id, "codigo": f.codigo}}
 
 
 @router.post("/recibos/{rid}/anular")

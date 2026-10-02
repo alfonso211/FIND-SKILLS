@@ -56,6 +56,31 @@ Para añadir activos nuevos: *Activos → Nuevo activo* (se eligen la gestora, l
   - Todo se procesa en el propio servidor: las imágenes no salen a servicios externos.
 - **Alquiler residencial**: contratos LAU (fianza, garantía adicional, día de pago, índice IRAV/IPC),
   emisión mensual de recibos prorrateados, cobros parciales o totales, anulación y actualización de renta.
+- **Facturación**: cada cobro registrado emite su factura y la descarga en PDF.
+  - **Series:** cada activo tiene su propia serie, con numeración correlativa que se reinicia cada año.
+    | Activo | Emite | Serie | Ejemplo |
+    |---|---|---|---|
+    | C/ Babilonia 35 | COMERCIAL DEL CAMPO S.A. | B35 | B35/00001/2026 |
+    | Suite Florida | INVERSIETE SA | SF | SF/00001/2026 |
+    | Suite Aeropuerto | INVERSIETE SA | SA | SA/00001/2026 |
+    Factura siempre la sociedad gestora del activo. Una serie no se puede repetir en dos activos ni mezclar emisores.
+  - **Dónde se cobra:** botón *Cobro* en las reservas (también al crear la reserva, si ya viene pagada) y botón
+    *Cobrar* en los recibos de alquiler. Los cobros parciales generan una factura por cada pago («Pago a cuenta»).
+    Se puede facturar a una empresa en lugar del cliente (p.ej. la que aloja a su personal).
+  - **IVA** (los importes cobrados lo incluyen):
+    - Apartamentos turísticos: 10 %.
+    - Viviendas: exentas, con la mención del art. 20.Uno.23º de la Ley del IVA.
+    - Garajes, trasteros y locales: 21 %.
+    - En cada contrato se puede fijar otro tipo, p.ej. un garaje arrendado junto con la vivienda (exento).
+    - La renta del contrato se indica sin IVA y el recibo lo suma.
+  - **Requisito:** CIF y domicilio fiscal de la sociedad emisora (*Administración → Sociedades*). Sin ellos no se
+    puede facturar ni registrar el cobro.
+  - **Inalterables:** las facturas no se editan ni se borran. Un error se corrige con una **rectificativa**, que va
+    en serie propia (B35R, SFR, SAR), anula la factura con importes en negativo y deshace el cobro. La emite
+    Dirección o Administración / Finanzas (permiso *facturas.rectificar*).
+  - **Huella:** cada factura guarda la huella SHA-256 de la anterior de la misma sociedad (cadena antimanipulación).
+  - **Consulta y exportación:** *Facturación → Facturas emitidas* permite buscar, reimprimir y exportar el libro
+    registro de facturas emitidas en CSV para Excel o la gestoría. Recepción ve las facturas de su activo.
 - **Mantenimiento**:
   - Órdenes de trabajo correctivas, preventivas, normativas y de mejora, por gremio o instalación y con
     prioridad. Una OT puede bloquear la unidad (la saca de venta) hasta su cierre.
@@ -164,6 +189,9 @@ El test `test_modelos_sin_migracion_pendiente` falla si se cambia un modelo sin 
 2. Recibir las tipologías de Suite Florida y las superficies y capacidades de los apartamentos turísticos.
 3. Envío del parte de viajeros a SES.HOSPEDAJES (Ministerio del Interior).
 4. Conexión con channel manager (Booking, Airbnb, Expedia) y tarifas por temporada.
-5. Remesas SEPA de recibos y exportación contable.
-6. Adjuntos (contratos firmados, fotos de averías, certificados OCA) y app móvil para técnicos.
-7. Despliegue en servidor con PostgreSQL, HTTPS y copias de seguridad.
+5. **Veri\*factu** (RD 1007/2023): adaptar la facturación al sistema de la AEAT antes de que sea obligatorio para
+   las sociedades. Supone enviar cada factura a Hacienda e imprimir el código QR. La numeración y la cadena de
+   huellas ya están preparadas.
+6. Retención de IRPF en alquileres de inmuebles a empresas, y remesas SEPA de recibos y exportación contable.
+7. Adjuntos (contratos firmados, fotos de averías, certificados OCA) y app móvil para técnicos.
+8. Despliegue en servidor con PostgreSQL, HTTPS y copias de seguridad.

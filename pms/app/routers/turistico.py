@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from .. import contratos
+from ..facturacion import IVA_ALOJAMIENTO, datos_cliente, dinero, emitir, serie_activo
 from ..models import MODALIDADES_RESERVA, AccommodationContract, Contact, Reservation, Unit, User
-from ..schemas import AccommodationContractIn, ReservationIn, ReservationUpdate
+from ..schemas import AccommodationContractIn, Payment, ReservationIn, ReservationUpdate
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
 from .documentos import adjuntar_pendientes
@@ -90,14 +91,54 @@ def create_reservation(data: ReservationIn, scope: Scope = Depends(get_scope), d
         bad_request("Indique guest_id o los datos del huésped")
     if data.documentos:
         adjuntar_pendientes(db, scope.user, data.documentos, guest)
-    r = Reservation(**data.model_dump(exclude={"guest", "guest_id", "documentos"}), guest_id=guest.id)
+    r = Reservation(**data.model_dump(exclude={"guest", "guest_id", "documentos", "importe_pagado", "forma_pago"}),
+                    guest_id=guest.id, importe_pagado=0)
     db.add(r)
     db.flush()
     audit(db, scope.user, "crear", "reserva", r.id,
           {"unidad": unit.codigo, "entrada": str(r.fecha_entrada), "salida": str(r.fecha_salida)})
+    factura = None
+    if data.importe_pagado:  # pagado al reservar: se registra el cobro y se factura
+        factura = _cobrar(db, scope, r, Payment(importe=data.importe_pagado, forma_pago=data.forma_pago))
     db.commit()
     db.refresh(r)
-    return _res_out(r)
+    out = _res_out(r)
+    if factura:
+        out["factura"] = {"id": factura.id, "codigo": factura.codigo}
+    return out
+
+
+def _cobrar(db: Session, scope: Scope, r: Reservation, data: Payment):
+    """Registra un cobro de la reserva y emite su factura."""
+    pendiente = dinero(r.importe_total) - dinero(r.importe_pagado)
+    if dinero(data.importe) > pendiente:
+        bad_request(f"El cobro supera el importe pendiente de la reserva ({pendiente} €). "
+                    "Si el importe total ha cambiado, corríjalo antes en la reserva.")
+    r.importe_pagado = dinero(r.importe_pagado) + dinero(data.importe)
+    u, a = r.unit, r.unit.asset
+    noches = (r.fecha_salida - r.fecha_entrada).days
+    concepto = (f"Alojamiento turístico · {a.nombre} · Apartamento {u.codigo} · "
+                f"{r.fecha_entrada:%d/%m/%Y} a {r.fecha_salida:%d/%m/%Y} ({noches} noche{'s' if noches != 1 else ''})"
+                f" · {r.adultos + r.ninos} huésped{'es' if r.adultos + r.ninos != 1 else ''}"
+                + (f" · Reserva {r.localizador}" if r.localizador else f" · Reserva R-{r.id}"))
+    if dinero(data.importe) < pendiente:
+        concepto = "Pago a cuenta · " + concepto
+    f = emitir(db, scope.user, company=a.company, serie=serie_activo(a), asset_id=a.id,
+               cliente=datos_cliente(r.guest, data.facturar_a), contact_id=r.guest_id, concepto=concepto,
+               total=data.importe, tipo_iva=IVA_ALOJAMIENTO, fecha_operacion=data.fecha_pago or date.today(),
+               forma_pago=data.forma_pago, reservation_id=r.id)
+    audit(db, scope.user, "cobro", "reserva", r.id, {"importe": data.importe, "factura": f.codigo})
+    return f
+
+
+@router.post("/reservas/{rid}/cobro")
+def register_payment(rid: int, data: Payment, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Cobro de una reserva: suma lo pagado y emite la factura (serie del activo)."""
+    r = get_or_404(db, Reservation, rid)
+    scope.require_asset("reservas.editar", r.unit.asset_id)
+    f = _cobrar(db, scope, r, data)
+    db.commit()
+    return {**_res_out(r), "factura": {"id": f.id, "codigo": f.codigo}}
 
 
 @router.put("/reservas/{rid}")
@@ -119,6 +160,8 @@ def update_reservation(rid: int, data: ReservationUpdate, scope: Scope = Depends
         bad_request("La fecha de salida debe ser posterior a la de entrada")
     if (data.estado or r.estado) in ACTIVAS and _conflict(db, unit_id, ent, sal, exclude_id=rid):
         bad_request("Conflicto con otra reserva en esas fechas")
+    if data.importe_total is not None and dinero(data.importe_total) < dinero(r.importe_pagado):
+        bad_request(f"El importe total no puede ser menor que lo ya cobrado ({dinero(r.importe_pagado)} €)")
     ch = apply(r, data)
     audit(db, scope.user, "editar", "reserva", rid, ch)
     db.commit()
