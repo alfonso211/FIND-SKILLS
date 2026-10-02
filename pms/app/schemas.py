@@ -118,6 +118,9 @@ class ContactIn(BaseModel):
     documento_num: str | None = None
     nacionalidad: str | None = None
     fecha_nacimiento: date | None = None
+    sexo: Literal["M", "F"] | None = None
+    num_soporte: str | None = None
+    fecha_caducidad_doc: date | None = None
     email: str | None = None
     telefono: str | None = None
     direccion: str | None = None
@@ -136,6 +139,9 @@ class ContactInline(BaseModel):
     documento_num: str | None = None
     nacionalidad: str | None = None
     fecha_nacimiento: date | None = None
+    sexo: Literal["M", "F"] | None = None
+    num_soporte: str | None = None
+    fecha_caducidad_doc: date | None = None
     email: str | None = None
     telefono: str | None = None
     direccion: str | None = None

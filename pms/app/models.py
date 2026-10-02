@@ -102,6 +102,9 @@ class Contact(Base):
     documento_num: Mapped[str | None] = mapped_column(String(30))
     nacionalidad: Mapped[str | None] = mapped_column(String(60))
     fecha_nacimiento: Mapped[date | None] = mapped_column(Date)
+    sexo: Mapped[str | None] = mapped_column(String(1))  # M | F
+    num_soporte: Mapped[str | None] = mapped_column(String(20))  # nº de soporte del DNI/NIE (parte de viajeros)
+    fecha_caducidad_doc: Mapped[date | None] = mapped_column(Date)
     email: Mapped[str | None] = mapped_column(String(160))
     telefono: Mapped[str | None] = mapped_column(String(40))
     direccion: Mapped[str | None] = mapped_column(String(300))
@@ -168,6 +171,22 @@ class Reservation(Base):
     creada: Mapped[datetime] = mapped_column(DateTime, default=_now)
     unit: Mapped[Unit] = relationship()
     guest: Mapped[Contact] = relationship()
+
+
+class ContactDocument(Base):
+    """Copia escaneada de un documento de identidad. El fichero se guarda cifrado fuera de la base de datos."""
+    __tablename__ = "documentos_terceros"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("terceros.id"), index=True)
+    tipo: Mapped[str | None] = mapped_column(String(10))  # DNI | NIE | PAS | OTRO
+    cara: Mapped[str] = mapped_column(String(10))  # anverso | reverso
+    fichero: Mapped[str] = mapped_column(String(64))
+    mime: Mapped[str] = mapped_column(String(60))
+    tamano: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    lectura: Mapped[dict | None] = mapped_column(JSON)
+    subido: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
 
 
 class AccommodationContract(Base):

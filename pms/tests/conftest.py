@@ -11,6 +11,7 @@ _tmp = tempfile.mkdtemp()
 os.environ["PMS_DATABASE_URL"] = os.environ.get("PMS_TEST_DATABASE_URL", f"sqlite:///{_tmp}/test.db")
 os.environ["PMS_SECRET_KEY"] = "test-secret-key-for-pytest-only-0123456789"
 os.environ["PMS_ADMIN_PASSWORD"] = "AdminTest!2026"
+os.environ["PMS_DOCS_DIR"] = f"{_tmp}/documentos"
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient  # noqa: E402

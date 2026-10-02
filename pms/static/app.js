@@ -263,6 +263,7 @@ async function accommodationContract(r) {
     `<a href="#" data-c="${h.id}">${fdt(h.creado)}${h.usuario ? " · " + esc(h.usuario) : ""}</a>`).join(" · ")}</p>` : "";
   const f = form(`Contrato de alojamiento · ${r.unidad} · ${r.huesped}`, [
     { html: `<p class="muted">Complete todo aquí: al imprimir, el cliente solo tendrá que firmar. Si falta algo, el sistema le avisará antes de imprimir. De la tarjeta solo se anotan los 4 últimos dígitos.</p>${historial}` },
+    { html: scanHtml },
     { k: "localizador", t: "Localizador" }, { k: "fecha_firma", t: "Fecha de firma", type: "date", req: true },
     { html: "<h4>Cliente</h4>" },
     { k: "cliente_nombre", t: "Nombre y apellidos", wide: true }, { k: "cliente_nacionalidad", t: "Nacionalidad" },
@@ -301,23 +302,102 @@ async function accommodationContract(r) {
   f.querySelectorAll("[data-c]").forEach((a) => (a.onclick = (e) => {
     e.preventDefault(); run(() => download("GET", `/api/turistico/reservas/${r.id}/contrato/${a.dataset.c}`), "Contrato descargado");
   }));
+  bindScan(f, r.guest_id, (lec) => {
+    const el = f.elements;
+    const nombre = conTildes(el.cliente_nombre.value, [lec.nombre, lec.apellidos].filter(Boolean).join(" "));
+    const dom = lec.domicilio || {};
+    const doc = `${lec.documento_tipo === "PAS" ? "Pasaporte" : lec.documento_tipo} ${lec.documento_num}`;
+    const ocup = el.ocupantes.value.includes(lec.documento_num) ? null
+      : [`${nombre} (${doc})`, ...el.ocupantes.value.split("\n").slice(1)].join("\n");
+    rellena(f, { cliente_nombre: nombre, cliente_documento: lec.documento_num, cliente_nacionalidad: lec.nacionalidad,
+      cliente_domicilio: dom.direccion, cliente_municipio: dom.municipio, cliente_pais: dom.pais, ocupantes: ocup });
+  });
 }
 
 const guestFields = [
   { k: "nombre", t: "Nombre", req: true }, { k: "apellidos", t: "Apellidos" },
   { k: "documento_tipo", t: "Tipo doc.", type: "select", options: list(["DNI", "NIE", "PAS", "CIF", "OTRO"]) },
   { k: "documento_num", t: "Nº documento" }, { k: "nacionalidad", t: "Nacionalidad" },
-  { k: "fecha_nacimiento", t: "Fecha nacimiento", type: "date" }, { k: "email", t: "Email", type: "email" },
+  { k: "fecha_nacimiento", t: "Fecha nacimiento", type: "date" },
+  { k: "sexo", t: "Sexo", type: "select", options: [["F", "Mujer"], ["M", "Hombre"]] },
+  { k: "num_soporte", t: "Nº de soporte (DNI/NIE)" }, { k: "fecha_caducidad_doc", t: "Caducidad del documento", type: "date" },
+  { k: "email", t: "Email", type: "email" },
   { k: "telefono", t: "Teléfono" },
   { html: "<h4>Domicilio habitual</h4>" },
   { k: "direccion", t: "Dirección (calle, número, piso, puerta)", wide: true },
   { k: "cp", t: "Código postal" }, { k: "municipio", t: "Municipio" }, { k: "pais", t: "País" },
 ];
-async function editGuest(id, tipo = "huesped") {
+async function editGuest(id, tipo = "huesped", onSaved) {
   const c = (await get("/api/terceros", { tipo })).find((x) => x.id === id);
   if (!c) return toast("Tercero no encontrado", true);
-  form(`${tipo === "huesped" ? "Huésped" : "Inquilino"}: ${c.nombre}`, [...guestFields, { k: "iban", t: "IBAN" }, { k: "notas", t: "Notas", type: "textarea", wide: true }], c,
-    async (d) => { await put(`/api/terceros/${id}`, { ...d, company_id: c.company_id, tipo: c.tipo }); toast("Datos guardados"); });
+  const f = form(`${tipo === "huesped" ? "Huésped" : "Inquilino"}: ${c.nombre}`, [{ html: scanHtml }, ...guestFields, { k: "iban", t: "IBAN" }, { k: "notas", t: "Notas", type: "textarea", wide: true }], c,
+    async (d) => { await put(`/api/terceros/${id}`, { ...d, company_id: c.company_id, tipo: c.tipo }); toast("Datos guardados"); onSaved && onSaved(); });
+  bindScan(f, id, (lec, t) => {
+    const nom = conTildes(f.elements.nombre.value, lec.nombre), ape = conTildes(f.elements.apellidos.value, lec.apellidos);
+    const dom = lec.domicilio || {};
+    rellena(f, { nombre: nom, apellidos: ape, documento_tipo: lec.documento_tipo, documento_num: lec.documento_num,
+      nacionalidad: lec.nacionalidad, fecha_nacimiento: lec.fecha_nacimiento, sexo: lec.sexo, num_soporte: lec.num_soporte,
+      fecha_caducidad_doc: lec.fecha_caducidad, direccion: dom.direccion, municipio: dom.municipio, pais: dom.pais });
+  });
+}
+
+// ---- escaneo de documentos de identidad
+const scanHtml = `<fieldset class="scan"><legend>Escanear documento de identidad (DNI, NIE/TIE, pasaporte)</legend>
+  <p class="muted">Adjunte la cara con las líneas «&lt;&lt;&lt;» (reverso del DNI/NIE, página de la foto del pasaporte) y, si quiere, la otra cara.
+  Se leen los datos y se guarda una copia cifrada en la ficha del cliente. Desde el móvil puede usar la cámara.</p>
+  <div class="scan-row"><label>Cara 1<input type="file" data-cara="anverso" accept="image/*,application/pdf"></label>
+  <label>Cara 2<input type="file" data-cara="reverso" accept="image/*,application/pdf"></label>
+  <button type="button" class="btn primary" data-scan>Leer y guardar copia</button></div>
+  <div data-scanmsg></div><div data-docs class="muted"></div></fieldset>`;
+const sinTildes = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+// La MRZ no lleva tildes: si lo ya escrito coincide salvo tildes, se conserva lo escrito
+const conTildes = (actual, leido) => (leido && sinTildes(actual) !== sinTildes(leido) ? leido : actual);
+function rellena(f, valores) {
+  Object.entries(valores).forEach(([k, v]) => {
+    const el = f.elements[k];
+    if (!el || v == null || v === "" || String(el.value) === String(v)) return;
+    el.value = v; el.classList.add("auto");
+  });
+}
+async function bindScan(f, cid, aplicar) {
+  const msg = f.querySelector("[data-scanmsg]"), lista = f.querySelector("[data-docs]");
+  const cargar = async () => {
+    const docs = await get(`/api/terceros/${cid}/documentos`).catch(() => []);
+    lista.innerHTML = docs.length ? "Copias guardadas: " + docs.map((d) => `${esc(d.tipo || "Documento")} · ${esc(d.cara)} (${fdt(d.subido)})
+      <a href="#" data-ver="${d.id}">Ver</a> <a href="#" data-borrar="${d.id}" class="danger">Borrar</a>`).join(" &nbsp;|&nbsp; ") : "";
+    lista.querySelectorAll("[data-ver]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); verDocumento(a.dataset.ver); }));
+    lista.querySelectorAll("[data-borrar]").forEach((a) => (a.onclick = async (e) => {
+      e.preventDefault();
+      if (confirm("¿Borrar esta copia del documento?")) { await run(() => api("DELETE", `/api/documentos/${a.dataset.borrar}`), "Copia borrada"); cargar(); }
+    }));
+  };
+  f.querySelector("[data-scan]").onclick = async () => {
+    const fd = new FormData();
+    f.querySelectorAll("input[data-cara]").forEach((i) => i.files[0] && fd.append(i.dataset.cara, i.files[0]));
+    if (![...fd.keys()].length) { msg.innerHTML = '<p class="error">Seleccione al menos una cara del documento.</p>'; return; }
+    msg.innerHTML = '<p class="muted">Leyendo el documento… (unos segundos)</p>';
+    try {
+      const res = await fetch(`/api/terceros/${cid}/documentos`, { method: "POST", headers: { Authorization: `Bearer ${S.token}` }, body: fd });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(errMsg(j, res));
+      const lec = j.lectura;
+      if (lec.leido) aplicar(lec, j.tercero);
+      const ok = lec.leido ? (lec.mrz_valido ? "✔ Documento leído y validado" : "⚠ Documento leído con dudas") : "✖ No se han podido leer los datos";
+      msg.innerHTML = `<p><b>${ok}.</b> Copia guardada en la ficha. ${lec.leido ? "Revise los campos resaltados." : ""}</p>` +
+        (lec.avisos || []).map((a) => `<p class="${a.includes("CADUCADO") ? "error" : "muted"}">• ${esc(a)}</p>`).join("");
+      f.querySelectorAll("input[data-cara]").forEach((i) => (i.value = ""));
+      cargar();
+    } catch (e) { msg.innerHTML = `<p class="error">${esc(e.message)}</p>`; }
+  };
+  cargar();
+}
+async function verDocumento(did) {
+  const w = window.open("", "_blank");  // se abre ya para que el navegador no lo bloquee
+  try {
+    const res = await fetch(`/api/documentos/${did}`, { headers: { Authorization: `Bearer ${S.token}` } });
+    if (!res.ok) throw new Error(errMsg(await res.json().catch(() => null), res));
+    w.location = URL.createObjectURL(await res.blob());
+  } catch (e) { w && w.close(); toast(e.message, true); }
 }
 function editReservation(r, reload) {
   form(`Reserva ${r.localizador || r.id} · ${r.unidad}`, [
@@ -475,7 +555,9 @@ async function contactsView(el, tipo) {
     { k: "nombre", t: "Nombre" }, { k: "apellidos", t: "Apellidos" }, { k: "documento_num", t: "Documento" },
     { k: "nacionalidad", t: "Nacionalidad" }, { k: "email", t: "Email" }, { k: "telefono", t: "Teléfono" },
     { k: "company_id", t: "Sociedad", f: (v) => esc(S.companies.find((c) => c.id === v)?.nombre ?? v) },
-  ], await get("/api/terceros", { tipo, q: $("#q", el).value }), (c) => can(perm + ".editar") ? [["Editar", () => form(c.nombre, fields, c, async (d) => { await put(`/api/terceros/${c.id}`, { ...d, company_id: c.company_id, tipo }); toast("Guardado"); load(); })]] : []);
+  ], await get("/api/terceros", { tipo, q: $("#q", el).value }), (c) => can(perm + ".editar") ? [["Editar", () => (tipo === "proveedor"
+    ? form(c.nombre, fields, c, async (d) => { await put(`/api/terceros/${c.id}`, { ...d, company_id: c.company_id, tipo }); toast("Guardado"); load(); })
+    : editGuest(c.id, tipo, load))]] : []);
   $("#q", el).oninput = debounce(load);
   if ($("#new", el)) $("#new", el).onclick = () => form("Nuevo", [{ k: "company_id", t: "Sociedad", type: "select", req: true, options: opts(S.companies) }, ...fields], {},
     async (d) => { await post("/api/terceros", clean({ ...d, company_id: Number(d.company_id), tipo })); toast("Creado"); load(); });
