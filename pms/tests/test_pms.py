@@ -215,11 +215,15 @@ def test_scope_follows_managing_company(client, admin, ids):
 
 def test_initial_users_and_forced_password_change(client, admin):
     users = {u["email"]: u for u in client.get("/api/admin/usuarios", headers=admin).json()}
-    assert len(users) >= 18  # admin + 3 dirección + 7 por activo x 2
-    for e in ("presidente@inversiete.com", "director.general@inversiete.com", "director.tecnico@inversiete.com"):
+    iniciales = ["jr@inversiete.es", "barbara@inversiete.es", "alfonso@inversiete.es",
+                 "juancarlos@apartamentossuitesflorida.es", "info@apartamentossuitesflorida.es",
+                 "jaime@apartamentossuitesaeropuerto.es", "info@apartamentossuitesaeropuerto.es"]
+    for e in iniciales:
         assert users[e]["debe_cambiar_password"]
+    for e in iniciales[:3]:
+        assert users[e]["asignaciones"][0]["rol"] == "Dirección Grupo" and users[e]["asignaciones"][0]["asset_id"] is None
     # con la contraseña provisional solo puede ver su perfil y cambiarla
-    h = login(client, "presidente@inversiete.com", INICIAL)
+    h = login(client, "jr@inversiete.es", INICIAL)
     assert client.get("/api/auth/me", headers=h).json()["debe_cambiar_password"] is True
     assert client.get("/api/activos", headers=h).status_code == 403
     bad = [("ZZZZZZZZ", "OtraClave2026"), (INICIAL, INICIAL), (INICIAL, "corta12"), (INICIAL, "aaaaaaaaaaaa")]
@@ -231,15 +235,18 @@ def test_initial_users_and_forced_password_change(client, admin):
     assert {a["codigo"] for a in client.get("/api/activos", headers=h).json()} >= {"BAB35", "SFL", "SAE"}
     assert client.get("/api/admin/usuarios", headers=h).status_code == 200
     # la provisional ya no sirve
-    assert client.post("/api/auth/login", json={"email": "presidente@inversiete.com", "password": INICIAL}).status_code == 401
+    assert client.post("/api/auth/login", json={"email": "jr@inversiete.es", "password": INICIAL}).status_code == 401
 
 
 def test_staff_per_asset(client, admin, ids):
     sfl, sae = ids["assets"]["SFL"]["id"], ids["assets"]["SAE"]["id"]
-    rec_sf = _first_login(client, "recepcion1.sflorida@inversiete.com", INICIAL)
-    rec_sa = _first_login(client, "recepcion3.saeropuerto@inversiete.com", INICIAL)
-    lim_sf = _first_login(client, "limpieza2.sflorida@inversiete.com", INICIAL)
-    mto_sa = _first_login(client, "mantenimiento1.saeropuerto@inversiete.com", INICIAL)
+    rec_sf = _first_login(client, "juancarlos@apartamentossuitesflorida.es", INICIAL)
+    rec_sa = _first_login(client, "info@apartamentossuitesaeropuerto.es", INICIAL)
+    # puestos aún sin titular: se dan de alta desde administración
+    lim_sf = _new_user(client, admin, "limpieza.prueba@inversiete.es",
+                       [{"role_id": ids["roles"]["Gobernanta / Limpieza"], "asset_id": sfl}])
+    mto_sa = _new_user(client, admin, "mto.prueba@inversiete.es",
+                       [{"role_id": ids["roles"]["Técnico Mantenimiento"], "asset_id": sae}])
     assert [a["codigo"] for a in client.get("/api/activos", headers=rec_sf).json()] == ["SFL"]
     assert [a["codigo"] for a in client.get("/api/activos", headers=mto_sa).json()] == ["SAE"]
 

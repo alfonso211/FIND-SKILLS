@@ -32,36 +32,28 @@ ACTIVOS = [
 ]
 
 # Usuarios iniciales. Todos entran con PASSWORD_INICIAL y deben cambiarla en el primer acceso.
+# Puestos aún sin titular (recepción 3, limpieza y mantenimiento de cada Suite) se darán de alta desde
+# Administración > Usuarios cuando se asignen.
 PASSWORD_INICIAL = "00000000"
-DIRECCION = [  # (email, nombre) -> rol "Dirección Grupo" sobre todo el grupo
-    ("presidente@inversiete.com", "Presidente"),
-    ("director.general@inversiete.com", "Director General"),
-    ("director.tecnico@inversiete.com", "Director Técnico"),
+USUARIOS_INICIALES = [  # (email, nombre, rol, código de activo o None = todo el grupo)
+    ("jr@inversiete.es", "Presidente", "Dirección Grupo", None),
+    ("barbara@inversiete.es", "Director General", "Dirección Grupo", None),
+    ("alfonso@inversiete.es", "Director Técnico", "Dirección Grupo", None),
+    ("juancarlos@apartamentossuitesflorida.es", "Recepción 1 · Suite Florida", "Recepción", "SFL"),
+    ("info@apartamentossuitesflorida.es", "Recepción 2 · Suite Florida", "Recepción", "SFL"),
+    ("jaime@apartamentossuitesaeropuerto.es", "Recepción 1 · Suite Aeropuerto", "Recepción", "SAE"),
+    ("info@apartamentossuitesaeropuerto.es", "Recepción 2 · Suite Aeropuerto", "Recepción", "SAE"),
 ]
-PERSONAL_ACTIVO = [  # (prefijo email, puesto, rol, nº de usuarios) por cada activo turístico
-    ("recepcion", "Recepción", "Recepción", 3),
-    ("limpieza", "Limpieza", "Gobernanta / Limpieza", 2),
-    ("mantenimiento", "Mantenimiento", "Técnico Mantenimiento", 2),
-]
-ACTIVOS_PERSONAL = {"SFL": ("sflorida", "Suite Florida"), "SAE": ("saeropuerto", "Suite Aeropuerto")}
 
 
 def _usuarios_iniciales(db: Session, assets: dict[str, Asset]) -> None:
     roles = {r.nombre: r for r in db.scalars(select(Role))}
     pw = hash_password(PASSWORD_INICIAL)
-
-    def nuevo(email, nombre, rol, asset_id=None):
+    for email, nombre, rol, codigo in USUARIOS_INICIALES:
+        a = assets[codigo] if codigo else None
         db.add(User(email=email, nombre=nombre, password_hash=pw, debe_cambiar_password=True,
-                    assignments=[Assignment(role_id=roles[rol].id, asset_id=asset_id,
-                                            company_id=assets_by_id[asset_id].company_id if asset_id else None)]))
-
-    assets_by_id = {a.id: a for a in assets.values()}
-    for email, nombre in DIRECCION:
-        nuevo(email, nombre, "Dirección Grupo")
-    for codigo, (slug, nombre_activo) in ACTIVOS_PERSONAL.items():
-        for pref, puesto, rol, n in PERSONAL_ACTIVO:
-            for i in range(1, n + 1):
-                nuevo(f"{pref}{i}.{slug}@inversiete.com", f"{puesto} {i} · {nombre_activo}", rol, assets[codigo].id)
+                    assignments=[Assignment(role_id=roles[rol].id, asset_id=a.id if a else None,
+                                            company_id=a.company_id if a else None)]))
 
 
 def seed(db: Session) -> None:

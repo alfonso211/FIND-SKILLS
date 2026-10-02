@@ -67,15 +67,17 @@ queda bloqueado 15 minutos.
 
 | Puesto | Usuario (email) | Rol | Ámbito |
 |---|---|---|---|
-| Presidente | presidente@inversiete.com | Dirección Grupo | Todo el grupo |
-| Director General | director.general@inversiete.com | Dirección Grupo | Todo el grupo |
-| Director Técnico | director.tecnico@inversiete.com | Dirección Grupo | Todo el grupo |
-| Recepción Suite Florida (3) | recepcion1…3.sflorida@inversiete.com | Recepción | Suite Florida |
-| Limpieza Suite Florida (2) | limpieza1…2.sflorida@inversiete.com | Gobernanta / Limpieza | Suite Florida |
-| Mantenimiento Suite Florida (2) | mantenimiento1…2.sflorida@inversiete.com | Técnico Mantenimiento | Suite Florida |
-| Recepción Suite Aeropuerto (3) | recepcion1…3.saeropuerto@inversiete.com | Recepción | Suite Aeropuerto |
-| Limpieza Suite Aeropuerto (2) | limpieza1…2.saeropuerto@inversiete.com | Gobernanta / Limpieza | Suite Aeropuerto |
-| Mantenimiento Suite Aeropuerto (2) | mantenimiento1…2.saeropuerto@inversiete.com | Técnico Mantenimiento | Suite Aeropuerto |
+| Presidente | jr@inversiete.es | Dirección Grupo | Todo el grupo |
+| Director General | barbara@inversiete.es | Dirección Grupo | Todo el grupo |
+| Director Técnico | alfonso@inversiete.es | Dirección Grupo | Todo el grupo |
+| Recepción 1 Suite Florida | juancarlos@apartamentossuitesflorida.es | Recepción | Suite Florida |
+| Recepción 2 Suite Florida | info@apartamentossuitesflorida.es | Recepción | Suite Florida |
+| Recepción 1 Suite Aeropuerto | jaime@apartamentossuitesaeropuerto.es | Recepción | Suite Aeropuerto |
+| Recepción 2 Suite Aeropuerto | info@apartamentossuitesaeropuerto.es | Recepción | Suite Aeropuerto |
+
+Están pendientes de titular la recepción 3, los 2 puestos de limpieza y los 2 de mantenimiento de cada Suite.
+Se dan de alta desde *Administración → Usuarios* con los roles Recepción, Gobernanta / Limpieza o
+Técnico Mantenimiento, limitados al activo correspondiente.
 
 Los emails y nombres se pueden cambiar desde *Administración → Usuarios*. El personal con ámbito de un activo
 solo ve los huéspedes e inquilinos vinculados a ese activo.
