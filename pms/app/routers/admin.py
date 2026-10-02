@@ -47,7 +47,7 @@ def create_user(data: UserIn, scope: Scope = Depends(get_scope), db: Session = D
         bad_request("Ya existe un usuario con ese email")
     _validate_assignments(db, data.asignaciones)
     u = User(email=email, nombre=data.nombre, password_hash=hash_password(data.password),
-             is_superadmin=data.is_superadmin, activo=data.activo,
+             is_superadmin=data.is_superadmin, activo=data.activo, debe_cambiar_password=True,
              assignments=[Assignment(**a.model_dump()) for a in data.asignaciones])
     db.add(u)
     db.flush()
@@ -67,6 +67,11 @@ def update_user(uid: int, data: UserUpdate, scope: Scope = Depends(get_scope), d
     if u.id == scope.user.id and (data.activo is False or data.is_superadmin is False):
         bad_request("No puede desactivarse ni quitarse privilegios a sí mismo")
     det = data.model_dump(exclude_unset=True, exclude={"password"})
+    if data.email is not None and data.email.lower().strip() != u.email:
+        email = data.email.lower().strip()
+        if db.scalar(select(User).where(User.email == email)):
+            bad_request("Ya existe un usuario con ese email")
+        u.email = email
     if data.nombre is not None:
         u.nombre = data.nombre
     if data.activo is not None:
@@ -75,7 +80,8 @@ def update_user(uid: int, data: UserUpdate, scope: Scope = Depends(get_scope), d
         u.is_superadmin = data.is_superadmin
     if data.password:
         u.password_hash = hash_password(data.password)
-        det["password"] = "cambiada"
+        u.debe_cambiar_password = True
+        det["password"] = "restablecida (provisional)"
     if data.asignaciones is not None:
         _validate_assignments(db, data.asignaciones)
         u.assignments = [Assignment(**a.model_dump()) for a in data.asignaciones]

@@ -273,15 +273,16 @@ class AssignmentIn(BaseModel):
 class UserIn(BaseModel):
     email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     nombre: str
-    password: str = Field(min_length=10)
+    password: str = Field(min_length=8)  # provisional: el usuario debe cambiarla al entrar
     is_superadmin: bool = False
     activo: bool = True
     asignaciones: list[AssignmentIn] = []
 
 
 class UserUpdate(BaseModel):
+    email: str | None = Field(default=None, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     nombre: str | None = None
-    password: str | None = Field(default=None, min_length=10)
+    password: str | None = Field(default=None, min_length=8)  # restablece contraseña provisional
     is_superadmin: bool | None = None
     activo: bool | None = None
     asignaciones: list[AssignmentIn] | None = None
@@ -295,4 +296,4 @@ class RoleIn(BaseModel):
 
 class PasswordChange(BaseModel):
     actual: str
-    nueva: str = Field(min_length=10)
+    nueva: str

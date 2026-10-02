@@ -57,7 +57,28 @@ Cada usuario recibe uno o varios **roles**, y cada rol se asigna con un **ámbit
 
 Roles iniciales, todos editables en *Administración → Roles y permisos*: Dirección Grupo, Dirección Sociedad,
 Gestor Alquiler Residencial, Recepción, Gobernanta / Limpieza, Técnico Mantenimiento, Administración / Finanzas
-y Consulta. Los permisos concretos se ajustarán cuando se detallen los rangos de acceso.
+y Consulta.
+
+### Usuarios iniciales
+
+Todos entran por primera vez con la contraseña provisional **`00000000`**. El sistema obliga a cambiarla antes de
+poder hacer nada más: mínimo 10 caracteres y distinta de la provisional. Tras 5 intentos fallidos el acceso
+queda bloqueado 15 minutos.
+
+| Puesto | Usuario (email) | Rol | Ámbito |
+|---|---|---|---|
+| Presidente | presidente@inversiete.com | Dirección Grupo | Todo el grupo |
+| Director General | director.general@inversiete.com | Dirección Grupo | Todo el grupo |
+| Director Técnico | director.tecnico@inversiete.com | Dirección Grupo | Todo el grupo |
+| Recepción Suite Florida (3) | recepcion1…3.sflorida@inversiete.com | Recepción | Suite Florida |
+| Limpieza Suite Florida (2) | limpieza1…2.sflorida@inversiete.com | Gobernanta / Limpieza | Suite Florida |
+| Mantenimiento Suite Florida (2) | mantenimiento1…2.sflorida@inversiete.com | Técnico Mantenimiento | Suite Florida |
+| Recepción Suite Aeropuerto (3) | recepcion1…3.saeropuerto@inversiete.com | Recepción | Suite Aeropuerto |
+| Limpieza Suite Aeropuerto (2) | limpieza1…2.saeropuerto@inversiete.com | Gobernanta / Limpieza | Suite Aeropuerto |
+| Mantenimiento Suite Aeropuerto (2) | mantenimiento1…2.saeropuerto@inversiete.com | Técnico Mantenimiento | Suite Aeropuerto |
+
+Los emails y nombres se pueden cambiar desde *Administración → Usuarios*. El personal con ámbito de un activo
+solo ve los huéspedes e inquilinos vinculados a ese activo.
 
 ## Puesta en marcha
 

@@ -207,6 +207,8 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(200))
     is_superadmin: Mapped[bool] = mapped_column(Boolean, default=False)
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
+    # contraseña provisional: hasta cambiarla solo puede consultar su perfil y cambiar la contraseña
+    debe_cambiar_password: Mapped[bool] = mapped_column(Boolean, default=False)
     assignments: Mapped[list["Assignment"]] = relationship(cascade="all, delete-orphan", lazy="selectin")
 
 

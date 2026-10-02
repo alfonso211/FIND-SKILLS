@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -67,7 +67,13 @@ def create_token(user: User) -> str:
 _bearer = HTTPBearer(auto_error=False)
 
 
-def current_user(cred: HTTPAuthorizationCredentials | None = Depends(_bearer), db: Session = Depends(get_db)) -> User:
+# Rutas permitidas mientras el usuario tiene una contraseña provisional
+RUTAS_PASSWORD_PROVISIONAL = {"/api/auth/me", "/api/auth/password"}
+PASSWORD_MIN = 10
+
+
+def current_user(request: Request, cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
+                 db: Session = Depends(get_db)) -> User:
     if not cred:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "No autenticado")
     try:
@@ -77,7 +83,28 @@ def current_user(cred: HTTPAuthorizationCredentials | None = Depends(_bearer), d
     user = db.get(User, int(payload["sub"]))
     if not user or not user.activo:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuario inactivo")
+    if user.debe_cambiar_password and request.url.path not in RUTAS_PASSWORD_PROVISIONAL:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Debe cambiar la contraseña provisional antes de continuar")
     return user
+
+
+# --------------------------------------------------------------------------- bloqueo por intentos fallidos
+MAX_INTENTOS, BLOQUEO_MIN = 5, 15
+_fallos: dict[str, list[datetime]] = {}
+
+
+def login_bloqueado(email: str) -> bool:
+    limite = datetime.now(timezone.utc) - timedelta(minutes=BLOQUEO_MIN)
+    _fallos[email] = [t for t in _fallos.get(email, []) if t > limite]
+    return len(_fallos[email]) >= MAX_INTENTOS
+
+
+def registrar_fallo(email: str) -> None:
+    _fallos.setdefault(email, []).append(datetime.now(timezone.utc))
+
+
+def limpiar_fallos(email: str) -> None:
+    _fallos.pop(email, None)
 
 
 # --------------------------------------------------------------------------- ámbitos
@@ -139,6 +166,13 @@ class Scope:
             if perm in (a.role.permisos or []) and a.asset_id is None and a.company_id in (None, company_id):
                 return True
         return False
+
+    def company_level_ids(self, perm: str) -> set[int] | None:
+        """Sociedades sobre las que el permiso se tiene a nivel de sociedad completa (no solo de algún activo)."""
+        if self.is_group_level(perm):
+            return None
+        return {a.company_id for a in self.user.assignments
+                if a.company_id and a.asset_id is None and perm in (a.role.permisos or [])}
 
     def is_group_level(self, perm: str) -> bool:
         if self.user.is_superadmin:

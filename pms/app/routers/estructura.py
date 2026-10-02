@@ -4,7 +4,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import ESTADOS_UNIDAD, MODALIDADES, USOS_UNIDAD, Asset, Company, Contact, Unit
+from ..models import ESTADOS_UNIDAD, MODALIDADES, USOS_UNIDAD, Asset, Company, Contact, Lease, Reservation, Unit
 from ..schemas import AssetIn, AssetUpdate, CompanyIn, ContactIn, UnitBulk, UnitIn, UnitUpdate
 from ..security import PERMISOS, Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
@@ -219,11 +219,32 @@ def _contact_perm(tipo: str, accion: str) -> str:
     return f"{PERMISO_TERCERO[tipo]}.{accion}"
 
 
+def _contact_filter(scope: Scope, tipo: str, accion: str):
+    """Condición SQL de terceros visibles. Con ámbito de sociedad (o grupo) se ven todos los de la sociedad;
+    con ámbito de activo, solo los vinculados a reservas/contratos de esos activos (p.ej. la recepción de
+    Suite Florida no ve huéspedes de Suite Aeropuerto aunque ambos los gestione la misma sociedad)."""
+    perm = _contact_perm(tipo, accion)
+    comp = scope.company_level_ids(perm)
+    if comp is None:
+        return None
+    assets = scope.asset_ids(perm) or set()
+    if tipo == "huesped":
+        linked = select(Reservation.guest_id).join(Unit).where(Unit.asset_id.in_(assets or {-1}))
+    elif tipo == "inquilino":
+        linked = select(Lease.tenant_id).join(Unit).where(Unit.asset_id.in_(assets or {-1}))
+    else:  # proveedores: catálogo de la sociedad
+        linked = select(Contact.id).where(Contact.company_id.in_(
+            select(Asset.company_id).where(Asset.id.in_(assets or {-1}))))
+    return or_(Contact.company_id.in_(comp or {-1}), Contact.id.in_(linked))
+
+
 @router.get("/terceros")
 def list_contacts(tipo: str, company_id: int | None = None, q: str | None = None,
                   scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    ids = scope.company_ids(_contact_perm(tipo, "ver"))
-    stmt = scoped(select(Contact).where(Contact.tipo == tipo), Contact.company_id, ids)
+    stmt = select(Contact).where(Contact.tipo == tipo)
+    cond = _contact_filter(scope, tipo, "ver")
+    if cond is not None:
+        stmt = stmt.where(cond)
     if company_id:
         stmt = stmt.where(Contact.company_id == company_id)
     if q:
@@ -253,7 +274,9 @@ def create_contact(data: ContactIn, scope: Scope = Depends(get_scope), db: Sessi
 @router.put("/terceros/{cid}")
 def update_contact(cid: int, data: ContactIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     c = get_or_404(db, Contact, cid)
-    _require_contact(scope, c.tipo, "editar", c.company_id)
+    cond = _contact_filter(scope, c.tipo, "editar")
+    if cond is not None and not db.scalar(select(Contact.id).where(Contact.id == cid, cond)):
+        raise HTTPException(403, "Sin permiso sobre este tercero")
     if data.company_id != c.company_id or data.tipo != c.tipo:
         bad_request("No se puede cambiar la sociedad ni el tipo de un tercero")
     ch = apply(c, data)

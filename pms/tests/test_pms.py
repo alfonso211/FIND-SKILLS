@@ -2,6 +2,8 @@ from datetime import date, timedelta
 
 from conftest import login
 
+INICIAL = "00000000"
+
 HOY = date.today()
 
 
@@ -41,11 +43,18 @@ def test_seed(client, admin, ids):
     assert me["is_superadmin"] and all(me["permisos"].values())
 
 
+def _first_login(client, email, provisional, nueva="ClaveDefinitiva2026"):
+    h = login(client, email, provisional)
+    r = client.post("/api/auth/password", headers=h, json={"actual": provisional, "nueva": nueva})
+    assert r.status_code == 200, r.text
+    return h
+
+
 def _new_user(client, admin, email, assignments):
     r = client.post("/api/admin/usuarios", headers=admin, json={
-        "email": email, "nombre": email.split("@")[0], "password": "ClaveSegura123", "asignaciones": assignments})
+        "email": email, "nombre": email.split("@")[0], "password": "Provisional1", "asignaciones": assignments})
     assert r.status_code == 201, r.text
-    return login(client, email, "ClaveSegura123")
+    return _first_login(client, email, "Provisional1")
 
 
 def test_recepcion_scoped_to_one_asset(client, admin, ids):
@@ -202,3 +211,68 @@ def test_scope_follows_managing_company(client, admin, ids):
     r = client.post("/api/activos", headers=h, json={
         "company_id": ccampo, "codigo": "CC2", "nombre": "Prueba", "modalidad": "alquiler_residencial"})
     assert r.json()["propietaria"] == "COMERCIAL DEL CAMPO S.A."
+
+
+def test_initial_users_and_forced_password_change(client, admin):
+    users = {u["email"]: u for u in client.get("/api/admin/usuarios", headers=admin).json()}
+    assert len(users) >= 18  # admin + 3 dirección + 7 por activo x 2
+    for e in ("presidente@inversiete.com", "director.general@inversiete.com", "director.tecnico@inversiete.com"):
+        assert users[e]["debe_cambiar_password"]
+    # con la contraseña provisional solo puede ver su perfil y cambiarla
+    h = login(client, "presidente@inversiete.com", INICIAL)
+    assert client.get("/api/auth/me", headers=h).json()["debe_cambiar_password"] is True
+    assert client.get("/api/activos", headers=h).status_code == 403
+    bad = [("ZZZZZZZZ", "OtraClave2026"), (INICIAL, INICIAL), (INICIAL, "corta12"), (INICIAL, "aaaaaaaaaaaa")]
+    for actual, nueva in bad:
+        assert client.post("/api/auth/password", headers=h, json={"actual": actual, "nueva": nueva}).status_code == 400
+    assert client.post("/api/auth/password", headers=h, json={"actual": INICIAL, "nueva": "Presidencia#2026"}).status_code == 200
+    assert client.get("/api/auth/me", headers=h).json()["debe_cambiar_password"] is False
+    # acceso total
+    assert {a["codigo"] for a in client.get("/api/activos", headers=h).json()} >= {"BAB35", "SFL", "SAE"}
+    assert client.get("/api/admin/usuarios", headers=h).status_code == 200
+    # la provisional ya no sirve
+    assert client.post("/api/auth/login", json={"email": "presidente@inversiete.com", "password": INICIAL}).status_code == 401
+
+
+def test_staff_per_asset(client, admin, ids):
+    sfl, sae = ids["assets"]["SFL"]["id"], ids["assets"]["SAE"]["id"]
+    rec_sf = _first_login(client, "recepcion1.sflorida@inversiete.com", INICIAL)
+    rec_sa = _first_login(client, "recepcion3.saeropuerto@inversiete.com", INICIAL)
+    lim_sf = _first_login(client, "limpieza2.sflorida@inversiete.com", INICIAL)
+    mto_sa = _first_login(client, "mantenimiento1.saeropuerto@inversiete.com", INICIAL)
+    assert [a["codigo"] for a in client.get("/api/activos", headers=rec_sf).json()] == ["SFL"]
+    assert [a["codigo"] for a in client.get("/api/activos", headers=mto_sa).json()] == ["SAE"]
+
+    # huésped de Suite Aeropuerto: lo ve la recepción de SA, no la de SF (misma sociedad gestora)
+    sa_unit = client.get(f"/api/unidades?asset_id={sae}&q=B-305", headers=admin).json()[0]
+    r = client.post("/api/turistico/reservas", headers=rec_sa, json={
+        "unit_id": sa_unit["id"], "guest": {"nombre": "Huesped", "apellidos": "SoloAeropuerto"},
+        "fecha_entrada": d(20), "fecha_salida": d(22)})
+    assert r.status_code == 201, r.text
+    assert client.get("/api/terceros?tipo=huesped&q=SoloAeropuerto", headers=rec_sa).json()
+    assert client.get("/api/terceros?tipo=huesped&q=SoloAeropuerto", headers=rec_sf).json() == []
+    gid = r.json()["guest_id"]
+    assert client.put(f"/api/terceros/{gid}", headers=rec_sf, json={
+        "company_id": ids["companies"]["INVERSIETE SA"], "tipo": "huesped", "nombre": "x"}).status_code == 403
+    assert client.get("/api/turistico/reservas", headers=rec_sf).json() == [] or \
+        all(x["asset_id"] == sfl for x in client.get("/api/turistico/reservas", headers=rec_sf).json())
+
+    # limpieza: marca limpia, pero no reserva ni ve reservas
+    u = client.get(f"/api/unidades?asset_id={sfl}&q=P2-3C", headers=admin).json()[0]
+    client.put(f"/api/unidades/{u['id']}", headers=admin, json={"estado": "pendiente_limpieza"})
+    assert client.post(f"/api/unidades/{u['id']}/limpia", headers=lim_sf).json()["estado"] == "disponible"
+    assert client.post("/api/turistico/reservas", headers=lim_sf, json={
+        "unit_id": u["id"], "guest": {"nombre": "x"}, "fecha_entrada": d(1), "fecha_salida": d(2)}).status_code == 403
+    assert client.get("/api/turistico/reservas", headers=lim_sf).json() == []
+
+    # mantenimiento: OT en su activo sí, en el otro no
+    assert client.post("/api/mantenimiento/ordenes", headers=mto_sa, json={
+        "asset_id": sae, "titulo": "Revisión bomba ACS", "categoria": "acs"}).status_code == 201
+    assert client.post("/api/mantenimiento/ordenes", headers=mto_sa, json={
+        "asset_id": sfl, "titulo": "x"}).status_code == 403
+
+
+def test_login_lockout(client):
+    for _ in range(5):
+        assert client.post("/api/auth/login", json={"email": "nadie@inversiete.com", "password": "x"}).status_code == 401
+    assert client.post("/api/auth/login", json={"email": "nadie@inversiete.com", "password": "x"}).status_code == 429

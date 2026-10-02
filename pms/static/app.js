@@ -491,8 +491,8 @@ V.usuarios = async (el) => {
       <button type="button" class="btn sm danger" data-del>✕</button></div>`;
   const edit = (u) => {
     const f = form(u ? `Usuario: ${u.nombre}` : "Nuevo usuario", [
-      ...(u ? [] : [{ k: "email", t: "Email", type: "email", req: true }]), { k: "nombre", t: "Nombre", req: true },
-      { k: "password", t: u ? "Nueva contraseña (opcional)" : "Contraseña (mín. 10)", type: "password", req: !u },
+      { k: "email", t: "Email (usuario de acceso)", type: "email", req: true }, { k: "nombre", t: "Nombre", req: true },
+      { k: "password", t: u ? "Restablecer contraseña provisional (opcional)" : "Contraseña provisional (mín. 8)", type: "password", req: !u },
       { k: "activo", t: "Usuario activo", type: "checkbox", def: true },
       ...(S.me.is_superadmin ? [{ k: "is_superadmin", t: "Superadministrador (acceso total)", type: "checkbox" }] : []),
       { html: `<fieldset><legend>Roles y ámbito de acceso (rol · sociedad · activo)</legend><div id="asg">${(u?.asignaciones || []).map(assignRow).join("")}</div>
@@ -514,7 +514,7 @@ V.usuarios = async (el) => {
   table($("#t", el), [
     { k: "nombre", t: "Nombre" }, { k: "email", t: "Email" },
     { k: "asignaciones", t: "Roles / ámbito", f: (v, u) => u.is_superadmin ? "<b>Superadministrador</b>" : v.map((a) => `${esc(a.rol)} <span class="muted">(${esc(scopeTxt(a))})</span>`).join("<br>") || '<span class="muted">Sin acceso</span>' },
-    { k: "activo", t: "Estado", f: (v) => (v ? badge("vigente") : badge("baja")) },
+    { k: "activo", t: "Estado", f: (v, u) => (v ? badge("vigente") : badge("baja")) + (u.debe_cambiar_password ? ' <span class="badge b-pendiente">contraseña provisional</span>' : "") },
   ], users, (u) => [["Editar", () => edit(u)]]);
 };
 
@@ -602,8 +602,28 @@ async function loadAssets() {
 }
 async function loadCompanies() { S.companies = await get("/api/sociedades"); }
 
+function forcePasswordChange() {
+  $("#login").classList.add("hidden"); $("#app").classList.remove("hidden");
+  $("#userName").textContent = S.me.nombre; $("#nav").innerHTML = ""; $("#view").innerHTML = ""; $("#assetFilter").hidden = true;
+  $("#viewTitle").textContent = "Cambio de contraseña obligatorio";
+  const f = form("Primer acceso: cambie su contraseña provisional", [
+    { html: '<p class="muted">Mínimo 10 caracteres. No puede ser la contraseña provisional.</p>' },
+    { k: "actual", t: "Contraseña provisional", type: "password", req: true },
+    { k: "nueva", t: "Nueva contraseña", type: "password", req: true },
+    { k: "repite", t: "Repita la nueva contraseña", type: "password", req: true },
+  ], {}, async (d) => {
+    if (d.nueva !== d.repite) throw new Error("Las contraseñas no coinciden");
+    await post("/api/auth/password", { actual: d.actual, nueva: d.nueva });
+    toast("Contraseña actualizada"); setTimeout(start, 0);
+  }, "Cambiar contraseña");
+  $("#fCancel", f).textContent = "Salir"; $("#fCancel", f).onclick = () => { $("#modal").close(); logout(); };
+  $("#modal").oncancel = (e) => e.preventDefault();  // no se puede cerrar con Esc
+}
+
 async function start() {
   try { S.me = await get("/api/auth/me"); } catch { return showLogin(); }
+  if (S.me.debe_cambiar_password) return forcePasswordChange();
+  $("#modal").oncancel = null; $("#assetFilter").hidden = false;
   S.cat = await get("/api/catalogos");
   S.asset = localStorage.getItem("pms_asset") || "";
   await Promise.all([loadAssets(), loadCompanies()]);
