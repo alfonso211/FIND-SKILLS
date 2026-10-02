@@ -1,6 +1,35 @@
 # Instalación del PMS en el servidor de Arsys
 
-Guía para el técnico que instale el PMS. Tiempo estimado: unos 45 minutos.
+## Instalación rápida (sin conocimientos técnicos)
+
+El guion `deploy/instalar.sh` hace automáticamente todo lo de los apartados 2 a 8: actualizaciones, cortafuegos,
+Docker, claves, arranque, HTTPS y copias diarias. Solo hay que:
+
+1. Entrar al servidor por SSH como root.
+2. Pegar el **bloque A**, que crea la clave de acceso al repositorio, y añadir esa clave en GitHub
+   (*Settings → Deploy keys*, sin marcar *Allow write access*).
+3. Pegar el **bloque B**, que descarga el PMS y ejecuta el instalador.
+
+**Bloque A**
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/pms_deploy -N "" -C pms-arsys -q
+printf 'Host github-pms\n  HostName github.com\n  IdentityFile ~/.ssh/pms_deploy\n  StrictHostKeyChecking accept-new\n' >> ~/.ssh/config
+cat ~/.ssh/pms_deploy.pub
+```
+
+**Bloque B**
+```bash
+apt-get update -qq && apt-get install -y -qq git && git clone -b main git@github-pms:alfonso211/FIND-SKILLS.git /opt/pms && bash /opt/pms/deploy/instalar.sh
+```
+
+El guion se puede repetir sin riesgo: no borra datos ni cambia las claves. Las credenciales del administrador técnico
+quedan en `/root/pms-credenciales.txt`.
+
+---
+
+## Instalación manual paso a paso (referencia técnica)
+
+Tiempo estimado: unos 45 minutos.
 
 ## 0. Requisitos del servidor
 
