@@ -122,7 +122,7 @@ V.panel = async (el) => {
     if (a.renta_mensual != null) k.push([eur(a.renta_mensual), "Renta mensual"], [eur(a.deuda_vencida), "Deuda vencida"]);
     if (a.ot_abiertas != null) k.push([a.ot_abiertas, "OT abiertas"], [a.ot_urgentes, "OT urgentes"]);
     const est = Object.entries(a.estados).map(([e, n]) => `${badge(e)} ${n}`).join(" ");
-    return `<div class="card"><h3>${esc(a.nombre)}</h3><div class="sub">${esc(a.modalidad_nombre)} · ${esc(a.sociedad)}</div>
+    return `<div class="card"><h3>${esc(a.nombre)}</h3><div class="sub">${esc(a.modalidad_nombre)} · Gestiona ${esc(a.sociedad)} · Propiedad ${esc(a.propietaria)}</div>
       ${a.ocupacion_hoy != null ? `<div class="bar"><i style="width:${Math.min(100, a.ocupacion_hoy)}%"></i></div>` : ""}
       <div class="kpis">${k.map(([v, l]) => `<div class="kpi"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("")}</div>
       <p style="margin-top:12px">${est || '<span class="muted">Sin unidades dadas de alta</span>'}</p></div>`;
@@ -135,7 +135,8 @@ V.activos = async (el) => {
   const fields = (isNew) => [
     ...(isNew ? [{ k: "codigo", t: "Código", req: true }] : []),
     { k: "nombre", t: "Nombre", req: true },
-    { k: "company_id", t: "Sociedad titular", type: "select", req: true, options: opts(S.companies) },
+    { k: "company_id", t: "Sociedad gestora (explotación y accesos)", type: "select", req: true, options: opts(S.companies) },
+    { k: "propietaria_id", t: "Sociedad propietaria del inmueble", type: "select", options: opts(S.companies) },
     ...(isNew ? [{ k: "modalidad", t: "Modalidad", type: "select", req: true, options: kv(S.cat.modalidades) }] : []),
     { k: "direccion", t: "Dirección", wide: true }, { k: "municipio", t: "Municipio" }, { k: "provincia", t: "Provincia" },
     { k: "cp", t: "C.P." }, { k: "ref_catastral", t: "Ref. catastral" }, { k: "num_registro_turistico", t: "Nº registro turístico" },
@@ -148,7 +149,7 @@ V.activos = async (el) => {
   if ($("#new", el)) $("#new", el).onclick = () => edit(null);
   table($("#t", el), [
     { k: "codigo", t: "Código" }, { k: "nombre", t: "Nombre" }, { k: "modalidad_nombre", t: "Modalidad" },
-    { k: "sociedad", t: "Sociedad" }, { k: "municipio", t: "Municipio" }, { k: "num_unidades", t: "Unidades", num: true },
+    { k: "sociedad", t: "Gestora" }, { k: "propietaria", t: "Propietaria" }, { k: "municipio", t: "Municipio" }, { k: "num_unidades", t: "Unidades", num: true },
     { k: "activo", t: "Estado", f: (v) => (v ? badge("vigente") : badge("baja")) },
   ], rows, (a) => [["Unidades", () => { setAsset(a.id); go("unidades"); }], can("activos.editar") && ["Editar", () => edit(a)]]);
 };

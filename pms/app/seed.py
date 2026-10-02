@@ -9,14 +9,18 @@ from .config import settings
 from .models import Asset, Company, Role, Unit, User
 from .security import ROLES_POR_DEFECTO, hash_password
 
-SOCIEDADES = ["INVERSIETE SA", "COMERCIAL DEL CAMPO", "EDIFICIOS CAMERANOS", "EMPRESA TURISTICA HOTELERA (ETHOSA)"]
+SOCIEDADES = ["INVERSIETE SA", "COMERCIAL DEL CAMPO S.A.", "EDIFICIOS CAMERANOS",
+              "EMPRESA TURISTICA HOTELERA (ETHOSA)"]
 
-# Titularidad provisional: todos los activos cuelgan de INVERSIETE hasta confirmar sociedad propietaria.
+# gestora = sociedad que explota el activo; propietaria = titular del inmueble
 ACTIVOS = [
     dict(codigo="BAB35", nombre="C/ Babilonia 35", modalidad="alquiler_residencial",
+         gestora="COMERCIAL DEL CAMPO S.A.", propietaria="COMERCIAL DEL CAMPO S.A.",
          direccion="Calle Babilonia 35", municipio="Madrid", provincia="Madrid"),
-    dict(codigo="SFL", nombre="Suite Florida", modalidad="apartamentos_turisticos", prefijo="SF-", unidades=325),
-    dict(codigo="SAE", nombre="Suite Aeropuerto", modalidad="apartamentos_turisticos", prefijo="SA-", unidades=300),
+    dict(codigo="SFL", nombre="Suite Florida", modalidad="apartamentos_turisticos", prefijo="SF-", unidades=325,
+         gestora="INVERSIETE SA", propietaria="COMERCIAL DEL CAMPO S.A."),
+    dict(codigo="SAE", nombre="Suite Aeropuerto", modalidad="apartamentos_turisticos", prefijo="SA-", unidades=300,
+         gestora="INVERSIETE SA", propietaria="COMERCIAL DEL CAMPO S.A."),
 ]
 
 
@@ -26,8 +30,11 @@ def seed(db: Session) -> None:
     matriz = Company(nombre=SOCIEDADES[0])
     db.add(matriz)
     db.flush()
+    soc = {matriz.nombre: matriz}
     for nombre in SOCIEDADES[1:]:
-        db.add(Company(nombre=nombre, parent_id=matriz.id))
+        soc[nombre] = Company(nombre=nombre, parent_id=matriz.id)
+        db.add(soc[nombre])
+    db.flush()
 
     for nombre, (desc, perms) in ROLES_POR_DEFECTO.items():
         db.add(Role(nombre=nombre, descripcion=desc, permisos=perms))
@@ -35,7 +42,8 @@ def seed(db: Session) -> None:
     for spec in ACTIVOS:
         spec = dict(spec)
         n, prefijo = spec.pop("unidades", 0), spec.pop("prefijo", "")
-        a = Asset(company_id=matriz.id, **spec)
+        gestora, propietaria = soc[spec.pop("gestora")], soc[spec.pop("propietaria")]
+        a = Asset(company_id=gestora.id, propietaria_id=propietaria.id, **spec)
         db.add(a)
         db.flush()
         for i in range(1, n + 1):

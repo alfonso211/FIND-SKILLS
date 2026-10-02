@@ -62,7 +62,8 @@ def update_company(cid: int, data: CompanyIn, scope: Scope = Depends(get_scope),
 # --------------------------------------------------------------------------- activos
 def _asset_out(a: Asset, n_units: int) -> dict:
     d = a.to_dict()
-    d["sociedad"] = a.company.nombre
+    d["sociedad"] = a.company.nombre  # gestora
+    d["propietaria"] = a.propietaria.nombre if a.propietaria else a.company.nombre
     d["modalidad_nombre"] = MODALIDADES.get(a.modalidad, a.modalidad)
     d["num_unidades"] = n_units
     return d
@@ -83,9 +84,11 @@ def create_asset(data: AssetIn, scope: Scope = Depends(get_scope), db: Session =
     if data.modalidad not in MODALIDADES:
         bad_request(f"Modalidad no válida. Opciones: {', '.join(MODALIDADES)}")
     get_or_404(db, Company, data.company_id)
+    if data.propietaria_id is not None:
+        get_or_404(db, Company, data.propietaria_id)
     if db.scalar(select(Asset).where(Asset.codigo == data.codigo)):
         bad_request("Ya existe un activo con ese código")
-    a = Asset(**data.model_dump())
+    a = Asset(**{**data.model_dump(), "propietaria_id": data.propietaria_id or data.company_id})
     db.add(a)
     db.flush()
     audit(db, scope.user, "crear", "activo", a.id, data.model_dump())
@@ -101,6 +104,8 @@ def update_asset(aid: int, data: AssetUpdate, scope: Scope = Depends(get_scope),
         if not scope.can_company("activos.editar", data.company_id):
             raise HTTPException(403, "Sin permiso sobre la sociedad destino")
         get_or_404(db, Company, data.company_id)
+    if data.propietaria_id is not None and data.propietaria_id != a.propietaria_id:
+        get_or_404(db, Company, data.propietaria_id)
     ch = apply(a, data)
     audit(db, scope.user, "editar", "activo", aid, ch)
     db.commit()

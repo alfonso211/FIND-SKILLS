@@ -6,16 +6,18 @@ Hay una sola plataforma, pero cada usuario solo ve y gestiona lo que su rol y su
 
 ## Activos cargados de inicio
 
-| Código | Activo | Modalidad | Unidades |
-|---|---|---|---|
-| BAB35 | C/ Babilonia 35, Madrid | Alquiler residencial (LAU) | Se dan de alta desde *Unidades → Alta masiva* |
-| SFL | Suite Florida | Apartamentos turísticos | 325 (SF-001 … SF-325) |
-| SAE | Suite Aeropuerto | Apartamentos turísticos | 300 (SA-001 … SA-300) |
+| Código | Activo | Modalidad | Gestora | Propietaria | Unidades |
+|---|---|---|---|---|---|
+| BAB35 | C/ Babilonia 35, Madrid | Alquiler residencial (LAU) | COMERCIAL DEL CAMPO S.A. | COMERCIAL DEL CAMPO S.A. | Se dan de alta desde *Unidades → Alta masiva* |
+| SFL | Suite Florida | Apartamentos turísticos | INVERSIETE SA | COMERCIAL DEL CAMPO S.A. | 325 (SF-001 … SF-325) |
+| SAE | Suite Aeropuerto | Apartamentos turísticos | INVERSIETE SA | COMERCIAL DEL CAMPO S.A. | 300 (SA-001 … SA-300) |
 
-Para añadir activos nuevos: *Activos → Nuevo activo* (se elige la sociedad titular y la modalidad).
+Cada activo distingue:
+- **Sociedad gestora**: la que lo explota. Determina los accesos por sociedad y a qué sociedad pertenecen
+  inquilinos y huéspedes.
+- **Sociedad propietaria**: la titular del inmueble. Si no se indica, se toma la gestora.
 
-> **Pendiente de confirmar:** la sociedad titular de cada activo. De forma provisional los tres
-> cuelgan de INVERSIETE SA. Se cambia desde *Activos → Editar*.
+Para añadir activos nuevos: *Activos → Nuevo activo* (se eligen la gestora, la propietaria y la modalidad).
 
 ## Módulos
 
@@ -42,7 +44,7 @@ Cada usuario recibe uno o varios **roles**, y cada rol se asigna con un **ámbit
 | Ámbito | Alcance |
 |---|---|
 | Todo el grupo | Todas las sociedades y activos |
-| Sociedad | Todos los activos de esa sociedad, también los que se den de alta en el futuro |
+| Sociedad | Todos los activos que gestiona esa sociedad, también los que se den de alta en el futuro |
 | Activo | Solo ese activo (p.ej. recepción de Suite Florida) |
 
 Roles iniciales, todos editables en *Administración → Roles y permisos*: Dirección Grupo, Dirección Sociedad,
@@ -83,7 +85,7 @@ Tests: `cd pms && python -m pytest`
 ## Próximos pasos propuestos
 
 1. Definir los rangos de acceso definitivos por puesto y ajustar los roles.
-2. Confirmar la sociedad titular de cada activo y el número de viviendas de Babilonia 35.
+2. Confirmar el número de viviendas de Babilonia 35.
 3. Envío del parte de viajeros a SES.HOSPEDAJES (Ministerio del Interior).
 4. Conexión con channel manager (Booking, Airbnb, Expedia) y tarifas por temporada.
 5. Remesas SEPA de recibos y exportación contable.

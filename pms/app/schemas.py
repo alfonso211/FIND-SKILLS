@@ -18,7 +18,8 @@ class CompanyIn(BaseModel):
 
 
 class AssetIn(BaseModel):
-    company_id: int
+    company_id: int  # sociedad gestora
+    propietaria_id: int | None = None  # si se omite, la propia gestora
     codigo: str = Field(min_length=1, max_length=20)
     nombre: str
     modalidad: str
@@ -34,6 +35,7 @@ class AssetIn(BaseModel):
 
 class AssetUpdate(BaseModel):
     company_id: int | None = None
+    propietaria_id: int | None = None
     nombre: str | None = None
     direccion: str | None = None
     municipio: str | None = None

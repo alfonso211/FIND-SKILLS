@@ -27,6 +27,7 @@ def panel(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
         total = sum(estados.values())
         operativas = total - estados.get("fuera_servicio", 0)
         k = {"id": a.id, "codigo": a.codigo, "nombre": a.nombre, "sociedad": a.company.nombre,
+             "propietaria": a.propietaria.nombre if a.propietaria else a.company.nombre,
              "modalidad": a.modalidad, "modalidad_nombre": MODALIDADES.get(a.modalidad, a.modalidad),
              "unidades": total, "estados": estados}
         ver_fin = scope.can_asset("finanzas.ver", a.id)

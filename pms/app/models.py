@@ -38,9 +38,12 @@ class Company(Base):
 
 
 class Asset(Base):
+    """company_id = sociedad GESTORA (explota el activo; determina accesos y a quién pertenecen
+    inquilinos/huéspedes). propietaria_id = sociedad PROPIETARIA del inmueble (puede ser otra)."""
     __tablename__ = "activos"
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("sociedades.id"), index=True)
+    propietaria_id: Mapped[int | None] = mapped_column(ForeignKey("sociedades.id"))
     codigo: Mapped[str] = mapped_column(String(20), unique=True)
     nombre: Mapped[str] = mapped_column(String(200))
     modalidad: Mapped[str] = mapped_column(String(40))
@@ -52,7 +55,8 @@ class Asset(Base):
     num_registro_turistico: Mapped[str | None] = mapped_column(String(60))
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
     notas: Mapped[str | None] = mapped_column(Text)
-    company: Mapped[Company] = relationship()
+    company: Mapped[Company] = relationship(foreign_keys=[company_id])
+    propietaria: Mapped[Company | None] = relationship(foreign_keys=[propietaria_id])
 
 
 class Unit(Base):

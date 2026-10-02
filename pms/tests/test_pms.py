@@ -20,6 +20,10 @@ def test_seed(client, admin, ids):
     assert a["SFL"]["num_unidades"] == 325
     assert a["SAE"]["num_unidades"] == 300
     assert a["BAB35"]["modalidad"] == "alquiler_residencial"
+    # gestora / propietaria
+    assert (a["BAB35"]["sociedad"], a["BAB35"]["propietaria"]) == ("COMERCIAL DEL CAMPO S.A.", "COMERCIAL DEL CAMPO S.A.")
+    for c in ("SFL", "SAE"):
+        assert (a[c]["sociedad"], a[c]["propietaria"]) == ("INVERSIETE SA", "COMERCIAL DEL CAMPO S.A.")
     assert len(ids["companies"]) == 4
     me = client.get("/api/auth/me", headers=admin).json()
     assert me["is_superadmin"] and all(me["permisos"].values())
@@ -169,3 +173,15 @@ def test_audit_trail(client, admin):
     log = client.get("/api/admin/auditoria", headers=admin).json()
     acciones = {e["accion"] for e in log}
     assert {"login", "crear", "checkin", "cobro", "actualizar_renta"} <= acciones
+
+
+def test_scope_follows_managing_company(client, admin, ids):
+    """El ámbito de sociedad se aplica sobre la sociedad gestora, no sobre la propietaria."""
+    ccampo = ids["companies"]["COMERCIAL DEL CAMPO S.A."]
+    h = _new_user(client, admin, "director.ccampo@inversiete.com",
+                  [{"role_id": ids["roles"]["Dirección Sociedad"], "company_id": ccampo}])
+    assert [a["codigo"] for a in client.get("/api/activos", headers=h).json()] == ["BAB35"]
+    # nuevo activo sin propietaria explícita -> propietaria = gestora
+    r = client.post("/api/activos", headers=h, json={
+        "company_id": ccampo, "codigo": "CC2", "nombre": "Prueba", "modalidad": "alquiler_residencial"})
+    assert r.json()["propietaria"] == "COMERCIAL DEL CAMPO S.A."
