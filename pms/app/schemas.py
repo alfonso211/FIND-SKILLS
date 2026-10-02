@@ -1,6 +1,8 @@
 """Esquemas de entrada (validación). Las respuestas se serializan con Base.to_dict()."""
 from datetime import date
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -30,6 +32,9 @@ class AssetIn(BaseModel):
     ref_catastral: str | None = None
     num_registro_turistico: str | None = None
     activo: bool = True
+    contrato_representante: str | None = None
+    contrato_representante_dni: str | None = None
+    contrato_email: str | None = None
     notas: str | None = None
 
 
@@ -44,6 +49,9 @@ class AssetUpdate(BaseModel):
     ref_catastral: str | None = None
     num_registro_turistico: str | None = None
     activo: bool | None = None
+    contrato_representante: str | None = None
+    contrato_representante_dni: str | None = None
+    contrato_email: str | None = None
     notas: str | None = None
 
 
@@ -113,6 +121,9 @@ class ContactIn(BaseModel):
     email: str | None = None
     telefono: str | None = None
     direccion: str | None = None
+    cp: str | None = None
+    municipio: str | None = None
+    pais: str | None = None
     iban: str | None = None
     notas: str | None = None
 
@@ -128,6 +139,9 @@ class ContactInline(BaseModel):
     email: str | None = None
     telefono: str | None = None
     direccion: str | None = None
+    cp: str | None = None
+    municipio: str | None = None
+    pais: str | None = None
 
 
 # --------------------------------------------------------------------------- alquiler
@@ -209,6 +223,40 @@ class ReservationUpdate(BaseModel):
     importe_pagado: float | None = None
     estado: str | None = None
     notas: str | None = None
+
+
+class AccommodationContractIn(BaseModel):
+    """Datos del contrato de alojamiento. Lo que se deje vacío se imprime con puntos para rellenar a mano."""
+    fecha_firma: date
+    localizador: str | None = None
+    representante: str | None = None
+    representante_dni: str | None = None
+    email_empresa: str | None = None
+    cliente_nombre: str | None = None
+    cliente_nacionalidad: str | None = None
+    cliente_documento: str | None = None
+    cliente_domicilio: str | None = None
+    cliente_cp: str | None = None
+    cliente_municipio: str | None = None
+    cliente_pais: str | None = None
+    cliente_email: str | None = None
+    cliente_movil: str | None = None
+    capacidad: int | None = None
+    dormitorios: int | None = None
+    garaje_sotano: str | None = None
+    garaje_plaza: str | None = None
+    precio_total: float | None = Field(default=None, ge=0)
+    fianza: float | None = Field(default=None, ge=0)
+    tarjeta_titular: str | None = None
+    # Nunca el número completo de la tarjeta: solo los 4 últimos dígitos
+    tarjeta_terminacion: str | None = Field(default=None, pattern=r"^\d{4}$")
+    tarjeta_caducidad: str | None = Field(default=None, pattern=r"^(0[1-9]|1[0-2])/\d{2}$")
+    ocupantes: str | None = None
+    motivo: Literal["turismo", "laboral", "medico", "estudios", "obras", "transito", "otro"] | None = None
+    motivo_otro: str | None = None
+    acreditacion: Literal["empadronamiento", "dni", "alquiler", "suministro", "residencia_fiscal", "otro"] | None = None
+    acreditacion_otro: str | None = None
+    actualizar_huesped: bool = True
 
 
 # --------------------------------------------------------------------------- mantenimiento

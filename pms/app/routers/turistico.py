@@ -1,13 +1,14 @@
 """Apartamentos turísticos: reservas, llegadas/salidas, disponibilidad y planning."""
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import MODALIDADES_RESERVA, Contact, Reservation, Unit
-from ..schemas import ReservationIn, ReservationUpdate
+from .. import contratos
+from ..models import MODALIDADES_RESERVA, AccommodationContract, Contact, Reservation, Unit, User
+from ..schemas import AccommodationContractIn, ReservationIn, ReservationUpdate
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
 
@@ -223,3 +224,116 @@ def planning(asset_id: int, desde: date | None = None, dias: int = Query(14, ge=
     return {"desde": d0.isoformat(), "dias": dias,
             "unidades": [{"id": u.id, "codigo": u.codigo, "bloque": u.bloque, "estado": u.estado, "reservas": by_unit.get(u.id, [])}
                          for u in units]}
+
+
+# --------------------------------------------------------------------------- contrato de alojamiento
+DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def _apartamento(u: Unit) -> dict:
+    """Portal/bloque, planta y número tal como se escriben en el contrato (P1-1A -> Portal 1, planta 1, nº A)."""
+    etiqueta, bloque = (u.bloque.split(" ", 1) + [""])[:2] if u.bloque else ("", "")
+    numero = u.codigo.split("-")[-1]
+    if u.planta and numero.startswith(u.planta) and numero[len(u.planta):].isalpha():
+        numero = numero[len(u.planta):]
+    return {"etiqueta_bloque": etiqueta or None, "portal": bloque or None, "planta": u.planta, "numero": numero}
+
+
+def _prefill(r: Reservation, db: Session) -> dict:
+    u, a, g = r.unit, r.unit.asset, r.guest
+    ultimo = db.scalar(select(AccommodationContract).where(AccommodationContract.reservation_id == r.id)
+                       .order_by(AccommodationContract.id.desc()))
+    base = {
+        "fecha_firma": date.today().isoformat(),
+        "localizador": r.localizador or f"R-{r.id}",
+        "representante": a.contrato_representante, "representante_dni": a.contrato_representante_dni,
+        "email_empresa": a.contrato_email,
+        "cliente_nombre": f"{g.nombre} {g.apellidos or ''}".strip(), "cliente_nacionalidad": g.nacionalidad,
+        "cliente_documento": g.documento_num, "cliente_domicilio": g.direccion, "cliente_cp": g.cp,
+        "cliente_municipio": g.municipio, "cliente_pais": g.pais, "cliente_email": g.email,
+        "cliente_movil": g.telefono,
+        "capacidad": u.capacidad, "dormitorios": u.dormitorios,
+        "precio_total": float(r.importe_total) if r.importe_total else None,
+        "ocupantes": f"{g.nombre} {g.apellidos or ''} ({g.documento_tipo or 'doc.'} {g.documento_num or '……'})".strip(),
+    }
+    if ultimo:  # se recuperan los datos tecleados en la última impresión
+        guardado = {k: v for k, v in ultimo.datos.items() if k in AccommodationContractIn.model_fields}
+        base.update({k: v for k, v in guardado.items() if v not in (None, "")})
+        base["fecha_firma"] = date.today().isoformat()
+    return base
+
+
+def _datos_plantilla(r: Reservation, c: AccommodationContractIn) -> dict:
+    d = c.model_dump()
+    d.update(_apartamento(r.unit))
+    d["registro_turistico"] = r.unit.asset.num_registro_turistico
+    f = contratos.fecha_es(c.fecha_firma)
+    d.update(firma_dia=f["dia"], firma_mes=f["mes"], firma_anio=f["anio"])
+    for pref, fecha in (("entrada", r.fecha_entrada), ("salida", r.fecha_salida)):
+        d.update({f"{pref}_dia": f"{fecha.day:02d}", f"{pref}_mes": f"{fecha.month:02d}", f"{pref}_anio": fecha.year})
+    d["noches"] = (r.fecha_salida - r.fecha_entrada).days
+    if c.tarjeta_caducidad:
+        d["tarjeta_cad_mes"], d["tarjeta_cad_anio"] = c.tarjeta_caducidad.split("/")
+    return d
+
+
+def _contrato_reserva(rid: int, perm: str, scope: Scope, db: Session) -> tuple[Reservation, object]:
+    r = get_or_404(db, Reservation, rid)
+    scope.require_asset(perm, r.unit.asset_id)
+    ruta = contratos.plantilla(r.unit.asset.codigo)
+    if not ruta:
+        bad_request("Este activo no tiene modelo de contrato de alojamiento")
+    return r, ruta
+
+
+def _descarga(contenido: bytes, r: Reservation) -> Response:
+    nombre = f"Contrato_{(r.localizador or f'R-{r.id}').replace(' ', '_')}_{r.unit.codigo}.docx"
+    return Response(contenido, media_type=DOCX, headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
+
+
+@router.get("/reservas/{rid}/contrato")
+def contract_form(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Datos propuestos para el contrato e historial de contratos impresos de la reserva."""
+    r, _ = _contrato_reserva(rid, "reservas.ver", scope, db)
+    historial = db.execute(select(AccommodationContract, User.nombre)
+                           .outerjoin(User, User.id == AccommodationContract.user_id)
+                           .where(AccommodationContract.reservation_id == rid)
+                           .order_by(AccommodationContract.id.desc())).all()
+    return {"datos": _prefill(r, db), "motivos": contratos.MOTIVOS, "acreditaciones": contratos.ACREDITACIONES,
+            "historial": [{"id": c.id, "creado": c.creado.isoformat(), "usuario": n} for c, n in historial]}
+
+
+@router.post("/reservas/{rid}/contrato")
+def contract_print(rid: int, data: AccommodationContractIn, scope: Scope = Depends(get_scope),
+                   db: Session = Depends(get_db)):
+    """Genera el contrato relleno (.docx), lo guarda en el historial y actualiza la ficha del huésped."""
+    r, ruta = _contrato_reserva(rid, "reservas.editar", scope, db)
+    contenido, pendientes = contratos.rellenar(ruta, _datos_plantilla(r, data))
+    if data.actualizar_huesped:
+        g = r.guest
+        for campo, valor in (("nacionalidad", data.cliente_nacionalidad), ("documento_num", data.cliente_documento),
+                             ("direccion", data.cliente_domicilio), ("cp", data.cliente_cp),
+                             ("municipio", data.cliente_municipio), ("pais", data.cliente_pais),
+                             ("email", data.cliente_email), ("telefono", data.cliente_movil)):
+            if valor:
+                setattr(g, campo, valor)
+    c = AccommodationContract(reservation_id=r.id, plantilla=ruta.name, datos=data.model_dump(mode="json"),
+                              user_id=scope.user.id)
+    db.add(c)
+    db.flush()
+    audit(db, scope.user, "imprimir_contrato", "reserva", r.id, {"contrato": c.id, "huecos_a_mano": pendientes})
+    db.commit()
+    resp = _descarga(contenido, r)
+    resp.headers["X-Huecos-Pendientes"] = str(len(pendientes))
+    return resp
+
+
+@router.get("/reservas/{rid}/contrato/{cid}")
+def contract_reprint(rid: int, cid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Reimprime un contrato ya generado, con los mismos datos."""
+    r, ruta = _contrato_reserva(rid, "reservas.ver", scope, db)
+    c = get_or_404(db, AccommodationContract, cid)
+    if c.reservation_id != rid:
+        bad_request("El contrato no pertenece a esta reserva")
+    contenido, _ = contratos.rellenar(ruta, _datos_plantilla(r, AccommodationContractIn(**c.datos)))
+    return _descarga(contenido, r)

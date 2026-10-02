@@ -5,7 +5,9 @@ from alembic.migration import MigrationContext
 from sqlalchemy import create_engine, text
 
 from app.database import Base
-from app.migraciones import migrar
+from alembic import command
+
+from app.migraciones import REVISION_BASE, _config, migrar
 
 
 def _diferencias(engine):
@@ -30,7 +32,9 @@ def test_base_vacia(tmp_path):
 def test_base_existente_se_conserva(tmp_path):
     """Simula la base de producción creada con create_all y con datos."""
     eng = create_engine(f"sqlite:///{tmp_path}/prod.db")
-    Base.metadata.create_all(eng)
+    with eng.begin() as conn:  # esquema de la versión 1, tal como lo creó create_all en producción
+        command.upgrade(_config(conn), REVISION_BASE)
+        conn.exec_driver_sql("DROP TABLE alembic_version")
     with eng.begin() as c:
         c.execute(text("insert into sociedades (nombre, activa) values ('INVERSIETE SA', 1)"))
     migrar(eng)

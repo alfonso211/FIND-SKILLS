@@ -25,12 +25,26 @@ async function api(method, path, body) {
   });
   if (res.status === 401 && S.token) { logout(); throw new Error("Sesión caducada"); }
   const data = res.status === 204 ? null : await res.json().catch(() => null);
-  if (!res.ok) {
-    let msg = data?.detail ?? res.statusText;
-    if (Array.isArray(msg)) msg = msg.map((e) => `${e.loc?.slice(-1)[0] ?? ""}: ${e.msg}`).join(" · ");
-    throw new Error(msg);
-  }
+  if (!res.ok) throw new Error(errMsg(data, res));
   return data;
+}
+function errMsg(data, res) {
+  let msg = data?.detail ?? res.statusText;
+  if (Array.isArray(msg)) msg = msg.map((e) => `${e.loc?.slice(-1)[0] ?? ""}: ${e.msg}`).join(" · ");
+  return msg;
+}
+// Descarga un fichero generado por la API (p.ej. un contrato .docx)
+async function download(method, path, body) {
+  const res = await fetch(path, {
+    method, headers: { "Content-Type": "application/json", Authorization: `Bearer ${S.token}` },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(errMsg(await res.json().catch(() => null), res));
+  const nombre = (res.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/)?.[1] || "documento";
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(await res.blob()), download: nombre });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  return res;
 }
 const get = (p, q) => api("GET", q ? `${p}?${new URLSearchParams(Object.entries(q).filter(([, v]) => v !== "" && v != null))}` : p);
 const post = (p, b = {}) => api("POST", p, b);
@@ -150,6 +164,9 @@ V.activos = async (el) => {
     ...(isNew ? [{ k: "modalidad", t: "Modalidad", type: "select", req: true, options: kv(S.cat.modalidades) }] : []),
     { k: "direccion", t: "Dirección", wide: true }, { k: "municipio", t: "Municipio" }, { k: "provincia", t: "Provincia" },
     { k: "cp", t: "C.P." }, { k: "ref_catastral", t: "Ref. catastral" }, { k: "num_registro_turistico", t: "Nº registro turístico" },
+    { html: "<h4>Datos de la empresa en los contratos de alojamiento</h4>" },
+    { k: "contrato_representante", t: "Representante (firma por la empresa)" }, { k: "contrato_representante_dni", t: "DNI del representante" },
+    { k: "contrato_email", t: "Correo para notificaciones", type: "email" },
     { k: "activo", t: "Activo en explotación", type: "checkbox", def: true }, { k: "notas", t: "Notas", type: "textarea", wide: true },
   ];
   const edit = (a) => form(a ? `Editar ${a.nombre}` : "Nuevo activo", fields(!a), a || {}, async (d) => {
@@ -225,6 +242,7 @@ const resCols = [
 ];
 function resActions(reload) {
   return (r) => can("reservas.editar") ? [
+    ["Contrato", () => accommodationContract(r)],
     r.estado === "confirmada" && ["Check-in", () => run(() => post(`/api/turistico/reservas/${r.id}/checkin`), "Check-in realizado").then(reload).catch(() => editGuest(r.guest_id))],
     r.estado === "checkin" && ["Check-out", () => run(() => post(`/api/turistico/reservas/${r.id}/checkout`), "Check-out realizado").then(reload)],
     ["Huésped", () => editGuest(r.guest_id)],
@@ -232,12 +250,48 @@ function resActions(reload) {
     r.estado === "confirmada" && ["Cancelar", () => confirm("¿Cancelar la reserva?") && run(() => post(`/api/turistico/reservas/${r.id}/cancelar`), "Reserva cancelada").then(reload), "danger"],
   ] : [];
 }
+async function accommodationContract(r) {
+  const info = await run(() => get(`/api/turistico/reservas/${r.id}/contrato`));
+  const sel = (obj) => Object.entries(obj).map(([k, v]) => [k, v.replace(/:$/, "")]);
+  const historial = info.historial.length ? `<p class="muted">Impresos: ${info.historial.map((h) =>
+    `<a href="#" data-c="${h.id}">${fdt(h.creado)}${h.usuario ? " · " + esc(h.usuario) : ""}</a>`).join(" · ")}</p>` : "";
+  const f = form(`Contrato de alojamiento · ${r.unidad} · ${r.huesped}`, [
+    { html: `<p class="muted">Lo que se deje vacío se imprime con puntos para rellenar a mano. De la tarjeta solo se anotan los 4 últimos dígitos.</p>${historial}` },
+    { k: "localizador", t: "Localizador" }, { k: "fecha_firma", t: "Fecha de firma", type: "date", req: true },
+    { html: "<h4>Cliente</h4>" },
+    { k: "cliente_nombre", t: "Nombre y apellidos", wide: true }, { k: "cliente_nacionalidad", t: "Nacionalidad" },
+    { k: "cliente_documento", t: "DNI / Pasaporte / NIE" }, { k: "cliente_domicilio", t: "Domicilio habitual", wide: true },
+    { k: "cliente_cp", t: "C.P." }, { k: "cliente_municipio", t: "Municipio" }, { k: "cliente_pais", t: "País" },
+    { k: "cliente_email", t: "Correo electrónico", type: "email" }, { k: "cliente_movil", t: "Móvil" },
+    { html: "<h4>Estancia</h4>" },
+    { k: "capacidad", t: "Capacidad máxima (plazas)", type: "number", step: 1 }, { k: "dormitorios", t: "Dormitorios", type: "number", step: 1 },
+    { k: "garaje_sotano", t: "Garaje: sótano" }, { k: "garaje_plaza", t: "Garaje: plaza nº" },
+    { k: "precio_total", t: "Precio total € (IVA incl.)", type: "number" }, { k: "fianza", t: "Fianza €", type: "number" },
+    { k: "tarjeta_titular", t: "Tarjeta: titular" }, { k: "tarjeta_terminacion", t: "Tarjeta: últimos 4 dígitos" },
+    { k: "tarjeta_caducidad", t: "Tarjeta: caducidad (MM/AA)" },
+    { k: "ocupantes", t: "Ocupantes autorizados (nombre, apellidos y documento de todos)", type: "textarea", wide: true },
+    { k: "motivo", t: "Motivo de la estancia", type: "select", options: sel(info.motivos) }, { k: "motivo_otro", t: "Motivo: otro" },
+    { k: "acreditacion", t: "Acreditación del domicilio", type: "select", options: sel(info.acreditaciones) }, { k: "acreditacion_otro", t: "Acreditación: otro" },
+    { html: "<h4>Empresa</h4>" },
+    { k: "representante", t: "Representante" }, { k: "representante_dni", t: "DNI representante" }, { k: "email_empresa", t: "Correo notificaciones", type: "email" },
+    { k: "actualizar_huesped", t: "Guardar los datos del cliente en su ficha de huésped", type: "checkbox", def: true, wide: true },
+  ], info.datos, async (d) => {
+    const res = await download("POST", `/api/turistico/reservas/${r.id}/contrato`, d);
+    const n = Number(res.headers.get("X-Huecos-Pendientes") || 0);
+    toast(n ? `Contrato generado. ${n} hueco(s) quedan para rellenar a mano.` : "Contrato generado. Ábralo e imprima dos copias.");
+  }, "Generar e imprimir");
+  f.querySelectorAll("[data-c]").forEach((a) => (a.onclick = (e) => {
+    e.preventDefault(); run(() => download("GET", `/api/turistico/reservas/${r.id}/contrato/${a.dataset.c}`), "Contrato descargado");
+  }));
+}
+
 const guestFields = [
   { k: "nombre", t: "Nombre", req: true }, { k: "apellidos", t: "Apellidos" },
   { k: "documento_tipo", t: "Tipo doc.", type: "select", options: list(["DNI", "NIE", "PAS", "CIF", "OTRO"]) },
   { k: "documento_num", t: "Nº documento" }, { k: "nacionalidad", t: "Nacionalidad" },
   { k: "fecha_nacimiento", t: "Fecha nacimiento", type: "date" }, { k: "email", t: "Email", type: "email" },
-  { k: "telefono", t: "Teléfono" }, { k: "direccion", t: "Dirección", wide: true },
+  { k: "telefono", t: "Teléfono" }, { k: "direccion", t: "Domicilio habitual", wide: true },
+  { k: "cp", t: "C.P." }, { k: "municipio", t: "Municipio" }, { k: "pais", t: "País" },
 ];
 async function editGuest(id, tipo = "huesped") {
   const c = (await get("/api/terceros", { tipo })).find((x) => x.id === id);
