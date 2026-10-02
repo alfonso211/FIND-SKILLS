@@ -1,6 +1,8 @@
 """Carga inicial: sociedades del grupo, roles, superadministrador y activos de partida.
 Solo se ejecuta si la base de datos está vacía."""
+import json
 import secrets
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,14 +14,20 @@ from .security import ROLES_POR_DEFECTO, hash_password
 SOCIEDADES = ["INVERSIETE SA", "COMERCIAL DEL CAMPO S.A.", "EDIFICIOS CAMERANOS",
               "EMPRESA TURISTICA HOTELERA (ETHOSA)"]
 
+# Unidades reales de cada activo (ver data/unidades_iniciales.json):
+#  - BAB35: listado de cuotas de comunidad oct-2026 (solo viviendas y garajes de COMERCIAL DEL CAMPO)
+#  - SFL:   listado 2026-10-02, 4 portales
+#  - SAE:   listado 2026-10-02, bloques A y B
+UNIDADES = Path(__file__).parent / "data" / "unidades_iniciales.json"
+
 # gestora = sociedad que explota el activo; propietaria = titular del inmueble
 ACTIVOS = [
     dict(codigo="BAB35", nombre="C/ Babilonia 35", modalidad="alquiler_residencial",
          gestora="COMERCIAL DEL CAMPO S.A.", propietaria="COMERCIAL DEL CAMPO S.A.",
          direccion="Calle Babilonia 35", municipio="Madrid", provincia="Madrid"),
-    dict(codigo="SFL", nombre="Suite Florida", modalidad="apartamentos_turisticos", prefijo="SF-", unidades=325,
+    dict(codigo="SFL", nombre="Suite Florida", modalidad="apartamentos_turisticos",
          gestora="INVERSIETE SA", propietaria="COMERCIAL DEL CAMPO S.A."),
-    dict(codigo="SAE", nombre="Suite Aeropuerto", modalidad="apartamentos_turisticos", prefijo="SA-", unidades=300,
+    dict(codigo="SAE", nombre="Suite Aeropuerto", modalidad="apartamentos_turisticos",
          gestora="INVERSIETE SA", propietaria="COMERCIAL DEL CAMPO S.A."),
 ]
 
@@ -39,15 +47,15 @@ def seed(db: Session) -> None:
     for nombre, (desc, perms) in ROLES_POR_DEFECTO.items():
         db.add(Role(nombre=nombre, descripcion=desc, permisos=perms))
 
+    unidades = json.loads(UNIDADES.read_text(encoding="utf-8"))
     for spec in ACTIVOS:
         spec = dict(spec)
-        n, prefijo = spec.pop("unidades", 0), spec.pop("prefijo", "")
         gestora, propietaria = soc[spec.pop("gestora")], soc[spec.pop("propietaria")]
         a = Asset(company_id=gestora.id, propietaria_id=propietaria.id, **spec)
         db.add(a)
         db.flush()
-        for i in range(1, n + 1):
-            db.add(Unit(asset_id=a.id, codigo=f"{prefijo}{i:03d}", tipologia="Apartamento"))
+        for u in unidades.get(a.codigo, []):
+            db.add(Unit(asset_id=a.id, **u))
 
     password = settings.admin_password or secrets.token_urlsafe(12)
     db.add(User(email=settings.admin_email, nombre="Administrador", password_hash=hash_password(password),

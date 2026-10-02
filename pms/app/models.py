@@ -20,6 +20,8 @@ MODALIDADES = {
 MODALIDADES_CONTRATO = {"alquiler_residencial"}
 MODALIDADES_RESERVA = {"apartamentos_turisticos"}
 
+USOS_UNIDAD = ["vivienda", "apartamento", "garaje", "trastero", "local", "oficina"]
+
 ESTADOS_UNIDAD = ["disponible", "ocupada", "pendiente_limpieza", "mantenimiento", "bloqueada", "fuera_servicio"]
 
 
@@ -65,6 +67,8 @@ class Unit(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
     codigo: Mapped[str] = mapped_column(String(30))
+    bloque: Mapped[str | None] = mapped_column(String(40))  # portal / bloque / escalera
+    uso: Mapped[str] = mapped_column(String(20), default="vivienda")
     tipologia: Mapped[str | None] = mapped_column(String(60))
     planta: Mapped[str | None] = mapped_column(String(10))
     superficie_m2: Mapped[float | None] = mapped_column(Numeric(8, 2))
@@ -74,6 +78,9 @@ class Unit(Base):
     estado: Mapped[str] = mapped_column(String(30), default="disponible")
     renta_base: Mapped[float | None] = mapped_column(Numeric(10, 2))
     tarifa_base_noche: Mapped[float | None] = mapped_column(Numeric(10, 2))
+    coef_participacion: Mapped[float | None] = mapped_column(Numeric(6, 3))  # % en la comunidad
+    cuota_comunidad: Mapped[float | None] = mapped_column(Numeric(10, 2))  # cuota ordinaria mensual
+    anejos: Mapped[str | None] = mapped_column(String(120))  # trasteros / plazas vinculadas
     notas: Mapped[str | None] = mapped_column(Text)
     asset: Mapped[Asset] = relationship()
 

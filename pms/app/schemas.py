@@ -50,6 +50,11 @@ class AssetUpdate(BaseModel):
 class UnitIn(BaseModel):
     asset_id: int
     codigo: str
+    bloque: str | None = None
+    uso: str = "vivienda"
+    coef_participacion: float | None = None
+    cuota_comunidad: float | None = None
+    anejos: str | None = None
     tipologia: str | None = None
     planta: str | None = None
     superficie_m2: float | None = None
@@ -64,6 +69,11 @@ class UnitIn(BaseModel):
 
 class UnitUpdate(BaseModel):
     codigo: str | None = None
+    bloque: str | None = None
+    uso: str | None = None
+    coef_participacion: float | None = None
+    cuota_comunidad: float | None = None
+    anejos: str | None = None
     tipologia: str | None = None
     planta: str | None = None
     superficie_m2: float | None = None
@@ -82,6 +92,8 @@ class UnitBulk(BaseModel):
     desde: int = Field(ge=0)
     hasta: int = Field(ge=0)
     digitos: int = Field(default=3, ge=1, le=6)
+    bloque: str | None = None
+    uso: str = "vivienda"
     tipologia: str | None = None
     capacidad: int | None = None
     tarifa_base_noche: float | None = None

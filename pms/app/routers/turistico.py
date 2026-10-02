@@ -194,26 +194,32 @@ def availability(asset_id: int, desde: date, hasta: date, capacidad: int = 1,
                                              Reservation.fecha_entrada < hasta, Reservation.fecha_salida > desde)
     stmt = select(Unit).where(Unit.asset_id == asset_id, Unit.estado.not_in(NO_ASIGNABLE),
                               Unit.id.not_in(busy), or_(Unit.capacidad.is_(None), Unit.capacidad >= capacidad))
-    units = [u.to_dict() for u in db.scalars(stmt.order_by(Unit.codigo))]
+    units = [u.to_dict() for u in db.scalars(stmt.order_by(Unit.bloque, Unit.codigo))]
     return {"libres": len(units), "unidades": units}
 
 
 @router.get("/planning")
 def planning(asset_id: int, desde: date | None = None, dias: int = Query(14, ge=1, le=62),
-             scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+             bloque: str | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     """Cuadro de ocupación unidad x día."""
     scope.require_asset("reservas.ver", asset_id)
     d0 = desde or date.today()
     d1 = d0 + timedelta(days=dias)
-    units = list(db.scalars(select(Unit).where(Unit.asset_id == asset_id).order_by(Unit.codigo)))
+    ustmt = select(Unit).where(Unit.asset_id == asset_id)
+    if bloque:
+        ustmt = ustmt.where(Unit.bloque == bloque)
+    units = list(db.scalars(ustmt.order_by(Unit.bloque, Unit.codigo)))
+    unit_ids = {u.id for u in units}
     res = db.scalars(select(Reservation).join(Unit).where(
         Unit.asset_id == asset_id, Reservation.estado.in_(("confirmada", "checkin", "checkout")),
         Reservation.fecha_entrada < d1, Reservation.fecha_salida > d0))
     by_unit: dict[int, list] = {}
     for r in res:
+        if r.unit_id not in unit_ids:
+            continue
         by_unit.setdefault(r.unit_id, []).append(
             {"id": r.id, "entrada": r.fecha_entrada.isoformat(), "salida": r.fecha_salida.isoformat(),
              "huesped": f"{r.guest.nombre} {r.guest.apellidos or ''}".strip(), "estado": r.estado})
     return {"desde": d0.isoformat(), "dias": dias,
-            "unidades": [{"id": u.id, "codigo": u.codigo, "estado": u.estado, "reservas": by_unit.get(u.id, [])}
+            "unidades": [{"id": u.id, "codigo": u.codigo, "bloque": u.bloque, "estado": u.estado, "reservas": by_unit.get(u.id, [])}
                          for u in units]}

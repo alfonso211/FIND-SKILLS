@@ -19,6 +19,18 @@ def test_seed(client, admin, ids):
     assert set(a) == {"BAB35", "SFL", "SAE"}
     assert a["SFL"]["num_unidades"] == 325
     assert a["SAE"]["num_unidades"] == 300
+    assert a["BAB35"]["num_unidades"] == 53
+    bab = client.get(f"/api/unidades?asset_id={a['BAB35']['id']}", headers=admin).json()
+    viv = [u for u in bab if u["uso"] == "vivienda"]
+    gar = [u for u in bab if u["uso"] == "garaje"]
+    assert len(viv) == 20 and len(gar) == 33
+    assert round(sum(u["cuota_comunidad"] for u in viv), 2) == 1950.20  # cuadra con el listado de comunidad
+    assert round(sum(u["cuota_comunidad"] for u in gar), 2) == 629.64
+    assert client.get(f"/api/unidades/bloques?asset_id={a['SFL']['id']}", headers=admin).json() == \
+        ["Portal 1", "Portal 2", "Portal 3", "Portal 4"]
+    assert client.get(f"/api/unidades/bloques?asset_id={a['SAE']['id']}", headers=admin).json() == ["Bloque A", "Bloque B"]
+    sae = client.get(f"/api/unidades?asset_id={a['SAE']['id']}&q=A-148", headers=admin).json()[0]
+    assert sae["tipologia"] == "Apartamento 2 dormitorios" and sae["dormitorios"] == 2
     assert a["BAB35"]["modalidad"] == "alquiler_residencial"
     # gestora / propietaria
     assert (a["BAB35"]["sociedad"], a["BAB35"]["propietaria"]) == ("COMERCIAL DEL CAMPO S.A.", "COMERCIAL DEL CAMPO S.A.")
@@ -59,7 +71,7 @@ def test_recepcion_scoped_to_one_asset(client, admin, ids):
 
 def test_reservation_flow(client, admin, ids):
     sfl = ids["assets"]["SFL"]["id"]
-    unit = client.get(f"/api/unidades?asset_id={sfl}&q=SF-010", headers=admin).json()[0]
+    unit = client.get(f"/api/unidades?asset_id={sfl}&q=P1-1J", headers=admin).json()[0]
     body = {"unit_id": unit["id"], "guest": {"nombre": "Ana", "apellidos": "López"}, "canal": "booking",
             "fecha_entrada": d(0), "fecha_salida": d(3), "adultos": 2, "importe_total": 360}
     r = client.post("/api/turistico/reservas", headers=admin, json=body)
@@ -84,21 +96,23 @@ def test_reservation_flow(client, admin, ids):
     panel = {a["codigo"]: a for a in client.get("/api/panel", headers=admin).json()["activos"]}
     assert panel["SFL"]["ocupacion_hoy"] > 0 and panel["SFL"]["llegadas_hoy"] >= 1
     assert client.post(f"/api/turistico/reservas/{res['id']}/checkout", headers=admin).json()["estado"] == "checkout"
-    u = client.get(f"/api/unidades?asset_id={sfl}&q=SF-010", headers=admin).json()[0]
+    u = client.get(f"/api/unidades?asset_id={sfl}&q=P1-1J", headers=admin).json()[0]
     assert u["estado"] == "pendiente_limpieza"
     assert client.post(f"/api/unidades/{u['id']}/limpia", headers=admin).json()["estado"] == "disponible"
     disp = client.get(f"/api/turistico/disponibilidad?asset_id={sfl}&desde={d(3)}&hasta={d(4)}", headers=admin).json()
     assert disp["libres"] == 324
     plan = client.get(f"/api/turistico/planning?asset_id={sfl}&dias=7", headers=admin).json()
     assert len(plan["unidades"]) == 325
+    p1 = client.get(f"/api/turistico/planning?asset_id={sfl}&dias=7&bloque=Portal 1", headers=admin).json()
+    assert len(p1["unidades"]) == 90 and any(u["reservas"] for u in p1["unidades"])
 
 
 def test_residential_lease_and_charges(client, admin, ids):
     bab = ids["assets"]["BAB35"]["id"]
     r = client.post("/api/unidades/masivo", headers=admin, json={
-        "asset_id": bab, "prefijo": "1", "desde": 1, "hasta": 4, "digitos": 2, "tipologia": "Vivienda 2D"})
+        "asset_id": bab, "prefijo": "T-", "desde": 1, "hasta": 4, "digitos": 2, "uso": "trastero"})
     assert r.json() == {"creadas": 4, "omitidas": 0}
-    unit = client.get(f"/api/unidades?asset_id={bab}", headers=admin).json()[0]
+    unit = client.get(f"/api/unidades?asset_id={bab}&uso=vivienda", headers=admin).json()[0]
     # contrato que empieza el día 16 de un mes de 30 días -> recibo prorrateado 15/30
     lease = client.post("/api/alquiler/contratos", headers=admin, json={
         "unit_id": unit["id"], "tenant": {"nombre": "Luis", "apellidos": "Pérez", "documento_num": "00000000T"},
@@ -114,6 +128,9 @@ def test_residential_lease_and_charges(client, admin, ids):
         "unit_id": sfl_unit["id"], "tenant": {"nombre": "x"}, "fecha_inicio": "2026-09-01",
         "renta_mensual": 10}).status_code == 400
 
+    panel = {a["codigo"]: a for a in client.get("/api/panel", headers=admin).json()["activos"]}
+    assert panel["BAB35"]["ocupacion_hoy"] == 5.0  # 1 de 20 viviendas (los garajes no cuentan)
+    assert panel["BAB35"]["alquiladas_por_uso"] == {"vivienda": 1}
     assert client.post("/api/alquiler/recibos/generar", headers=admin, json={"periodo": "2026-09"}).json()["creados"] == 1
     assert client.post("/api/alquiler/recibos/generar", headers=admin, json={"periodo": "2026-09"}).json()["creados"] == 0
     rec = client.get("/api/alquiler/recibos?periodo=2026-09", headers=admin).json()[0]

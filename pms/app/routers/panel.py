@@ -47,11 +47,20 @@ def panel(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
                         Unit.asset_id == a.id, Reservation.estado.not_in(("cancelada",)),
                         Reservation.fecha_entrada >= ini_mes, Reservation.fecha_entrada < fin_mes)) or 0)
 
+        usos = dict(db.execute(select(Unit.uso, func.count()).where(Unit.asset_id == a.id)
+                               .group_by(Unit.uso)).all())
+        k["usos"] = usos
+
         if a.modalidad == "alquiler_residencial" and scope.can_asset("alquiler.ver", a.id):
-            vig = db.scalar(select(func.count()).select_from(Lease).join(Unit).where(
-                Unit.asset_id == a.id, Lease.estado == "vigente"))
-            k["contratos_vigentes"] = vig
-            k["ocupacion_hoy"] = round(100 * vig / operativas, 1) if operativas else 0
+            alquiladas = dict(db.execute(select(Unit.uso, func.count(func.distinct(Unit.id))).join(Lease).where(
+                Unit.asset_id == a.id, Lease.estado == "vigente").group_by(Unit.uso)).all())
+            k["contratos_vigentes"] = sum(alquiladas.values())
+            k["alquiladas_por_uso"] = alquiladas
+            # ocupación sobre viviendas (los garajes/trasteros se informan aparte)
+            base_uso = "vivienda" if usos.get("vivienda") else None
+            denom = usos.get(base_uso, 0) if base_uso else operativas
+            num = alquiladas.get(base_uso, 0) if base_uso else k["contratos_vigentes"]
+            k["ocupacion_hoy"] = round(100 * num / denom, 1) if denom else 0
             if ver_fin:
                 k["renta_mensual"] = float(db.scalar(select(func.coalesce(func.sum(Lease.renta_mensual), 0))
                                                      .join(Unit).where(Unit.asset_id == a.id,

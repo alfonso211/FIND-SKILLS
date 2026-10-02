@@ -8,9 +8,17 @@ Hay una sola plataforma, pero cada usuario solo ve y gestiona lo que su rol y su
 
 | Código | Activo | Modalidad | Gestora | Propietaria | Unidades |
 |---|---|---|---|---|---|
-| BAB35 | C/ Babilonia 35, Madrid | Alquiler residencial (LAU) | COMERCIAL DEL CAMPO S.A. | COMERCIAL DEL CAMPO S.A. | Se dan de alta desde *Unidades → Alta masiva* |
-| SFL | Suite Florida | Apartamentos turísticos | INVERSIETE SA | COMERCIAL DEL CAMPO S.A. | 325 (SF-001 … SF-325) |
-| SAE | Suite Aeropuerto | Apartamentos turísticos | INVERSIETE SA | COMERCIAL DEL CAMPO S.A. | 300 (SA-001 … SA-300) |
+| BAB35 | C/ Babilonia 35, Madrid | Alquiler residencial (LAU) | COMERCIAL DEL CAMPO S.A. | COMERCIAL DEL CAMPO S.A. | 20 viviendas (trasteros como anejos) + 33 plazas de garaje (ST-1, ST-2, ST-3) |
+| SFL | Suite Florida | Apartamentos turísticos | INVERSIETE SA | COMERCIAL DEL CAMPO S.A. | 325 en 4 portales (P1: 90, P2: 75, P3: 75, P4: 85). Código `P{portal}-{planta}{letra}`, p.ej. P1-1A |
+| SAE | Suite Aeropuerto | Apartamentos turísticos | INVERSIETE SA | COMERCIAL DEL CAMPO S.A. | 300 en 2 bloques (A: 147, B: 153): 268 de 1 dormitorio, 27 de 2 dormitorios y 5 estudios |
+
+Las unidades se cargan desde `pms/app/data/unidades_iniciales.json`, que se generó a partir de estos documentos:
+- **Babilonia 35:** listado de cuotas de comunidad de octubre de 2026. Se cargan solo las viviendas y los garajes,
+  con superficie, coeficiente y cuota ordinaria. Los trasteros figuran como anejos de cada vivienda. Las cuotas
+  cuadran con el listado (1.950,20 € en viviendas y 629,64 € en garajes).
+- **Suite Florida:** listado del 2 de octubre de 2026. La tipología está pendiente de recibir.
+- **Suite Aeropuerto:** listado del 2 de octubre de 2026. Las unidades sin anotación son apartamentos de 1 dormitorio,
+  ESTUDIO son estudios y DOBLE son apartamentos de 2 dormitorios.
 
 Cada activo distingue:
 - **Sociedad gestora**: la que lo explota. Determina los accesos por sociedad y a qué sociedad pertenecen
@@ -85,7 +93,7 @@ Tests: `cd pms && python -m pytest`
 ## Próximos pasos propuestos
 
 1. Definir los rangos de acceso definitivos por puesto y ajustar los roles.
-2. Confirmar el número de viviendas de Babilonia 35.
+2. Recibir las tipologías de Suite Florida y las superficies y capacidades de los apartamentos turísticos.
 3. Envío del parte de viajeros a SES.HOSPEDAJES (Ministerio del Interior).
 4. Conexión con channel manager (Booking, Airbnb, Expedia) y tarifas por temporada.
 5. Remesas SEPA de recibos y exportación contable.

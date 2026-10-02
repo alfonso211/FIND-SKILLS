@@ -12,6 +12,8 @@ const can = (p) => !!S.me?.permisos?.[p];
 const label = (s) => String(s ?? "").replace(/_/g, " ");
 const badge = (v) => (v == null || v === "" ? "" : `<span class="badge b-${esc(v)}">${esc(label(v))}</span>`);
 const assetName = (id) => S.assets.find((a) => a.id === id)?.nombre ?? id;
+const PLURAL = { vivienda: "viviendas", apartamento: "apartamentos", garaje: "garajes", trastero: "trasteros", local: "locales", oficina: "oficinas" };
+const plural = (u) => PLURAL[u] || u;
 const assetsOf = (mod) => S.assets.filter((a) => !mod || a.modalidad === mod);
 
 // ------------------------------------------------------------------ API
@@ -45,6 +47,7 @@ async function run(fn, okMsg) {
 // ------------------------------------------------------------------ tabla genérica
 // cols: [{k, t, f?:(v,row)=>html, num?}]   actions: (row)=>[[label, fn, cls?], ...]
 function table(el, cols, rows, actions) {
+  if (!el) return;  // la vista cambió mientras se cargaban los datos
   if (!rows.length) { el.innerHTML = `<div class="table-wrap"><div class="empty">Sin resultados</div></div>`; return; }
   const head = cols.map((c) => `<th class="${c.num ? "num" : ""}">${esc(c.t)}</th>`).join("") + (actions ? "<th></th>" : "");
   const acts = rows.map((r) => (actions ? actions(r).filter(Boolean) : []));
@@ -114,10 +117,16 @@ V.panel = async (el) => {
   if (!p.activos.length) { el.innerHTML = `<div class="empty">No tiene activos asignados.</div>`; return; }
   el.innerHTML = `<p class="muted">Situación a ${fdate(p.fecha)}</p><div class="cards">${p.activos.filter((a) => !S.asset || String(a.id) === String(S.asset)).map((a) => {
     const k = [];
-    k.push([a.unidades, "Unidades"]);
+    k.push([a.unidades, Object.entries(a.usos || {}).map(([u, n]) => `${n} ${n === 1 ? u : plural(u)}`).join(" · ") || "Unidades"]);
     if (a.ocupacion_hoy != null) k.push([a.ocupacion_hoy + " %", "Ocupación hoy"]);
     if (a.llegadas_hoy != null) k.push([a.llegadas_hoy, "Llegadas hoy"], [a.salidas_hoy, "Salidas hoy"]);
-    if (a.contratos_vigentes != null) k.push([a.contratos_vigentes, "Contratos vigentes"]);
+    if (a.contratos_vigentes != null) {
+      const al = a.alquiladas_por_uso || {};
+      Object.entries(a.usos || {}).forEach(([u, n]) => {
+        const t = plural(u);
+        k.push([`${al[u] || 0} / ${n}`, `${t[0].toUpperCase()}${t.slice(1)} alquilad${["vivienda", "oficina"].includes(u) ? "as" : "os"}`]);
+      });
+    }
     if (a.produccion_mes != null) k.push([eur(a.produccion_mes), "Producción mes"]);
     if (a.renta_mensual != null) k.push([eur(a.renta_mensual), "Renta mensual"], [eur(a.deuda_vencida), "Deuda vencida"]);
     if (a.ot_abiertas != null) k.push([a.ot_abiertas, "OT abiertas"], [a.ot_urgentes, "OT urgentes"]);
@@ -155,21 +164,31 @@ V.activos = async (el) => {
 };
 
 V.unidades = async (el) => {
-  el.innerHTML = `<div class="toolbar"><input id="q" placeholder="Buscar código / tipología"><select id="est"><option value="">Todos los estados</option>${S.cat.estados_unidad.map((e) => `<option value="${e}">${label(e)}</option>`).join("")}</select>
+  const bloques = S.asset ? await get("/api/unidades/bloques", { asset_id: S.asset }) : [];
+  el.innerHTML = `<div class="toolbar"><input id="q" placeholder="Buscar código / tipología">
+    ${bloques.length ? `<select id="blq"><option value="">Todos los bloques</option>${bloques.map((b) => `<option>${esc(b)}</option>`).join("")}</select>` : ""}
+    <select id="uso"><option value="">Todos los usos</option>${S.cat.usos_unidad.map((u) => `<option value="${u}">${label(u)}</option>`).join("")}</select>
+    <select id="est"><option value="">Todos los estados</option>${S.cat.estados_unidad.map((e) => `<option value="${e}">${label(e)}</option>`).join("")}</select>
     <span class="spacer"></span>${can("activos.editar") ? '<button class="btn" id="bulk">Alta masiva</button><button class="btn primary" id="new">Nueva unidad</button>' : ""}</div><div id="t"></div>`;
   const fields = [
-    { k: "codigo", t: "Código", req: true }, { k: "tipologia", t: "Tipología" }, { k: "planta", t: "Planta" },
+    { k: "codigo", t: "Código", req: true }, { k: "bloque", t: "Bloque / portal" },
+    { k: "uso", t: "Uso", type: "select", req: true, options: list(S.cat.usos_unidad), def: "vivienda" },
+    { k: "tipologia", t: "Tipología" }, { k: "planta", t: "Planta" },
     { k: "superficie_m2", t: "Superficie m²", type: "number" }, { k: "dormitorios", t: "Dormitorios", type: "number", step: 1 },
     { k: "capacidad", t: "Capacidad (plazas)", type: "number", step: 1 }, { k: "ref_catastral", t: "Ref. catastral" },
     { k: "estado", t: "Estado", type: "select", req: true, options: list(S.cat.estados_unidad), def: "disponible" },
     { k: "renta_base", t: "Renta base €/mes", type: "number" }, { k: "tarifa_base_noche", t: "Tarifa base €/noche", type: "number" },
+    { k: "coef_participacion", t: "Coef. participación %", type: "number" }, { k: "cuota_comunidad", t: "Cuota comunidad €/mes", type: "number" },
+    { k: "anejos", t: "Anejos (trasteros, plazas)" },
     { k: "notas", t: "Notas", type: "textarea", wide: true },
   ];
   const load = async () => {
-    const rows = await get("/api/unidades", { asset_id: S.asset, estado: $("#est", el).value, q: $("#q", el).value });
+    const rows = await get("/api/unidades", { asset_id: S.asset, estado: $("#est", el).value, q: $("#q", el).value, uso: $("#uso", el).value, bloque: $("#blq", el)?.value });
     table($("#t", el), [
-      { k: "asset_id", t: "Activo", f: (v) => esc(assetName(v)) }, { k: "codigo", t: "Unidad" }, { k: "tipologia", t: "Tipología" },
-      { k: "planta", t: "Planta" }, { k: "superficie_m2", t: "m²", num: true }, { k: "capacidad", t: "Plazas", num: true },
+      { k: "asset_id", t: "Activo", f: (v) => esc(assetName(v)) }, { k: "bloque", t: "Bloque" }, { k: "codigo", t: "Unidad" },
+      { k: "uso", t: "Uso", f: (v) => esc(label(v)) }, { k: "tipologia", t: "Tipología" },
+      { k: "planta", t: "Planta" }, { k: "superficie_m2", t: "m²", num: true }, { k: "anejos", t: "Anejos" },
+      { k: "coef_participacion", t: "Coef. %", num: true }, { k: "cuota_comunidad", t: "Cuota com.", num: true, f: eur },
       { k: "estado", t: "Estado", f: badge },
     ], rows, (u) => [
       u.estado === "pendiente_limpieza" && (can("limpieza.editar") || can("activos.editar")) &&
@@ -178,13 +197,15 @@ V.unidades = async (el) => {
       can("mantenimiento.editar") && ["Avería", () => newWorkOrder(u.asset_id, u.id).then(load)],
     ]);
   };
-  $("#q", el).oninput = debounce(load); $("#est", el).onchange = load;
+  $("#q", el).oninput = debounce(load); $("#est", el).onchange = load; $("#uso", el).onchange = load;
+  if ($("#blq", el)) $("#blq", el).onchange = load;
   if ($("#new", el)) {
     $("#new", el).onclick = async () => { const aid = await pickAsset(); form("Nueva unidad", fields, {}, async (d) => { await post("/api/unidades", clean({ ...d, asset_id: aid })); toast("Unidad creada"); load(); }); };
     $("#bulk", el).onclick = async () => {
       const aid = await pickAsset();
       form(`Alta masiva en ${assetName(aid)}`, [
-        { k: "prefijo", t: "Prefijo (p.ej. SF-)" }, { k: "desde", t: "Desde nº", type: "number", req: true, def: 1 },
+        { k: "prefijo", t: "Prefijo (p.ej. P1-1)" }, { k: "bloque", t: "Bloque / portal" },
+        { k: "uso", t: "Uso", type: "select", req: true, options: list(S.cat.usos_unidad), def: "vivienda" }, { k: "desde", t: "Desde nº", type: "number", req: true, def: 1 },
         { k: "hasta", t: "Hasta nº", type: "number", req: true }, { k: "digitos", t: "Dígitos", type: "number", def: 3 },
         { k: "tipologia", t: "Tipología" }, { k: "capacidad", t: "Plazas", type: "number" },
         { k: "renta_base", t: "Renta base €/mes", type: "number" }, { k: "tarifa_base_noche", t: "Tarifa €/noche", type: "number" },
@@ -241,7 +262,7 @@ async function newReservation(reload) {
     const disp = await get("/api/turistico/disponibilidad", { asset_id: aid, desde: q.fecha_entrada, hasta: q.fecha_salida, capacidad: q.adultos + (q.ninos || 0) });
     if (!disp.libres) throw new Error("No hay unidades disponibles para esas fechas y ocupación");
     setTimeout(() => form(`Reserva ${fdate(q.fecha_entrada)} → ${fdate(q.fecha_salida)} · ${disp.libres} libres`, [
-      { k: "unit_id", t: "Unidad", type: "select", req: true, options: disp.unidades.map((u) => [u.id, `${u.codigo} ${u.tipologia ?? ""} ${u.tarifa_base_noche ? "· " + eur(u.tarifa_base_noche) : ""}`]) },
+      { k: "unit_id", t: "Unidad", type: "select", req: true, options: disp.unidades.map((u) => [u.id, `${u.codigo} ${u.bloque ? "· " + u.bloque : ""} ${u.tipologia ?? ""} ${u.tarifa_base_noche ? "· " + eur(u.tarifa_base_noche) : ""}`]) },
       { k: "canal", t: "Canal", type: "select", req: true, options: list(S.cat.canales), def: "directo" }, { k: "localizador", t: "Localizador" },
       { k: "importe_total", t: "Importe total €", type: "number", def: 0 }, { k: "importe_pagado", t: "Pagado €", type: "number", def: 0 },
       { html: "<h4>Huésped titular</h4>" }, ...guestFields, { k: "notas", t: "Notas", type: "textarea", wide: true },
@@ -281,11 +302,13 @@ V.planning = async (el) => {
   const pool = assetsOf("apartamentos_turisticos");
   const cur = pool.find((a) => String(a.id) === String(S.asset)) || pool[0];
   if (!cur) { el.innerHTML = '<div class="empty">Sin activos turísticos</div>'; return; }
-  el.innerHTML = `<div class="toolbar"><strong>${esc(cur.nombre)}</strong><label>Desde<input type="date" id="d" value="${today()}"></label>
+  const bloques = await get("/api/unidades/bloques", { asset_id: cur.id });
+  el.innerHTML = `<div class="toolbar"><strong>${esc(cur.nombre)}</strong>
+    ${bloques.length ? `<label>Bloque<select id="b"><option value="">Todos</option>${bloques.map((b) => `<option>${esc(b)}</option>`).join("")}</select></label>` : ""}<label>Desde<input type="date" id="d" value="${today()}"></label>
     <label>Días<select id="n"><option>7</option><option selected>14</option><option>31</option></select></label>
     <span class="muted legend"><i style="background:#cfe0f5"></i>reservada<i style="background:#9cc0ea"></i>alojado<i style="background:#d9e8d9"></i>salida realizada<i style="background:#f5d0cb"></i>no disponible</span></div><div id="t" class="table-wrap"></div>`;
   const load = async () => {
-    const p = await get("/api/turistico/planning", { asset_id: cur.id, desde: $("#d", el).value, dias: $("#n", el).value });
+    const p = await get("/api/turistico/planning", { asset_id: cur.id, desde: $("#d", el).value, dias: $("#n", el).value, bloque: $("#b", el)?.value });
     const days = [...Array(p.dias)].map((_, i) => addDays(p.desde, i));
     const head = `<tr><th>Unidad</th>${days.map((d) => `<th>${d.slice(8)}/${d.slice(5, 7)}</th>`).join("")}</tr>`;
     const body = p.unidades.map((u) => `<tr><td class="u">${esc(u.codigo)}</td>${days.map((d) => {
@@ -295,7 +318,7 @@ V.planning = async (el) => {
     }).join("")}</tr>`).join("");
     $("#t", el).innerHTML = `<table class="planning">${head}${body}</table>`;
   };
-  $("#d", el).onchange = load; $("#n", el).onchange = load;
+  $("#d", el).onchange = load; $("#n", el).onchange = load; if ($("#b", el)) $("#b", el).onchange = load;
   load();
 };
 
@@ -333,7 +356,7 @@ V.contratos = async (el) => {
     const units = (await get("/api/unidades", { asset_id: aid })).filter((u) => u.estado !== "fuera_servicio");
     if (!units.length) return toast("El activo no tiene unidades. Dé de alta las viviendas primero.", true);
     form(`Nuevo contrato · ${assetName(aid)}`, [
-      { k: "unit_id", t: "Vivienda", type: "select", req: true, options: units.map((u) => [u.id, `${u.codigo} · ${label(u.estado)}`]) }, ...leaseFields,
+      { k: "unit_id", t: "Unidad", type: "select", req: true, options: units.map((u) => [u.id, `${u.codigo} · ${label(u.uso)} · ${label(u.estado)}`]) }, ...leaseFields,
       { html: "<h4>Inquilino</h4>" }, ...guestFields, { k: "notas", t: "Notas contrato", type: "textarea", wide: true },
     ], {}, async (d) => {
       const t = {}; guestFields.forEach((f) => { t[f.k] = d[f.k]; delete d[f.k]; });
@@ -564,7 +587,8 @@ async function go(view) {
   document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.v === view));
   $(".sidebar").classList.remove("open");
   $("#viewTitle").textContent = TITLES[view];
-  const el = $("#view"); el.innerHTML = '<p class="muted">Cargando…</p>';
+  // contenedor nuevo por navegación: una carga anterior aún en curso escribe en uno ya desmontado
+  const el = document.createElement("div"); $("#view").replaceChildren(el); el.innerHTML = '<p class="muted">Cargando…</p>';
   try { await V[view](el); } catch (e) { el.innerHTML = `<p class="error">${esc(e.message)}</p>`; }
 }
 function setAsset(id) { S.asset = id ? String(id) : ""; $("#assetFilter").value = S.asset; localStorage.setItem("pms_asset", S.asset); }
