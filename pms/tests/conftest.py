@@ -6,7 +6,9 @@ from pathlib import Path
 import pytest
 
 _tmp = tempfile.mkdtemp()
-os.environ["PMS_DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
+# Por defecto SQLite temporal; para probar contra PostgreSQL:
+#   PMS_TEST_DATABASE_URL=postgresql+psycopg://usuario:clave@localhost/pmstest python -m pytest
+os.environ["PMS_DATABASE_URL"] = os.environ.get("PMS_TEST_DATABASE_URL", f"sqlite:///{_tmp}/test.db")
 os.environ["PMS_SECRET_KEY"] = "test-secret-key-for-pytest-only-0123456789"
 os.environ["PMS_ADMIN_PASSWORD"] = "AdminTest!2026"
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -20,6 +22,8 @@ ADMIN = ("admin@inversiete.com", "AdminTest!2026")
 
 @pytest.fixture(scope="session")
 def client():
+    from app.database import Base, engine
+    Base.metadata.drop_all(engine)  # base limpia (relevante con PostgreSQL)
     with TestClient(app) as c:
         yield c
 

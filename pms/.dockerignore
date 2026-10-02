@@ -1,8 +1,6 @@
 __pycache__/
 *.pyc
-.venv/
 *.db
-*.db-journal
 .secret_key
 .pytest_cache/
-deploy/.env
+tests/

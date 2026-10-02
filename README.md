@@ -93,9 +93,14 @@ solo ve los huéspedes e inquilinos vinculados a ese activo.
 
 ## Puesta en marcha
 
+**Producción (servidor Arsys):** seguir [`deploy/INSTALACION.md`](deploy/INSTALACION.md). Usa Docker, PostgreSQL,
+HTTPS automático y copias diarias.
+
+**Desarrollo local:**
+
 ```bash
 cd pms
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 PMS_ADMIN_PASSWORD='ClaveInicialSegura' uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
@@ -113,7 +118,7 @@ Variables de entorno:
 
 La documentación de la API está en `http://localhost:8000/docs`.
 
-Tests: `cd pms && python -m pytest`
+Tests: `cd pms && python -m pytest`. Contra PostgreSQL: `PMS_TEST_DATABASE_URL=postgresql+psycopg://usuario:clave@host/bd python -m pytest`
 
 ## Estructura técnica
 

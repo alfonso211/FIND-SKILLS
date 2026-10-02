@@ -1,0 +1,54 @@
+# PMS Grupo INVERSIETE - despliegue en producción
+#   cp .env.example .env   (y rellenar)
+#   docker compose up -d --build
+name: pms
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pms
+      POSTGRES_USER: pms
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Defina DB_PASSWORD en .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pms -d pms"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # sin puertos publicados: solo accesible desde la aplicación
+
+  app:
+    build: ../pms
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PMS_DATABASE_URL: postgresql+psycopg://pms:${DB_PASSWORD}@db:5432/pms
+      PMS_SECRET_KEY: ${PMS_SECRET_KEY:?Defina PMS_SECRET_KEY en .env}
+      PMS_ADMIN_EMAIL: ${PMS_ADMIN_EMAIL:-admin@inversiete.es}
+      PMS_ADMIN_PASSWORD: ${PMS_ADMIN_PASSWORD:?Defina PMS_ADMIN_PASSWORD en .env}
+      PMS_TOKEN_HOURS: ${PMS_TOKEN_HOURS:-12}
+
+  caddy:
+    # proxy con HTTPS automático (certificado Let's Encrypt)
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [app]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      PMS_DOMINIO: ${PMS_DOMINIO:?Defina PMS_DOMINIO en .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
