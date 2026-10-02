@@ -11,8 +11,14 @@ from .config import settings
 from .models import Asset, Assignment, Company, Role, Unit, User
 from .security import ROLES_POR_DEFECTO, hash_password
 
-SOCIEDADES = ["INVERSIETE SA", "COMERCIAL DEL CAMPO S.A.", "EDIFICIOS CAMERANOS",
-              "EMPRESA TURISTICA HOTELERA (ETHOSA)"]
+# (razón social, CIF). CIF de INVERSIETE y COMERCIAL DEL CAMPO según Registro Mercantil (fuentes públicas,
+# a contrastar con escrituras); el resto, pendiente.
+SOCIEDADES = [
+    ("INVERSIETE SA", "A78072915"),
+    ("COMERCIAL DEL CAMPO S.A.", "A28362309"),
+    ("EDIFICIOS CAMERANOS", None),
+    ("EMPRESA TURISTICA HOTELERA (ETHOSA)", None),
+]
 
 # Unidades reales de cada activo (ver data/unidades_iniciales.json):
 #  - BAB35: listado de cuotas de comunidad oct-2026 (solo viviendas y garajes de COMERCIAL DEL CAMPO)
@@ -59,12 +65,12 @@ def _usuarios_iniciales(db: Session, assets: dict[str, Asset]) -> None:
 def seed(db: Session) -> None:
     if db.scalar(select(Company.id)):
         return
-    matriz = Company(nombre=SOCIEDADES[0])
+    matriz = Company(nombre=SOCIEDADES[0][0], cif=SOCIEDADES[0][1])
     db.add(matriz)
     db.flush()
     soc = {matriz.nombre: matriz}
-    for nombre in SOCIEDADES[1:]:
-        soc[nombre] = Company(nombre=nombre, parent_id=matriz.id)
+    for nombre, cif in SOCIEDADES[1:]:
+        soc[nombre] = Company(nombre=nombre, cif=cif, parent_id=matriz.id)
         db.add(soc[nombre])
     db.flush()
 

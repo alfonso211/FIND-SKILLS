@@ -39,6 +39,8 @@ def test_seed(client, admin, ids):
     for c in ("SFL", "SAE"):
         assert (a[c]["sociedad"], a[c]["propietaria"]) == ("INVERSIETE SA", "COMERCIAL DEL CAMPO S.A.")
     assert len(ids["companies"]) == 4
+    cifs = {c["nombre"]: c["cif"] for c in client.get("/api/sociedades", headers=admin).json()}
+    assert cifs["INVERSIETE SA"] == "A78072915" and cifs["COMERCIAL DEL CAMPO S.A."] == "A28362309"
     me = client.get("/api/auth/me", headers=admin).json()
     assert me["is_superadmin"] and all(me["permisos"].values())
 
