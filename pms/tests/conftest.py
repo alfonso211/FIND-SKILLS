@@ -48,3 +48,13 @@ def ids(client, admin):
     roles = {r["nombre"]: r["id"] for r in client.get("/api/admin/roles", headers=admin).json()}
     comps = {c["nombre"]: c["id"] for c in client.get("/api/sociedades", headers=admin).json()}
     return {"assets": assets, "roles": roles, "companies": comps}
+
+
+def domicilio_fiscal(client, admin):
+    """Las facturas exigen el domicilio fiscal del emisor (en pruebas, uno ficticio)."""
+    for c in client.get("/api/sociedades", headers=admin).json():
+        if c["nombre"] in ("INVERSIETE SA", "COMERCIAL DEL CAMPO S.A.") and not c.get("direccion"):
+            r = client.put(f"/api/sociedades/{c['id']}", headers=admin, json={
+                **{k: c[k] for k in ("nombre", "cif", "parent_id", "activa")},
+                "direccion": "Calle de Prueba 1", "cp": "28001", "municipio": "Madrid", "provincia": "Madrid"})
+            assert r.status_code == 200, r.text

@@ -15,6 +15,10 @@ class Login(BaseModel):
 class CompanyIn(BaseModel):
     nombre: str
     cif: str | None = None
+    direccion: str | None = None  # domicilio fiscal (sale en las facturas)
+    cp: str | None = None
+    municipio: str | None = None
+    provincia: str | None = None
     parent_id: int | None = None
     activa: bool = True
 
@@ -31,6 +35,7 @@ class AssetIn(BaseModel):
     cp: str | None = None
     ref_catastral: str | None = None
     num_registro_turistico: str | None = None
+    serie_factura: str | None = Field(default=None, pattern=r"^[A-Z0-9]{1,8}$")
     activo: bool = True
     contrato_representante: str | None = None
     contrato_representante_dni: str | None = None
@@ -48,6 +53,7 @@ class AssetUpdate(BaseModel):
     cp: str | None = None
     ref_catastral: str | None = None
     num_registro_turistico: str | None = None
+    serie_factura: str | None = Field(default=None, pattern=r"^[A-Z0-9]{1,8}$")
     activo: bool | None = None
     contrato_representante: str | None = None
     contrato_representante_dni: str | None = None
@@ -164,6 +170,7 @@ class LeaseIn(BaseModel):
     garantia_adicional: float | None = None
     dia_pago: int = Field(default=5, ge=1, le=28)
     indice_actualizacion: str = "IRAV"
+    tipo_iva: float | None = Field(default=None, ge=0, le=21)  # vacío: vivienda exenta, resto 21 %
     estado: str = "vigente"
     notas: str | None = None
     documentos: list[int] = []  # copias del documento del cliente escaneadas en el alta
@@ -176,6 +183,7 @@ class LeaseUpdate(BaseModel):
     garantia_adicional: float | None = None
     dia_pago: int | None = Field(default=None, ge=1, le=28)
     indice_actualizacion: str | None = None
+    tipo_iva: float | None = Field(default=None, ge=0, le=21)
     estado: str | None = None
     notas: str | None = None
 
@@ -190,9 +198,30 @@ class ChargeGenerate(BaseModel):
     asset_id: int | None = None
 
 
+class FacturarA(BaseModel):
+    """Empresa u otra persona a la que se factura en lugar del cliente."""
+    nombre: str = Field(min_length=2)
+    nif: str = Field(min_length=5, max_length=20)
+    domicilio: str = Field(min_length=5)
+
+
 class Payment(BaseModel):
+    """Cobro: al registrarlo se emite la factura."""
     importe: float = Field(gt=0)
     fecha_pago: date | None = None
+    forma_pago: Literal["efectivo", "tarjeta", "transferencia", "domiciliacion", "bizum", "plataforma"] | None = None
+    facturar_a: FacturarA | None = None
+
+    @field_validator("fecha_pago")
+    @classmethod
+    def _no_futura(cls, v):
+        if v and v > date.today():
+            raise ValueError("La fecha de cobro no puede ser futura")
+        return v
+
+
+class InvoiceRectify(BaseModel):
+    motivo: str = Field(min_length=5)
 
 
 # --------------------------------------------------------------------------- turístico
@@ -207,7 +236,8 @@ class ReservationIn(BaseModel):
     adultos: int = Field(default=1, ge=1)
     ninos: int = Field(default=0, ge=0)
     importe_total: float = Field(default=0, ge=0)
-    importe_pagado: float = Field(default=0, ge=0)
+    importe_pagado: float = Field(default=0, ge=0)  # si se indica, se registra el cobro y se factura
+    forma_pago: Literal["efectivo", "tarjeta", "transferencia", "domiciliacion", "bizum", "plataforma"] | None = None
     notas: str | None = None
     documentos: list[int] = []  # copias del documento del cliente escaneadas en el alta
 
@@ -228,8 +258,7 @@ class ReservationUpdate(BaseModel):
     fecha_salida: date | None = None
     adultos: int | None = None
     ninos: int | None = None
-    importe_total: float | None = None
-    importe_pagado: float | None = None
+    importe_total: float | None = Field(default=None, ge=0)  # lo cobrado solo cambia con "Cobro" (factura)
     estado: str | None = None
     notas: str | None = None
 

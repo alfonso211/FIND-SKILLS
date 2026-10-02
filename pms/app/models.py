@@ -35,6 +35,11 @@ class Company(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     nombre: Mapped[str] = mapped_column(String(200), unique=True)
     cif: Mapped[str | None] = mapped_column(String(20))
+    # domicilio fiscal (obligatorio en las facturas que emite la sociedad)
+    direccion: Mapped[str | None] = mapped_column(String(300))
+    cp: Mapped[str | None] = mapped_column(String(10))
+    municipio: Mapped[str | None] = mapped_column(String(100))
+    provincia: Mapped[str | None] = mapped_column(String(100))
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("sociedades.id"))
     activa: Mapped[bool] = mapped_column(Boolean, default=True)
 
@@ -55,6 +60,8 @@ class Asset(Base):
     cp: Mapped[str | None] = mapped_column(String(10))
     ref_catastral: Mapped[str | None] = mapped_column(String(30))
     num_registro_turistico: Mapped[str | None] = mapped_column(String(60))
+    # Serie de sus facturas (B35, SF, SA...). Factura la sociedad gestora.
+    serie_factura: Mapped[str | None] = mapped_column(String(10))
     # Datos de la empresa para los contratos de alojamiento
     contrato_representante: Mapped[str | None] = mapped_column(String(160))
     contrato_representante_dni: Mapped[str | None] = mapped_column(String(20))
@@ -130,6 +137,8 @@ class Lease(Base):
     dia_pago: Mapped[int] = mapped_column(Integer, default=5)
     indice_actualizacion: Mapped[str] = mapped_column(String(20), default="IRAV")  # IRAV | IPC | NINGUNO
     estado: Mapped[str] = mapped_column(String(20), default="vigente")  # borrador | vigente | finalizado | rescindido
+    # % de IVA. Vacío = según el uso de la unidad (vivienda exenta, resto 21 %)
+    tipo_iva: Mapped[float | None] = mapped_column(Numeric(5, 2))
     notas: Mapped[str | None] = mapped_column(Text)
     unit: Mapped[Unit] = relationship()
     tenant: Mapped[Contact] = relationship()
@@ -142,7 +151,8 @@ class Charge(Base):
     lease_id: Mapped[int] = mapped_column(ForeignKey("contratos.id"), index=True)
     periodo: Mapped[str] = mapped_column(String(7))  # AAAA-MM
     concepto: Mapped[str] = mapped_column(String(60), default="Renta")
-    importe: Mapped[float] = mapped_column(Numeric(10, 2))
+    importe: Mapped[float] = mapped_column(Numeric(10, 2))  # IVA incluido
+    tipo_iva: Mapped[float | None] = mapped_column(Numeric(5, 2))
     fecha_vencimiento: Mapped[date] = mapped_column(Date)
     importe_pagado: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
     fecha_pago: Mapped[date | None] = mapped_column(Date)
@@ -200,6 +210,45 @@ class AccommodationContract(Base):
     datos: Mapped[dict] = mapped_column(JSON)
     creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+
+
+# --------------------------------------------------------------------------- facturación
+class Invoice(Base):
+    """Factura emitida al registrar un cobro. Numeración correlativa por serie y año (SF/00001/2026).
+    No se modifica ni se borra: los errores se corrigen con una factura rectificativa (serie propia, p.ej. SFR).
+    Los datos del emisor y del cliente se copian al emitir, para que la factura no cambie si cambia la ficha.
+    Cada factura lleva la huella SHA-256 de la anterior de la misma sociedad (cadena antimanipulación)."""
+    __tablename__ = "facturas"
+    __table_args__ = (UniqueConstraint("serie", "anio", "numero"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    serie: Mapped[str] = mapped_column(String(12))
+    anio: Mapped[int] = mapped_column(Integer)
+    numero: Mapped[int] = mapped_column(Integer)
+    codigo: Mapped[str] = mapped_column(String(30), unique=True)
+    tipo: Mapped[str] = mapped_column(String(20), default="ordinaria")  # ordinaria | rectificativa
+    rectifica_id: Mapped[int | None] = mapped_column(ForeignKey("facturas.id"))
+    motivo: Mapped[str | None] = mapped_column(Text)
+    company_id: Mapped[int] = mapped_column(ForeignKey("sociedades.id"), index=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
+    emisor: Mapped[dict] = mapped_column(JSON)  # nombre, nif, domicilio
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("terceros.id"))
+    cliente: Mapped[dict] = mapped_column(JSON)  # nombre, nif, domicilio
+    fecha_expedicion: Mapped[date] = mapped_column(Date, index=True)
+    fecha_operacion: Mapped[date] = mapped_column(Date)
+    concepto: Mapped[str] = mapped_column(Text)
+    base_imponible: Mapped[float] = mapped_column(Numeric(12, 2))
+    tipo_iva: Mapped[float] = mapped_column(Numeric(5, 2))
+    cuota_iva: Mapped[float] = mapped_column(Numeric(12, 2))
+    total: Mapped[float] = mapped_column(Numeric(12, 2))
+    exencion: Mapped[str | None] = mapped_column(String(200))
+    forma_pago: Mapped[str | None] = mapped_column(String(30))
+    charge_id: Mapped[int | None] = mapped_column(ForeignKey("recibos.id"))
+    reservation_id: Mapped[int | None] = mapped_column(ForeignKey("reservas.id"))
+    huella: Mapped[str] = mapped_column(String(64))
+    huella_anterior: Mapped[str | None] = mapped_column(String(64))
+    creada: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    asset: Mapped[Asset] = relationship()
 
 
 # --------------------------------------------------------------------------- mantenimiento

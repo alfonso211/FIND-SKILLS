@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 
-from conftest import login
+from conftest import domicilio_fiscal, login
 
 INICIAL = "00000000"
 
@@ -148,8 +148,10 @@ def test_residential_lease_and_charges(client, admin, ids):
     assert client.post("/api/alquiler/recibos/generar", headers=admin, json={"periodo": "2026-09"}).json()["creados"] == 0
     rec = client.get("/api/alquiler/recibos?periodo=2026-09", headers=admin).json()[0]
     assert rec["importe"] == 600.0
+    domicilio_fiscal(client, admin)  # sin él no se puede facturar el cobro
     p = client.post(f"/api/alquiler/recibos/{rec['id']}/cobro", headers=admin, json={"importe": 200}).json()
     assert p["estado"] == "parcial" and p["pendiente"] == 400.0
+    assert p["factura"]["codigo"].startswith("B35/") and p["factura"]["codigo"].endswith(f"/{HOY.year}")
     assert client.post(f"/api/alquiler/recibos/{rec['id']}/cobro", headers=admin, json={"importe": 500}).status_code == 400
     assert client.post(f"/api/alquiler/recibos/{rec['id']}/cobro", headers=admin, json={"importe": 400}).json()["estado"] == "pagado"
     # actualización de renta

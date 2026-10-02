@@ -14,3 +14,5 @@ Pillow>=10
 pypdfium2>=4
 pycountry>=23
 cryptography>=42
+# facturas en PDF
+reportlab>=4.2
