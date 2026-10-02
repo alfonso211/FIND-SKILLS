@@ -8,6 +8,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 COPY static ./static
+COPY alembic.ini ./
+COPY migrations ./migrations
 
 # la aplicación no se ejecuta como root
 RUN useradd --system --uid 10001 pms && chown -R pms /app
