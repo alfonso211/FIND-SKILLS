@@ -12,6 +12,7 @@ Docker, claves, arranque, HTTPS y copias diarias. Solo hay que:
 
 **Bloque A**
 ```bash
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
 ssh-keygen -t ed25519 -f ~/.ssh/pms_deploy -N "" -C pms-arsys -q
 printf 'Host github-pms\n  HostName github.com\n  IdentityFile ~/.ssh/pms_deploy\n  StrictHostKeyChecking accept-new\n' >> ~/.ssh/config
 cat ~/.ssh/pms_deploy.pub
@@ -87,6 +88,7 @@ docker --version && docker compose version
 El repositorio es privado. Cree una **clave de despliegue** de solo lectura:
 
 ```bash
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
 ssh-keygen -t ed25519 -f ~/.ssh/pms_deploy -N "" -C "pms-arsys"
 cat ~/.ssh/pms_deploy.pub
 ```
