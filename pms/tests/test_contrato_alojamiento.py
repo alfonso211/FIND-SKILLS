@@ -42,8 +42,19 @@ def test_contrato_suite_florida(client, admin, ids):
 
     datos = {**info["datos"], "cliente_domicilio": "C/ Mayor 1", "cliente_cp": "41001", "cliente_municipio": "Sevilla",
              "cliente_pais": "España", "fianza": 300, "tarjeta_titular": "Lucía Martín", "tarjeta_terminacion": "4242",
-             "tarjeta_caducidad": "08/28", "motivo": "laboral", "acreditacion": "dni", "garaje_sotano": "1",
-             "garaje_plaza": "15"}
+             "tarjeta_caducidad": "08/28", "motivo": ["laboral", "transito"], "acreditacion": "dni",
+             "garaje_sotano": "1", "garaje_plaza": "15"}
+    # faltan capacidad, dormitorios, correo y móvil: no se imprime y se dice qué falta
+    res = client.post(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin, json=datos)
+    assert res.status_code == 400
+    for falta in ("Capacidad máxima", "Dormitorios", "Correo del cliente", "Móvil del cliente"):
+        assert falta in res.json()["detail"]
+    assert "Motivo" not in res.json()["detail"]
+    # ...pero lo tecleado queda guardado en la reserva
+    guardado = client.get(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin).json()["datos"]
+    assert guardado["fianza"] == 300 and guardado["motivo"] == ["laboral", "transito"]
+    assert guardado["acreditacion"] == ["dni"]
+    datos.update(capacidad=2, dormitorios=1, cliente_email="lucia@example.com", cliente_movil="600000000")
     res = client.post(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin, json=datos)
     assert res.status_code == 200, res.text
     assert res.headers["content-type"].startswith("application/vnd.openxmlformats")
@@ -53,9 +64,18 @@ def test_contrato_suite_florida(client, admin, ids):
                      "D./Dª Lucía Martín Sanz", "nacionalidad Española", "nº 12345678Z", "en C/ Mayor 1 (C.P. 41001",
                      "Portal 1 Planta 1 Nº A", "Nº de noches: 3", "Precio total: 1.234,50 €", "Fianza: 300,00 €",
                      "terminación nº 4242 · caducidad 08 / 28", "☒ desplazamiento laboral temporal",
-                     "☐ turismo / ocio", "☒ DNI o equivalente", "sótano -1 plaza nº 15"):
+                     "☒ tránsito aeroportuario", "☐ turismo / ocio", "☒ DNI o equivalente",
+                     "sótano -1 plaza nº 15", "Capacidad máxima: 2 plazas", "Móvil: 600000000",
+                     ):
         assert esperado in t, esperado
-    assert int(res.headers["x-huecos-pendientes"]) > 0  # p.ej. capacidad y dormitorios aún sin cargar
+    # «otro» sin marcar: sin puntos ni dos puntos colgando (motivo y acreditación)
+    assert (t + "\n").count("☐ otro\n") == 2 and "otro:" not in t
+    # el cliente solo firma: no queda ningún hueco con puntos
+    assert "…" not in t
+    assert res.headers["x-huecos-pendientes"] == "0"
+    # la unidad aprende su capacidad y dormitorios
+    u = client.get(f"/api/unidades?asset_id={sfl}&q=P1-1A", headers=admin).json()[0]
+    assert (u["capacidad"], u["dormitorios"]) == (2, 1)
     # la ficha del huésped se completa con lo tecleado
     g = client.get("/api/terceros?tipo=huesped&q=12345678Z", headers=admin).json()[0]
     assert (g["direccion"], g["cp"], g["municipio"], g["pais"]) == ("C/ Mayor 1", "41001", "Sevilla", "España")
@@ -70,8 +90,16 @@ def test_contrato_suite_aeropuerto_y_seguridad(client, admin, ids):
     sae = ids["assets"]["SAE"]["id"]
     r = _reserva(client, admin, sae, "B-101", 44, 45)
     base = client.get(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin).json()["datos"]
-    res = client.post(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin, json=base)
+    # al hacer la reserva se puede solo guardar, con lo que falte
+    g = client.post(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin,
+                    json={**base, "solo_guardar": True, "motivo": ["otro"], "motivo_otro": "congreso médico"})
+    assert g.status_code == 200 and g.json()["guardado"] and "Fianza" in g.json()["faltan"]
+    res = client.post(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin,
+                      json={**base, "permitir_huecos": True, "sin_garaje": True, "motivo": ["otro"],
+                            "motivo_otro": "congreso médico"})
+    assert res.status_code == 200, res.text
     t = _texto(res.content)
+    assert "Garaje: No incluido" in t and "☒ otro: congreso médico" in t
     assert "“Apartamentos Suites Aeropuerto”" in t and "nº AM 259" in t and "Bloque B Planta 1 Nº 101" in t
     # los huecos sin dato se dejan con puntos para rellenar a mano
     assert "Fianza: ……" in t
