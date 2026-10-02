@@ -338,3 +338,33 @@ def test_work_order_flow_by_role(client, admin, ids):
     assert c["conf_mto_por_nombre"] == "mto.ot" and c["conf_limpieza_por_nombre"] == "lim.ot"
     # la unidad bloqueada se libera solo cuando no quedan OT bloqueantes abiertas
     assert client.get(f"/api/unidades?asset_id={sfl}&q=P4-2B", headers=admin).json()[0]["estado"] == "disponible"
+
+
+def test_preventive_common_areas_skip_cleaning(client, admin, ids):
+    sae = ids["assets"]["SAE"]["id"]
+    rol = ids["roles"]
+    rec = _new_user(client, admin, "rec.prev@inversiete.es", [{"role_id": rol["Recepción"], "asset_id": sae}])
+    lim = _new_user(client, admin, "lim.prev@inversiete.es", [{"role_id": rol["Gobernanta / Limpieza"], "asset_id": sae}])
+    mto = _new_user(client, admin, "mto.prev@inversiete.es", [{"role_id": rol["Técnico Mantenimiento"], "asset_id": sae}])
+    # preventiva de zonas comunes: mantenimiento confirma -> recepción cierra, sin limpieza
+    w = client.post("/api/mantenimiento/ordenes", headers=mto, json={
+        "asset_id": sae, "tipo": "preventivo", "categoria": "pci", "titulo": "Revisión trimestral extintores"}).json()
+    assert w["requiere_limpieza"] is False
+    base = f"/api/mantenimiento/ordenes/{w['id']}"
+    r = client.post(f"{base}/confirmar-mantenimiento", headers=mto, json={"solucion": "Revisados 24 extintores"}).json()
+    assert r["estado"] == "pendiente_cierre"
+    assert client.post(f"{base}/confirmar-limpieza", headers=lim).status_code == 400
+    assert client.post(f"{base}/rechazar", headers=lim, json={"motivo": "xxx"}).status_code == 403
+    assert client.post(f"{base}/cerrar", headers=mto, json={}).status_code == 403
+    assert client.post(f"{base}/cerrar", headers=rec, json={}).json()["estado"] == "cerrada"
+    # preventiva en una unidad y correctiva en zonas comunes sí requieren limpieza
+    unit = client.get(f"/api/unidades?asset_id={sae}&q=A-250", headers=admin).json()[0]
+    assert client.post("/api/mantenimiento/ordenes", headers=mto, json={
+        "asset_id": sae, "unit_id": unit["id"], "tipo": "preventivo", "titulo": "Limpieza filtros split"}).json()["requiere_limpieza"]
+    assert client.post("/api/mantenimiento/ordenes", headers=rec, json={
+        "asset_id": sae, "titulo": "Fuga en pasillo planta 2"}).json()["requiere_limpieza"]
+    # las OT generadas por los planes preventivos (zonas comunes) tampoco pasan por limpieza
+    client.post("/api/mantenimiento/planes/plantilla", headers=admin, json={"asset_id": sae})
+    client.post("/api/mantenimiento/planes/generar", headers=admin, json={"asset_id": sae, "dias_antelacion": 90})
+    gen = client.get(f"/api/mantenimiento/ordenes?asset_id={sae}&tipo=preventivo&abiertas=true", headers=admin).json()
+    assert any(not o["requiere_limpieza"] and o["plan_id"] for o in gen)

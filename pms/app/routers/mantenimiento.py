@@ -42,8 +42,17 @@ PLANTILLA_PREVENTIVO = [
 ]
 
 
+TIPOS_PREVENTIVOS = ("preventivo", "normativo")
+
+
+def requiere_limpieza(w: WorkOrder) -> bool:
+    """Las OT preventivas/normativas de zonas comunes (sin unidad) no pasan por limpieza."""
+    return not (w.unit_id is None and w.tipo in TIPOS_PREVENTIVOS)
+
+
 def _wo_out(w: WorkOrder, db: Session) -> dict:
     d = w.to_dict()
+    d["requiere_limpieza"] = requiere_limpieza(w)
     d["unidad"] = db.get(Unit, w.unit_id).codigo if w.unit_id else None
     for campo in ("abierta_por", "conf_mto_por", "conf_limpieza_por", "cerrada_por"):
         uid = getattr(w, campo)
@@ -131,7 +140,7 @@ def confirm_work(wid: int, data: ConfirmWork, scope: Scope = Depends(get_scope),
     if data.coste_real is not None:
         w.coste_real = data.coste_real
     w.conf_mto_por, w.conf_mto_fecha = scope.user.id, datetime.now()
-    w.estado = "trabajo_realizado"
+    w.estado = "trabajo_realizado" if requiere_limpieza(w) else "pendiente_cierre"
     audit(db, scope.user, "confirmar_mantenimiento", "orden_trabajo", wid, data.model_dump())
     db.commit()
     return _wo_out(w, db)
@@ -142,6 +151,8 @@ def confirm_cleaning(wid: int, scope: Scope = Depends(get_scope), db: Session = 
     """Limpieza revisa la unidad / zona tras el trabajo y la da por correcta."""
     w = _open_order(db, wid)
     scope.require_asset("limpieza.confirmar_ot", w.asset_id)
+    if not requiere_limpieza(w):
+        bad_request("Las OT preventivas de zonas comunes no requieren confirmación de limpieza")
     if not w.conf_mto_por:
         bad_request("Mantenimiento aún no ha confirmado el trabajo")
     if w.conf_limpieza_por:
@@ -161,7 +172,8 @@ class Reject(BaseModel):
 def reject_work(wid: int, data: Reject, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     """Limpieza o recepción devuelven la orden a mantenimiento (trabajo no conforme)."""
     w = _open_order(db, wid)
-    if not (scope.can_asset("limpieza.confirmar_ot", w.asset_id) or scope.can_asset("mantenimiento.cerrar", w.asset_id)):
+    puede_limpieza = requiere_limpieza(w) and scope.can_asset("limpieza.confirmar_ot", w.asset_id)
+    if not (puede_limpieza or scope.can_asset("mantenimiento.cerrar", w.asset_id)):
         raise HTTPException(403, "Sin permiso para rechazar el trabajo")
     if not w.conf_mto_por:
         bad_request("No hay trabajo confirmado que rechazar")
@@ -202,7 +214,7 @@ def close_order(wid: int, data: CloseOrder, scope: Scope = Depends(get_scope), d
     else:
         if not w.conf_mto_por:
             bad_request("Falta la confirmación de mantenimiento")
-        if not w.conf_limpieza_por:
+        if requiere_limpieza(w) and not w.conf_limpieza_por:
             bad_request("Falta la confirmación de limpieza")
         w.estado = "cerrada"
     w.fecha_cierre = date.today()

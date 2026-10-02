@@ -46,6 +46,8 @@ Para añadir activos nuevos: *Activos → Nuevo activo* (se eligen la gestora, l
     4. Recepción la cierra. Solo puede hacerlo con las dos confirmaciones.
 
     Al cerrar, la unidad queda disponible. Cada paso queda registrado con usuario y fecha.
+    Las OT preventivas y normativas de zonas comunes (sin unidad) no pasan por Limpieza: Mantenimiento confirma
+    y Recepción cierra.
   - Planes preventivos periódicos que generan sus OT automáticamente.
   - Plantilla normativa cargable por activo: RITE, RIPCI (RD 513/2017), legionela (RD 487/2022),
     ascensores (RD 355/2024), REBT ITC-BT-05 y buenas prácticas. Es orientativa: hay que ajustar
