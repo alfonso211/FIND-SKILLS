@@ -48,6 +48,10 @@ Para añadir activos nuevos: *Activos → Nuevo activo* (se eligen la gestora, l
     de lectura mecánica, validada con dígitos de control. En el DNI propone además el domicilio del reverso.
   - Avisa si el documento está caducado.
   - Rellena el contrato y completa la ficha. El nombre tecleado con tildes no se sustituye.
+  - **Escáner primero:** en *Nueva reserva*, *Nuevo huésped/inquilino* y *Nuevo contrato* el escáner es lo primero.
+    Al elegir el fichero o capturar con la cámara, el documento se lee solo. El cliente se crea con sus datos y
+    la copia queda adjunta. Si el equipo tiene cámara (webcam, tablet o móvil), se abre automáticamente; se puede
+    desactivar. Las copias escaneadas que no llegan a adjuntarse se borran a las 24 h.
   - Guarda una copia cifrada en la ficha del cliente y registra quién la consulta.
   - Todo se procesa en el propio servidor: las imágenes no salen a servicios externos.
 - **Alquiler residencial**: contratos LAU (fianza, garantía adicional, día de pago, índice IRAV/IPC),

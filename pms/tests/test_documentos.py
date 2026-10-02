@@ -66,3 +66,58 @@ def test_documento_no_valido_y_permisos(client, admin, ids):
     # borrar
     assert client.delete(f"/api/documentos/{did}", headers=admin).status_code == 200
     assert client.get(f"/api/documentos/{did}", headers=admin).status_code == 404
+
+
+def _leer(client, h, reverso):
+    return client.post("/api/documentos/leer", headers=h, files={"reverso": ("r.jpg", reverso, "image/jpeg")})
+
+
+def test_escanear_primero_y_crear_reserva(client, admin, ids):
+    """Flujo de recepción: se escanea el documento al empezar la reserva y el cliente se crea con sus datos."""
+    sae = ids["assets"]["SAE"]["id"]
+    rec = _new_user(client, admin, "rec.scanfirst@inversiete.es", [{"role_id": ids["roles"]["Recepción"], "asset_id": sae}])
+    j = _leer(client, rec, reverso_dni(formato="JPEG")).json()
+    lec = j["lectura"]
+    assert lec["leido"] and lec["mrz_valido"]
+    doc_ids = [d["id"] for d in j["documentos"]]
+    # mientras no hay cliente, la copia solo la ve quien la escaneó
+    assert client.get(f"/api/documentos/{doc_ids[0]}", headers=rec).status_code == 200
+    otro = _new_user(client, admin, "rec2.scanfirst@inversiete.es", [{"role_id": ids["roles"]["Recepción"], "asset_id": sae}])
+    assert client.get(f"/api/documentos/{doc_ids[0]}", headers=otro).status_code == 403
+
+    unit = client.get(f"/api/unidades?asset_id={sae}&q=B-210", headers=admin).json()[0]
+    body = {"unit_id": unit["id"], "fecha_entrada": "2027-03-01", "fecha_salida": "2027-03-03",
+            "guest": {"nombre": lec["nombre"], "apellidos": lec["apellidos"]}, "documentos": doc_ids}
+    # otro usuario no puede adjuntar una copia ajena
+    assert client.post("/api/turistico/reservas", headers=otro, json=body).status_code == 400
+    r = client.post("/api/turistico/reservas", headers=rec, json=body)
+    assert r.status_code == 201, r.text
+    g = client.get(f"/api/terceros?tipo=huesped&q={lec['documento_num']}", headers=rec).json()[0]
+    assert (g["documento_num"], g["num_soporte"], g["sexo"], g["municipio"]) == ("99999999R", "BAA000589", "F", "Sevilla")
+    docs = client.get(f"/api/terceros/{g['id']}/documentos", headers=rec).json()
+    assert [d["id"] for d in docs] == doc_ids
+    # ya adjuntada, no se puede reutilizar para otro cliente
+    body["fecha_entrada"], body["fecha_salida"] = "2027-04-01", "2027-04-02"
+    assert client.post("/api/turistico/reservas", headers=rec, json=body).status_code == 400
+
+
+def test_alta_de_huesped_con_documento_y_purga(client, admin, ids):
+    j = _leer(client, admin, reverso_dni(formato="JPEG")).json()
+    c = client.post("/api/terceros", headers=admin, json={
+        "company_id": ids["companies"]["INVERSIETE SA"], "tipo": "huesped", "nombre": "Lucía",
+        "documentos": [d["id"] for d in j["documentos"]]})
+    assert c.status_code == 201, c.text
+    assert (c.json()["num_soporte"], c.json()["fecha_nacimiento"]) == ("BAA000589", "1980-01-01")
+    assert len(client.get(f"/api/terceros/{c.json()['id']}/documentos", headers=admin).json()) == 1
+
+    # las copias que nadie adjunta se borran a las 24 h
+    from datetime import datetime, timedelta
+
+    from app.database import SessionLocal
+    from app.models import ContactDocument
+    viejo = _leer(client, admin, reverso_dni(formato="JPEG")).json()["documentos"][0]["id"]
+    with SessionLocal() as db:
+        db.get(ContactDocument, viejo).subido = datetime.now() - timedelta(hours=25)
+        db.commit()
+    _leer(client, admin, reverso_dni(formato="JPEG"))  # cualquier escaneo nuevo purga los abandonados
+    assert client.get(f"/api/documentos/{viejo}", headers=admin).status_code == 404

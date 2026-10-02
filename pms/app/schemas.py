@@ -129,6 +129,7 @@ class ContactIn(BaseModel):
     pais: str | None = None
     iban: str | None = None
     notas: str | None = None
+    documentos: list[int] = []  # copias escaneadas antes de dar de alta al cliente
 
 
 class ContactInline(BaseModel):
@@ -165,6 +166,7 @@ class LeaseIn(BaseModel):
     indice_actualizacion: str = "IRAV"
     estado: str = "vigente"
     notas: str | None = None
+    documentos: list[int] = []  # copias del documento del cliente escaneadas en el alta
 
 
 class LeaseUpdate(BaseModel):
@@ -207,6 +209,7 @@ class ReservationIn(BaseModel):
     importe_total: float = Field(default=0, ge=0)
     importe_pagado: float = Field(default=0, ge=0)
     notas: str | None = None
+    documentos: list[int] = []  # copias del documento del cliente escaneadas en el alta
 
     @field_validator("fecha_salida")
     @classmethod

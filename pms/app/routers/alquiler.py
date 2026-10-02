@@ -12,6 +12,7 @@ from ..models import MODALIDADES_CONTRATO, Asset, Charge, Contact, Lease, Unit
 from ..schemas import ChargeGenerate, LeaseIn, LeaseUpdate, Payment, RentUpdate
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
+from .documentos import adjuntar_pendientes
 
 router = APIRouter(prefix="/api/alquiler", tags=["alquiler residencial"])
 
@@ -89,7 +90,9 @@ def create_lease(data: LeaseIn, scope: Scope = Depends(get_scope), db: Session =
     else:
         bad_request("Indique tenant_id o los datos del inquilino")
 
-    lease = Lease(**data.model_dump(exclude={"tenant", "tenant_id"}), tenant_id=tenant.id)
+    if data.documentos:
+        adjuntar_pendientes(db, scope.user, data.documentos, tenant)
+    lease = Lease(**data.model_dump(exclude={"tenant", "tenant_id", "documentos"}), tenant_id=tenant.id)
     db.add(lease)
     if lease.estado == "vigente" and lease.fecha_inicio <= date.today():
         unit.estado = "ocupada"
