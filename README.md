@@ -42,6 +42,14 @@ Para añadir activos nuevos: *Activos → Nuevo activo* (se eligen la gestora, l
   - Cada impresión queda en el historial de la reserva para reimprimirla.
   - De la tarjeta de garantía solo se guardan titular, últimos 4 dígitos y caducidad.
   - El representante, su DNI y el correo de la empresa se configuran en la ficha del activo.
+- **Escaneo de documentos de identidad** (DNI, NIE/TIE, pasaportes y otros documentos con zona MRZ), en la ficha
+  del cliente y en el contrato:
+  - Lee nombre, apellidos, número, nº de soporte, nacionalidad, fecha de nacimiento, sexo y caducidad de la zona
+    de lectura mecánica, validada con dígitos de control. En el DNI propone además el domicilio del reverso.
+  - Avisa si el documento está caducado.
+  - Rellena el contrato y completa la ficha. El nombre tecleado con tildes no se sustituye.
+  - Guarda una copia cifrada en la ficha del cliente y registra quién la consulta.
+  - Todo se procesa en el propio servidor: las imágenes no salen a servicios externos.
 - **Alquiler residencial**: contratos LAU (fianza, garantía adicional, día de pago, índice IRAV/IPC),
   emisión mensual de recibos prorrateados, cobros parciales o totales, anulación y actualización de renta.
 - **Mantenimiento**:

@@ -74,6 +74,20 @@ EOF
 else
   echo "Ya existe $DEPLOY/.env: se mantienen las claves actuales."
 fi
+# Clave de cifrado de los documentos de identidad (se añade también a instalaciones anteriores)
+if ! grep -q '^PMS_DOCS_KEY=.' .env; then
+  sed -i '/^PMS_DOCS_KEY=/d' .env
+  DOCS_KEY=$(openssl rand -base64 32 | tr '+/' '-_')
+  echo "PMS_DOCS_KEY=$DOCS_KEY" >> .env
+  umask 077
+  {
+    echo
+    echo "Clave de cifrado de las copias de documentos de identidad (PMS_DOCS_KEY):"
+    echo "$DOCS_KEY"
+    echo "Guárdela FUERA del servidor (gestor de contraseñas). Sin ella no se pueden recuperar las copias."
+  } >> "$CRED"
+  aviso "Generada la clave de cifrado de documentos. Está en $CRED: guárdela fuera del servidor y borre el fichero."
+fi
 
 verde "6/7 Arrancando el PMS (la primera vez tarda 3-5 minutos)"
 docker compose up -d --build

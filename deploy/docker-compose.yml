@@ -32,6 +32,11 @@ services:
       PMS_ADMIN_EMAIL: ${PMS_ADMIN_EMAIL:-admin@inversiete.es}
       PMS_ADMIN_PASSWORD: ${PMS_ADMIN_PASSWORD:?Defina PMS_ADMIN_PASSWORD en .env}
       PMS_TOKEN_HOURS: ${PMS_TOKEN_HOURS:-12}
+      # copias de documentos de identidad, cifradas con PMS_DOCS_KEY
+      PMS_DOCS_DIR: /data/documentos
+      PMS_DOCS_KEY: ${PMS_DOCS_KEY:-}
+    volumes:
+      - documentos:/data/documentos
 
   caddy:
     # proxy con HTTPS automático (certificado Let's Encrypt)
@@ -50,5 +55,6 @@ services:
 
 volumes:
   pgdata:
+  documentos:
   caddy_data:
   caddy_config:

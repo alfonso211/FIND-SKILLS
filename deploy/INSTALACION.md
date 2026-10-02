@@ -172,6 +172,17 @@ docker compose start app
 
 Haga una restauración de prueba al menos una vez al trimestre.
 
+## 8 bis. Clave de cifrado de documentos de identidad
+
+Las copias escaneadas de DNI y pasaportes se guardan **cifradas** con la clave `PMS_DOCS_KEY` del fichero `.env`.
+El instalador la genera automáticamente y la deja en `/root/pms-credenciales.txt`.
+
+- **Guárdela fuera del servidor**, en el gestor de contraseñas de la empresa, y borre después ese fichero.
+- **Sin esa clave no se pueden recuperar las copias de los documentos**, ni siquiera desde las copias de seguridad.
+- **No la cambie** una vez haya documentos guardados.
+
+Las copias de seguridad diarias incluyen la carpeta de documentos (`/var/backups/pms/documentos_*.tar.gz`).
+
 ## 9. Actualizaciones del PMS
 
 ```bash
