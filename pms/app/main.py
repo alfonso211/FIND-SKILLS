@@ -5,7 +5,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import BASE_DIR
-from .database import Base, SessionLocal, engine
+from .database import SessionLocal
+from .migraciones import migrar
 from .routers import admin, alquiler, auth, estructura, mantenimiento, panel, turistico
 from .seed import seed
 
@@ -14,7 +15,7 @@ STATIC = BASE_DIR / "static"
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    Base.metadata.create_all(engine)
+    migrar()
     with SessionLocal() as db:
         seed(db)
     yield

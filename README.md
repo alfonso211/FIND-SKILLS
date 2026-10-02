@@ -120,6 +120,17 @@ La documentación de la API está en `http://localhost:8000/docs`.
 
 Tests: `cd pms && python -m pytest`. Contra PostgreSQL: `PMS_TEST_DATABASE_URL=postgresql+psycopg://usuario:clave@host/bd python -m pytest`
 
+## Cambios en la base de datos (migraciones)
+
+El esquema se actualiza solo al arrancar el PMS (`pms/app/migraciones.py`, con Alembic). Las actualizaciones
+conservan los datos. Para el desarrollo:
+
+1. Modificar `pms/app/models.py`.
+2. Generar la migración: `cd pms && alembic revision --autogenerate -m "descripción" --rev-id 0002`.
+3. Revisar el fichero generado en `pms/migrations/versions/`.
+
+El test `test_modelos_sin_migracion_pendiente` falla si se cambia un modelo sin crear su migración.
+
 ## Estructura técnica
 
 - Backend: Python, FastAPI y SQLAlchemy. Autenticación con JWT y contraseñas en bcrypt.

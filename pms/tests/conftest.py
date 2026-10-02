@@ -24,6 +24,8 @@ ADMIN = ("admin@inversiete.com", "AdminTest!2026")
 def client():
     from app.database import Base, engine
     Base.metadata.drop_all(engine)  # base limpia (relevante con PostgreSQL)
+    with engine.begin() as conn:
+        conn.exec_driver_sql("DROP TABLE IF EXISTS alembic_version")
     with TestClient(app) as c:
         yield c
 
