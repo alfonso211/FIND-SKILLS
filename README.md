@@ -34,6 +34,12 @@ Para añadir activos nuevos: *Activos → Nuevo activo* (se eligen la gestora, l
 - **Apartamentos turísticos**: reservas con control de solapes y de capacidad, búsqueda de disponibilidad,
   check-in (exige los datos del parte de viajeros, RD 933/2021), check-out y paso de la unidad a
   *pendiente de limpieza*. Incluye planning por unidad y día, y ficha de huéspedes.
+- **Contrato de alojamiento (MOD-ALOJ-001)**: botón *Contrato* en cada reserva de Suite Florida y Suite Aeropuerto.
+  - Rellena el Word original (`pms/app/plantillas/`) con los datos de la reserva, del huésped y del apartamento.
+  - Lo que no se rellene queda con puntos para completarlo a mano.
+  - Cada impresión queda en el historial de la reserva para reimprimirla.
+  - De la tarjeta de garantía solo se guardan titular, últimos 4 dígitos y caducidad.
+  - El representante, su DNI y el correo de la empresa se configuran en la ficha del activo.
 - **Alquiler residencial**: contratos LAU (fianza, garantía adicional, día de pago, índice IRAV/IPC),
   emisión mensual de recibos prorrateados, cobros parciales o totales, anulación y actualización de renta.
 - **Mantenimiento**:

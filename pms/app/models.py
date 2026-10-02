@@ -55,6 +55,10 @@ class Asset(Base):
     cp: Mapped[str | None] = mapped_column(String(10))
     ref_catastral: Mapped[str | None] = mapped_column(String(30))
     num_registro_turistico: Mapped[str | None] = mapped_column(String(60))
+    # Datos de la empresa para los contratos de alojamiento
+    contrato_representante: Mapped[str | None] = mapped_column(String(160))
+    contrato_representante_dni: Mapped[str | None] = mapped_column(String(20))
+    contrato_email: Mapped[str | None] = mapped_column(String(160))
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
     notas: Mapped[str | None] = mapped_column(Text)
     company: Mapped[Company] = relationship(foreign_keys=[company_id])
@@ -101,6 +105,9 @@ class Contact(Base):
     email: Mapped[str | None] = mapped_column(String(160))
     telefono: Mapped[str | None] = mapped_column(String(40))
     direccion: Mapped[str | None] = mapped_column(String(300))
+    cp: Mapped[str | None] = mapped_column(String(10))
+    municipio: Mapped[str | None] = mapped_column(String(100))
+    pais: Mapped[str | None] = mapped_column(String(60))
     iban: Mapped[str | None] = mapped_column(String(40))
     notas: Mapped[str | None] = mapped_column(Text)
 
@@ -159,6 +166,18 @@ class Reservation(Base):
     creada: Mapped[datetime] = mapped_column(DateTime, default=_now)
     unit: Mapped[Unit] = relationship()
     guest: Mapped[Contact] = relationship()
+
+
+class AccommodationContract(Base):
+    """Contrato de alojamiento generado para una reserva (MOD-ALOJ-001). Se guardan los datos con los que se
+    imprimió para poder reimprimirlo idéntico. De la tarjeta solo se guardan titular, últimos 4 dígitos y caducidad."""
+    __tablename__ = "contratos_alojamiento"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    reservation_id: Mapped[int] = mapped_column(ForeignKey("reservas.id"), index=True)
+    plantilla: Mapped[str] = mapped_column(String(80))
+    datos: Mapped[dict] = mapped_column(JSON)
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
 
 
 # --------------------------------------------------------------------------- mantenimiento
