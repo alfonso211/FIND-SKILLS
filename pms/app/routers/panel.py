@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import MODALIDADES, Asset, Charge, Lease, Reservation, Unit, WorkOrder
 from ..security import Scope, get_scope
+from .mantenimiento import ABIERTAS
 from ..utils import scoped
 
 router = APIRouter(prefix="/api", tags=["panel"])
@@ -72,9 +73,9 @@ def panel(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
 
         if scope.can_asset("mantenimiento.ver", a.id):
             wo = select(func.count()).select_from(WorkOrder).where(
-                WorkOrder.asset_id == a.id, WorkOrder.estado.in_(("abierta", "asignada", "en_curso",
-                                                                  "pendiente_material")))
+                WorkOrder.asset_id == a.id, WorkOrder.estado.in_(ABIERTAS))
             k["ot_abiertas"] = db.scalar(wo)
             k["ot_urgentes"] = db.scalar(wo.where(WorkOrder.prioridad == "urgente"))
+            k["ot_pendientes_cierre"] = db.scalar(wo.where(WorkOrder.estado == "pendiente_cierre"))
         out.append(k)
     return {"fecha": hoy.isoformat(), "activos": out}

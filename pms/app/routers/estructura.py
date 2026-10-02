@@ -26,7 +26,8 @@ def catalogos(scope: Scope = Depends(get_scope)):
         "categorias_mto": ["general", "fontaneria", "electricidad", "climatizacion", "acs", "ascensores", "pci",
                            "carpinteria", "cerrajeria", "pintura", "albanileria", "cubiertas", "telecom",
                            "electrodomesticos", "limpieza", "jardineria", "plagas"],
-        "estados_ot": ["abierta", "asignada", "en_curso", "pendiente_material", "cerrada", "cancelada"],
+        "estados_ot": ["abierta", "asignada", "en_curso", "pendiente_material", "trabajo_realizado",
+                       "pendiente_cierre", "cerrada", "cancelada"],
         "prioridades": ["baja", "media", "alta", "urgente"],
     }
 

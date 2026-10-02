@@ -166,10 +166,16 @@ def test_maintenance(client, admin, ids):
     # unidad bloqueada no admite reservas
     assert client.post("/api/turistico/reservas", headers=admin, json={
         "unit_id": unit["id"], "guest": {"nombre": "X"}, "fecha_entrada": d(1), "fecha_salida": d(2)}).status_code == 400
-    c = client.post(f"/api/mantenimiento/ordenes/{w['id']}/cerrar", headers=admin,
-                    json={"solucion": "Sustitución válvula", "coste_real": 85.5}).json()
-    assert c["estado"] == "cerrada"
-    assert client.get(f"/api/unidades?asset_id={sae}&q={unit['codigo']}", headers=admin).json()[0]["estado"] == "pendiente_limpieza"
+    base = f"/api/mantenimiento/ordenes/{w['id']}"
+    # sin confirmaciones no se puede cerrar
+    assert client.post(f"{base}/cerrar", headers=admin, json={}).status_code == 400
+    assert client.post(f"{base}/confirmar-mantenimiento", headers=admin,
+                       json={"solucion": "Sustitución válvula", "coste_real": 85.5}).json()["estado"] == "trabajo_realizado"
+    assert client.post(f"{base}/confirmar-limpieza", headers=admin).json()["estado"] == "pendiente_cierre"
+    c = client.post(f"{base}/cerrar", headers=admin, json={}).json()
+    assert c["estado"] == "cerrada" and c["coste_real"] == 85.5
+    # limpieza ya confirmó la unidad -> queda disponible
+    assert client.get(f"/api/unidades?asset_id={sae}&q={unit['codigo']}", headers=admin).json()[0]["estado"] == "disponible"
     n = client.post("/api/mantenimiento/planes/plantilla", headers=admin,
                     json={"asset_id": sae, "primera_fecha": d(0)}).json()["creados"]
     assert n > 5
@@ -283,3 +289,52 @@ def test_login_lockout(client):
     for _ in range(5):
         assert client.post("/api/auth/login", json={"email": "nadie@inversiete.com", "password": "x"}).status_code == 401
     assert client.post("/api/auth/login", json={"email": "nadie@inversiete.com", "password": "x"}).status_code == 429
+
+
+def test_work_order_flow_by_role(client, admin, ids):
+    """Abren recepción/limpieza/mantenimiento; confirma mantenimiento, luego limpieza; cierra solo recepción."""
+    sfl = ids["assets"]["SFL"]["id"]
+    rol = ids["roles"]
+    rec = _new_user(client, admin, "rec.ot@inversiete.es", [{"role_id": rol["Recepción"], "asset_id": sfl}])
+    lim = _new_user(client, admin, "lim.ot@inversiete.es", [{"role_id": rol["Gobernanta / Limpieza"], "asset_id": sfl}])
+    mto = _new_user(client, admin, "mto.ot@inversiete.es", [{"role_id": rol["Técnico Mantenimiento"], "asset_id": sfl}])
+    unit = client.get(f"/api/unidades?asset_id={sfl}&q=P4-2B", headers=admin).json()[0]
+
+    # los tres pueden abrir; quien solo abre no fija datos de gestión
+    for h in (rec, lim, mto):
+        r = client.post("/api/mantenimiento/ordenes", headers=h, json={
+            "asset_id": sfl, "unit_id": unit["id"], "titulo": "Grifo gotea", "categoria": "fontaneria",
+            "proveedor": "X", "coste_estimado": 999})
+        assert r.status_code == 201, r.text
+    ot = client.post("/api/mantenimiento/ordenes", headers=lim, json={
+        "asset_id": sfl, "unit_id": unit["id"], "titulo": "Persiana rota", "bloquea_unidad": True,
+        "coste_estimado": 999}).json()
+    assert ot["coste_estimado"] is None and ot["abierta_por_nombre"] == "lim.ot"
+    assert client.get(f"/api/unidades?asset_id={sfl}&q=P4-2B", headers=admin).json()[0]["estado"] == "mantenimiento"
+    base = f"/api/mantenimiento/ordenes/{ot['id']}"
+
+    # limpieza no puede confirmar antes que mantenimiento; recepción y limpieza no confirman trabajo
+    assert client.post(f"{base}/confirmar-limpieza", headers=lim).status_code == 400
+    assert client.post(f"{base}/confirmar-mantenimiento", headers=rec, json={"solucion": "xxx"}).status_code == 403
+    assert client.post(f"{base}/confirmar-mantenimiento", headers=lim, json={"solucion": "xxx"}).status_code == 403
+    # mantenimiento no puede cerrar
+    assert client.post(f"{base}/cerrar", headers=mto, json={}).status_code == 403
+
+    assert client.post(f"{base}/confirmar-mantenimiento", headers=mto,
+                       json={"solucion": "Cambio de cinta", "coste_real": 25}).status_code == 200
+    # recepción no puede sustituir la confirmación de limpieza ni cerrar sin ella
+    assert client.post(f"{base}/confirmar-limpieza", headers=rec).status_code == 403
+    assert client.post(f"{base}/confirmar-limpieza", headers=mto).status_code == 403
+    assert "limpieza" in client.post(f"{base}/cerrar", headers=rec, json={}).json()["detail"]
+    # limpieza rechaza: vuelve a mantenimiento sin confirmaciones
+    r = client.post(f"{base}/rechazar", headers=lim, json={"motivo": "Sigue sin bajar"}).json()
+    assert r["estado"] == "en_curso" and r["conf_mto_por"] is None and "Sigue sin bajar" in r["descripcion"]
+    client.post(f"{base}/confirmar-mantenimiento", headers=mto, json={"solucion": "Cambio de cinta y polea"})
+    assert client.post(f"{base}/confirmar-limpieza", headers=lim).json()["estado"] == "pendiente_cierre"
+    # limpieza y mantenimiento no cierran; recepción sí
+    assert client.post(f"{base}/cerrar", headers=lim, json={}).status_code == 403
+    c = client.post(f"{base}/cerrar", headers=rec, json={}).json()
+    assert c["estado"] == "cerrada" and c["cerrada_por_nombre"] == "rec.ot"
+    assert c["conf_mto_por_nombre"] == "mto.ot" and c["conf_limpieza_por_nombre"] == "lim.ot"
+    # la unidad bloqueada se libera solo cuando no quedan OT bloqueantes abiertas
+    assert client.get(f"/api/unidades?asset_id={sfl}&q=P4-2B", headers=admin).json()[0]["estado"] == "disponible"

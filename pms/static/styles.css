@@ -63,8 +63,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: var(--line); color: var(--ink); }
 .b-disponible, .b-pagado, .b-vigente, .b-cerrada, .b-checkout, .b-baja { background: #e3f3e9; color: var(--ok); }
-.b-ocupada, .b-checkin, .b-confirmada, .b-en_curso, .b-asignada, .b-media { background: #e3edf9; color: var(--info); }
-.b-pendiente_limpieza, .b-pendiente, .b-parcial, .b-abierta, .b-pendiente_material, .b-alta, .b-borrador { background: #fdf3e1; color: var(--warn); }
+.b-trabajo_realizado, .b-ocupada, .b-checkin, .b-confirmada, .b-en_curso, .b-asignada, .b-media { background: #e3edf9; color: var(--info); }
+.b-pendiente_cierre, .b-pendiente_limpieza, .b-pendiente, .b-parcial, .b-abierta, .b-pendiente_material, .b-alta, .b-borrador { background: #fdf3e1; color: var(--warn); }
 .b-mantenimiento, .b-bloqueada, .b-fuera_servicio, .b-cancelada, .b-no_show, .b-urgente, .b-anulado, .b-rescindido { background: #fbe6e4; color: var(--bad); }
 
 .planning { font-size: 11px; }

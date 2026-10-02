@@ -183,6 +183,14 @@ class WorkOrder(Base):
     fecha_prevista: Mapped[date | None] = mapped_column(Date)
     fecha_cierre: Mapped[date | None] = mapped_column(Date)
     solucion: Mapped[str | None] = mapped_column(Text)
+    # Flujo: abre (recepción/limpieza/mantenimiento) -> mantenimiento confirma trabajo -> limpieza confirma
+    # la unidad -> recepción cierra.
+    abierta_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    conf_mto_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    conf_mto_fecha: Mapped[datetime | None] = mapped_column(DateTime)
+    conf_limpieza_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    conf_limpieza_fecha: Mapped[datetime | None] = mapped_column(DateTime)
+    cerrada_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
 
 
 class PreventivePlan(Base):

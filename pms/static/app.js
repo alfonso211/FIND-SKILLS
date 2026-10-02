@@ -14,6 +14,7 @@ const badge = (v) => (v == null || v === "" ? "" : `<span class="badge b-${esc(v
 const assetName = (id) => S.assets.find((a) => a.id === id)?.nombre ?? id;
 const PLURAL = { vivienda: "viviendas", apartamento: "apartamentos", garaje: "garajes", trastero: "trasteros", local: "locales", oficina: "oficinas" };
 const plural = (u) => PLURAL[u] || u;
+const canOpenOT = () => can("mantenimiento.abrir") || can("mantenimiento.editar");
 const assetsOf = (mod) => S.assets.filter((a) => !mod || a.modalidad === mod);
 
 // ------------------------------------------------------------------ API
@@ -129,7 +130,7 @@ V.panel = async (el) => {
     }
     if (a.produccion_mes != null) k.push([eur(a.produccion_mes), "Producción mes"]);
     if (a.renta_mensual != null) k.push([eur(a.renta_mensual), "Renta mensual"], [eur(a.deuda_vencida), "Deuda vencida"]);
-    if (a.ot_abiertas != null) k.push([a.ot_abiertas, "OT abiertas"], [a.ot_urgentes, "OT urgentes"]);
+    if (a.ot_abiertas != null) k.push([a.ot_abiertas, "OT abiertas"], [a.ot_urgentes, "OT urgentes"], [a.ot_pendientes_cierre, "OT pendientes de cierre"]);
     const est = Object.entries(a.estados).map(([e, n]) => `${badge(e)} ${n}`).join(" ");
     return `<div class="card"><h3>${esc(a.nombre)}</h3><div class="sub">${esc(a.modalidad_nombre)} · Gestiona ${esc(a.sociedad)} · Propiedad ${esc(a.propietaria)}</div>
       ${a.ocupacion_hoy != null ? `<div class="bar"><i style="width:${Math.min(100, a.ocupacion_hoy)}%"></i></div>` : ""}
@@ -194,7 +195,7 @@ V.unidades = async (el) => {
       u.estado === "pendiente_limpieza" && (can("limpieza.editar") || can("activos.editar")) &&
         ["Limpia ✓", () => run(() => post(`/api/unidades/${u.id}/limpia`), "Unidad disponible").then(load)],
       can("activos.editar") && ["Editar", () => form(`Unidad ${u.codigo}`, fields, u, async (d) => { await put(`/api/unidades/${u.id}`, d); toast("Guardado"); load(); })],
-      can("mantenimiento.editar") && ["Avería", () => newWorkOrder(u.asset_id, u.id).then(load)],
+      canOpenOT() && ["Avería", () => newWorkOrder(u.asset_id, u.id).then(load)],
     ]);
   };
   $("#q", el).oninput = debounce(load); $("#est", el).onchange = load; $("#uso", el).onchange = load;
@@ -413,13 +414,13 @@ async function newWorkOrder(assetId, unitId) {
   return new Promise((resolve) => form(`Nueva orden de trabajo · ${assetName(aid)}`, [
     { k: "titulo", t: "Título", req: true, wide: true },
     { k: "unit_id", t: "Unidad (vacío = zonas comunes)", type: "select", options: units.map((u) => [u.id, u.codigo]) },
-    { k: "tipo", t: "Tipo", type: "select", req: true, options: list(["correctivo", "preventivo", "normativo", "mejora"]), def: "correctivo" },
+    ...(can("mantenimiento.editar") ? [{ k: "tipo", t: "Tipo", type: "select", req: true, options: list(["correctivo", "preventivo", "normativo", "mejora"]), def: "correctivo" }] : []),
     { k: "categoria", t: "Instalación / gremio", type: "select", req: true, options: list(S.cat.categorias_mto), def: "general" },
     { k: "prioridad", t: "Prioridad", type: "select", req: true, options: list(S.cat.prioridades), def: "media" },
-    { k: "asignado_a", t: "Asignado a" }, { k: "proveedor", t: "Proveedor" },
-    { k: "coste_estimado", t: "Coste estimado €", type: "number" }, { k: "fecha_prevista", t: "Fecha prevista", type: "date" },
+    ...(can("mantenimiento.editar") ? [{ k: "asignado_a", t: "Asignado a" }, { k: "proveedor", t: "Proveedor" },
+      { k: "coste_estimado", t: "Coste estimado €", type: "number" }, { k: "fecha_prevista", t: "Fecha prevista", type: "date" }] : []),
     { k: "bloquea_unidad", t: "Bloquear unidad (fuera de venta hasta cierre)", type: "checkbox", wide: true },
-    { k: "descripcion", t: "Descripción", type: "textarea", wide: true },
+    { k: "descripcion", t: "Descripción de la avería", type: "textarea", wide: true },
   ], { unit_id: unitId }, async (d) => {
     await post("/api/mantenimiento/ordenes", clean({ ...d, asset_id: aid, unit_id: d.unit_id ? Number(d.unit_id) : null }));
     toast("Orden de trabajo creada"); resolve();
@@ -427,28 +428,44 @@ async function newWorkOrder(assetId, unitId) {
 }
 
 V.ordenes = async (el) => {
-  el.innerHTML = `<div class="toolbar"><select id="e"><option value="abiertas">Abiertas</option><option value="">Todas</option>${S.cat.estados_ot.map((x) => `<option>${x}</option>`).join("")}</select>
+  el.innerHTML = `<div class="toolbar"><select id="e"><option value="abiertas">Abiertas</option><option value="">Todas</option>${S.cat.estados_ot.map((x) => `<option value="${x}">${label(x)}</option>`).join("")}</select>
     <select id="tp"><option value="">Todos los tipos</option>${["correctivo", "preventivo", "normativo", "mejora"].map((x) => `<option>${x}</option>`).join("")}</select>
-    <span class="spacer"></span>${can("mantenimiento.editar") ? '<button class="btn primary" id="new">Nueva OT</button>' : ""}</div><div id="t"></div>`;
+    <span class="spacer"></span>${canOpenOT() ? '<button class="btn primary" id="new">Nueva OT</button>' : ""}</div>
+    <p class="muted">Flujo: se abre la OT → mantenimiento confirma el trabajo → limpieza confirma la unidad → recepción cierra.</p><div id="t"></div>`;
+  const check = (who, when) => (who ? `<span title="${esc(fdt(when))}">✓ ${esc(who)}</span>` : '<span class="muted">pendiente</span>');
   const load = async () => {
     const e = $("#e", el).value;
     const rows = await get("/api/mantenimiento/ordenes", { asset_id: S.asset, tipo: $("#tp", el).value, ...(e === "abiertas" ? { abiertas: true } : { estado: e }) });
     table($("#t", el), [
       { k: "id", t: "Nº", num: true }, { k: "fecha_apertura", t: "Apertura", f: fdate }, { k: "asset_id", t: "Activo", f: (v) => esc(assetName(v)) },
-      { k: "unidad", t: "Unidad", f: (v) => esc(v || "Z. comunes") }, { k: "titulo", t: "Título" }, { k: "tipo", t: "Tipo" },
-      { k: "categoria", t: "Instalación" }, { k: "prioridad", t: "Prioridad", f: badge }, { k: "asignado_a", t: "Asignado" },
-      { k: "fecha_prevista", t: "Prevista", f: fdate }, { k: "coste_real", t: "Coste", num: true, f: eur }, { k: "estado", t: "Estado", f: badge },
-    ], rows, (w) => can("mantenimiento.editar") && !["cerrada", "cancelada"].includes(w.estado) ? [
-      ["Editar", () => form(`OT ${w.id}: ${w.titulo}`, [
-        { k: "titulo", t: "Título", req: true, wide: true }, { k: "estado", t: "Estado", type: "select", options: list(["abierta", "asignada", "en_curso", "pendiente_material"]) },
-        { k: "prioridad", t: "Prioridad", type: "select", options: list(S.cat.prioridades) }, { k: "categoria", t: "Instalación", type: "select", options: list(S.cat.categorias_mto) },
-        { k: "asignado_a", t: "Asignado a" }, { k: "proveedor", t: "Proveedor" }, { k: "coste_estimado", t: "Coste estimado €", type: "number" },
-        { k: "fecha_prevista", t: "Fecha prevista", type: "date" }, { k: "descripcion", t: "Descripción", type: "textarea", wide: true },
-      ], w, async (d) => { await put(`/api/mantenimiento/ordenes/${w.id}`, d); toast("OT actualizada"); load(); })],
-      ["Cerrar", () => form(`Cerrar OT ${w.id}`, [{ k: "solucion", t: "Trabajo realizado / solución", type: "textarea", wide: true, req: true },
-        { k: "coste_real", t: "Coste real €", type: "number" }, { k: "cancelar", t: "Cancelar en lugar de cerrar", type: "checkbox" }], {},
-        async (d) => { await post(`/api/mantenimiento/ordenes/${w.id}/cerrar`, d); toast("OT cerrada"); load(); })],
-    ] : []);
+      { k: "unidad", t: "Unidad", f: (v) => esc(v || "Z. comunes") }, { k: "titulo", t: "Título" },
+      { k: "categoria", t: "Instalación" }, { k: "prioridad", t: "Prioridad", f: badge }, { k: "abierta_por_nombre", t: "Abierta por" },
+      { k: "asignado_a", t: "Asignado" }, { k: "conf_mto_por_nombre", t: "Mantenimiento", f: (v, w) => check(v, w.conf_mto_fecha) },
+      { k: "conf_limpieza_por_nombre", t: "Limpieza", f: (v, w) => check(v, w.conf_limpieza_fecha) },
+      { k: "coste_real", t: "Coste", num: true, f: eur }, { k: "estado", t: "Estado", f: badge },
+    ], rows, (w) => {
+      if (["cerrada", "cancelada"].includes(w.estado)) return [];
+      const enTrabajo = !w.conf_mto_por;
+      return [
+        can("mantenimiento.editar") && enTrabajo && ["Editar", () => form(`OT ${w.id}: ${w.titulo}`, [
+          { k: "titulo", t: "Título", req: true, wide: true }, { k: "estado", t: "Estado", type: "select", options: list(["abierta", "asignada", "en_curso", "pendiente_material"]) },
+          { k: "prioridad", t: "Prioridad", type: "select", options: list(S.cat.prioridades) }, { k: "categoria", t: "Instalación", type: "select", options: list(S.cat.categorias_mto) },
+          { k: "tipo", t: "Tipo", type: "select", options: list(["correctivo", "preventivo", "normativo", "mejora"]) },
+          { k: "asignado_a", t: "Asignado a" }, { k: "proveedor", t: "Proveedor" }, { k: "coste_estimado", t: "Coste estimado €", type: "number" },
+          { k: "fecha_prevista", t: "Fecha prevista", type: "date" }, { k: "descripcion", t: "Descripción", type: "textarea", wide: true },
+        ], w, async (d) => { await put(`/api/mantenimiento/ordenes/${w.id}`, d); toast("OT actualizada"); load(); })],
+        can("mantenimiento.editar") && enTrabajo && ["Trabajo realizado", () => form(`OT ${w.id}: confirmar trabajo realizado`, [
+          { k: "solucion", t: "Trabajo realizado / solución", type: "textarea", wide: true, req: true }, { k: "coste_real", t: "Coste real €", type: "number" }],
+          {}, async (d) => { await post(`/api/mantenimiento/ordenes/${w.id}/confirmar-mantenimiento`, d); toast("Trabajo confirmado. Pendiente de limpieza"); load(); })],
+        can("limpieza.confirmar_ot") && w.conf_mto_por && !w.conf_limpieza_por && ["Unidad OK", () => run(() => post(`/api/mantenimiento/ordenes/${w.id}/confirmar-limpieza`), "Confirmado por limpieza. Pendiente de cierre").then(load)],
+        (can("limpieza.confirmar_ot") || can("mantenimiento.cerrar")) && w.conf_mto_por && ["Rechazar", () => form(`OT ${w.id}: devolver a mantenimiento`, [
+          { k: "motivo", t: "Motivo (qué no está bien)", type: "textarea", wide: true, req: true }], {},
+          async (d) => { await post(`/api/mantenimiento/ordenes/${w.id}/rechazar`, d); toast("Devuelta a mantenimiento"); load(); }), "danger"],
+        can("mantenimiento.cerrar") && w.estado === "pendiente_cierre" && ["Cerrar OT", () => run(() => post(`/api/mantenimiento/ordenes/${w.id}/cerrar`, {}), "OT cerrada").then(load), "primary"],
+        can("mantenimiento.cerrar") && ["Anular", () => form(`Anular OT ${w.id}`, [{ k: "motivo", t: "Motivo", type: "textarea", wide: true, req: true }], {},
+          async (d) => { await post(`/api/mantenimiento/ordenes/${w.id}/cerrar`, { cancelar: true, motivo: d.motivo }); toast("OT anulada"); load(); }), "danger"],
+      ];
+    });
   };
   $("#e", el).onchange = load; $("#tp", el).onchange = load;
   if ($("#new", el)) $("#new", el).onclick = () => newWorkOrder().then(load);

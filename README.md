@@ -38,7 +38,14 @@ Para añadir activos nuevos: *Activos → Nuevo activo* (se eligen la gestora, l
   emisión mensual de recibos prorrateados, cobros parciales o totales, anulación y actualización de renta.
 - **Mantenimiento**:
   - Órdenes de trabajo correctivas, preventivas, normativas y de mejora, por gremio o instalación y con
-    prioridad. Una OT puede bloquear la unidad (la saca de venta) y la libera al cerrarse.
+    prioridad. Una OT puede bloquear la unidad (la saca de venta) hasta su cierre.
+  - **Circuito de cierre**:
+    1. Abren la OT Recepción, Limpieza o Mantenimiento.
+    2. Mantenimiento ejecuta el trabajo y lo confirma con la solución y el coste.
+    3. Limpieza revisa la unidad y la confirma, o la rechaza y vuelve a Mantenimiento.
+    4. Recepción la cierra. Solo puede hacerlo con las dos confirmaciones.
+
+    Al cerrar, la unidad queda disponible. Cada paso queda registrado con usuario y fecha.
   - Planes preventivos periódicos que generan sus OT automáticamente.
   - Plantilla normativa cargable por activo: RITE, RIPCI (RD 513/2017), legionela (RD 487/2022),
     ascensores (RD 355/2024), REBT ITC-BT-05 y buenas prácticas. Es orientativa: hay que ajustar

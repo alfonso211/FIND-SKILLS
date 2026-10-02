@@ -1,21 +1,26 @@
 """Mantenimiento correctivo y preventivo (órdenes de trabajo y planes periódicos)."""
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import MODALIDADES_RESERVA, Asset, PreventivePlan, Unit, WorkOrder
+from ..models import Asset, PreventivePlan, Unit, User, WorkOrder
 from ..schemas import PlanIn, PlanUpdate, WorkOrderIn, WorkOrderUpdate
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
 
 router = APIRouter(prefix="/api/mantenimiento", tags=["mantenimiento"])
 
-ABIERTAS = ("abierta", "asignada", "en_curso", "pendiente_material")
+# Estados editables a mano por mantenimiento
+ESTADOS_TRABAJO = ("abierta", "asignada", "en_curso", "pendiente_material")
+# Estados que fija el flujo de confirmaciones
+ABIERTAS = ESTADOS_TRABAJO + ("trabajo_realizado", "pendiente_cierre")
 ESTADOS_OT = set(ABIERTAS) | {"cerrada", "cancelada"}
+# Datos de gestión que solo fija mantenimiento (quien solo abre el aviso no los rellena)
+CAMPOS_GESTION = ("asignado_a", "proveedor", "coste_estimado", "fecha_prevista", "tipo")
 
 # Plantilla de preventivo legal / buenas prácticas. Revisar y ajustar periodicidades a cada instalación
 # (potencia térmica, nº de ascensores, uso del edificio...) antes de darla por buena.
@@ -40,7 +45,17 @@ PLANTILLA_PREVENTIVO = [
 def _wo_out(w: WorkOrder, db: Session) -> dict:
     d = w.to_dict()
     d["unidad"] = db.get(Unit, w.unit_id).codigo if w.unit_id else None
+    for campo in ("abierta_por", "conf_mto_por", "conf_limpieza_por", "cerrada_por"):
+        uid = getattr(w, campo)
+        d[campo + "_nombre"] = db.get(User, uid).nombre if uid else None
     return d
+
+
+def _open_order(db: Session, wid: int) -> WorkOrder:
+    w = get_or_404(db, WorkOrder, wid)
+    if w.estado not in ABIERTAS:
+        bad_request("La orden ya está cerrada o cancelada")
+    return w
 
 
 # --------------------------------------------------------------------------- órdenes de trabajo
@@ -63,14 +78,20 @@ def list_orders(asset_id: int | None = None, estado: str | None = None, abiertas
 
 @router.post("/ordenes", status_code=201)
 def create_order(data: WorkOrderIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    scope.require_asset("mantenimiento.editar", data.asset_id)
+    gestiona = scope.can_asset("mantenimiento.editar", data.asset_id)
+    if not (gestiona or scope.can_asset("mantenimiento.abrir", data.asset_id)):
+        raise HTTPException(403, "Sin permiso para abrir órdenes de trabajo en este activo")
     get_or_404(db, Asset, data.asset_id)
     unit = None
     if data.unit_id:
         unit = get_or_404(db, Unit, data.unit_id)
         if unit.asset_id != data.asset_id:
             bad_request("La unidad no pertenece al activo indicado")
-    w = WorkOrder(**data.model_dump())
+    valores = data.model_dump()
+    if not gestiona:
+        for campo in CAMPOS_GESTION:
+            valores.pop(campo, None)
+    w = WorkOrder(**valores, abierta_por=scope.user.id)
     db.add(w)
     if unit and data.bloquea_unidad and unit.estado in ("disponible", "pendiente_limpieza"):
         unit.estado = "mantenimiento"
@@ -84,40 +105,109 @@ def create_order(data: WorkOrderIn, scope: Scope = Depends(get_scope), db: Sessi
 def update_order(wid: int, data: WorkOrderUpdate, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     w = get_or_404(db, WorkOrder, wid)
     scope.require_asset("mantenimiento.editar", w.asset_id)
-    if data.estado is not None and data.estado not in ESTADOS_OT:
-        bad_request("Estado no válido")
-    if data.estado in ("cerrada", "cancelada"):
-        bad_request("Use la acción 'cerrar' para cerrar o cancelar la orden")
+    if w.estado not in ESTADOS_TRABAJO:
+        bad_request("La orden ya tiene el trabajo confirmado; si hay que rehacerlo, debe rechazarse")
+    if data.estado is not None and data.estado not in ESTADOS_TRABAJO:
+        bad_request(f"Estado no válido. Opciones: {', '.join(ESTADOS_TRABAJO)}")
     ch = apply(w, data)
     audit(db, scope.user, "editar", "orden_trabajo", wid, ch)
     db.commit()
     return _wo_out(w, db)
 
 
-class CloseOrder(BaseModel):
-    solucion: str | None = None
+class ConfirmWork(BaseModel):
+    solucion: str = Field(min_length=3)
     coste_real: float | None = Field(default=None, ge=0)
+
+
+@router.post("/ordenes/{wid}/confirmar-mantenimiento")
+def confirm_work(wid: int, data: ConfirmWork, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Mantenimiento da el trabajo por realizado."""
+    w = _open_order(db, wid)
+    scope.require_asset("mantenimiento.editar", w.asset_id)
+    if w.conf_mto_por:
+        bad_request("El trabajo ya está confirmado por mantenimiento")
+    w.solucion = data.solucion
+    if data.coste_real is not None:
+        w.coste_real = data.coste_real
+    w.conf_mto_por, w.conf_mto_fecha = scope.user.id, datetime.now()
+    w.estado = "trabajo_realizado"
+    audit(db, scope.user, "confirmar_mantenimiento", "orden_trabajo", wid, data.model_dump())
+    db.commit()
+    return _wo_out(w, db)
+
+
+@router.post("/ordenes/{wid}/confirmar-limpieza")
+def confirm_cleaning(wid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Limpieza revisa la unidad / zona tras el trabajo y la da por correcta."""
+    w = _open_order(db, wid)
+    scope.require_asset("limpieza.confirmar_ot", w.asset_id)
+    if not w.conf_mto_por:
+        bad_request("Mantenimiento aún no ha confirmado el trabajo")
+    if w.conf_limpieza_por:
+        bad_request("Ya está confirmada por limpieza")
+    w.conf_limpieza_por, w.conf_limpieza_fecha = scope.user.id, datetime.now()
+    w.estado = "pendiente_cierre"
+    audit(db, scope.user, "confirmar_limpieza", "orden_trabajo", wid)
+    db.commit()
+    return _wo_out(w, db)
+
+
+class Reject(BaseModel):
+    motivo: str = Field(min_length=3)
+
+
+@router.post("/ordenes/{wid}/rechazar")
+def reject_work(wid: int, data: Reject, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Limpieza o recepción devuelven la orden a mantenimiento (trabajo no conforme)."""
+    w = _open_order(db, wid)
+    if not (scope.can_asset("limpieza.confirmar_ot", w.asset_id) or scope.can_asset("mantenimiento.cerrar", w.asset_id)):
+        raise HTTPException(403, "Sin permiso para rechazar el trabajo")
+    if not w.conf_mto_por:
+        bad_request("No hay trabajo confirmado que rechazar")
+    w.conf_mto_por = w.conf_mto_fecha = w.conf_limpieza_por = w.conf_limpieza_fecha = None
+    w.estado = "en_curso"
+    w.descripcion = f"{w.descripcion or ''}\n[Rechazada {date.today():%d/%m/%Y} por {scope.user.nombre}] {data.motivo}".strip()
+    audit(db, scope.user, "rechazar", "orden_trabajo", wid, data.model_dump())
+    db.commit()
+    return _wo_out(w, db)
+
+
+class CloseOrder(BaseModel):
     cancelar: bool = False
+    motivo: str | None = None
+
+
+def _release_unit(db: Session, w: WorkOrder, cancelada: bool) -> None:
+    if not (w.unit_id and w.bloquea_unidad):
+        return
+    unit = db.get(Unit, w.unit_id)
+    others = db.scalar(select(WorkOrder.id).where(WorkOrder.unit_id == unit.id, WorkOrder.id != w.id,
+                                                  WorkOrder.bloquea_unidad, WorkOrder.estado.in_(ABIERTAS)))
+    if unit.estado == "mantenimiento" and not others:
+        # cerrada: limpieza ya confirmó la unidad -> disponible; cancelada: hay que revisarla
+        unit.estado = "pendiente_limpieza" if cancelada else "disponible"
 
 
 @router.post("/ordenes/{wid}/cerrar")
 def close_order(wid: int, data: CloseOrder, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    w = get_or_404(db, WorkOrder, wid)
-    scope.require_asset("mantenimiento.editar", w.asset_id)
-    if w.estado not in ABIERTAS:
-        bad_request("La orden ya está cerrada")
-    w.estado = "cancelada" if data.cancelar else "cerrada"
+    """Recepción cierra la orden cuando mantenimiento y limpieza la han confirmado (o la cancela)."""
+    w = _open_order(db, wid)
+    scope.require_asset("mantenimiento.cerrar", w.asset_id)
+    if data.cancelar:
+        if not data.motivo:
+            bad_request("Indique el motivo de la cancelación")
+        w.estado = "cancelada"
+        w.solucion = f"{w.solucion or ''}\n[Cancelada] {data.motivo}".strip()
+    else:
+        if not w.conf_mto_por:
+            bad_request("Falta la confirmación de mantenimiento")
+        if not w.conf_limpieza_por:
+            bad_request("Falta la confirmación de limpieza")
+        w.estado = "cerrada"
     w.fecha_cierre = date.today()
-    if data.solucion is not None:
-        w.solucion = data.solucion
-    if data.coste_real is not None:
-        w.coste_real = data.coste_real
-    if w.unit_id and w.bloquea_unidad:
-        unit = db.get(Unit, w.unit_id)
-        others = db.scalar(select(WorkOrder.id).where(WorkOrder.unit_id == unit.id, WorkOrder.id != w.id,
-                                                      WorkOrder.bloquea_unidad, WorkOrder.estado.in_(ABIERTAS)))
-        if unit.estado == "mantenimiento" and not others:
-            unit.estado = "pendiente_limpieza" if unit.asset.modalidad in MODALIDADES_RESERVA else "disponible"
+    w.cerrada_por = scope.user.id
+    _release_unit(db, w, cancelada=data.cancelar)
     audit(db, scope.user, w.estado, "orden_trabajo", wid, data.model_dump())
     db.commit()
     return _wo_out(w, db)
