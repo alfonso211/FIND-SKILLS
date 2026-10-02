@@ -1,0 +1,34 @@
+from datetime import date, datetime
+from decimal import Decimal
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
+
+from .config import settings
+
+_connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
+engine = create_engine(settings.database_url, connect_args=_connect_args)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+
+class Base(DeclarativeBase):
+    def to_dict(self, exclude: tuple[str, ...] = ()) -> dict:
+        out = {}
+        for col in self.__table__.columns:
+            if col.name in exclude:
+                continue
+            val = getattr(self, col.name)
+            if isinstance(val, Decimal):
+                val = float(val)
+            elif isinstance(val, (date, datetime)):
+                val = val.isoformat()
+            out[col.name] = val
+        return out
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

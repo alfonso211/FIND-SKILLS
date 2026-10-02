@@ -1,0 +1,5558 @@
+{
+ "SFL": [
+  {
+   "codigo": "P1-1A",
+   "bloque": "Portal 1",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-1B",
+   "bloque": "Portal 1",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-1C",
+   "bloque": "Portal 1",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-1D",
+   "bloque": "Portal 1",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-1E",
+   "bloque": "Portal 1",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-1F",
+   "bloque": "Portal 1",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-1G",
+   "bloque": "Portal 1",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-1H",
+   "bloque": "Portal 1",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-1I",
+   "bloque": "Portal 1",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-1J",
+   "bloque": "Portal 1",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-1K",
+   "bloque": "Portal 1",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-1L",
+   "bloque": "Portal 1",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-1M",
+   "bloque": "Portal 1",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-1N",
+   "bloque": "Portal 1",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-1O",
+   "bloque": "Portal 1",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-1P",
+   "bloque": "Portal 1",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-1Q",
+   "bloque": "Portal 1",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-1R",
+   "bloque": "Portal 1",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-2A",
+   "bloque": "Portal 1",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-2B",
+   "bloque": "Portal 1",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-2C",
+   "bloque": "Portal 1",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-2D",
+   "bloque": "Portal 1",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-2E",
+   "bloque": "Portal 1",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-2F",
+   "bloque": "Portal 1",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-2G",
+   "bloque": "Portal 1",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-2H",
+   "bloque": "Portal 1",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-2I",
+   "bloque": "Portal 1",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-2J",
+   "bloque": "Portal 1",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-2K",
+   "bloque": "Portal 1",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-2L",
+   "bloque": "Portal 1",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-2M",
+   "bloque": "Portal 1",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-2N",
+   "bloque": "Portal 1",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-2O",
+   "bloque": "Portal 1",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-2P",
+   "bloque": "Portal 1",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-2Q",
+   "bloque": "Portal 1",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-2R",
+   "bloque": "Portal 1",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-3A",
+   "bloque": "Portal 1",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-3B",
+   "bloque": "Portal 1",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-3C",
+   "bloque": "Portal 1",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-3D",
+   "bloque": "Portal 1",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-3E",
+   "bloque": "Portal 1",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-3F",
+   "bloque": "Portal 1",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-3G",
+   "bloque": "Portal 1",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-3H",
+   "bloque": "Portal 1",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-3I",
+   "bloque": "Portal 1",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-3J",
+   "bloque": "Portal 1",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-3K",
+   "bloque": "Portal 1",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-3L",
+   "bloque": "Portal 1",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-3M",
+   "bloque": "Portal 1",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-3N",
+   "bloque": "Portal 1",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-3O",
+   "bloque": "Portal 1",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-3P",
+   "bloque": "Portal 1",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-3Q",
+   "bloque": "Portal 1",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-3R",
+   "bloque": "Portal 1",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-4A",
+   "bloque": "Portal 1",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-4B",
+   "bloque": "Portal 1",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-4C",
+   "bloque": "Portal 1",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-4D",
+   "bloque": "Portal 1",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-4E",
+   "bloque": "Portal 1",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-4F",
+   "bloque": "Portal 1",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-4G",
+   "bloque": "Portal 1",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-4H",
+   "bloque": "Portal 1",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-4I",
+   "bloque": "Portal 1",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-4J",
+   "bloque": "Portal 1",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-4K",
+   "bloque": "Portal 1",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-4L",
+   "bloque": "Portal 1",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-4M",
+   "bloque": "Portal 1",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-4N",
+   "bloque": "Portal 1",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-4O",
+   "bloque": "Portal 1",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-4P",
+   "bloque": "Portal 1",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-4Q",
+   "bloque": "Portal 1",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-4R",
+   "bloque": "Portal 1",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-5A",
+   "bloque": "Portal 1",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-5B",
+   "bloque": "Portal 1",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-5C",
+   "bloque": "Portal 1",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-5D",
+   "bloque": "Portal 1",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-5E",
+   "bloque": "Portal 1",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-5F",
+   "bloque": "Portal 1",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-5G",
+   "bloque": "Portal 1",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-5H",
+   "bloque": "Portal 1",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-5I",
+   "bloque": "Portal 1",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-5J",
+   "bloque": "Portal 1",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-5K",
+   "bloque": "Portal 1",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-5L",
+   "bloque": "Portal 1",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-5M",
+   "bloque": "Portal 1",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-5N",
+   "bloque": "Portal 1",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-5O",
+   "bloque": "Portal 1",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-5P",
+   "bloque": "Portal 1",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-5Q",
+   "bloque": "Portal 1",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P1-5R",
+   "bloque": "Portal 1",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-1A",
+   "bloque": "Portal 2",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-1B",
+   "bloque": "Portal 2",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-1C",
+   "bloque": "Portal 2",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-1D",
+   "bloque": "Portal 2",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-1E",
+   "bloque": "Portal 2",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-1F",
+   "bloque": "Portal 2",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-1G",
+   "bloque": "Portal 2",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-1H",
+   "bloque": "Portal 2",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-1I",
+   "bloque": "Portal 2",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-1J",
+   "bloque": "Portal 2",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-1K",
+   "bloque": "Portal 2",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-1L",
+   "bloque": "Portal 2",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-1M",
+   "bloque": "Portal 2",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-1N",
+   "bloque": "Portal 2",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-1O",
+   "bloque": "Portal 2",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-2A",
+   "bloque": "Portal 2",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-2B",
+   "bloque": "Portal 2",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-2C",
+   "bloque": "Portal 2",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-2D",
+   "bloque": "Portal 2",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-2E",
+   "bloque": "Portal 2",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-2F",
+   "bloque": "Portal 2",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-2G",
+   "bloque": "Portal 2",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-2H",
+   "bloque": "Portal 2",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-2I",
+   "bloque": "Portal 2",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-2J",
+   "bloque": "Portal 2",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-2K",
+   "bloque": "Portal 2",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-2L",
+   "bloque": "Portal 2",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-2M",
+   "bloque": "Portal 2",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-2N",
+   "bloque": "Portal 2",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-2O",
+   "bloque": "Portal 2",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-3A",
+   "bloque": "Portal 2",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-3B",
+   "bloque": "Portal 2",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-3C",
+   "bloque": "Portal 2",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-3D",
+   "bloque": "Portal 2",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-3E",
+   "bloque": "Portal 2",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-3F",
+   "bloque": "Portal 2",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-3G",
+   "bloque": "Portal 2",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-3H",
+   "bloque": "Portal 2",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-3I",
+   "bloque": "Portal 2",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-3J",
+   "bloque": "Portal 2",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-3K",
+   "bloque": "Portal 2",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-3L",
+   "bloque": "Portal 2",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-3M",
+   "bloque": "Portal 2",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-3N",
+   "bloque": "Portal 2",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-3O",
+   "bloque": "Portal 2",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-4A",
+   "bloque": "Portal 2",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-4B",
+   "bloque": "Portal 2",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-4C",
+   "bloque": "Portal 2",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-4D",
+   "bloque": "Portal 2",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-4E",
+   "bloque": "Portal 2",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-4F",
+   "bloque": "Portal 2",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-4G",
+   "bloque": "Portal 2",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-4H",
+   "bloque": "Portal 2",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-4I",
+   "bloque": "Portal 2",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-4J",
+   "bloque": "Portal 2",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-4K",
+   "bloque": "Portal 2",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-4L",
+   "bloque": "Portal 2",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-4M",
+   "bloque": "Portal 2",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-4N",
+   "bloque": "Portal 2",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-4O",
+   "bloque": "Portal 2",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-5A",
+   "bloque": "Portal 2",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-5B",
+   "bloque": "Portal 2",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-5C",
+   "bloque": "Portal 2",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-5D",
+   "bloque": "Portal 2",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-5E",
+   "bloque": "Portal 2",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-5F",
+   "bloque": "Portal 2",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-5G",
+   "bloque": "Portal 2",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-5H",
+   "bloque": "Portal 2",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-5I",
+   "bloque": "Portal 2",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-5J",
+   "bloque": "Portal 2",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-5K",
+   "bloque": "Portal 2",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-5L",
+   "bloque": "Portal 2",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-5M",
+   "bloque": "Portal 2",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-5N",
+   "bloque": "Portal 2",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P2-5O",
+   "bloque": "Portal 2",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-1A",
+   "bloque": "Portal 3",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-1B",
+   "bloque": "Portal 3",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-1C",
+   "bloque": "Portal 3",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-1D",
+   "bloque": "Portal 3",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-1E",
+   "bloque": "Portal 3",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-1F",
+   "bloque": "Portal 3",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-1G",
+   "bloque": "Portal 3",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-1H",
+   "bloque": "Portal 3",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-1I",
+   "bloque": "Portal 3",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-1J",
+   "bloque": "Portal 3",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-1K",
+   "bloque": "Portal 3",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-1L",
+   "bloque": "Portal 3",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-1M",
+   "bloque": "Portal 3",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-1N",
+   "bloque": "Portal 3",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-1O",
+   "bloque": "Portal 3",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-2A",
+   "bloque": "Portal 3",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-2B",
+   "bloque": "Portal 3",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-2C",
+   "bloque": "Portal 3",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-2D",
+   "bloque": "Portal 3",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-2E",
+   "bloque": "Portal 3",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-2F",
+   "bloque": "Portal 3",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-2G",
+   "bloque": "Portal 3",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-2H",
+   "bloque": "Portal 3",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-2I",
+   "bloque": "Portal 3",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-2J",
+   "bloque": "Portal 3",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-2K",
+   "bloque": "Portal 3",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-2L",
+   "bloque": "Portal 3",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-2M",
+   "bloque": "Portal 3",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-2N",
+   "bloque": "Portal 3",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-2O",
+   "bloque": "Portal 3",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-3A",
+   "bloque": "Portal 3",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-3B",
+   "bloque": "Portal 3",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-3C",
+   "bloque": "Portal 3",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-3D",
+   "bloque": "Portal 3",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-3E",
+   "bloque": "Portal 3",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-3F",
+   "bloque": "Portal 3",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-3G",
+   "bloque": "Portal 3",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-3H",
+   "bloque": "Portal 3",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-3I",
+   "bloque": "Portal 3",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-3J",
+   "bloque": "Portal 3",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-3K",
+   "bloque": "Portal 3",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-3L",
+   "bloque": "Portal 3",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-3M",
+   "bloque": "Portal 3",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-3N",
+   "bloque": "Portal 3",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-3O",
+   "bloque": "Portal 3",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-4A",
+   "bloque": "Portal 3",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-4B",
+   "bloque": "Portal 3",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-4C",
+   "bloque": "Portal 3",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-4D",
+   "bloque": "Portal 3",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-4E",
+   "bloque": "Portal 3",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-4F",
+   "bloque": "Portal 3",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-4G",
+   "bloque": "Portal 3",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-4H",
+   "bloque": "Portal 3",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-4I",
+   "bloque": "Portal 3",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-4J",
+   "bloque": "Portal 3",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-4K",
+   "bloque": "Portal 3",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-4L",
+   "bloque": "Portal 3",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-4M",
+   "bloque": "Portal 3",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-4N",
+   "bloque": "Portal 3",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-4O",
+   "bloque": "Portal 3",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-5A",
+   "bloque": "Portal 3",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-5B",
+   "bloque": "Portal 3",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-5C",
+   "bloque": "Portal 3",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-5D",
+   "bloque": "Portal 3",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-5E",
+   "bloque": "Portal 3",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-5F",
+   "bloque": "Portal 3",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-5G",
+   "bloque": "Portal 3",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-5H",
+   "bloque": "Portal 3",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-5I",
+   "bloque": "Portal 3",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-5J",
+   "bloque": "Portal 3",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-5K",
+   "bloque": "Portal 3",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-5L",
+   "bloque": "Portal 3",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-5M",
+   "bloque": "Portal 3",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-5N",
+   "bloque": "Portal 3",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P3-5O",
+   "bloque": "Portal 3",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-1A",
+   "bloque": "Portal 4",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-1B",
+   "bloque": "Portal 4",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-1C",
+   "bloque": "Portal 4",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-1D",
+   "bloque": "Portal 4",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-1E",
+   "bloque": "Portal 4",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-1F",
+   "bloque": "Portal 4",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-1G",
+   "bloque": "Portal 4",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-1H",
+   "bloque": "Portal 4",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-1I",
+   "bloque": "Portal 4",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-1J",
+   "bloque": "Portal 4",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-1K",
+   "bloque": "Portal 4",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-1L",
+   "bloque": "Portal 4",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-1M",
+   "bloque": "Portal 4",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-1N",
+   "bloque": "Portal 4",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-1O",
+   "bloque": "Portal 4",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-1P",
+   "bloque": "Portal 4",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-1Q",
+   "bloque": "Portal 4",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-2A",
+   "bloque": "Portal 4",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-2B",
+   "bloque": "Portal 4",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-2C",
+   "bloque": "Portal 4",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-2D",
+   "bloque": "Portal 4",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-2E",
+   "bloque": "Portal 4",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-2F",
+   "bloque": "Portal 4",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-2G",
+   "bloque": "Portal 4",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-2H",
+   "bloque": "Portal 4",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-2I",
+   "bloque": "Portal 4",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-2J",
+   "bloque": "Portal 4",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-2K",
+   "bloque": "Portal 4",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-2L",
+   "bloque": "Portal 4",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-2M",
+   "bloque": "Portal 4",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-2N",
+   "bloque": "Portal 4",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-2O",
+   "bloque": "Portal 4",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-2P",
+   "bloque": "Portal 4",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-2Q",
+   "bloque": "Portal 4",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-3A",
+   "bloque": "Portal 4",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-3B",
+   "bloque": "Portal 4",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-3C",
+   "bloque": "Portal 4",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-3D",
+   "bloque": "Portal 4",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-3E",
+   "bloque": "Portal 4",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-3F",
+   "bloque": "Portal 4",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-3G",
+   "bloque": "Portal 4",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-3H",
+   "bloque": "Portal 4",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-3I",
+   "bloque": "Portal 4",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-3J",
+   "bloque": "Portal 4",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-3K",
+   "bloque": "Portal 4",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-3L",
+   "bloque": "Portal 4",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-3M",
+   "bloque": "Portal 4",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-3N",
+   "bloque": "Portal 4",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-3O",
+   "bloque": "Portal 4",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-3P",
+   "bloque": "Portal 4",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-3Q",
+   "bloque": "Portal 4",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-4A",
+   "bloque": "Portal 4",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-4B",
+   "bloque": "Portal 4",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-4C",
+   "bloque": "Portal 4",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-4D",
+   "bloque": "Portal 4",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-4E",
+   "bloque": "Portal 4",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-4F",
+   "bloque": "Portal 4",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-4G",
+   "bloque": "Portal 4",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-4H",
+   "bloque": "Portal 4",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-4I",
+   "bloque": "Portal 4",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-4J",
+   "bloque": "Portal 4",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-4K",
+   "bloque": "Portal 4",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-4L",
+   "bloque": "Portal 4",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-4M",
+   "bloque": "Portal 4",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-4N",
+   "bloque": "Portal 4",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-4O",
+   "bloque": "Portal 4",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-4P",
+   "bloque": "Portal 4",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-4Q",
+   "bloque": "Portal 4",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-5A",
+   "bloque": "Portal 4",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-5B",
+   "bloque": "Portal 4",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-5C",
+   "bloque": "Portal 4",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-5D",
+   "bloque": "Portal 4",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-5E",
+   "bloque": "Portal 4",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-5F",
+   "bloque": "Portal 4",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-5G",
+   "bloque": "Portal 4",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-5H",
+   "bloque": "Portal 4",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-5I",
+   "bloque": "Portal 4",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-5J",
+   "bloque": "Portal 4",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-5K",
+   "bloque": "Portal 4",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-5L",
+   "bloque": "Portal 4",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-5M",
+   "bloque": "Portal 4",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-5N",
+   "bloque": "Portal 4",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-5O",
+   "bloque": "Portal 4",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-5P",
+   "bloque": "Portal 4",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  },
+  {
+   "codigo": "P4-5Q",
+   "bloque": "Portal 4",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": null,
+   "notas": null
+  }
+ ],
+ "SAE": [
+  {
+   "codigo": "B-101",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-102",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-103",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-104",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-105",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-106",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-107",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-108",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-109",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-110",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-111",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Estudio",
+   "dormitorios": 0
+  },
+  {
+   "codigo": "B-112",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Estudio",
+   "dormitorios": 0
+  },
+  {
+   "codigo": "B-113",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-114",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-115",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-116",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-117",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-118",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-119",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-120",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-121",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-122",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-123",
+   "bloque": "Bloque B",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-127",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-128",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-129",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-130",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-131",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-132",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-133",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-134",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-135",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-136",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-137",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-138",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-139",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-140",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-141",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Estudio",
+   "dormitorios": 0
+  },
+  {
+   "codigo": "A-142",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Estudio",
+   "dormitorios": 0
+  },
+  {
+   "codigo": "A-143",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-144",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-145",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-146",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-147",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-148",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-149",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-150",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-151",
+   "bloque": "Bloque A",
+   "planta": "1",
+   "uso": "apartamento",
+   "tipologia": "Estudio",
+   "dormitorios": 0
+  },
+  {
+   "codigo": "B-201",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "B-202",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-203",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-204",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-205",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-206",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-207",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-208",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-209",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-210",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-211",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-212",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-213",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-214",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-215",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-216",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-217",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-218",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-219",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-220",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-221",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-222",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-223",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-224",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-225",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-226",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-227",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-228",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-229",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-230",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-231",
+   "bloque": "Bloque B",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-232",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-233",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-234",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-235",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-236",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-237",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-238",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-239",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-240",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-241",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-242",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-243",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-244",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-245",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-246",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-247",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-248",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-249",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-250",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-251",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-252",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-253",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-254",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-255",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-256",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-257",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-258",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-259",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-260",
+   "bloque": "Bloque A",
+   "planta": "2",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-301",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "B-302",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-303",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-304",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-305",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-306",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-307",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-308",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-309",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-310",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-311",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-312",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-313",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-314",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-315",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-316",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-317",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-318",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-319",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-320",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-321",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-322",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-323",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-324",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-325",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-326",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-327",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-328",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-329",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-330",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-331",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-332",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-333",
+   "bloque": "Bloque B",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-334",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-335",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-336",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-337",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-338",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-339",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-340",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-341",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-342",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-343",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-344",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-345",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-346",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-347",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-348",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-349",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-350",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-351",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-352",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-353",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-354",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-355",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-356",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-357",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-358",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-359",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-360",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-361",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-362",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-363",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-364",
+   "bloque": "Bloque A",
+   "planta": "3",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-401",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "B-402",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-403",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-404",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-405",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-406",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-407",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-408",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-409",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-410",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-411",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-412",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-413",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-414",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-415",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-416",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-417",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-418",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-419",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-420",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-421",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-422",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-423",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-424",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-425",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-426",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-427",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-428",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-429",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-430",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-431",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-432",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-433",
+   "bloque": "Bloque B",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-434",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-435",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-436",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-437",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-438",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-439",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-440",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-441",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-442",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-443",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-444",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-445",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-446",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-447",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-448",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-449",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-450",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-451",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-452",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-453",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-454",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-455",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-456",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-457",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-458",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-459",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-460",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-461",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-462",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-463",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-464",
+   "bloque": "Bloque A",
+   "planta": "4",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-501",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "B-502",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-503",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-504",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-505",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-506",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-507",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-508",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-509",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-510",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-511",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-512",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-513",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-514",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-515",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-516",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-517",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-518",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-519",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-520",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-521",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-522",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-523",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-524",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-525",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-526",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-527",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-528",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-529",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-530",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-531",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-532",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "B-533",
+   "bloque": "Bloque B",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-534",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-535",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-536",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-537",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-538",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-539",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-540",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-541",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-542",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-543",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-544",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-545",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-546",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-547",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-548",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-549",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-550",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-551",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-552",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-553",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-554",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-555",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-556",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-557",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-558",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-559",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-560",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  },
+  {
+   "codigo": "A-561",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-562",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-563",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 2 dormitorios",
+   "dormitorios": 2
+  },
+  {
+   "codigo": "A-564",
+   "bloque": "Bloque A",
+   "planta": "5",
+   "uso": "apartamento",
+   "tipologia": "Apartamento 1 dormitorio",
+   "dormitorios": 1
+  }
+ ],
+ "BAB35": [
+  {
+   "codigo": "BJ-F",
+   "bloque": null,
+   "planta": "Bajo",
+   "uso": "vivienda",
+   "tipologia": "Vivienda",
+   "superficie_m2": 46.15,
+   "coef_participacion": 0.79,
+   "cuota_comunidad": 99.01,
+   "anejos": "Trasteros 66 y 67"
+  },
+  {
+   "codigo": "BJ-H",
+   "bloque": null,
+   "planta": "Bajo",
+   "uso": "vivienda",
+   "tipologia": "Vivienda",
+   "superficie_m2": 47.74,
+   "coef_participacion": 0.78,
+   "cuota_comunidad": 97.77,
+   "anejos": "Trastero 41"
+  },
+  {
+   "codigo": "BJ-I",
+   "bloque": null,
+   "planta": "Bajo",
+   "uso": "vivienda",
+   "tipologia": "Vivienda",
+   "superficie_m2": 47.74,
+   "coef_participacion": 0.78,
+   "cuota_comunidad": 97.77,
+   "anejos": "Trastero 42"
+  },
+  {
+   "codigo": "BJ-L",
+   "bloque": null,
+   "planta": "Bajo",
+   "uso": "vivienda",
+   "tipologia": "Vivienda",
+   "superficie_m2": 46.15,
+   "coef_participacion": 0.75,
+   "cuota_comunidad": 94.0,
+   "anejos": "Trastero 86"
+  },
+  {
+   "codigo": "BJ-Q",
+   "bloque": null,
+   "planta": "Bajo",
+   "uso": "vivienda",
+   "tipologia": "Vivienda",
+   "superficie_m2": 46.15,
+   "coef_participacion": 0.79,
+   "cuota_comunidad": 99.01,
+   "anejos": "Trasteros 77 y 78"
+  },
+  {
+   "codigo": "1-U",
+   "bloque": null,
+   "planta": "1",
+   "uso": "vivienda",
+   "tipologia": "Vivienda",
+   "superficie_m2": 46.15,
+   "coef_participacion": 0.75,
+   "cuota_comunidad": 94.0,
+   "anejos": "Trastero 20"
+  },
+  {
+   "codigo": "1-X",
+   "bloque": null,
+   "planta": "1",
+   "uso": "vivienda",
+   "tipologia": "Vivienda",
+   "superficie_m2": 46.15,
+   "coef_participacion": 0.75,
+   "cuota_comunidad": 94.0,
+   "anejos": "Trastero 110"
+  },
+  {
+   "codigo": "1-Z",
+   "bloque": null,
+   "planta": "1",
+   "uso": "vivienda",
+   "tipologia": "Vivienda",
+   "superficie_m2": 46.15,
+   "coef_participacion": 0.75,
+   "cuota_comunidad": 94.0,
+   "anejos": "Trastero 54"
+  },
+  {
+   "codigo": "2-D",
+   "bloque": null,
+   "planta": "2",
+   "uso": "vivienda",
+   "tipologia": "Vivienda",
+   "superficie_m2": 65.13,
+   "coef_participacion": 1.06,
+   "cuota_comunidad": 132.84,
+   "anejos": "Trastero 22"
+  },
+  {
+   "codigo": "2-U",
+   "bloque": null,
+   "planta": "2",
+   "uso": "vivienda",
+   "tipologia": "Vivienda",
+   "superficie_m2": 46.15,
+   "coef_participacion": 0.75,
+   "cuota_comunidad": 94.0,
+   "anejos": "Trastero 70"
+  },
+  {
+   "codigo": "2-Z",
+   "bloque": null,
+   "planta": "2",
+   "uso": "vivienda",
+   "tipologia": "Vivienda",
+   "superficie_m2": 46.15,
+   "coef_participacion": 0.75,
+   "cuota_comunidad": 94.0,
+   "anejos": "Trastero 4"
+  },
+  {
+   "codigo": "3-G",
+   "bloque": null,
+   "planta": "3",
+   "uso": "vivienda",
+   "tipologia": "Vivienda",
+   "superficie_m2": 46.15,
+   "coef_participacion": 0.75,
+   "cuota_comunidad": 94.0,
+   "anejos": "Trastero 5"
+  },
+  {
+   "codigo": "3-N",
+   "bloque": null,
+   "planta": "3",
+   "uso": "vivienda",
+   "tipologia": "Vivienda",
+   "superficie_m2": 46.15,
+   "coef_participacion": 0.75,
+   "cuota_comunidad": 94.0,
+   "anejos": "Trastero 94"
+  },
+  {
+   "codigo": "3-P",
+   "bloque": null,
+   "planta": "3",
+   "uso": "vivienda",
+   "tipologia": "Vivienda",
+   "superficie_m2": 46.15,
+   "coef_participacion": 0.75,
+   "cuota_comunidad": 94.0,
+   "anejos": "Trastero 72"
+  },
+  {
+   "codigo": "3-R",
+   "bloque": null,
+   "planta": "3",
+   "uso": "vivienda",
+   "tipologia": "Vivienda",
+   "superficie_m2": 46.15,
+   "coef_participacion": 0.75,
+   "cuota_comunidad": 94.0,
+   "anejos": "Trastero 109"
+  },
+  {
+   "codigo": "3-T",
+   "bloque": null,
+   "planta": "3",
+   "uso": "vivienda",
+   "tipologia": "Vivienda",
+   "superficie_m2": 46.15,
+   "coef_participacion": 0.75,
+   "cuota_comunidad": 94.0,
+   "anejos": "Trastero 7"
+  },
+  {
+   "codigo": "3-U",
+   "bloque": null,
+   "planta": "3",
+   "uso": "vivienda",
+   "tipologia": "Vivienda",
+   "superficie_m2": 46.15,
+   "coef_participacion": 0.75,
+   "cuota_comunidad": 94.0,
+   "anejos": "Trastero 74"
+  },
+  {
+   "codigo": "3-Z",
+   "bloque": null,
+   "planta": "3",
+   "uso": "vivienda",
+   "tipologia": "Vivienda",
+   "superficie_m2": 46.15,
+   "coef_participacion": 0.71,
+   "cuota_comunidad": 88.98,
+   "anejos": null
+  },
+  {
+   "codigo": "4-C",
+   "bloque": null,
+   "planta": "4",
+   "uso": "vivienda",
+   "tipologia": "Vivienda",
+   "superficie_m2": 48.03,
+   "coef_participacion": 0.81,
+   "cuota_comunidad": 101.53,
+   "anejos": "Trastero 52"
+  },
+  {
+   "codigo": "4-F",
+   "bloque": null,
+   "planta": "4",
+   "uso": "vivienda",
+   "tipologia": "Vivienda",
+   "superficie_m2": 49.94,
+   "coef_participacion": 0.84,
+   "cuota_comunidad": 105.29,
+   "anejos": "Trastero 88"
+  },
+  {
+   "codigo": "ST3-03",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 15,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-04",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 15,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-13",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 12.6,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-16",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 15,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-20",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 15,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-21",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 14.5,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-22",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 14.5,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-23",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 11.03,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-24",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 13.5,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-25",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 13.5,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-26",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 15,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-29",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 15,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-33",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 15,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-34",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 15,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-35",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 15,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-36",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 15,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-37",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 15,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-38",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 14.25,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-39",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 14.25,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-40",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 13.5,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-41",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 15,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-42",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 15,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-43",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 15,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-44",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 15,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-46",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 14.75,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST3-53",
+   "bloque": null,
+   "planta": "ST-3",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 13.25,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST2-15",
+   "bloque": null,
+   "planta": "ST-2",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 12.6,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST2-23",
+   "bloque": null,
+   "planta": "ST-2",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 11.03,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST2-24",
+   "bloque": null,
+   "planta": "ST-2",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 13.5,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST2-46",
+   "bloque": null,
+   "planta": "ST-2",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 14.25,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST1-01",
+   "bloque": null,
+   "planta": "ST-1",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 14,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST1-12",
+   "bloque": null,
+   "planta": "ST-1",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 15.08,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  },
+  {
+   "codigo": "ST1-18",
+   "bloque": null,
+   "planta": "ST-1",
+   "uso": "garaje",
+   "tipologia": "Plaza de garaje",
+   "superficie_m2": 13,
+   "coef_participacion": 0.08,
+   "cuota_comunidad": 19.08
+  }
+ ]
+}

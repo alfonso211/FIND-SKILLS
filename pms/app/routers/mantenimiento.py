@@ -1,0 +1,311 @@
+"""Mantenimiento correctivo y preventivo (órdenes de trabajo y planes periódicos)."""
+from datetime import date, datetime, timedelta
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from ..database import get_db
+from ..models import Asset, PreventivePlan, Unit, User, WorkOrder
+from ..schemas import PlanIn, PlanUpdate, WorkOrderIn, WorkOrderUpdate
+from ..security import Scope, audit, get_scope
+from ..utils import apply, bad_request, get_or_404, scoped
+
+router = APIRouter(prefix="/api/mantenimiento", tags=["mantenimiento"])
+
+# Estados editables a mano por mantenimiento
+ESTADOS_TRABAJO = ("abierta", "asignada", "en_curso", "pendiente_material")
+# Estados que fija el flujo de confirmaciones
+ABIERTAS = ESTADOS_TRABAJO + ("trabajo_realizado", "pendiente_cierre")
+ESTADOS_OT = set(ABIERTAS) | {"cerrada", "cancelada"}
+# Datos de gestión que solo fija mantenimiento (quien solo abre el aviso no los rellena)
+CAMPOS_GESTION = ("asignado_a", "proveedor", "coste_estimado", "fecha_prevista", "tipo")
+
+# Plantilla de preventivo legal / buenas prácticas. Revisar y ajustar periodicidades a cada instalación
+# (potencia térmica, nº de ascensores, uso del edificio...) antes de darla por buena.
+PLANTILLA_PREVENTIVO = [
+    ("Mantenimiento preventivo instalaciones térmicas", "climatizacion",
+     "RD 1027/2007 RITE IT 3 (periodicidad según potencia)", 30),
+    ("Revisión trimestral sistemas PCI (extintores, BIE, detección, alumbrado emergencia)", "pci",
+     "RD 513/2017 RIPCI Anexo II Tabla I", 90),
+    ("Revisión anual PCI por empresa mantenedora habilitada", "pci", "RD 513/2017 RIPCI Anexo II Tabla II", 365),
+    ("Control temperaturas ACS en acumuladores y puntos terminales", "acs", "RD 487/2022 legionela (PPCR)", 30),
+    ("Limpieza y desinfección instalación ACS", "acs", "RD 487/2022 legionela (PPCR)", 365),
+    ("Mantenimiento ascensores por empresa conservadora", "ascensores", "RD 355/2024 ITC AEM 1", 30),
+    ("Inspección periódica BT por OCA (verificar plazo 5/10 años según uso)", "electricidad",
+     "RD 842/2002 REBT ITC-BT-05", 1825),
+    ("Revisión cuadros eléctricos zonas comunes (termografía)", "electricidad", "Buenas prácticas", 180),
+    ("Revisión grupo de presión y bombas", "fontaneria", "Buenas prácticas", 180),
+    ("Revisión cubiertas, canalones y bajantes", "cubiertas", "Buenas prácticas (antes de otoño)", 365),
+    ("Tratamiento control de plagas (DDD)", "plagas", "Buenas prácticas / sanidad", 90),
+]
+
+
+TIPOS_PREVENTIVOS = ("preventivo", "normativo")
+
+
+def requiere_limpieza(w: WorkOrder) -> bool:
+    """Las OT preventivas/normativas de zonas comunes (sin unidad) no pasan por limpieza."""
+    return not (w.unit_id is None and w.tipo in TIPOS_PREVENTIVOS)
+
+
+def _wo_out(w: WorkOrder, db: Session) -> dict:
+    d = w.to_dict()
+    d["requiere_limpieza"] = requiere_limpieza(w)
+    d["unidad"] = db.get(Unit, w.unit_id).codigo if w.unit_id else None
+    for campo in ("abierta_por", "conf_mto_por", "conf_limpieza_por", "cerrada_por"):
+        uid = getattr(w, campo)
+        d[campo + "_nombre"] = db.get(User, uid).nombre if uid else None
+    return d
+
+
+def _open_order(db: Session, wid: int) -> WorkOrder:
+    w = get_or_404(db, WorkOrder, wid)
+    if w.estado not in ABIERTAS:
+        bad_request("La orden ya está cerrada o cancelada")
+    return w
+
+
+# --------------------------------------------------------------------------- órdenes de trabajo
+@router.get("/ordenes")
+def list_orders(asset_id: int | None = None, estado: str | None = None, abiertas: bool = False,
+                tipo: str | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    ids = scope.asset_ids("mantenimiento.ver")
+    stmt = scoped(select(WorkOrder), WorkOrder.asset_id, ids)
+    if asset_id:
+        stmt = stmt.where(WorkOrder.asset_id == asset_id)
+    if estado:
+        stmt = stmt.where(WorkOrder.estado == estado)
+    if abiertas:
+        stmt = stmt.where(WorkOrder.estado.in_(ABIERTAS))
+    if tipo:
+        stmt = stmt.where(WorkOrder.tipo == tipo)
+    stmt = stmt.order_by(WorkOrder.fecha_apertura.desc(), WorkOrder.id.desc())
+    return [_wo_out(w, db) for w in db.scalars(stmt.limit(2000))]
+
+
+@router.post("/ordenes", status_code=201)
+def create_order(data: WorkOrderIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    gestiona = scope.can_asset("mantenimiento.editar", data.asset_id)
+    if not (gestiona or scope.can_asset("mantenimiento.abrir", data.asset_id)):
+        raise HTTPException(403, "Sin permiso para abrir órdenes de trabajo en este activo")
+    get_or_404(db, Asset, data.asset_id)
+    unit = None
+    if data.unit_id:
+        unit = get_or_404(db, Unit, data.unit_id)
+        if unit.asset_id != data.asset_id:
+            bad_request("La unidad no pertenece al activo indicado")
+    valores = data.model_dump()
+    if not gestiona:
+        for campo in CAMPOS_GESTION:
+            valores.pop(campo, None)
+    w = WorkOrder(**valores, abierta_por=scope.user.id)
+    db.add(w)
+    if unit and data.bloquea_unidad and unit.estado in ("disponible", "pendiente_limpieza"):
+        unit.estado = "mantenimiento"
+    db.flush()
+    audit(db, scope.user, "crear", "orden_trabajo", w.id, {"titulo": w.titulo, "prioridad": w.prioridad})
+    db.commit()
+    return _wo_out(w, db)
+
+
+@router.put("/ordenes/{wid}")
+def update_order(wid: int, data: WorkOrderUpdate, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    w = get_or_404(db, WorkOrder, wid)
+    scope.require_asset("mantenimiento.editar", w.asset_id)
+    if w.estado not in ESTADOS_TRABAJO:
+        bad_request("La orden ya tiene el trabajo confirmado; si hay que rehacerlo, debe rechazarse")
+    if data.estado is not None and data.estado not in ESTADOS_TRABAJO:
+        bad_request(f"Estado no válido. Opciones: {', '.join(ESTADOS_TRABAJO)}")
+    ch = apply(w, data)
+    audit(db, scope.user, "editar", "orden_trabajo", wid, ch)
+    db.commit()
+    return _wo_out(w, db)
+
+
+class ConfirmWork(BaseModel):
+    solucion: str = Field(min_length=3)
+    coste_real: float | None = Field(default=None, ge=0)
+
+
+@router.post("/ordenes/{wid}/confirmar-mantenimiento")
+def confirm_work(wid: int, data: ConfirmWork, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Mantenimiento da el trabajo por realizado."""
+    w = _open_order(db, wid)
+    scope.require_asset("mantenimiento.editar", w.asset_id)
+    if w.conf_mto_por:
+        bad_request("El trabajo ya está confirmado por mantenimiento")
+    w.solucion = data.solucion
+    if data.coste_real is not None:
+        w.coste_real = data.coste_real
+    w.conf_mto_por, w.conf_mto_fecha = scope.user.id, datetime.now()
+    w.estado = "trabajo_realizado" if requiere_limpieza(w) else "pendiente_cierre"
+    audit(db, scope.user, "confirmar_mantenimiento", "orden_trabajo", wid, data.model_dump())
+    db.commit()
+    return _wo_out(w, db)
+
+
+@router.post("/ordenes/{wid}/confirmar-limpieza")
+def confirm_cleaning(wid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Limpieza revisa la unidad / zona tras el trabajo y la da por correcta."""
+    w = _open_order(db, wid)
+    scope.require_asset("limpieza.confirmar_ot", w.asset_id)
+    if not requiere_limpieza(w):
+        bad_request("Las OT preventivas de zonas comunes no requieren confirmación de limpieza")
+    if not w.conf_mto_por:
+        bad_request("Mantenimiento aún no ha confirmado el trabajo")
+    if w.conf_limpieza_por:
+        bad_request("Ya está confirmada por limpieza")
+    w.conf_limpieza_por, w.conf_limpieza_fecha = scope.user.id, datetime.now()
+    w.estado = "pendiente_cierre"
+    audit(db, scope.user, "confirmar_limpieza", "orden_trabajo", wid)
+    db.commit()
+    return _wo_out(w, db)
+
+
+class Reject(BaseModel):
+    motivo: str = Field(min_length=3)
+
+
+@router.post("/ordenes/{wid}/rechazar")
+def reject_work(wid: int, data: Reject, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Limpieza o recepción devuelven la orden a mantenimiento (trabajo no conforme)."""
+    w = _open_order(db, wid)
+    puede_limpieza = requiere_limpieza(w) and scope.can_asset("limpieza.confirmar_ot", w.asset_id)
+    if not (puede_limpieza or scope.can_asset("mantenimiento.cerrar", w.asset_id)):
+        raise HTTPException(403, "Sin permiso para rechazar el trabajo")
+    if not w.conf_mto_por:
+        bad_request("No hay trabajo confirmado que rechazar")
+    w.conf_mto_por = w.conf_mto_fecha = w.conf_limpieza_por = w.conf_limpieza_fecha = None
+    w.estado = "en_curso"
+    w.descripcion = f"{w.descripcion or ''}\n[Rechazada {date.today():%d/%m/%Y} por {scope.user.nombre}] {data.motivo}".strip()
+    audit(db, scope.user, "rechazar", "orden_trabajo", wid, data.model_dump())
+    db.commit()
+    return _wo_out(w, db)
+
+
+class CloseOrder(BaseModel):
+    cancelar: bool = False
+    motivo: str | None = None
+
+
+def _release_unit(db: Session, w: WorkOrder, cancelada: bool) -> None:
+    if not (w.unit_id and w.bloquea_unidad):
+        return
+    unit = db.get(Unit, w.unit_id)
+    others = db.scalar(select(WorkOrder.id).where(WorkOrder.unit_id == unit.id, WorkOrder.id != w.id,
+                                                  WorkOrder.bloquea_unidad, WorkOrder.estado.in_(ABIERTAS)))
+    if unit.estado == "mantenimiento" and not others:
+        # cerrada: limpieza ya confirmó la unidad -> disponible; cancelada: hay que revisarla
+        unit.estado = "pendiente_limpieza" if cancelada else "disponible"
+
+
+@router.post("/ordenes/{wid}/cerrar")
+def close_order(wid: int, data: CloseOrder, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Recepción cierra la orden cuando mantenimiento y limpieza la han confirmado (o la cancela)."""
+    w = _open_order(db, wid)
+    scope.require_asset("mantenimiento.cerrar", w.asset_id)
+    if data.cancelar:
+        if not data.motivo:
+            bad_request("Indique el motivo de la cancelación")
+        w.estado = "cancelada"
+        w.solucion = f"{w.solucion or ''}\n[Cancelada] {data.motivo}".strip()
+    else:
+        if not w.conf_mto_por:
+            bad_request("Falta la confirmación de mantenimiento")
+        if requiere_limpieza(w) and not w.conf_limpieza_por:
+            bad_request("Falta la confirmación de limpieza")
+        w.estado = "cerrada"
+    w.fecha_cierre = date.today()
+    w.cerrada_por = scope.user.id
+    _release_unit(db, w, cancelada=data.cancelar)
+    audit(db, scope.user, w.estado, "orden_trabajo", wid, data.model_dump())
+    db.commit()
+    return _wo_out(w, db)
+
+
+# --------------------------------------------------------------------------- planes preventivos
+@router.get("/planes")
+def list_plans(asset_id: int | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    ids = scope.asset_ids("mantenimiento.ver")
+    stmt = scoped(select(PreventivePlan), PreventivePlan.asset_id, ids)
+    if asset_id:
+        stmt = stmt.where(PreventivePlan.asset_id == asset_id)
+    return [p.to_dict() for p in db.scalars(stmt.order_by(PreventivePlan.proxima_fecha))]
+
+
+@router.post("/planes", status_code=201)
+def create_plan(data: PlanIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    scope.require_asset("mantenimiento.editar", data.asset_id)
+    get_or_404(db, Asset, data.asset_id)
+    p = PreventivePlan(**data.model_dump())
+    db.add(p)
+    db.flush()
+    audit(db, scope.user, "crear", "plan_preventivo", p.id, {"titulo": p.titulo})
+    db.commit()
+    return p.to_dict()
+
+
+@router.put("/planes/{pid}")
+def update_plan(pid: int, data: PlanUpdate, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    p = get_or_404(db, PreventivePlan, pid)
+    scope.require_asset("mantenimiento.editar", p.asset_id)
+    ch = apply(p, data)
+    audit(db, scope.user, "editar", "plan_preventivo", pid, ch)
+    db.commit()
+    return p.to_dict()
+
+
+class TemplateReq(BaseModel):
+    asset_id: int
+    primera_fecha: date | None = None
+
+
+@router.post("/planes/plantilla", status_code=201)
+def load_template(data: TemplateReq, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Carga la plantilla normativa en un activo (omite planes con el mismo título ya existentes)."""
+    scope.require_asset("mantenimiento.editar", data.asset_id)
+    get_or_404(db, Asset, data.asset_id)
+    existing = set(db.scalars(select(PreventivePlan.titulo).where(PreventivePlan.asset_id == data.asset_id)))
+    start = data.primera_fecha or date.today() + timedelta(days=7)
+    n = 0
+    for titulo, cat, norma, dias in PLANTILLA_PREVENTIVO:
+        if titulo in existing:
+            continue
+        db.add(PreventivePlan(asset_id=data.asset_id, titulo=titulo, categoria=cat, normativa=norma,
+                              periodicidad_dias=dias, proxima_fecha=start))
+        n += 1
+    audit(db, scope.user, "cargar_plantilla", "plan_preventivo", None, {"asset_id": data.asset_id, "creados": n})
+    db.commit()
+    return {"creados": n}
+
+
+class GenerateReq(BaseModel):
+    dias_antelacion: int = Field(default=7, ge=0, le=90)
+    asset_id: int | None = None
+
+
+@router.post("/planes/generar")
+def generate_orders(data: GenerateReq, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Crea las OT preventivas cuyo vencimiento cae dentro de la antelación indicada y avanza la próxima fecha."""
+    ids = scope.asset_ids("mantenimiento.editar")
+    if data.asset_id:
+        scope.require_asset("mantenimiento.editar", data.asset_id)
+        ids = {data.asset_id}
+    limite = date.today() + timedelta(days=data.dias_antelacion)
+    plans = db.scalars(scoped(select(PreventivePlan), PreventivePlan.asset_id, ids).where(
+        PreventivePlan.activo, PreventivePlan.proxima_fecha <= limite))
+    created = 0
+    for p in plans:
+        open_wo = db.scalar(select(WorkOrder.id).where(WorkOrder.plan_id == p.id, WorkOrder.estado.in_(ABIERTAS)))
+        if open_wo:
+            continue
+        db.add(WorkOrder(asset_id=p.asset_id, plan_id=p.id, tipo="preventivo", categoria=p.categoria,
+                         prioridad="media", titulo=p.titulo, descripcion=p.normativa, proveedor=p.proveedor,
+                         fecha_prevista=p.proxima_fecha))
+        p.proxima_fecha = p.proxima_fecha + timedelta(days=p.periodicidad_dias)
+        created += 1
+    audit(db, scope.user, "generar_preventivo", "orden_trabajo", None, {"creadas": created})
+    db.commit()
+    return {"creadas": created}
