@@ -204,6 +204,7 @@ V.panel = async (el) => {
     k.push([a.unidades, Object.entries(a.usos || {}).map(([u, n]) => `${n} ${n === 1 ? u : plural(u)}`).join(" · ") || "Unidades"]);
     if (a.ocupacion_hoy != null) k.push([a.ocupacion_hoy + " %", "Ocupación hoy"]);
     if (a.llegadas_hoy != null) k.push([a.llegadas_hoy, "Llegadas hoy"], [a.salidas_hoy, "Salidas hoy"]);
+    if (a.estancias_vencidas) k.push([a.estancias_vencidas, "Estancias vencidas (renovar o salida)", "mal"]);
     if (a.contratos_vigentes != null) {
       const al = a.alquiladas_por_uso || {};
       Object.entries(a.usos || {}).forEach(([u, n]) => {
@@ -219,7 +220,7 @@ V.panel = async (el) => {
     const clic = varios && conMapa.has(a.id);
     return `<div class="card${clic ? " clic" : ""}" ${clic ? `data-abrir="${a.id}" tabindex="0" role="button" title="Abrir el plano de ${esc(a.nombre)}"` : ""}>${logoActivo(a.id)}<h3>${esc(a.nombre)}${clic ? '<span class="ver-plano">Ver plano →</span>' : ""}</h3><div class="sub">${esc(a.modalidad_nombre)} · Gestiona ${esc(a.sociedad)} · Propiedad ${esc(a.propietaria)}</div>
       ${a.ocupacion_hoy != null ? `<div class="bar"><i style="width:${Math.min(100, a.ocupacion_hoy)}%"></i></div>` : ""}
-      <div class="kpis">${k.map(([v, l]) => `<div class="kpi"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("")}</div>
+      <div class="kpis">${k.map(([v, l, cls]) => `<div class="kpi ${cls || ""}"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("")}</div>
       <p style="margin-top:12px">${est || '<span class="muted">Sin unidades dadas de alta</span>'}</p></div>`;
   }).join("")}</div>`;
   el.querySelectorAll("[data-abrir]").forEach((c) => {
@@ -250,8 +251,8 @@ function gridPlano(pl, planta, mini = false) {
   const celdas = planta.celdas.map((c) => {
     const pos = `grid-row:${c.f};grid-column:${c.c}`;
     if (c.t === "u") {
-      const tip = `${c.codigo} · ${c.tipologia || ""} · ${ESTADO_TXT[c.estado]}${c.reserva ? ` · ${c.reserva.proxima ? "próxima llegada: " : ""}${c.reserva.huesped} ${fdate(c.reserva.entrada)} → ${fdate(c.reserva.salida)}` : ""}${c.alquiler ? ` · alquiler mensual: ${c.alquiler.cliente}${c.alquiler.matricula ? " (" + c.alquiler.matricula + ")" : ""}` : ""}${c.ot ? ` · ${c.ot} incidencia(s) abierta(s)` : ""}${c.limpieza ? " · pendiente de limpieza" : ""}`;
-      return `<div class="pc u pc-${c.estado}" style="${pos}" data-u="${c.unit_id}" title="${esc(tip)}">${mini ? "" : `<b>${esc(c.num)}</b><small>${esc(c.tipo)}</small>${c.ot ? `<span class="m${c.urgente ? " urg" : ""}">M</span>` : ""}${c.limpieza ? '<span class="lim" title="Pendiente de limpieza">L</span>' : ""}`}</div>`;
+      const tip = `${c.codigo} · ${c.tipologia || ""} · ${ESTADO_TXT[c.estado]}${c.vencida ? " · ESTANCIA VENCIDA" : ""}${c.reserva ? ` · ${c.reserva.proxima ? "próxima llegada: " : ""}${c.reserva.huesped} ${fdate(c.reserva.entrada)} → ${fdate(c.reserva.salida)}` : ""}${c.alquiler ? ` · alquiler mensual: ${c.alquiler.cliente}${c.alquiler.matricula ? " (" + c.alquiler.matricula + ")" : ""}` : ""}${c.ot ? ` · ${c.ot} incidencia(s) abierta(s)` : ""}${c.limpieza ? " · pendiente de limpieza" : ""}`;
+      return `<div class="pc u pc-${c.estado}" style="${pos}" data-u="${c.unit_id}" title="${esc(tip)}">${mini ? "" : `<b>${esc(c.num)}</b><small>${esc(c.tipo)}</small>${c.ot ? `<span class="m${c.urgente ? " urg" : ""}">M</span>` : ""}${c.limpieza ? '<span class="lim" title="Pendiente de limpieza">L</span>' : ""}${c.vencida ? '<span class="venc" title="Estancia vencida: renovar o dar la salida">V</span>' : ""}`}</div>`;
     }
     if (c.t === "zc") return `<div class="pc zc pc-zc" style="${pos}" data-z="${esc(c.zona)}" title="${esc(c.nombre)}${c.ot ? ` · ${c.ot} incidencia(s) abierta(s)` : ""}">${mini ? "" : `<b>ZC</b>${c.ot ? `<span class="m${c.urgente ? " urg" : ""}">${c.ot}</span>` : ""}`}</div>`;
     if (c.t === "falta") return `<div class="pc falta" style="${pos}" title="El ${esc(c.num)} no existe en las unidades del PMS">${mini ? "" : esc(c.num) + "?"}</div>`;
@@ -287,7 +288,7 @@ V.plano = async (el) => {
       <div class="total"><span>${planta.planta.startsWith("-") ? "Plazas en el sótano" : "Total en planta"}</span><b>${r.total}</b></div></div>
       <div class="marcadores ayuda"><div><i class="pc-zc"></i><span>Zona común: incidencias de ese lado del edificio</span></div>
       <div><span class="m-ej" style="background:#fff;color:#111;border-color:#111">←</span><span>${datos.asset.codigo === "SAE" ? "Entrada del edificio. Entrando: bloque A a la derecha, bloque B a la izquierda" : datos.asset.codigo === "SFL" ? "Entrada. Entrando: portales 2 y 3 a la derecha (arriba), 1 y 4 a la izquierda (abajo). Zona común de cada portal junto a su número" : "Entrada"}</span></div>
-      <div><span class="m-ej">M</span><span>Mantenimiento pendiente (rojo: urgente)</span></div><div><span class="m-ej lim">L</span><span>Pendiente de limpieza</span></div></div>
+      <div><span class="m-ej">M</span><span>Mantenimiento pendiente (rojo: urgente)</span></div><div><span class="m-ej venc">V</span><span>Estancia vencida: renovar o dar la salida</span></div><div><span class="m-ej lim">L</span><span>Pendiente de limpieza</span></div></div>
       <p class="muted">Pulse un apartamento para ver su ficha completa, reservar, bloquear o abrir una incidencia.</p>`;
     $("#grid", el).querySelectorAll("[data-u]").forEach((c) => (c.onclick = () => fichaApartamento(Number(c.dataset.u), recarga)));
     $("#grid", el).querySelectorAll("[data-z]").forEach((c) => (c.onclick = () => zonaComun(datos.asset.id, c.dataset.z, recarga)));
@@ -1061,6 +1062,52 @@ function editarAlquilerGaraje(c, reload) {
   ], c, async (d) => { await put(`/api/garajes/contratos/${c.id}`, d); toast("Alquiler actualizado"); reload(); });
 }
 
+// ---- estancias vencidas: siguen alojados después de su fecha de salida (y las que terminan en 3 días)
+async function estanciasVencidas(cont, reload) {
+  if (!cont) return;
+  const v = await get("/api/turistico/vencidas", { asset_id: S.asset, dias: 3 }).catch(() => null);
+  if (!v || !(v.vencidas.length + v.proximas.length)) { cont.innerHTML = ""; return; }
+  const acc = (r) => [
+    r.whatsapp && ["WhatsApp", () => window.open(r.whatsapp, "_blank", "noopener")],
+    can("reservas.editar") && ["Ampliar", () => editReservation(r, reload)],
+    can("reservas.editar") && ["Check-out", () => confirm(`¿Dar la salida a ${r.huesped} (${r.unidad})?`) && run(() => post(`/api/turistico/reservas/${r.id}/checkout`), "Check-out realizado").then(reload)],
+    ["Cliente", () => editGuest(r.guest_id, "huesped", reload)],
+  ];
+  const cols = [{ k: "unidad", t: "Apartamento" }, { k: "huesped", t: "Cliente" }, { k: "telefono", t: "Teléfono", f: (x) => esc(x || "—") },
+    { k: "fecha_entrada", t: "Entrada", f: fdate }, { k: "fecha_salida", t: "Salida", f: fdate },
+    { k: "dias", t: "Situación", f: (d) => (d > 0 ? `<span class="badge b-cancelada">vencida hace ${d} día${d === 1 ? "" : "s"}</span>` : d === 0 ? '<span class="badge b-pendiente">sale hoy</span>' : `<span class="badge b-pendiente">termina en ${-d} día${d === -1 ? "" : "s"}</span>`) }];
+  cont.innerHTML = `<div class="aviso-vencidas"><h4>⚠ Estancias vencidas o que terminan pronto (${v.vencidas.length} vencidas · ${v.proximas.length} en 3 días)</h4>
+    <p class="muted">Siguen alojados después de su fecha de salida, o la tienen muy próxima: renueve la estancia (Ampliar) o dé la salida. Con teléfono, «WhatsApp» abre el aviso al cliente ya escrito.</p><div data-t></div></div>`;
+  table($("[data-t]", cont), cols, [...v.vencidas, ...v.proximas], acc);
+}
+// ---- ocupación actual exportada del PMS anterior
+async function importarOcupacion(reload) {
+  const aid = await pickAsset("apartamentos_turisticos");
+  const f = form(`Importar ocupación del PMS anterior · ${assetName(aid)}`, [
+    { html: `<p>Listado de ocupación exportado del PMS anterior (Excel con una hoja por planta: Localizador, Núm, Sótano/Plaza, FEntrada/FSalida, Ocupante, Teléfonos).</p>
+      <ul class="muted"><li>Los <b>alojados</b> quedan con check-in hecho; si su salida ya pasó, como <b>estancia vencida</b> (aviso para renovar o dar la salida).</li>
+      <li>Las <b>reservas</b> futuras quedan confirmadas.</li><li>La <b>plaza de garaje</b> de cada fila se reserva para las mismas fechas y sigue al apartamento.</li>
+      <li>Si vuelve a importar el listado, se actualizan fechas y estado: no se duplica nada.</li></ul>` },
+    { html: '<label>Fichero *<input type="file" accept=".xlsx" data-fich required></label>' },
+  ], {}, async (_, fr) => {
+    const fich = $("[data-fich]", fr).files[0];
+    const enviar = (confirmar) => { const fd = new FormData(); fd.append("fichero", fich); fd.append("asset_id", aid); fd.append("confirmar", confirmar); return upload("/api/turistico/importar-ocupacion", fd); };
+    const prev = await enviar(false);
+    setTimeout(() => {
+      const filas = prev.filas.map((x) => `<tr><td>${esc(x.localizador)}</td><td>${esc(x.unidad)}</td><td>${esc(x.ocupante)}</td><td>${fdate(x.entrada)} → ${fdate(x.salida)}</td>
+        <td>${x.situacion === "alojado" ? (x.vencida ? '<span class="badge b-cancelada">alojado · vencida</span>' : '<span class="badge b-vigente">alojado</span>') : '<span class="badge b-confirmada">reserva</span>'}</td>
+        <td>${esc(x.garaje || "")}</td><td style="white-space:normal">${x.estado === "ok" ? (x.accion === "actualizar" ? "se actualiza" : "nueva") + (x.aviso ? ` <span class="muted">· ${esc(x.aviso)}</span>` : "") : `<span class="badge b-cancelada">error</span> ${esc(x.motivo)}`}</td></tr>`).join("");
+      form(`Vista previa · ${prev.nuevas} nuevas · ${prev.actualizadas} a actualizar · ${prev.vencidas} vencidas · ${prev.errores} con error`, [
+        { html: `<div class="table-wrap" style="max-height:55vh;overflow:auto"><table><thead><tr><th>Localizador</th><th>Apto.</th><th>Ocupante</th><th>Estancia</th><th>Situación</th><th>Garaje</th><th>Resultado</th></tr></thead><tbody>${filas}</tbody></table></div>` },
+      ], {}, async () => {
+        const r = await enviar(true);
+        toast(`Ocupación cargada: ${r.nuevas} nuevas, ${r.actualizadas} actualizadas, ${r.garajes} plazas de garaje`); reload && reload();
+      }, "Cargar ocupación");
+      $("#modal").classList.add("ancho");
+    }, 0);
+  }, "Comprobar fichero");
+}
+
 // ---- parte de viajeros: fichero para SES.HOSPEDAJE (plazo: 24 h desde la llegada)
 V.ses = async (el) => {
   const aid = await pickAsset("apartamentos_turisticos");
@@ -1118,8 +1165,10 @@ async function encuestaIne() {
 
 V.hoy = async (el) => {
   el.innerHTML = `<div class="toolbar"><input type="date" id="f" value="${today()}"><span class="spacer"></span>${can("reservas.editar") ? '<button class="btn primary" id="new">Nueva reserva</button>' : ""}</div>
+    <div id="venc"></div>
     <h4>Llegadas</h4><div id="l"></div><h4>Salidas</h4><div id="s"></div><h4>Alojados</h4><div id="a"></div>`;
   const load = async () => {
+    estanciasVencidas($("#venc", el), load);
     const r = await get("/api/turistico/hoy", { asset_id: S.asset, fecha: $("#f", el).value });
     table($("#l", el), resCols, r.llegadas, resActions(load));
     table($("#s", el), resCols, r.salidas, resActions(load));
@@ -1133,11 +1182,12 @@ V.hoy = async (el) => {
 V.reservas = async (el) => {
   el.innerHTML = `<div class="toolbar"><label>Desde<input type="date" id="d" value="${today()}"></label><label>Hasta<input type="date" id="h" value="${addDays(today(), 30)}"></label>
     <label>Estado<select id="e"><option value="">Todos</option>${["confirmada", "checkin", "checkout", "cancelada", "no_show"].map((x) => `<option>${x}</option>`).join("")}</select></label>
-    <label>Buscar<input id="q" placeholder="Localizador, huésped, unidad"></label><span class="spacer"></span>${can("reservas.editar") ? '<button class="btn" id="imp">Importar Excel</button><button class="btn primary" id="new">Nueva reserva</button>' : ""}</div><div id="t"></div>`;
+    <label>Buscar<input id="q" placeholder="Localizador, huésped, unidad"></label><span class="spacer"></span>${can("reservas.editar") ? '<button class="btn" id="ocu">Importar ocupación (PMS anterior)</button><button class="btn" id="imp">Importar Excel</button><button class="btn primary" id="new">Nueva reserva</button>' : ""}</div><div id="t"></div>`;
   const load = async () => table($("#t", el), resCols, await get("/api/turistico/reservas", { asset_id: S.asset, desde: $("#d", el).value, hasta: $("#h", el).value, estado: $("#e", el).value, q: $("#q", el).value }), resActions(load));
   ["#d", "#h", "#e"].forEach((s) => ($(s, el).onchange = load)); $("#q", el).oninput = debounce(load);
   if ($("#new", el)) $("#new", el).onclick = () => newReservation(load);
   if ($("#imp", el)) $("#imp", el).onclick = () => importarReservas(load);
+  if ($("#ocu", el)) $("#ocu", el).onclick = () => importarOcupacion(load);
   load();
 };
 

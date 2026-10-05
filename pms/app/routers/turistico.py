@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..database import get_db
-from .. import (avisos, contratos, documentos, encuesta_ine, firma_contrato, importacion, planos, recibos,
+from .. import (avisos, contratos, documentos, encuesta_ine, firma_contrato, importacion, importacion_ocupacion,
+               planos, recibos,
                registro_viajeros)
 from ..facturacion import (IVA_ALOJAMIENTO, IVA_GENERAL, datos_cliente, dinero, emitir, linea, lineas_servicios,
                            serie_activo)
@@ -184,11 +185,26 @@ def update_reservation(rid: int, data: ReservationUpdate, scope: Scope = Depends
         bad_request("Conflicto con otra reserva en esas fechas")
     if data.importe_total is not None and dinero(data.importe_total) < dinero(r.importe_pagado):
         bad_request(f"El importe total no puede ser menor que lo ya cobrado ({dinero(r.importe_pagado)} €)")
+    garajes = _garajes_asociados(db, r)
     ch = apply(r, data)
+    for g in garajes:  # ampliar o acortar la estancia mueve también la plaza de garaje asociada
+        if (g.fecha_entrada, g.fecha_salida) != (r.fecha_entrada, r.fecha_salida):
+            if _conflict(db, g.unit_id, r.fecha_entrada, r.fecha_salida, exclude_id=g.id):
+                bad_request(f"La plaza de garaje {g.unit.codigo} está ocupada en las nuevas fechas")
+            g.fecha_entrada, g.fecha_salida = r.fecha_entrada, r.fecha_salida
     audit(db, scope.user, "editar", "reserva", rid, ch)
     db.commit()
     db.refresh(r)
     return _res_out(r)
+
+
+def _garajes_asociados(db: Session, r: Reservation) -> list[Reservation]:
+    """Plazas de garaje reservadas junto con el apartamento (localizador «<localizador>-G»)."""
+    if not r.localizador or r.localizador.endswith("-G"):
+        return []
+    return list(db.scalars(select(Reservation).join(Unit).where(
+        Unit.asset_id == r.unit.asset_id, Reservation.localizador == f"{r.localizador}-G",
+        Reservation.estado.in_(ACTIVAS))))
 
 
 @router.post("/reservas/{rid}/checkin")
@@ -219,6 +235,10 @@ def checkout(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(
         bad_request("Solo se puede hacer check-out de una reserva con check-in")
     r.estado = "checkout"
     r.unit.estado = "pendiente_limpieza"
+    for g in _garajes_asociados(db, r):  # la plaza de garaje sale con el apartamento
+        g.estado = "checkout"
+        if g.unit.estado == "ocupada":
+            g.unit.estado = "disponible"
     audit(db, scope.user, "checkout", "reserva", rid)
     db.commit()
     return _res_out(r)
@@ -658,6 +678,146 @@ def import_reservations(fichero: UploadFile = File(...), asset_id: int = Form(..
         db.commit()
     return {"filas": resultado, "validas": cuenta("valida") + cuenta("importada"), "importadas": creadas,
             "errores": cuenta("error"), "omitidas": cuenta("omitida"), "columnas_ignoradas": ignoradas}
+
+
+# --------------------------------------------------------------------------- ocupación actual del PMS anterior
+NOTA_IMPORTADA = "Importada del PMS anterior (ocupación exportada): completar datos del cliente y ocupantes."
+
+
+@router.post("/importar-ocupacion")
+def import_occupancy(fichero: UploadFile = File(...), asset_id: int = Form(...), confirmar: bool = Form(False),
+                     scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Carga la ocupación actual exportada del PMS anterior: los alojados quedan con check-in hecho (aunque su
+    salida ya haya pasado: estancia vencida) y las reservas, confirmadas. Las plazas de garaje del listado se
+    reservan para las mismas fechas. Volver a importar el fichero actualiza fechas y estado (no duplica)."""
+    scope.require_asset("reservas.editar", asset_id)
+    asset = get_or_404(db, Asset, asset_id)
+    if asset.modalidad not in MODALIDADES_RESERVA:
+        bad_request("Este activo no admite reservas turísticas")
+    datos = fichero.file.read(10 * 1024 * 1024 + 1)
+    if len(datos) > 10 * 1024 * 1024 or not importacion_ocupacion.es_ocupacion(datos):
+        bad_request("El fichero no es un listado de ocupación del PMS anterior (columnas Localizador, FEntrada…)")
+    hoy = date.today()
+    unidades = {u.codigo.upper(): u for u in db.scalars(select(Unit).where(Unit.asset_id == asset_id))}
+    previas = {r.localizador: r for r in db.scalars(select(Reservation).join(Unit).where(
+        Unit.asset_id == asset_id, Reservation.localizador.is_not(None)))}
+    clientes: dict[str, Contact] = {}
+    resultado = []
+    cuenta = dict.fromkeys(("nuevas", "actualizadas", "errores", "vencidas", "garajes"), 0)
+    for f in importacion_ocupacion.leer(datos):
+        out = {k: f.get(k) for k in ("hoja", "fila", "situacion", "localizador", "ocupante", "telefono", "garaje")}
+        out.update(unidad=f"{f['bloque']}-{f.get('numero', '?')}",
+                   entrada=f["entrada"].isoformat() if f.get("entrada") else None,
+                   salida=f["salida"].isoformat() if f.get("salida") else None)
+        try:
+            if f.get("error"):
+                raise ValueError(f["error"])
+            u = unidades.get(out["unidad"].upper())
+            if not u:
+                raise ValueError(f"el apartamento {out['unidad']} no existe en {asset.nombre}")
+            alojado = f["situacion"] == "alojado" and f["entrada"] <= hoy
+            vencida = alojado and f["salida"] < hoy
+            out["vencida"] = vencida
+            previa = previas.get(f["localizador"])
+            if previa is None and _conflict(db, u.id, f["entrada"], f["salida"]):
+                raise ValueError(f"{u.codigo} ya tiene otra reserva en esas fechas")
+            g = None
+            if f.get("garaje"):
+                g = unidades.get(f["garaje"].upper())
+                if not g:
+                    out["aviso"] = f"la plaza {f['garaje']} no existe: no se reserva"
+            out["accion"] = "actualizar" if previa else "crear"
+            if confirmar:
+                cliente = previa.guest if previa else clientes.get(f["ocupante"].upper())
+                if cliente is None:
+                    nombre, apellidos = importacion_ocupacion.nombre_y_apellidos(f["ocupante"])
+                    cliente = db.scalar(select(Contact).where(
+                        Contact.company_id == asset.company_id, Contact.tipo == "huesped", Contact.nombre == nombre,
+                        Contact.apellidos.is_(None) if apellidos is None else Contact.apellidos == apellidos))
+                    if cliente is None:
+                        cliente = Contact(company_id=asset.company_id, tipo="huesped", nombre=nombre[:120],
+                                          apellidos=apellidos, notas="Alta desde la ocupación del PMS anterior")
+                        db.add(cliente)
+                        db.flush()
+                    clientes[f["ocupante"].upper()] = cliente
+                if f["telefono"] and not cliente.telefono:
+                    cliente.telefono = f["telefono"]
+                estado = "checkin" if alojado else "confirmada"
+                for unidad, loc in ((u, f["localizador"]), (g, f"{f['localizador']}-G")):
+                    if unidad is None:
+                        continue
+                    r = previas.get(loc) or db.scalar(select(Reservation).join(Unit).where(
+                        Unit.asset_id == asset_id, Reservation.localizador == loc))
+                    if r is None:
+                        if unidad is g and _conflict(db, g.id, f["entrada"], f["salida"]):
+                            out["aviso"] = f"la plaza {g.codigo} está ocupada en esas fechas: no se reserva"
+                            continue
+                        r = Reservation(unit_id=unidad.id, guest_id=cliente.id, localizador=loc, canal="directo",
+                                        fecha_entrada=f["entrada"], fecha_salida=f["salida"], adultos=1, ninos=0,
+                                        importe_total=0, importe_pagado=0, estado=estado,
+                                        notas=NOTA_IMPORTADA if unidad is u else
+                                        f"Plaza de garaje asociada a la reserva {f['localizador']} (PMS anterior).")
+                        r.ocupantes.append(ReservationGuest(contact_id=cliente.id, titular=True, orden=0))
+                        db.add(r)
+                    else:
+                        r.fecha_entrada, r.fecha_salida = f["entrada"], f["salida"]
+                        if r.estado in ("confirmada", "checkin"):
+                            r.estado = estado
+                    if estado == "checkin":
+                        unidad.estado = "ocupada"
+                    if unidad is g:
+                        cuenta["garajes"] += 1
+                db.flush()
+            cuenta["actualizadas" if out["accion"] == "actualizar" else "nuevas"] += 1
+            cuenta["vencidas"] += vencida
+            out["estado"] = "ok"
+        except ValueError as e:
+            out.update(estado="error", motivo=str(e))
+            cuenta["errores"] += 1
+        resultado.append(out)
+    if confirmar:
+        audit(db, scope.user, "importar_ocupacion", "activo", asset_id, {"fichero": fichero.filename, **cuenta})
+        db.commit()
+    return {"filas": resultado, **cuenta, "importado": confirmar}
+
+
+# --------------------------------------------------------------------------- estancias vencidas
+def vencidas_q(asset_ids: set[int] | None, dia: date):
+    """Alojados (check-in hecho) cuya fecha de salida ya pasó: hay que renovar la estancia o dar la salida."""
+    stmt = select(Reservation).join(Unit).where(Reservation.estado == "checkin", Reservation.fecha_salida < dia,
+                                                Unit.uso != "garaje")
+    return scoped(stmt, Unit.asset_id, asset_ids)
+
+
+@router.get("/vencidas")
+def overdue_stays(asset_id: int | None = None, dias: int = Query(3, ge=0, le=30), scope: Scope = Depends(get_scope),
+                  db: Session = Depends(get_db)):
+    """Estancias vencidas (ya pasó la salida y siguen alojados) y las que terminan en los próximos `dias` días,
+    con el enlace de WhatsApp para avisar al cliente."""
+    hoy = date.today()
+    ids = scope.asset_ids("reservas.ver")
+    vencen = scoped(select(Reservation).join(Unit), Unit.asset_id, ids).where(
+        Reservation.estado == "checkin", Unit.uso != "garaje", Reservation.fecha_salida >= hoy,
+        Reservation.fecha_salida <= hoy + timedelta(days=dias))
+    q_venc = vencidas_q(ids, hoy)
+    if asset_id:
+        vencen, q_venc = vencen.where(Unit.asset_id == asset_id), q_venc.where(Unit.asset_id == asset_id)
+
+    def fila(r: Reservation) -> dict:
+        d = _res_out(r)
+        d["telefono"] = r.guest.telefono
+        d["dias"] = (hoy - r.fecha_salida).days
+        movil = firma_contrato.movil_whatsapp(r.guest.telefono or "")
+        if movil:
+            a = r.unit.asset
+            txt = (f"Hola {r.guest.nombre}, le escribimos de {a.nombre}. Su estancia en el apartamento {r.unit.codigo} "
+                   + (f"finalizó el {r.fecha_salida:%d/%m/%Y}" if r.fecha_salida < hoy
+                      else f"finaliza el {r.fecha_salida:%d/%m/%Y}")
+                   + ". Por favor, pase por recepción o contéstenos para renovarla o preparar la salida. Gracias.")
+            d["whatsapp"] = f"https://wa.me/{movil}?text={quote(txt)}"
+        return d
+    return {"vencidas": [fila(r) for r in db.scalars(q_venc.order_by(Reservation.fecha_salida, Unit.codigo))],
+            "proximas": [fila(r) for r in db.scalars(vencen.order_by(Reservation.fecha_salida, Unit.codigo))]}
 
 
 # --------------------------------------------------------------------------- contrato de alojamiento

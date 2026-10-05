@@ -37,8 +37,9 @@ def panel(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
             # la ocupación es de los alojamientos; las plazas de garaje se cuentan aparte
             base = select(func.count()).select_from(Reservation).join(Unit).where(Unit.asset_id == a.id,
                                                                                   Unit.uso != "garaje")
+            # los alojados con la salida ya pasada (estancia vencida) siguen ocupando hasta el check-out
             hoy_activas = (Reservation.estado.in_(("confirmada", "checkin")), Reservation.fecha_entrada <= hoy,
-                           Reservation.fecha_salida > hoy)
+                           or_(Reservation.fecha_salida > hoy, Reservation.estado == "checkin"))
             ocupadas = db.scalar(base.where(*hoy_activas))
             alojamientos = db.scalar(select(func.count()).select_from(Unit).where(
                 Unit.asset_id == a.id, Unit.uso != "garaje", Unit.estado != "fuera_servicio"))
@@ -53,6 +54,8 @@ def panel(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
                 k["garajes_ocupados"] = len(por_reserva | por_meses)
                 k["garajes_alquiler_mensual"] = len(por_meses)
                 k["garajes"] = garajes
+            k["estancias_vencidas"] = db.scalar(base.where(Reservation.estado == "checkin",  # salida pasada, siguen
+                                                           Reservation.fecha_salida < hoy))
             k["llegadas_hoy"] = db.scalar(base.where(Reservation.fecha_entrada == hoy,
                                                      Reservation.estado.in_(("confirmada", "checkin"))))
             k["salidas_hoy"] = db.scalar(base.where(Reservation.fecha_salida == hoy,
