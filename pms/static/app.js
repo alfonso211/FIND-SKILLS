@@ -669,10 +669,16 @@ const guestFields = [
   { k: "direccion", t: "Dirección (calle, número, piso, puerta)", wide: true },
   { k: "cp", t: "Código postal" }, { k: "municipio", t: "Municipio" }, { k: "pais", t: "País" },
 ];
+function unidadesHtml(c) {
+  const u = c.unidades || [];
+  if (!u.length) return `<p class="muted">Sin apartamentos ni plazas en este momento${c.n_estancias ? ` · ${c.n_estancias} estancia(s) en total` : ""}.</p>`;
+  return `<fieldset><legend>Tiene ${c.n_apartamentos} apartamento(s)${u.length > c.n_apartamentos ? ` y ${u.length - c.n_apartamentos} plaza(s) de garaje` : ""}${c.n_estancias ? ` · ${c.n_estancias} estancia(s) en total` : ""}</legend>
+    <ul class="envios">${u.map((x) => `<li><b>${esc(x.codigo)}</b> · ${esc(x.activo)} · ${x.tipo === "reserva" ? `reserva ${esc(x.localizador || "")} (${x.estado === "checkin" ? "alojado" : "confirmada"})` : `contrato ${esc(x.localizador || "")}`} · ${fdate(x.desde)} → ${x.hasta ? fdate(x.hasta) : "indefinido"}</li>`).join("")}</ul></fieldset>`;
+}
 async function editGuest(id, tipo = "huesped", onSaved) {
-  const c = (await get("/api/terceros", { tipo })).find((x) => x.id === id);
-  if (!c) return toast("Tercero no encontrado", true);
-  const f = form(`${{ huesped: "Huésped", cliente_garaje: "Cliente de garaje" }[tipo] || "Inquilino"}: ${c.nombre}`, [{ html: scanHtml() }, ...guestFields, { k: "iban", t: "IBAN" }, { k: "notas", t: "Notas", type: "textarea", wide: true }], c,
+  const c = await get(`/api/terceros/${id}`).catch(() => null);
+  if (!c) return toast("Cliente no encontrado", true);
+  const f = form(`${{ huesped: "Huésped", cliente_garaje: "Cliente de garaje" }[tipo] || "Inquilino"}: ${c.nombre} ${c.apellidos || ""}`.trim(), [{ html: unidadesHtml(c) }, { html: scanHtml() }, ...guestFields, { k: "iban", t: "IBAN" }, { k: "notas", t: "Notas", type: "textarea", wide: true }], c,
     async (d) => { await put(`/api/terceros/${id}`, { ...d, company_id: c.company_id, tipo: c.tipo }); toast("Datos guardados"); onSaved && onSaved(); });
   bindScan(f, id, (lec) => rellenaFicha(f, lec));
 }
@@ -1466,30 +1472,96 @@ V.servicios = async (el) => {
 
 V.inquilinos = (el) => contactsView(el, "inquilino");
 V.huespedes = (el) => contactsView(el, "huesped");
-V.proveedores = (el) => contactsView(el, "proveedor");
 async function contactsView(el, tipo) {
-  const perm = { inquilino: "alquiler", huesped: "reservas", proveedor: "mantenimiento" }[tipo];
-  el.innerHTML = `<div class="toolbar"><input id="q" placeholder="Nombre, documento, email"><span class="spacer"></span>${can(perm + ".editar") ? '<button class="btn primary" id="new">Nuevo</button>' : ""}</div><div id="t"></div>`;
+  const perm = { inquilino: "alquiler", huesped: "reservas" }[tipo];
+  el.innerHTML = `<div class="toolbar"><input id="q" placeholder="Nombre, documento, email, teléfono"><span class="spacer"></span>${can(perm + ".editar") ? '<button class="btn primary" id="new">Nuevo</button>' : ""}</div><div id="dup"></div><div id="t"></div>`;
   const fields = [...guestFields, { k: "iban", t: "IBAN" }, { k: "notas", t: "Notas", type: "textarea", wide: true }];
   const load = async () => table($("#t", el), [
     { k: "nombre", t: "Nombre" }, { k: "apellidos", t: "Apellidos" }, { k: "documento_num", t: "Documento" },
-    { k: "nacionalidad", t: "Nacionalidad" }, { k: "email", t: "Email" }, { k: "telefono", t: "Teléfono" },
+    { k: "unidades", t: "Apartamentos", f: (v, c) => (v.length ? `<b>${c.n_apartamentos}</b> <span class="muted">${esc(v.join(", "))}</span>` : '<span class="muted">—</span>') },
+    { k: "email", t: "Email" }, { k: "telefono", t: "Teléfono" },
     { k: "company_id", t: "Sociedad", f: (v) => esc(S.companies.find((c) => c.id === v)?.nombre ?? v) },
-  ], await get("/api/terceros", { tipo, q: $("#q", el).value }), (c) => can(perm + ".editar") ? [["Editar", () => (tipo === "proveedor"
-    ? form(c.nombre, fields, c, async (d) => { await put(`/api/terceros/${c.id}`, { ...d, company_id: c.company_id, tipo }); toast("Guardado"); load(); })
-    : editGuest(c.id, tipo, load))]] : []);
+  ], await get("/api/terceros", { tipo, q: $("#q", el).value }), (c) => [[can(perm + ".editar") ? "Ficha" : "Ver", () => editGuest(c.id, tipo, load)]]);
+  const repetidos = async () => {
+    if (!can(perm + ".editar")) return;
+    const g = await get("/api/terceros/duplicados", { tipo }).catch(() => []);
+    $("#dup", el).innerHTML = g.length ? `<div class="aviso-vencidas"><b>${g.length} cliente(s) con la ficha repetida</b> (mismo nombre). Revise y únalas para que cada cliente tenga una sola ficha con todos sus apartamentos. <button class="btn sm primary" data-revisar>Revisar y unir</button></div>` : "";
+    if (g.length) $("[data-revisar]", el).onclick = () => unirFichas(g, () => { load(); repetidos(); });
+  };
   $("#q", el).oninput = debounce(load);
   if ($("#new", el)) $("#new", el).onclick = () => {
-    const conDoc = tipo !== "proveedor";
-    const f = form("Nuevo", [...(conDoc ? [{ html: scanHtml("1. Escanee el documento del cliente (DNI, NIE/TIE, pasaporte)") }] : []),
+    const f = form("Nuevo", [{ html: scanHtml("1. Escanee el documento del cliente (DNI, NIE/TIE, pasaporte)") },
       { k: "company_id", t: "Sociedad", type: "select", req: true, options: opts(S.companies) }, ...fields], {},
       async (d, fr) => {
-        await post("/api/terceros", clean({ ...d, company_id: Number(d.company_id), tipo, documentos: conDoc ? fr._docs.map((x) => x.id) : [] }));
-        toast("Creado"); load();
+        await post("/api/terceros", clean({ ...d, company_id: Number(d.company_id), tipo, documentos: fr._docs.map((x) => x.id) }));
+        toast("Creado"); load(); repetidos();
       });
-    if (conDoc) conEscaner(f);
+    conEscaner(f);
   };
+  load(); repetidos();
+}
+
+// Fichas repetidas: se elige la que se conserva y las demás se unen a ella (reservas, contratos, documentos)
+function unirFichas(grupos, done) {
+  const g = grupos[0];
+  if (!g) return done();
+  const desc = (c) => `Ficha ${c.id}: ${c.documento_num || "sin documento"} · ${c.telefono || "sin teléfono"} · ${c.email || "sin correo"} · ${c.reservas} reserva(s)${c.unidades.length ? ` · ${c.unidades.join(", ")}` : ""}`;
+  form(`Ficha repetida: ${g.nombre} (${grupos.length} pendiente(s))`, [
+    { html: g.documentos_distintos
+      ? '<p class="error">Estas fichas tienen documentos distintos: son personas diferentes con el mismo nombre. Solo se pueden unir las que coinciden.</p>'
+      : '<p class="muted">Se conserva la ficha elegida; las demás se unen a ella: pasan sus reservas, contratos, documentos escaneados y facturas, y se completan los datos que falten.</p>' },
+    { k: "conservar", t: "Conservar la ficha", type: "select", req: true, options: g.fichas.map((c) => [String(c.id), desc(c)]), def: String(g.principal), wide: true },
+    { k: "unir", t: "Unir a ella", type: "checks", options: g.fichas.map((c) => [String(c.id), desc(c)]) },
+  ], { unir: g.documentos_distintos ? [] : g.fichas.map((c) => String(c.id)) }, async (d) => {
+    const ids = d.unir.map(Number).filter((x) => x !== Number(d.conservar));
+    if (ids.length) {
+      await post(`/api/terceros/${d.conservar}/fusionar`, { ids });
+      toast(`${g.nombre}: ${ids.length + 1} fichas unidas en una`);
+    }
+    unirFichas(grupos.slice(1), done);
+  }, "Unir y seguir");
+}
+
+// ---- proveedores del grupo (no dependen de ninguna sociedad)
+const TIPOS_PERSONA = [["empresa", "Empresa (CIF)"], ["autonomo", "Autónomo (DNI/NIE)"], ["particular", "Persona física (DNI/NIE)"]];
+V.proveedores = async (el) => {
+  const editar = can("mantenimiento.editar");
+  el.innerHTML = `<div class="toolbar"><input id="q" placeholder="Nombre, CIF/DNI, actividad, municipio"><label class="check"><input type="checkbox" id="baja"> Ver también los de baja</label>
+    <span class="spacer"></span>${editar ? '<button class="btn primary" id="new">Nuevo proveedor</button>' : ""}</div>
+    <p class="muted">Fichero de proveedores del grupo, común a todas las sociedades. Se usa al indicar el proveedor de una orden de trabajo, la empresa mantenedora de un plan preventivo o la empresa del personal.</p><div id="t"></div>`;
+  const fields = [
+    { k: "nombre", t: "Nombre o razón social", req: true, wide: true },
+    { k: "tipo_persona", t: "Tipo", type: "select", req: true, options: TIPOS_PERSONA, def: "empresa" },
+    { k: "nif", t: "CIF / DNI / NIE" },
+    { k: "direccion", t: "Domicilio", wide: true }, { k: "cp", t: "C.P." }, { k: "municipio", t: "Municipio" },
+    { k: "provincia", t: "Provincia" }, { k: "pais", t: "País", def: "España" },
+    { k: "email", t: "Correo electrónico", type: "email" }, { k: "telefono", t: "Teléfono" },
+    { k: "persona_contacto", t: "Persona de contacto" }, { k: "actividad", t: "Actividad / gremio" },
+    { k: "activo", t: "Proveedor en activo", type: "checkbox", def: true },
+    { k: "notas", t: "Notas", type: "textarea", wide: true },
+  ];
+  const guardar = (p) => async (d) => {
+    await (p ? put(`/api/proveedores/${p.id}`, d) : post("/api/proveedores", d));
+    S.proveedores = null; toast(p ? "Proveedor guardado" : "Proveedor dado de alta"); load();
+  };
+  const load = async () => table($("#t", el), [
+    { k: "nombre", t: "Nombre" }, { k: "nif", t: "CIF / DNI" }, { k: "tipo_persona_nombre", t: "Tipo" },
+    { k: "actividad", t: "Actividad" }, { k: "municipio", t: "Municipio" }, { k: "telefono", t: "Teléfono" },
+    { k: "email", t: "Correo" }, { k: "activo", t: "Estado", f: (v) => (v ? "En activo" : '<span class="muted">Baja</span>') },
+  ], await get("/api/proveedores", { q: $("#q", el).value, solo_activos: !$("#baja", el).checked }), (p) => [
+    [editar ? "Ficha" : "Ver", () => form(p.nombre, fields, p, editar ? guardar(p) : async () => {}, editar ? "Guardar" : "Cerrar")],
+    editar && ["Borrar", async () => { if (confirm(`¿Borrar la ficha de ${p.nombre}? Las órdenes de trabajo conservan su nombre.`)) { await run(() => api("DELETE", `/api/proveedores/${p.id}`), "Ficha borrada"); S.proveedores = null; load(); } }, "danger"],
+  ]);
+  $("#q", el).oninput = debounce(load); $("#baja", el).onchange = load;
+  if ($("#new", el)) $("#new", el).onclick = () => form("Nuevo proveedor", fields, {}, guardar(null));
   load();
+};
+// Sugerencias del fichero de proveedores en los campos de texto «proveedor» / «empresa»
+async function sugerirProveedores(f, ...campos) {
+  if (!can("mantenimiento.ver")) return;
+  S.proveedores = S.proveedores || await get("/api/proveedores", { solo_activos: true }).catch(() => []);
+  if (!f.querySelector("#dl-prov")) f.insertAdjacentHTML("beforeend", `<datalist id="dl-prov">${S.proveedores.map((p) => `<option value="${esc(p.nombre)}">${esc(p.actividad || "")}</option>`).join("")}</datalist>`);
+  campos.forEach((c) => f.elements[c]?.setAttribute("list", "dl-prov"));
 }
 
 // ---- mantenimiento
@@ -1497,7 +1569,7 @@ async function newWorkOrder(assetId, unitId, zona) {  // zona: {zona, nombre} de
   const aid = assetId || await pickAsset();
   const units = zona ? [] : await get("/api/unidades", { asset_id: aid });
   const titulo = zona ? `Nueva incidencia · ${zona.nombre}` : unitId ? `Nueva incidencia · ${units.find((u) => u.id === unitId)?.codigo ?? ""}` : `Nueva orden de trabajo · ${assetName(aid)}`;
-  return new Promise((resolve) => bindFotos(form(titulo, [
+  return new Promise((resolve) => sugerirProveedores(bindFotos(form(titulo, [
     { k: "titulo", t: "Título", req: true, wide: true },
     ...(zona ? [] : [{ k: "unit_id", t: "Unidad (vacío = zonas comunes)", type: "select", options: units.map((u) => [u.id, u.codigo]) }]),
     ...(can("mantenimiento.editar") ? [{ k: "tipo", t: "Tipo", type: "select", req: true, options: list(["correctivo", "preventivo", "normativo", "mejora"]), def: "correctivo" }] : []),
@@ -1513,7 +1585,7 @@ async function newWorkOrder(assetId, unitId, zona) {  // zona: {zona, nombre} de
     const n = await subirFotos(f, w.id, "averia");
     toast(`Orden de trabajo OT-${String(w.id).padStart(5, "0")} creada` + (n ? ` con ${n} foto(s)` : "") + (w.prioridad === "urgente" ? ". Se ha avisado por correo." : ""));
     resolve();
-  })));
+  })), "proveedor"));
 }
 // Bloque de fotos: en el móvil «Hacer foto» abre directamente la cámara trasera
 function fotosHtml(titulo, pdf = false) {
@@ -1602,13 +1674,13 @@ V.ordenes = async (el) => {
       const enTrabajo = !w.conf_mto_por;
       return [...comunes,
         puedeEnviarOT() && enTrabajo && ["Enviar", () => enviarOT(w, load)],
-        can("mantenimiento.editar") && enTrabajo && ["Editar", () => form(`OT ${w.id}: ${w.titulo}`, [
+        can("mantenimiento.editar") && enTrabajo && ["Editar", () => sugerirProveedores(form(`OT ${w.id}: ${w.titulo}`, [
           { k: "titulo", t: "Título", req: true, wide: true }, { k: "estado", t: "Estado", type: "select", options: list(["abierta", "asignada", "en_curso", "pendiente_material"]) },
           { k: "prioridad", t: "Prioridad", type: "select", options: list(S.cat.prioridades) }, { k: "categoria", t: "Instalación", type: "select", options: list(S.cat.categorias_mto) },
           { k: "tipo", t: "Tipo", type: "select", options: list(["correctivo", "preventivo", "normativo", "mejora"]) },
           { k: "asignado_a", t: "Asignado a" }, { k: "proveedor", t: "Proveedor" }, { k: "coste_estimado", t: "Coste estimado €", type: "number" },
           { k: "fecha_prevista", t: "Fecha prevista", type: "date" }, { k: "descripcion", t: "Descripción", type: "textarea", wide: true },
-        ], w, async (d) => { await put(`/api/mantenimiento/ordenes/${w.id}`, d); toast("OT actualizada"); load(); })],
+        ], w, async (d) => { await put(`/api/mantenimiento/ordenes/${w.id}`, d); toast("OT actualizada"); load(); }), "proveedor")],
         can("mantenimiento.editar") && enTrabajo && ["Trabajo realizado", () => bindFotos(form(`OT ${w.id}: confirmar trabajo realizado`, [
           { k: "solucion", t: "Trabajo realizado / solución", type: "textarea", wide: true, req: true }, { k: "coste_real", t: "Coste real €", type: "number" },
           { html: fotosHtml("Fotos del trabajo terminado (opcional)") }],
@@ -1646,9 +1718,9 @@ V.preventivo = async (el) => {
     { k: "normativa", t: "Normativa" }, { k: "periodicidad_dias", t: "Cada (días)", num: true },
     { k: "proxima_fecha", t: "Próxima", f: (v) => (v < today() ? `<b style="color:var(--bad)">${fdate(v)}</b>` : fdate(v)) },
     { k: "proveedor", t: "Mantenedor" }, { k: "activo", t: "Activo", f: (v) => (v ? "Sí" : "No") },
-  ], await get("/api/mantenimiento/planes", { asset_id: S.asset }), (p) => can("mantenimiento.editar") ? [["Editar", () => form(p.titulo, fields, p, async (d) => { await put(`/api/mantenimiento/planes/${p.id}`, d); toast("Plan guardado"); load(); })]] : []);
+  ], await get("/api/mantenimiento/planes", { asset_id: S.asset }), (p) => can("mantenimiento.editar") ? [["Editar", () => sugerirProveedores(form(p.titulo, fields, p, async (d) => { await put(`/api/mantenimiento/planes/${p.id}`, d); toast("Plan guardado"); load(); }), "proveedor")]] : []);
   if ($("#new", el)) {
-    $("#new", el).onclick = async () => { const aid = await pickAsset(); form("Nuevo plan preventivo", fields, {}, async (d) => { await post("/api/mantenimiento/planes", clean({ ...d, asset_id: aid })); toast("Plan creado"); load(); }); };
+    $("#new", el).onclick = async () => { const aid = await pickAsset(); sugerirProveedores(form("Nuevo plan preventivo", fields, {}, async (d) => { await post("/api/mantenimiento/planes", clean({ ...d, asset_id: aid })); toast("Plan creado"); load(); }), "proveedor"); };
     $("#tpl", el).onclick = async () => { const aid = await pickAsset(); run(() => post("/api/mantenimiento/planes/plantilla", { asset_id: aid }), (r) => `${r.creados} planes cargados`).then(load); };
     $("#gen", el).onclick = () => form("Generar órdenes preventivas", [{ k: "dias_antelacion", t: "Días de antelación", type: "number", def: 7, req: true }], {},
       async (d) => { const r = await post("/api/mantenimiento/planes/generar", clean({ ...d, asset_id: S.asset ? Number(S.asset) : null })); toast(`${r.creadas} órdenes generadas`); load(); });
@@ -1738,11 +1810,11 @@ V.personal = async (el) => {
     { k: "avisar_urgentes", t: "OT urgentes", f: (v) => (v ? "Al momento" : "") },
     { k: "activo", t: "Estado", f: (v) => (v ? "En activo" : '<span class="muted">Baja</span>') },
   ], await get("/api/personal", { asset_id: S.asset, area: $("#ar", el).value }), (p) => editar(p.area) ? [
-    ["Editar", () => form(p.nombre, fields, p, guardar(p))],
+    ["Editar", () => sugerirProveedores(form(p.nombre, fields, p, guardar(p)), "empresa")],
     ["Borrar", async () => { if (confirm(`¿Borrar la ficha de ${p.nombre}?`)) { await run(() => api("DELETE", `/api/personal/${p.id}`), "Ficha borrada"); load(); } }, "danger"],
   ] : []);
   $("#ar", el).onchange = load;
-  if ($("#new", el)) $("#new", el).onclick = () => form("Nueva persona", fields, { area: areas[0][0], asset_id: S.asset }, guardar(null));
+  if ($("#new", el)) $("#new", el).onclick = () => sugerirProveedores(form("Nueva persona", fields, { area: areas[0][0], asset_id: S.asset }, guardar(null)), "empresa");
   if ($("#pl", el)) $("#pl", el).onclick = () => parteLimpieza(today());
   load();
 };

@@ -1,12 +1,14 @@
 """Sociedades, activos, unidades y terceros."""
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from .. import avisos, marca, registro_viajeros
+from .. import avisos, marca, nif, registro_viajeros
 from ..database import get_db
 from ..facturacion import FORMAS_PAGO
-from ..models import ESTADOS_UNIDAD, MODALIDADES, USOS_UNIDAD, Asset, Company, Contact, Lease, Reservation, Unit
+from ..models import (ESTADOS_UNIDAD, MODALIDADES, USOS_UNIDAD, Asset, Company, Contact, ContactDocument, Invoice, Lease,
+                      Reservation, ReservationGuest, Unit)
 from ..schemas import AssetIn, AssetUpdate, CompanyIn, ContactIn, UnitBulk, UnitIn, UnitUpdate
 from ..security import PERMISOS, Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
@@ -14,7 +16,7 @@ from ..utils import apply, bad_request, get_or_404, scoped
 router = APIRouter(prefix="/api", tags=["estructura"])
 
 # Qué permiso gobierna cada tipo de tercero
-PERMISO_TERCERO = {"inquilino": "alquiler", "huesped": "reservas", "proveedor": "mantenimiento",
+PERMISO_TERCERO = {"inquilino": "alquiler", "huesped": "reservas",
                    "cliente_garaje": "reservas"}  # cliente externo de una plaza de garaje (no es huésped)
 
 
@@ -260,9 +262,8 @@ def _contact_filter(scope: Scope, tipo: str, accion: str):
         linked = select(Reservation.guest_id).join(Unit).where(Unit.asset_id.in_(assets or {-1}))
     elif tipo in ("inquilino", "cliente_garaje"):
         linked = select(Lease.tenant_id).join(Unit).where(Unit.asset_id.in_(assets or {-1}))
-    else:  # proveedores: catálogo de la sociedad
-        linked = select(Contact.id).where(Contact.company_id.in_(
-            select(Asset.company_id).where(Asset.id.in_(assets or {-1}))))
+    else:
+        linked = select(Lease.tenant_id).where(False)
     return or_(Contact.company_id.in_(comp or {-1}), Contact.id.in_(linked))
 
 
@@ -280,7 +281,146 @@ def list_contacts(tipo: str, company_id: int | None = None, q: str | None = None
         stmt = stmt.where(or_(Contact.nombre.ilike(like), Contact.apellidos.ilike(like),
                               Contact.documento_num.ilike(like), Contact.email.ilike(like),
                               Contact.telefono.ilike(like)))
-    return [c.to_dict() for c in db.scalars(stmt.order_by(Contact.nombre).limit(500))]
+    filas = list(db.scalars(stmt.order_by(Contact.nombre, Contact.apellidos).limit(500)))
+    uds = unidades_de(db, [c.id for c in filas])
+    out = []
+    for c in filas:
+        d = c.to_dict()
+        u = uds.get(c.id, [])
+        d["unidades"] = [x["codigo"] for x in u]
+        d["n_apartamentos"] = sum(1 for x in u if x["uso"] != "garaje")
+        out.append(d)
+    return out
+
+
+ACTIVAS = ("confirmada", "checkin")
+
+
+def unidades_de(db: Session, ids: list[int]) -> dict[int, list[dict]]:
+    """Apartamentos y plazas que tiene cada cliente ahora: reservas confirmadas o en curso y contratos vigentes."""
+    out: dict[int, list[dict]] = {}
+    if not ids:
+        return out
+    for r, u, a in db.execute(select(Reservation, Unit, Asset).join(Unit, Unit.id == Reservation.unit_id)
+                              .join(Asset, Asset.id == Unit.asset_id)
+                              .where(Reservation.guest_id.in_(ids), Reservation.estado.in_(ACTIVAS))
+                              .order_by(Unit.codigo)):
+        out.setdefault(r.guest_id, []).append({
+            "codigo": u.codigo, "uso": u.uso, "activo": a.nombre, "tipo": "reserva", "localizador": r.localizador,
+            "desde": r.fecha_entrada.isoformat(), "hasta": r.fecha_salida.isoformat(), "estado": r.estado})
+    for l, u, a in db.execute(select(Lease, Unit, Asset).join(Unit, Unit.id == Lease.unit_id)
+                              .join(Asset, Asset.id == Unit.asset_id)
+                              .where(Lease.tenant_id.in_(ids), Lease.estado.in_(("borrador", "vigente")))
+                              .order_by(Unit.codigo)):
+        out.setdefault(l.tenant_id, []).append({
+            "codigo": u.codigo, "uso": u.uso, "activo": a.nombre, "tipo": "contrato", "localizador": l.referencia,
+            "desde": l.fecha_inicio.isoformat(), "hasta": l.fecha_fin.isoformat() if l.fecha_fin else None,
+            "estado": l.estado})
+    return out
+
+
+def _visible(db: Session, scope: Scope, c: Contact, accion: str) -> None:
+    cond = _contact_filter(scope, c.tipo, accion)
+    if cond is not None and not db.scalar(select(Contact.id).where(Contact.id == c.id, cond)):
+        raise HTTPException(403, "Sin permiso sobre este cliente")
+
+
+@router.get("/terceros/duplicados")
+def duplicate_contacts(tipo: str, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Fichas con el mismo nombre en la misma sociedad (sin tildes ni mayúsculas). No se unen solas: dos clientes
+    distintos pueden llamarse igual; se revisan y se unen con «fusionar»."""
+    stmt = select(Contact).where(Contact.tipo == tipo)
+    cond = _contact_filter(scope, tipo, "editar")
+    if cond is not None:
+        stmt = stmt.where(cond)
+    grupos: dict[tuple, list[Contact]] = {}
+    for c in db.scalars(stmt.order_by(Contact.id)):
+        grupos.setdefault((c.company_id, nif.nombre_clave(c.nombre, c.apellidos)), []).append(c)
+    repetidos = [g for g in grupos.values() if len(g) > 1]
+    uds = unidades_de(db, [c.id for g in repetidos for c in g])
+    n_res = dict(db.execute(select(Reservation.guest_id, func.count()).where(
+        Reservation.guest_id.in_([c.id for g in repetidos for c in g] or [-1])).group_by(Reservation.guest_id)).all())
+    out = []
+    for g in repetidos:
+        fichas = [{**c.to_dict(), "unidades": [x["codigo"] for x in uds.get(c.id, [])], "reservas": n_res.get(c.id, 0),
+                   "datos": sum(1 for k in CAMPOS_FUSION if getattr(c, k))} for c in g]
+        docs = {nif.normalizar(c.documento_num) for c in g if c.documento_num}
+        principal = max(fichas, key=lambda f: (f["datos"], f["reservas"], -f["id"]))
+        out.append({"nombre": f"{g[0].nombre} {g[0].apellidos or ''}".strip(), "fichas": fichas,
+                    "principal": principal["id"], "documentos_distintos": len(docs) > 1})
+    return out
+
+
+CAMPOS_FUSION = ("apellidos", "documento_tipo", "documento_num", "nacionalidad", "fecha_nacimiento", "sexo",
+                 "num_soporte", "fecha_caducidad_doc", "email", "telefono", "direccion", "cp", "municipio",
+                 "municipio_ine", "pais", "iban")
+
+
+class MergeIn(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=50)
+
+
+@router.post("/terceros/{cid}/fusionar")
+def merge_contacts(cid: int, data: MergeIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Une en la ficha `cid` las fichas repetidas del mismo cliente: pasan a ella sus reservas, ocupaciones,
+    contratos, documentos escaneados y facturas; se completan los datos que le falten y se borran las demás."""
+    c = get_or_404(db, Contact, cid)
+    _visible(db, scope, c, "editar")
+    otros = []
+    for oid in dict.fromkeys(data.ids):
+        if oid == cid:
+            continue
+        o = get_or_404(db, Contact, oid)
+        _visible(db, scope, o, "editar")
+        if (o.company_id, o.tipo) != (c.company_id, c.tipo):
+            bad_request("Solo se pueden unir fichas de la misma sociedad y del mismo tipo")
+        da, db_ = nif.normalizar(c.documento_num), nif.normalizar(o.documento_num)
+        if da and db_ and da != db_:
+            bad_request(f"{o.nombre} {o.apellidos or ''} tiene otro documento ({o.documento_num}): son personas "
+                        "distintas y no se pueden unir")
+        otros.append(o)
+    if not otros:
+        bad_request("Indique las fichas que se unen a esta")
+    ids = [o.id for o in otros]
+    for o in otros:  # datos que faltan en la ficha que se conserva
+        for k in CAMPOS_FUSION:
+            if not getattr(c, k) and getattr(o, k):
+                setattr(c, k, getattr(o, k))
+        if o.notas and o.notas not in (c.notas or ""):
+            c.notas = f"{c.notas}\n{o.notas}" if c.notas else o.notas
+    ya = set(db.scalars(select(ReservationGuest.reservation_id).where(ReservationGuest.contact_id == cid)))
+    for og in db.scalars(select(ReservationGuest).where(ReservationGuest.contact_id.in_(ids))):
+        if og.reservation_id in ya:
+            db.delete(og)  # ya figuraba como ocupante de esa reserva
+        else:
+            og.contact_id = cid
+            ya.add(og.reservation_id)
+    db.flush()
+    movidas = {}
+    for modelo, col in ((Reservation, Reservation.guest_id), (Lease, Lease.tenant_id),
+                        (ContactDocument, ContactDocument.contact_id), (Invoice, Invoice.contact_id)):
+        filas = list(db.scalars(select(modelo).where(col.in_(ids))))
+        for f in filas:
+            setattr(f, col.key, cid)
+        movidas[modelo.__tablename__] = len(filas)
+    db.flush()
+    for o in otros:
+        db.delete(o)
+    audit(db, scope.user, "fusionar", "tercero", cid, {"unidas": ids, "movidas": movidas})
+    db.commit()
+    return contact_detail(cid, scope, db)
+
+
+@router.get("/terceros/{cid}")
+def contact_detail(cid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Ficha del cliente con los apartamentos y plazas que tiene ahora y el número de estancias."""
+    c = get_or_404(db, Contact, cid)
+    _visible(db, scope, c, "ver")
+    d = c.to_dict()
+    d["unidades"] = unidades_de(db, [cid]).get(cid, [])
+    d["n_apartamentos"] = sum(1 for x in d["unidades"] if x["uso"] != "garaje")
+    d["n_estancias"] = db.scalar(select(func.count()).select_from(Reservation).where(Reservation.guest_id == cid))
+    return d
 
 
 def _require_contact(scope: Scope, tipo: str, accion: str, company_id: int):
@@ -292,6 +432,13 @@ def _require_contact(scope: Scope, tipo: str, accion: str, company_id: int):
 @router.post("/terceros", status_code=201)
 def create_contact(data: ContactIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     _require_contact(scope, data.tipo, "editar", data.company_id)
+    doc = nif.normalizar(data.documento_num)
+    if doc:
+        dup = db.scalar(select(Contact).where(Contact.company_id == data.company_id, Contact.tipo == data.tipo,
+                                              func.upper(Contact.documento_num) == doc))
+        if dup:
+            bad_request(f"Ya existe la ficha de {dup.nombre} {dup.apellidos or ''} con el documento {doc}: "
+                        "búsquela y edítela en lugar de crear otra")
     c = Contact(**data.model_dump(exclude={"documentos"}))
     registro_viajeros.completar_municipio(c)
     db.add(c)

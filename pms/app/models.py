@@ -125,6 +125,30 @@ class Contact(Base):
     notas: Mapped[str | None] = mapped_column(Text)
 
 
+TIPOS_PERSONA = {"empresa": "Empresa (CIF)", "autonomo": "Autónomo (DNI/NIE)", "particular": "Persona física (DNI/NIE)"}
+
+
+class Supplier(Base):
+    """Proveedor del grupo: no depende de ninguna sociedad y lo usan todas (OT, preventivo, personal)."""
+    __tablename__ = "proveedores"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nombre: Mapped[str] = mapped_column(String(200))  # razón social o nombre y apellidos
+    tipo_persona: Mapped[str] = mapped_column(String(20), default="empresa")  # empresa | autonomo | particular
+    nif: Mapped[str | None] = mapped_column(String(20), unique=True)  # CIF, DNI o NIE
+    direccion: Mapped[str | None] = mapped_column(String(300))
+    cp: Mapped[str | None] = mapped_column(String(10))
+    municipio: Mapped[str | None] = mapped_column(String(100))
+    provincia: Mapped[str | None] = mapped_column(String(60))
+    pais: Mapped[str | None] = mapped_column(String(60))
+    email: Mapped[str | None] = mapped_column(String(160))
+    telefono: Mapped[str | None] = mapped_column(String(40))
+    persona_contacto: Mapped[str | None] = mapped_column(String(160))
+    actividad: Mapped[str | None] = mapped_column(String(160))  # gremio: fontanería, PCI, ascensores...
+    activo: Mapped[bool] = mapped_column(Boolean, default=True)
+    notas: Mapped[str | None] = mapped_column(Text)
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
 # --------------------------------------------------------------------------- alquiler residencial
 class Lease(Base):
     __tablename__ = "contratos"
