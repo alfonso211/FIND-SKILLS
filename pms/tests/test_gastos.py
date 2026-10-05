@@ -93,3 +93,29 @@ def test_documentos_y_gastos(client, admin, ids):
     queda = [x for x in client.get(f"/api/gastos?asset_id={sae}", headers=admin).json()["gastos"] if x["id"] == g["id"]]
     assert queda and queda[0]["documento_id"] is None  # el apunte del gasto se conserva
     assert client.delete(f"/api/gastos/{g['id']}", headers=admin).json()["ok"]
+
+
+def test_proveedor_nuevo_desde_un_gasto(client, admin, ids):
+    """Recepción da de alta en el fichero del grupo el proveedor de una factura; el gasto queda enlazado."""
+    sae = ids["assets"]["SAE"]["id"]
+    rec = _usuario(client, admin, ids, "recepcion.proveedor@inversiete.com", "Recepción", "SAE")
+    g = client.post("/api/gastos", headers=rec, json={
+        "asset_id": sae, "fecha": HOY.isoformat(), "categoria": "material", "concepto": "Sábanas",
+        "proveedor": "Textiles  Nuevo Proveedor SL", "total": 60.5}).json()
+    assert g["supplier_id"] is None
+    assert client.get("/api/proveedores?q=Textiles", headers=rec).json() == []
+    p = client.post("/api/proveedores", headers=rec, json={
+        "nombre": "TEXTILES NUEVO PROVEEDOR SL", "nif": "A58818501", "pais": "España", "telefono": "910000001",
+        "direccion": "C/ Lino 4", "municipio": "Madrid", "notas": "Entrega en 48 h"})
+    assert p.status_code == 201, p.text
+    lista = client.get(f"/api/gastos?asset_id={sae}", headers=rec).json()["gastos"]
+    assert next(x for x in lista if x["id"] == g["id"])["supplier_id"] == p.json()["id"]
+    # recepción no borra proveedores (son de todo el grupo); la dirección sí, y el gasto conserva el nombre
+    assert client.delete(f"/api/proveedores/{p.json()['id']}", headers=rec).status_code == 403
+    assert client.delete(f"/api/proveedores/{p.json()['id']}", headers=admin).json()["ok"]
+    lista = client.get(f"/api/gastos?asset_id={sae}", headers=admin).json()["gastos"]
+    x = next(x for x in lista if x["id"] == g["id"])
+    assert x["supplier_id"] is None and x["proveedor"] == "Textiles Nuevo Proveedor SL"
+    # limpieza no ve el fichero de proveedores de la cuenta de gastos ni da de alta
+    gob = _usuario(client, admin, ids, "gobernanta.proveedor@inversiete.com", "Gobernanta / Limpieza", "SAE")
+    assert client.post("/api/proveedores", headers=gob, json={"nombre": "No Permitido SL"}).status_code == 403
