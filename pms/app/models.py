@@ -394,6 +394,72 @@ class StaffMember(Base):
     notas: Mapped[str | None] = mapped_column(Text)
 
 
+# --------------------------------------------------------------------------- documentos recibidos y gastos
+TIPOS_DOCUMENTO = {
+    "factura": "Factura", "ticket": "Ticket / recibo", "albaran": "Albarán", "presupuesto": "Presupuesto",
+    "carta": "Carta", "notificacion": "Notificación / requerimiento", "contrato": "Contrato",
+    "seguro": "Póliza / seguro", "otro": "Otro",
+}
+TIPOS_GASTO = ("factura", "ticket", "albaran")  # tipos que normalmente son un gasto
+CATEGORIAS_GASTO = {
+    "suministros": "Suministros (luz, agua, gas)", "telecom": "Telefonía e internet",
+    "mantenimiento": "Mantenimiento y reparaciones", "limpieza": "Limpieza y lavandería",
+    "material": "Material, menaje y mobiliario", "amenities": "Amenities y consumibles",
+    "comunidad": "Comunidad de propietarios", "impuestos": "Impuestos y tasas", "seguros": "Seguros",
+    "profesionales": "Servicios profesionales (gestoría, abogados…)", "comisiones": "Comisiones (OTA, bancos)",
+    "publicidad": "Publicidad y marketing", "personal": "Personal externo", "otros": "Otros",
+}
+AMBITOS_GASTO = {"general": "General del activo", "apartamento": "Apartamento concreto", "otro": "Otro"}
+
+
+class ReceivedDocument(Base):
+    """Documento recibido y escaneado (factura, ticket, carta…), guardado cifrado en la carpeta de su activo.
+    Cada activo ve solo los suyos; quien gestiona la sociedad o el grupo, todos."""
+    __tablename__ = "documentos_recibidos"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
+    unit_id: Mapped[int | None] = mapped_column(ForeignKey("unidades.id"))
+    tipo: Mapped[str] = mapped_column(String(20))
+    fecha: Mapped[date] = mapped_column(Date, index=True)  # fecha del documento
+    emisor: Mapped[str | None] = mapped_column(String(200))
+    referencia: Mapped[str | None] = mapped_column(String(60))  # nº de factura, expediente…
+    descripcion: Mapped[str | None] = mapped_column(Text)
+    nombre: Mapped[str] = mapped_column(String(200))
+    fichero: Mapped[str] = mapped_column(String(64))
+    mime: Mapped[str] = mapped_column(String(60))
+    tamano: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    subido: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+
+
+class Expense(Base):
+    """Apunte de la cuenta de gastos del activo, normalmente con su documento (factura o ticket) escaneado."""
+    __tablename__ = "gastos"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
+    documento_id: Mapped[int | None] = mapped_column(ForeignKey("documentos_recibidos.id"), index=True)
+    ambito: Mapped[str] = mapped_column(String(20), default="general")  # general | apartamento | otro
+    unit_id: Mapped[int | None] = mapped_column(ForeignKey("unidades.id"))
+    ambito_detalle: Mapped[str | None] = mapped_column(String(200))  # «otro»: zona, varios apartamentos…
+    fecha: Mapped[date] = mapped_column(Date, index=True)
+    categoria: Mapped[str] = mapped_column(String(30))
+    concepto: Mapped[str] = mapped_column(String(300))
+    proveedor: Mapped[str | None] = mapped_column(String(200))
+    supplier_id: Mapped[int | None] = mapped_column(ForeignKey("proveedores.id"))
+    numero_factura: Mapped[str | None] = mapped_column(String(60))
+    base: Mapped[float] = mapped_column(Numeric(12, 2))
+    tipo_iva: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
+    cuota: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    total: Mapped[float] = mapped_column(Numeric(12, 2))
+    forma_pago: Mapped[str | None] = mapped_column(String(30))
+    pagado: Mapped[bool] = mapped_column(Boolean, default=False)
+    fecha_pago: Mapped[date | None] = mapped_column(Date)
+    notas: Mapped[str | None] = mapped_column(Text)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
 class WorkOrderAttachment(Base):
     """Foto o documento de una orden de trabajo (avería, trabajo terminado, certificado OCA, factura...).
     El fichero se guarda cifrado fuera de la base de datos, como las copias de documentos de identidad."""
