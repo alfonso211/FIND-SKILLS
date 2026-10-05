@@ -29,7 +29,10 @@ Para añadir activos nuevos: *Activos → Nuevo activo* (se eligen la gestora, l
 
 ## Módulos
 
-- **Panel de control**: ocupación del día, llegadas y salidas, contratos vigentes, renta mensual,
+- **Panel de control**:
+  - Quien ve todos los activos: cada tarjeta de situación de un activo con plano es interactiva y abre el plano.
+  - Quien solo ve su activo: la situación informativa y las plantas en miniatura, para empezar a trabajar.
+  - Contenido: ocupación del día, llegadas y salidas, contratos vigentes, renta mensual,
   deuda vencida, producción del mes y OT abiertas o urgentes por activo.
 - **Plano de apartamentos** (Suite Aeropuerto; Suite Florida, pendiente de sus croquis):
   - Croquis de cada planta igual que el del PMS anterior y con sus mismos colores: alquilado (cian), reserva
@@ -95,6 +98,13 @@ Para añadir activos nuevos: *Activos → Nuevo activo* (se eligen la gestora, l
   - **Inalterables:** las facturas no se editan ni se borran. Un error se corrige con una **rectificativa**, que va
     en serie propia (B35R, SFR, SAR), anula la factura con importes en negativo y deshace el cobro. La emite
     Dirección o Administración / Finanzas (permiso *facturas.rectificar*).
+  - **Servicios (21 %):** limpieza extra, plaza de aparcamiento exterior, plaza de garaje, lavandería…
+    - Se definen en *Facturación e informes → Servicios*, con precio IVA incluido, o se escriben a mano.
+    - Se pueden añadir en el mismo cobro de la reserva o del recibo.
+    - También pueden ir en una **factura solo de servicios**, por ejemplo el alquiler de una plaza a un cliente
+      externo.
+    - Cada factura puede tener varias líneas con distinto IVA y lleva el desglose de base y cuota por tipo.
+      El libro de facturas emitidas da una fila por factura y tipo de IVA.
   - **Huella:** cada factura guarda la huella SHA-256 de la anterior de la misma sociedad (cadena antimanipulación).
   - **Consulta y exportación:** *Facturación → Facturas emitidas* permite buscar, reimprimir y exportar el libro
     registro de facturas emitidas en CSV para Excel o la gestoría. Recepción ve las facturas de su activo.
@@ -125,7 +135,9 @@ Para añadir activos nuevos: *Activos → Nuevo activo* (se eligen la gestora, l
     las periodicidades a cada instalación.
 - **Informes Excel** (*Facturación e informes → Informes Excel*), por activo y mes, en el periodo elegido:
   - **Ocupación:** noches disponibles y ocupadas, ADR y RevPAR en turísticos; unidades alquiladas por uso en residencial.
-  - **Producción:** alojamiento devengado, rentas emitidas y facturado.
+  - **Producción:** lo facturado en el mes según la fecha de factura, no la de la reserva ni la de entrada del
+    cliente. Se desglosa en alojamiento, rentas y servicios (sin IVA), IVA y total. El panel de control usa el mismo
+    criterio.
   - **Morosidad:** recibos y reservas con saldo, con contacto y antigüedad de la deuda.
   - **Costes de mantenimiento:** por OT, instalación, tipo y proveedor.
 - **Importación de reservas desde Excel o CSV** (*Reservas → Importar Excel*):

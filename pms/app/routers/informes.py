@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..facturacion import lineas_de
 from ..models import (MODALIDADES_CONTRATO, MODALIDADES_RESERVA, Asset, Charge, Contact, Invoice, Lease,
                       Reservation, Unit, WorkOrder)
 from ..security import Scope, audit, get_scope
@@ -94,11 +95,6 @@ def _reservas(db: Session, ids: list[int], desde: date, hasta: date):
         Reservation.fecha_entrada <= hasta, Reservation.fecha_salida > desde)).all()
 
 
-def _prorrata(r: Reservation, ini: date, fin: date) -> float:
-    total = (r.fecha_salida - r.fecha_entrada).days
-    return float(r.importe_total or 0) * _noches(r.fecha_entrada, r.fecha_salida, ini, fin) / total if total else 0.0
-
-
 # --------------------------------------------------------------------------- informes
 def _ocupacion(db, scope, wb, desde, hasta, asset_id):
     turisticos = _activos(db, scope, "reservas.ver", asset_id, MODALIDADES_RESERVA)
@@ -109,21 +105,26 @@ def _ocupacion(db, scope, wb, desde, hasta, asset_id):
         n_unid = {a.id: db.scalar(select(func.count()).select_from(Unit).where(
             Unit.asset_id == a.id, Unit.estado != "fuera_servicio")) for a in turisticos}
         res = _reservas(db, [a.id for a in turisticos], desde, hasta)
+        fact = _facturado(db, [a.id for a in turisticos], desde, hasta) if any(
+            scope.can_asset("finanzas.ver", a.id) for a in turisticos) else {}
         filas = []
         for a in turisticos:
             propias = [r for r, aid in res if aid == a.id]
             for mes, ini, fin in _meses(desde, hasta):
                 disp = n_unid[a.id] * ((fin - ini).days + 1)
                 ocup = sum(_noches(r.fecha_entrada, r.fecha_salida, ini, fin) for r in propias)
-                ingresos = round(sum(_prorrata(r, ini, fin) for r in propias), 2)
+                ingresos = (round(fact.get((a.id, f"{ini:%Y-%m}"), {}).get("alojamiento", 0), 2)
+                            if scope.can_asset("finanzas.ver", a.id) else None)
                 llegadas = sum(1 for r in propias if ini <= r.fecha_entrada <= fin)
                 filas.append([a.nombre, mes, n_unid[a.id], disp, ocup, ocup / disp if disp else 0, llegadas, ingresos,
-                              round(ingresos / ocup, 2) if ocup else 0, round(ingresos / disp, 2) if disp else 0])
+                              None if ingresos is None else round(ingresos / ocup, 2) if ocup else 0,
+                              None if ingresos is None else round(ingresos / disp, 2) if disp else 0])
         _hoja(wb, "Turísticos", ["Activo", "Mes", "Unidades", "Noches disponibles", "Noches ocupadas", "% ocupación",
-                                 "Llegadas", "Ingresos alojamiento", "ADR (precio medio noche)", "RevPAR"], filas,
+                                 "Llegadas", "Alojamiento facturado (base)", "ADR (precio medio noche)", "RevPAR"], filas,
               {3: ENTERO, 4: ENTERO, 5: PCT, 7: EUR, 8: EUR, 9: EUR}, totales=[3, 4, 6, 7],
-              nota="Ingresos repartidos por noches de cada mes (IVA incluido). No incluye reservas canceladas ni "
-                   "no presentadas. Unidades fuera de servicio excluidas.")
+              nota="Noches: reservas confirmadas, alojadas o salidas (sin canceladas ni no presentadas); unidades fuera de "
+                   "servicio excluidas. Importes: alojamiento facturado en el mes según fecha de factura, sin IVA "
+                   "(solo con permiso de finanzas).")
     if residenciales:
         filas = []
         for a in residenciales:
@@ -143,31 +144,38 @@ def _ocupacion(db, scope, wb, desde, hasta, asset_id):
               nota="Unidad alquilada: con contrato vigente, finalizado o rescindido que cubre algún día del mes.")
 
 
+def _facturado(db, ids: list[int], desde: date, hasta: date) -> dict[tuple[int, str], dict[str, float]]:
+    """Base imponible facturada por activo, mes (fecha de factura) y tipo de línea; también IVA, total y nº."""
+    out: dict[tuple[int, str], dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    for f in db.scalars(select(Invoice).where(Invoice.asset_id.in_(ids or [-1]), Invoice.fecha_expedicion >= desde,
+                                              Invoice.fecha_expedicion <= hasta)):
+        acc = out[(f.asset_id, f"{f.fecha_expedicion:%Y-%m}")]
+        for x in lineas_de(f):
+            acc[x["tipo"]] += x["base"]
+        acc["base"] += float(f.base_imponible)
+        acc["iva"] += float(f.cuota_iva)
+        acc["total"] += float(f.total)
+        acc["n"] += 1
+    return out
+
+
 def _produccion(db, scope, wb, desde, hasta, asset_id):
+    """La producción es lo facturado: cuenta la fecha de la factura, no la de la reserva ni la de entrada."""
     activos = _activos(db, scope, "finanzas.ver", asset_id)
     if not activos:
         raise HTTPException(403, "Sin permiso para ver la producción (finanzas)")
-    ids = [a.id for a in activos]
-    res = _reservas(db, ids, desde, hasta)
-    recibos = db.execute(select(Charge.periodo, Charge.importe, Unit.asset_id).join(Lease, Lease.id == Charge.lease_id)
-                         .join(Unit, Unit.id == Lease.unit_id).where(Unit.asset_id.in_(ids), Charge.estado != "anulado")).all()
-    facturas = db.execute(select(Invoice.asset_id, Invoice.fecha_expedicion, Invoice.base_imponible, Invoice.cuota_iva,
-                                 Invoice.total).where(Invoice.asset_id.in_(ids), Invoice.fecha_expedicion >= desde,
-                                                      Invoice.fecha_expedicion <= hasta)).all()
+    fact = _facturado(db, [a.id for a in activos], desde, hasta)
     filas = []
     for a in activos:
-        for mes, ini, fin in _meses(desde, hasta):
-            periodo = f"{ini:%Y-%m}"
-            aloj = round(sum(_prorrata(r, ini, fin) for r, aid in res if aid == a.id), 2)
-            rentas = round(sum(float(i) for p, i, aid in recibos if aid == a.id and p == periodo), 2)
-            fm = [f for f in facturas if f.asset_id == a.id and ini <= f.fecha_expedicion <= fin]
-            filas.append([a.nombre, mes, aloj, rentas, aloj + rentas, round(sum(float(f.base_imponible) for f in fm), 2),
-                          round(sum(float(f.cuota_iva) for f in fm), 2), round(sum(float(f.total) for f in fm), 2), len(fm)])
-    _hoja(wb, "Producción", ["Activo", "Mes", "Alojamiento turístico (devengado)", "Rentas emitidas", "Producción total",
-                             "Facturado: base imponible", "Facturado: IVA", "Facturado: total (cobrado)", "Nº facturas"],
+        for mes, ini, _ in _meses(desde, hasta):
+            v = fact.get((a.id, f"{ini:%Y-%m}"), {})
+            filas.append([a.nombre, mes] + [round(v.get(k, 0), 2) for k in
+                                            ("alojamiento", "renta", "servicio", "base", "iva", "total")] + [int(v.get("n", 0))])
+    _hoja(wb, "Producción", ["Activo", "Mes", "Alojamiento (base)", "Rentas (base)", "Servicios (base)",
+                             "Producción (base imponible)", "IVA", "Total facturado", "Nº facturas"],
           filas, {2: EUR, 3: EUR, 4: EUR, 5: EUR, 6: EUR, 7: EUR, 8: ENTERO}, totales=[2, 3, 4, 5, 6, 7, 8],
-          nota="Producción: reservas repartidas por noches de cada mes y recibos de alquiler del periodo (IVA incluido). "
-               "Facturado: facturas emitidas en el mes al registrar cobros, rectificativas incluidas.")
+          nota="Producción = lo facturado en cada mes según la fecha de la factura, sin IVA. Incluye las "
+               "rectificativas (en negativo).")
 
 
 def _tramo(dias: int) -> str:

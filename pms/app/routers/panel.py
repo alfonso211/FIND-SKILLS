@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import MODALIDADES, Asset, Charge, Lease, Reservation, Unit, WorkOrder
+from ..models import MODALIDADES, Asset, Charge, Invoice, Lease, Reservation, Unit, WorkOrder
 from ..security import Scope, get_scope
 from .mantenimiento import ABIERTAS
 from ..utils import scoped
@@ -42,11 +42,6 @@ def panel(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
                                                      Reservation.estado.in_(("confirmada", "checkin"))))
             k["salidas_hoy"] = db.scalar(base.where(Reservation.fecha_salida == hoy,
                                                     Reservation.estado.in_(("checkin", "checkout"))))
-            if ver_fin:
-                k["produccion_mes"] = float(db.scalar(
-                    select(func.coalesce(func.sum(Reservation.importe_total), 0)).join(Unit).where(
-                        Unit.asset_id == a.id, Reservation.estado.not_in(("cancelada",)),
-                        Reservation.fecha_entrada >= ini_mes, Reservation.fecha_entrada < fin_mes)) or 0)
 
         usos = dict(db.execute(select(Unit.uso, func.count()).where(Unit.asset_id == a.id)
                                .group_by(Unit.uso)).all())
@@ -70,6 +65,12 @@ def panel(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
                     select(func.coalesce(func.sum(Charge.importe - Charge.importe_pagado), 0))
                     .join(Lease).join(Unit).where(Unit.asset_id == a.id, Charge.estado.in_(("pendiente", "parcial")),
                                                   Charge.fecha_vencimiento < hoy)) or 0)
+
+        if ver_fin:  # producción = facturado en el mes (fecha de factura), sin IVA
+            k["produccion_mes"] = float(db.scalar(
+                select(func.coalesce(func.sum(Invoice.base_imponible), 0)).where(
+                    Invoice.asset_id == a.id, Invoice.fecha_expedicion >= ini_mes,
+                    Invoice.fecha_expedicion < fin_mes)) or 0)
 
         if scope.can_asset("mantenimiento.ver", a.id):
             wo = select(func.count()).select_from(WorkOrder).where(

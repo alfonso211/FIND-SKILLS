@@ -9,7 +9,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from .facturacion import FORMAS_PAGO
+from .facturacion import FORMAS_PAGO, desglose, lineas_de
 from .models import Invoice
 
 AZUL = colors.HexColor("#13294b")
@@ -65,23 +65,31 @@ def generar(f: Invoice, asset, original: Invoice | None = None) -> bytes:
                              ("LEFTPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 4),
                              ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
 
-    iva_txt = "Exento" if Decimal(str(f.tipo_iva)) == 0 else f"{Decimal(str(f.tipo_iva)).normalize():f} %"
-    det = Table([
-        ["Concepto", "Base imponible", "IVA", "Cuota IVA", "Total"],
-        [Paragraph(_esc(f.concepto), normal), _eur(f.base_imponible), iva_txt, _eur(f.cuota_iva), _eur(f.total)],
-    ], colWidths=[82 * mm, 28 * mm, 16 * mm, 22 * mm, 26 * mm], repeatRows=1)
+    lineas = lineas_de(f)
+    pct = lambda t: "Exento" if Decimal(str(t)) == 0 else f"{Decimal(str(t)).normalize():f} %"  # noqa: E731
+    cant = lambda c: f"{Decimal(str(c)).normalize():f}".replace(".", ",")  # noqa: E731
+    filas = [["Concepto", "Cant.", "Precio", "Base imponible", "IVA", "Cuota IVA", "Total"]]
+    for x in lineas:
+        filas.append([Paragraph(_esc(x["concepto"]), normal), cant(x["cantidad"]), _eur(x["precio"]), _eur(x["base"]),
+                      pct(x["tipo_iva"]), _eur(x["cuota"]), _eur(x["total"])])
+    det = Table(filas, colWidths=[64 * mm, 12 * mm, 20 * mm, 24 * mm, 14 * mm, 19 * mm, 21 * mm], repeatRows=1)
     det.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 8.5),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("BACKGROUND", (0, 0), (-1, 0), AZUL),
         ("ALIGN", (1, 0), (-1, -1), "RIGHT"), ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LINEBELOW", (0, 1), (-1, -1), 0.6, LINEA), ("TOPPADDING", (0, 0), (-1, -1), 5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
 
-    tot = Table([["Base imponible", _eur(f.base_imponible)], [f"IVA ({iva_txt})", _eur(f.cuota_iva)],
-                 ["TOTAL FACTURA", _eur(f.total)]], colWidths=[40 * mm, 30 * mm], hAlign="RIGHT")
+    # desglose por tipo de IVA (obligatorio cuando hay varios) y total
+    filas_tot = []
+    for d in desglose(lineas):
+        filas_tot += [[f"Base imponible al {pct(d['tipo_iva'])}" if len(desglose(lineas)) > 1 else "Base imponible",
+                       _eur(d["base"])], [f"IVA ({pct(d['tipo_iva'])})", _eur(d["cuota"])]]
+    filas_tot.append(["TOTAL FACTURA", _eur(f.total)])
+    tot = Table(filas_tot, colWidths=[48 * mm, 30 * mm], hAlign="RIGHT")
     tot.setStyle(TableStyle([("ALIGN", (1, 0), (1, -1), "RIGHT"), ("FONTSIZE", (0, 0), (-1, -1), 9.5),
-                             ("FONTNAME", (0, 2), (-1, 2), "Helvetica-Bold"), ("TEXTCOLOR", (0, 2), (-1, 2), AZUL),
-                             ("LINEABOVE", (0, 2), (-1, 2), 1, AZUL), ("TOPPADDING", (0, 0), (-1, -1), 3)]))
+                             ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"), ("TEXTCOLOR", (0, -1), (-1, -1), AZUL),
+                             ("LINEABOVE", (0, -1), (-1, -1), 1, AZUL), ("TOPPADDING", (0, 0), (-1, -1), 3)]))
 
     cuerpo = [cab, Spacer(1, 9 * mm), cli, Spacer(1, 7 * mm), det, Spacer(1, 4 * mm), tot, Spacer(1, 6 * mm)]
     if rect and original is not None:

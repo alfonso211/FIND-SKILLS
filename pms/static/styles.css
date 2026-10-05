@@ -216,3 +216,9 @@ label.btn { display: inline-block; color: var(--ink); font-size: 14px; }
   body { background: #fff; } * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 dialog.ancho { width: min(940px, 96vw); }
+.card.clic { cursor: pointer; transition: box-shadow .12s, border-color .12s, transform .12s; }
+.card.clic:hover, .card.clic:focus { border-color: var(--brand-2); box-shadow: 0 6px 18px rgba(19, 41, 75, .16); transform: translateY(-1px); outline: none; }
+.card .ver-plano { float: right; font-size: 12px; font-weight: 600; color: var(--brand-2); }
+.servicios .srv-fila { display: grid; grid-template-columns: minmax(0, 2.2fr) 70px 120px 90px auto; gap: 6px; margin-bottom: 6px; align-items: center; }
+.servicios .srv-fila [data-c]:not([hidden]) { grid-column: 1 / -1; grid-row: 2; }
+@media (max-width: 860px) { .servicios .srv-fila { grid-template-columns: 1fr 1fr; } }
