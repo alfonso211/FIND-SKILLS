@@ -165,6 +165,8 @@ h4 { margin: 20px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
   .card .logo-activo { position: static; display: block; margin-bottom: 8px; }
 }
 
+ul.envios { list-style: none; padding: 0; margin: 8px 0; }
+ul.envios li { padding: 7px 0; border-bottom: 1px solid var(--line, #e7e1d4); }
 .checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px 14px; }
 .scan { background: #f6f9fd; }
 .scan-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; align-items: end; }

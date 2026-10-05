@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from .. import marca, registro_viajeros
+from .. import avisos, marca, registro_viajeros
 from ..database import get_db
 from ..facturacion import FORMAS_PAGO
 from ..models import ESTADOS_UNIDAD, MODALIDADES, USOS_UNIDAD, Asset, Company, Contact, Lease, Reservation, Unit
@@ -35,6 +35,7 @@ def catalogos(scope: Scope = Depends(get_scope)):
         "formas_pago": FORMAS_PAGO,
         "parentescos": registro_viajeros.PARENTESCOS,
         "paises": registro_viajeros.lista_paises(),
+        "correo": avisos.configurado(),  # sin correo, los envíos al personal se hacen por WhatsApp
     }
 
 

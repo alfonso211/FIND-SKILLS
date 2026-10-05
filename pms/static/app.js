@@ -1219,7 +1219,7 @@ async function encuestaIne() {
 }
 
 V.hoy = async (el) => {
-  el.innerHTML = `<div class="toolbar"><input type="date" id="f" value="${today()}"><span class="spacer"></span>${can("reservas.editar") ? '<button class="btn primary" id="new">Nueva reserva</button>' : ""}</div>
+  el.innerHTML = `<div class="toolbar"><input type="date" id="f" value="${today()}"><span class="spacer"></span>${can("limpieza.editar") ? '<button class="btn" id="pl">Parte de limpieza</button>' : ""}${can("reservas.editar") ? '<button class="btn primary" id="new">Nueva reserva</button>' : ""}</div>
     <div id="venc"></div>
     <h4>Llegadas</h4><div id="l"></div><h4>Salidas</h4><div id="s"></div><h4>Alojados</h4><div id="a"></div>`;
   const load = async () => {
@@ -1231,6 +1231,7 @@ V.hoy = async (el) => {
   };
   $("#f", el).onchange = load;
   if ($("#new", el)) $("#new", el).onclick = () => newReservation(load);
+  if ($("#pl", el)) $("#pl", el).onclick = () => parteLimpieza($("#f", el).value);
   load();
 };
 
@@ -1586,10 +1587,10 @@ V.ordenes = async (el) => {
     const e = $("#e", el).value;
     const rows = await get("/api/mantenimiento/ordenes", { asset_id: S.asset, tipo: $("#tp", el).value, ...(e === "abiertas" ? { abiertas: true } : { estado: e }) });
     table($("#t", el), [
-      { k: "id", t: "Nº", f: (v) => `OT-${String(v).padStart(5, "0")}` }, { k: "fecha_apertura", t: "Apertura", f: fdate }, { k: "asset_id", t: "Activo", f: (v) => esc(assetName(v)) },
+      { k: "id", t: "Nº", f: otNum }, { k: "fecha_apertura", t: "Apertura", f: fdate }, { k: "asset_id", t: "Activo", f: (v) => esc(assetName(v)) },
       { k: "unidad", t: "Unidad", f: (v, w) => esc(v || w.zona_nombre || "Z. comunes") }, { k: "titulo", t: "Título" },
       { k: "categoria", t: "Instalación" }, { k: "prioridad", t: "Prioridad", f: badge }, { k: "abierta_por_nombre", t: "Abierta por" },
-      { k: "asignado_a", t: "Asignado" }, { k: "conf_mto_por_nombre", t: "Mantenimiento", f: (v, w) => check(v, w.conf_mto_fecha) },
+      { k: "asignado_a", t: "Asignado" }, { k: "envios", t: "Enviada", f: (v) => (v?.length ? `<span title="${esc(v.map((e) => `${fdt(e.fecha)} ${e.nombre} (${e.canal === "email" ? "correo" : "WhatsApp"})`).join("\n"))}">✉ ${esc([...new Set(v.map((e) => e.nombre))].join(", "))}</span>` : "") }, { k: "conf_mto_por_nombre", t: "Mantenimiento", f: (v, w) => check(v, w.conf_mto_fecha) },
       { k: "conf_limpieza_por_nombre", t: "Limpieza", f: (v, w) => (w.requiere_limpieza ? check(v, w.conf_limpieza_fecha) : '<span class="muted">no aplica</span>') },
       { k: "coste_real", t: "Coste", num: true, f: eur }, { k: "estado", t: "Estado", f: badge },
     ], rows, (w) => {
@@ -1600,6 +1601,7 @@ V.ordenes = async (el) => {
       if (["cerrada", "cancelada"].includes(w.estado)) return comunes;
       const enTrabajo = !w.conf_mto_por;
       return [...comunes,
+        puedeEnviarOT() && enTrabajo && ["Enviar", () => enviarOT(w, load)],
         can("mantenimiento.editar") && enTrabajo && ["Editar", () => form(`OT ${w.id}: ${w.titulo}`, [
           { k: "titulo", t: "Título", req: true, wide: true }, { k: "estado", t: "Estado", type: "select", options: list(["abierta", "asignada", "en_curso", "pendiente_material"]) },
           { k: "prioridad", t: "Prioridad", type: "select", options: list(S.cat.prioridades) }, { k: "categoria", t: "Instalación", type: "select", options: list(S.cat.categorias_mto) },
@@ -1651,6 +1653,97 @@ V.preventivo = async (el) => {
     $("#gen", el).onclick = () => form("Generar órdenes preventivas", [{ k: "dias_antelacion", t: "Días de antelación", type: "number", def: 7, req: true }], {},
       async (d) => { const r = await post("/api/mantenimiento/planes/generar", clean({ ...d, asset_id: S.asset ? Number(S.asset) : null })); toast(`${r.creadas} órdenes generadas`); load(); });
   }
+  load();
+};
+
+// ---- personal de mantenimiento y limpieza: fichas con correo y teléfono; envío de las OT y del parte de limpieza
+const AREAS = [["mantenimiento", "Mantenimiento"], ["limpieza", "Limpieza"]];
+const puedeEnviarOT = () => can("mantenimiento.editar") || can("mantenimiento.cerrar");
+const otNum = (id) => `OT-${String(id).padStart(5, "0")}`;
+const personaTxt = (p) => `${p.nombre}${p.empresa ? ` (${p.empresa})` : ""}${p.email ? "" : " · sin correo"}${p.whatsapp ? "" : " · sin WhatsApp"}`;
+const canalEnvio = (que) => ({ k: "canal", t: "Enviar por", type: "select", req: true, def: S.cat.correo ? "email" : "whatsapp",
+  options: [["email", `Correo electrónico${que}`], ["whatsapp", "WhatsApp (se abre con el mensaje escrito)"]] });
+
+function resultadoEnvio(titulo, res) {
+  const wa = res.some((r) => r.whatsapp);
+  form(titulo, [{ html: `${wa ? '<p class="muted">Pulse «Abrir WhatsApp» en cada persona y después «Enviar» en WhatsApp: hasta entonces el mensaje no sale.</p>' : ""}
+    <ul class="envios">${res.map((r) => `<li><b>${esc(r.nombre)}</b> · ${esc(r.destino)} · ${r.whatsapp
+      ? `<a class="btn sm primary" href="${esc(r.whatsapp)}" target="_blank" rel="noopener">Abrir WhatsApp</a>`
+      : r.ok ? "correo enviado ✓" : `<span class="error">no enviado: ${esc(r.error || "error")}</span>`}</li>`).join("")}</ul>` }],
+  {}, async () => {}, "Cerrar");
+}
+
+async function enviarOT(w, reload) {
+  const gente = await get("/api/personal", { asset_id: w.asset_id, solo_activos: true });
+  if (!gente.length) return toast("No hay personal dado de alta para este activo (Mantenimiento → Personal)", true);
+  gente.sort((a, b) => (a.area !== "mantenimiento") - (b.area !== "mantenimiento"));
+  const previos = [...new Set((w.envios || []).map((e) => e.nombre))];
+  form(`Enviar ${otNum(w.id)} · ${w.titulo}`, [
+    { k: "personal_ids", t: "Enviar a", type: "checks", options: gente.map((p) => [String(p.id), `${personaTxt(p)} · ${p.area_nombre}`]) },
+    canalEnvio(" (con el parte en PDF y las fotos)"),
+    { k: "nota", t: "Nota para el técnico (opcional)", type: "textarea", wide: true },
+    previos.length && { html: `<p class="muted">Ya enviada a: ${esc(previos.join(", "))}</p>` },
+  ].filter(Boolean), {}, async (d) => {
+    if (!d.personal_ids.length) throw new Error("Elija al menos una persona");
+    const r = await post(`/api/mantenimiento/ordenes/${w.id}/enviar`, { ...clean(d), personal_ids: d.personal_ids.map(Number) });
+    reload && reload();
+    resultadoEnvio(`${otNum(w.id)} enviada`, r.enviados);
+  }, "Enviar");
+}
+
+async function parteLimpieza(fecha) {
+  const aid = await pickAsset();
+  const [p, gente] = await Promise.all([get("/api/personal/limpieza", { asset_id: aid, fecha }),
+    get("/api/personal", { asset_id: aid, area: "limpieza", solo_activos: true })]);
+  if (!gente.length) return toast("No hay personal de limpieza dado de alta para este activo (Mantenimiento → Personal)", true);
+  if (!p.unidades.length) return toast(`No hay unidades pendientes de limpieza ni salidas el ${fdate(p.fecha)}`);
+  form(`Parte de limpieza · ${assetName(aid)} · ${fdate(p.fecha)}`, [
+    { html: '<p class="muted">Unidades pendientes de limpieza y salidas del día; primero las que tienen llegada. Para repartir el trabajo, marque las unidades de cada persona y envíe; repita con el resto.</p>' },
+    { k: "unit_ids", t: `Unidades (${p.unidades.length})`, type: "checks", options: p.unidades.map((u) => [String(u.unit_id), `${u.codigo} · ${u.motivo}${u.llegada ? ` · LLEGADA (${u.pax_llegada} pax)` : ""}`]) },
+    { k: "personal_ids", t: "Enviar a", type: "checks", options: gente.map((x) => [String(x.id), personaTxt(x)]) },
+    canalEnvio(""),
+    { k: "nota", t: "Nota (opcional)", type: "textarea", wide: true },
+  ], { unit_ids: p.unidades.map((u) => String(u.unit_id)) }, async (d) => {
+    if (!d.unit_ids.length) throw new Error("Elija al menos una unidad");
+    if (!d.personal_ids.length) throw new Error("Elija al menos una persona");
+    const r = await post("/api/personal/limpieza/enviar", { ...clean(d), asset_id: aid, fecha: p.fecha,
+      unit_ids: d.unit_ids.map(Number), personal_ids: d.personal_ids.map(Number) });
+    resultadoEnvio("Parte de limpieza enviado", r.enviados);
+  }, "Enviar");
+}
+
+V.personal = async (el) => {
+  const editar = (area) => can(area === "limpieza" ? "limpieza.editar" : "mantenimiento.editar");
+  const areas = AREAS.filter(([a]) => editar(a));
+  el.innerHTML = `<div class="toolbar"><select id="ar"><option value="">Mantenimiento y limpieza</option>${AREAS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
+    <span class="spacer"></span>${can("limpieza.editar") ? '<button class="btn" id="pl">Enviar parte de limpieza</button>' : ""}${areas.length ? '<button class="btn primary" id="new">Nueva persona</button>' : ""}</div>
+    <p class="muted">Técnicos y personal de limpieza, propios o de subcontratas, a los que se envían las órdenes de trabajo («Enviar» en cada OT) y el parte de limpieza por correo o WhatsApp. No necesitan usuario en INVERPMS.</p><div id="t"></div>`;
+  const fields = [
+    { k: "area", t: "Área", type: "select", req: true, options: areas },
+    { k: "asset_id", t: "Activo (vacío = todos)", type: "select", options: opts(S.assets) },
+    { k: "nombre", t: "Nombre", req: true }, { k: "empresa", t: "Empresa (si es subcontrata)" },
+    { k: "email", t: "Correo electrónico", type: "email" }, { k: "telefono", t: "Móvil (WhatsApp)" },
+    { k: "avisar_urgentes", t: "Recibir al momento por correo las OT urgentes (mantenimiento)", type: "checkbox", wide: true },
+    { k: "activo", t: "En activo", type: "checkbox", def: true },
+    { k: "notas", t: "Notas (horario, especialidad…)", type: "textarea", wide: true },
+  ];
+  const guardar = (p) => async (d) => {
+    const body = { ...d, asset_id: d.asset_id ? Number(d.asset_id) : null };
+    await (p ? put(`/api/personal/${p.id}`, body) : post("/api/personal", body));
+    toast(p ? "Ficha guardada" : "Persona dada de alta"); load();
+  };
+  const load = async () => table($("#t", el), [
+    { k: "area_nombre", t: "Área" }, { k: "nombre", t: "Nombre" }, { k: "empresa", t: "Empresa" },
+    { k: "activo_nombre", t: "Activo" }, { k: "email", t: "Correo" }, { k: "telefono", t: "Móvil" },
+    { k: "avisar_urgentes", t: "OT urgentes", f: (v) => (v ? "Al momento" : "") },
+    { k: "activo", t: "Estado", f: (v) => (v ? "En activo" : '<span class="muted">Baja</span>') },
+  ], await get("/api/personal", { asset_id: S.asset, area: $("#ar", el).value }), (p) => editar(p.area) ? [
+    ["Editar", () => form(p.nombre, fields, p, guardar(p))],
+    ["Borrar", async () => { if (confirm(`¿Borrar la ficha de ${p.nombre}?`)) { await run(() => api("DELETE", `/api/personal/${p.id}`), "Ficha borrada"); load(); } }, "danger"],
+  ] : []);
+  $("#ar", el).onchange = load;
+  if ($("#new", el)) $("#new", el).onclick = () => form("Nueva persona", fields, { area: areas[0][0], asset_id: S.asset }, guardar(null));
+  if ($("#pl", el)) $("#pl", el).onclick = () => parteLimpieza(today());
   load();
 };
 
@@ -1768,11 +1861,12 @@ const MENU = [
   ["Apartamentos turísticos", [["plano", "Plano de apartamentos", "activos.ver"], ["hoy", "Llegadas / salidas", "reservas.ver"], ["reservas", "Reservas", "reservas.ver"], ["planning", "Planning", "reservas.ver"], ["huespedes", "Huéspedes", "reservas.ver"], ["ses", "Parte de viajeros (SES)", "reservas.ver"], ["garajes", "Alquiler de garajes", "reservas.ver"]]],
   ["Alquiler residencial", [["contratos", "Contratos", "alquiler.ver"], ["recibos", "Recibos y cobros", "alquiler.ver"], ["inquilinos", "Inquilinos", "alquiler.ver"]]],
   ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["servicios", "Servicios", "activos.ver"], ["informes", "Informes Excel", "informes"]]],
-  ["Mantenimiento", [["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["proveedores", "Proveedores", "mantenimiento.ver"]]],
+  ["Mantenimiento", [["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["personal", "Personal mto. y limpieza", "personal"], ["proveedores", "Proveedores", "mantenimiento.ver"]]],
   ["Administración", [["usuarios", "Usuarios", "admin"], ["roles", "Roles y permisos", "admin"], ["sociedades", "Sociedades", "admin"], ["avisos", "Avisos por correo", "admin"], ["auditoria", "Auditoría", "auditoria.ver"]]],
   ["", [["perfil", "Mi perfil", null]]],
 ];
-const allowed = (p) => !p || (p === "admin" ? S.me.admin_grupo : p === "informes" ? ["reservas.ver", "alquiler.ver", "finanzas.ver", "mantenimiento.ver"].some(can) : can(p));
+const allowed = (p) => !p || (p === "admin" ? S.me.admin_grupo : p === "informes" ? ["reservas.ver", "alquiler.ver", "finanzas.ver", "mantenimiento.ver"].some(can)
+  : p === "personal" ? ["mantenimiento.ver", "limpieza.editar", "limpieza.confirmar_ot"].some(can) : can(p));
 const TITLES = Object.fromEntries(MENU.flatMap(([, items]) => items.map(([id, t]) => [id, t])));
 
 function renderNav() {

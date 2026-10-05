@@ -344,6 +344,28 @@ class WorkOrder(Base):
     conf_limpieza_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     conf_limpieza_fecha: Mapped[datetime | None] = mapped_column(DateTime)
     cerrada_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    # envíos de la orden al personal de mantenimiento: [{fecha, canal, destino, nombre, usuario}]
+    envios: Mapped[list | None] = mapped_column(JSON)
+
+
+AREAS_PERSONAL = {"mantenimiento": "Mantenimiento", "limpieza": "Limpieza"}
+
+
+class StaffMember(Base):
+    """Personal de mantenimiento o limpieza (propio o de una subcontrata) al que se envían las órdenes de trabajo
+    y el parte de limpieza por correo o WhatsApp. No necesita usuario en el PMS. Sin activo = todos."""
+    __tablename__ = "personal_servicio"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("activos.id"), index=True)
+    area: Mapped[str] = mapped_column(String(20))  # mantenimiento | limpieza
+    nombre: Mapped[str] = mapped_column(String(160))
+    empresa: Mapped[str | None] = mapped_column(String(160))
+    email: Mapped[str | None] = mapped_column(String(160))
+    telefono: Mapped[str | None] = mapped_column(String(40))
+    # mantenimiento: recibe por correo, al momento, las OT urgentes de su activo
+    avisar_urgentes: Mapped[bool] = mapped_column(Boolean, default=False)
+    activo: Mapped[bool] = mapped_column(Boolean, default=True)
+    notas: Mapped[str | None] = mapped_column(Text)
 
 
 class WorkOrderAttachment(Base):
