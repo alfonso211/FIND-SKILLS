@@ -185,6 +185,7 @@ V.panel = async (el) => {
         k.push([`${al[u] || 0} / ${n}`, `${t[0].toUpperCase()}${t.slice(1)} alquilad${["vivienda", "oficina"].includes(u) ? "as" : "os"}`]);
       });
     }
+    if (a.garajes) k.push([`${a.garajes_ocupados} / ${a.garajes}`, "Garajes ocupados hoy"]);
     if (a.produccion_mes != null) k.push([eur(a.produccion_mes), "Producción mes (facturado sin IVA)"]);
     if (a.renta_mensual != null) k.push([eur(a.renta_mensual), "Renta mensual"], [eur(a.deuda_vencida), "Deuda vencida"]);
     if (a.ot_abiertas != null) k.push([a.ot_abiertas, "OT abiertas"], [a.ot_urgentes, "OT urgentes"], [a.ot_pendientes_cierre, "OT pendientes de cierre"]);
@@ -229,10 +230,11 @@ function gridPlano(pl, planta, mini = false) {
     if (c.t === "zc") return `<div class="pc zc pc-zc" style="${pos}" data-z="${esc(c.zona)}" title="${esc(c.nombre)}${c.ot ? ` · ${c.ot} incidencia(s) abierta(s)` : ""}">${mini ? "" : `<b>ZC</b>${c.ot ? `<span class="m${c.urgente ? " urg" : ""}">${c.ot}</span>` : ""}`}</div>`;
     if (c.t === "falta") return `<div class="pc falta" style="${pos}" title="El ${esc(c.num)} no existe en las unidades del PMS">${mini ? "" : esc(c.num) + "?"}</div>`;
     if (c.t === "lbl") return `<div class="pc lbl lbl-${esc(c.texto)}" style="${pos}">${mini ? "" : esc(c.texto)}</div>`;
-    const TIT = { acc: "Entrada del edificio", pis: "Piscina", jar: "Jardín", asc: "Ascensor", esc: "Escalera", escA: "Escalera bloque A", escB: "Escalera bloque B", ter: "Terraza" };
+    const TIT = { acc: "Entrada", pis: "Piscina", jar: "Jardín", asc: "Ascensor", esc: "Escalera", escA: "Escalera bloque A", escB: "Escalera bloque B", ter: "Terraza", portal: `Portal ${c.texto}`, plaza: "Patio", tarima: "Solárium", rampa: "Rampa", sentido: "Sentido de circulación" };
     return `<div class="pc ${c.t}" style="${pos}"${TIT[c.t] ? ` title="${TIT[c.t]}"` : ""}>${mini ? "" : esc(c.texto || DECOR[c.t] || "")}</div>`;
   }).join("");
-  return `<div class="plano${mini ? " mini" : ""}" style="grid-template-columns:repeat(${pl.columnas},minmax(0,1fr));grid-template-rows:repeat(${pl.filas},auto)">${celdas}</div>`;
+  const cols = planta.columnas || pl.columnas, filas = planta.filas || pl.filas;
+  return `<div class="plano${mini ? " mini" : ""}${cols > 20 ? " denso" : ""}" style="grid-template-columns:repeat(${cols},minmax(0,1fr));grid-template-rows:repeat(${filas},minmax(0,1fr));aspect-ratio:${cols}/${filas}">${celdas}</div>`;
 }
 
 V.plano = async (el) => {
@@ -256,9 +258,9 @@ V.plano = async (el) => {
     const r = planta.resumen;
     $("#lat", el).innerHTML = `<h4>${esc(datos.asset.nombre)}</h4><p class="muted">${esc(planta.etiqueta)} · ${fdate(datos.fecha)}</p>
       <div class="marcadores">${ESTADOS_PLANO.map(([k, t]) => `<div><i class="pc-${k}"></i><span>${t}</span><b>${r[k]}</b></div>`).join("")}
-      <div class="total"><span>Total en planta</span><b>${r.total}</b></div></div>
+      <div class="total"><span>${planta.planta.startsWith("-") ? "Plazas en el sótano" : "Total en planta"}</span><b>${r.total}</b></div></div>
       <div class="marcadores ayuda"><div><i class="pc-zc"></i><span>Zona común: incidencias de ese lado del edificio</span></div>
-      <div><span class="m-ej" style="background:#fff;color:#111;border-color:#111">←</span><span>Entrada del edificio. Entrando: bloque A a la derecha, bloque B a la izquierda</span></div>
+      <div><span class="m-ej" style="background:#fff;color:#111;border-color:#111">←</span><span>${datos.asset.codigo === "SAE" ? "Entrada del edificio. Entrando: bloque A a la derecha, bloque B a la izquierda" : datos.asset.codigo === "SFL" ? "Entrada. Entrando: portales 2 y 3 a la derecha (arriba), 1 y 4 a la izquierda (abajo). Zona común de cada portal junto a su número" : "Entrada"}</span></div>
       <div><span class="m-ej">M</span><span>Mantenimiento pendiente (rojo: urgente)</span></div><div><span class="m-ej lim">L</span><span>Pendiente de limpieza</span></div></div>
       <p class="muted">Pulse un apartamento para ver su ficha completa, reservar, bloquear o abrir una incidencia.</p>`;
     $("#grid", el).querySelectorAll("[data-u]").forEach((c) => (c.onclick = () => fichaApartamento(Number(c.dataset.u), recarga)));
@@ -278,6 +280,7 @@ function cerrarSolo(f) { const b = $("button[type=submit]", f); if (b) b.remove(
 async function fichaApartamento(uid, recarga) {
   const d = await run(() => get(`/api/plano/unidades/${uid}/ficha`));
   const u = d.unidad;
+  const garaje = u.uso === "garaje";
   const items = [];
   (d.reservas || []).forEach((r) => items.push({ tipo: "reserva", fecha: r.entrada, texto: [r.localizador, r.huesped, r.documento, r.canal, r.estado, r.notas].join(" "),
     html: `<b>Reserva ${esc(r.localizador || "R-" + r.id)}</b> · ${fdate(r.entrada)} → ${fdate(r.salida)} (${r.noches} noches) · ${esc(r.huesped)} · ${badge(r.estado)}${r.proxima ? ' <span class="badge b-pendiente">próxima</span>' : ""}<br><span class="muted">${esc(r.canal)} · ${r.adultos + r.ninos} pax · ${eur(r.importe_total)} (cobrado ${eur(r.importe_pagado)})${r.contrato ? " · contrato impreso" : ""}</span>`,
@@ -299,11 +302,11 @@ async function fichaApartamento(uid, recarga) {
   const bloqueoVigente = (d.bloqueos || []).find((b) => !b.levantado);
   const actual = d.actual ? `<p><b>${d.estado === "alquilado" ? "Alojado" : "Llega"}:</b> ${esc(d.actual.huesped)} · ${fdate(d.actual.entrada)} → ${fdate(d.actual.salida)}</p>` : "";
   const acciones = [
-    d.puede.reservar && ["reserva", "Reserva", "Nueva reserva en este apartamento"],
+    d.puede.reservar && ["reserva", "Reserva", garaje ? "Alquilar esta plaza (se factura al 21 %)" : "Nueva reserva en este apartamento"],
     d.puede.bloquear && (d.estado === "bloqueado" ? ["desbloquear", "Bloqueado", bloqueoVigente ? `Motivo: ${bloqueoVigente.motivo}. Pulse para desbloquear` : "Pulse para desbloquear"] : ["bloqueo", "Bloqueado", "Sacarlo de venta indicando el motivo"]),
     d.puede.incidencia && ["incidencia", "Incidencia", "Abrir una incidencia (avería) con fotos"],
   ].filter(Boolean);
-  const f = cerrarSolo(form(`Apartamento ${u.codigo} · ${u.tipologia || ""}`, [
+  const f = cerrarSolo(form(garaje ? `Plaza de garaje ${u.codigo} · ${u.bloque || ""}` : `Apartamento ${u.codigo} · ${u.tipologia || ""}`, [
     { html: `<p><span class="estado-ap pc-${d.estado}">${ESTADO_TXT[d.estado]}</span> ${u.bloque ? esc(u.bloque) + " · " : ""}planta ${esc(u.planta || "")}${u.capacidad ? ` · ${u.capacidad} plazas` : ""}${d.limpieza ? ' · <span class="badge b-pendiente_limpieza">pendiente de limpieza</span>' : ""}</p>${actual}
       <div class="acciones-ap">${acciones.map(([k, t, ayuda]) => `<button type="button" class="accion-ap ${k === "desbloquear" ? "marcada" : ""}" data-acc="${k}"><span class="caja">${k === "desbloquear" ? "☑" : "☐"}</span><b>${t}</b><small>${esc(ayuda)}</small></button>`).join("")}</div>
       <div class="buscador"><input type="search" placeholder="Buscar en este apartamento: cliente, reserva, documento, incidencia, bloqueo, factura…" data-q>
@@ -322,7 +325,7 @@ async function fichaApartamento(uid, recarga) {
   $("[data-q]", f).oninput = pintaRes;
   f.querySelectorAll(".chip").forEach((c) => (c.onclick = () => { filtroTipo = c.dataset.t; f.querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); pintaRes(); }));
   pintaRes();
-  const fija = { id: u.id, codigo: u.codigo, asset_id: u.asset_id };
+  const fija = { id: u.id, codigo: u.codigo, asset_id: u.asset_id, uso: u.uso };
   f.querySelectorAll("[data-acc]").forEach((b) => (b.onclick = () => {
     const acc = b.dataset.acc;
     if (acc === "reserva") newReservation(recarga, fija);
@@ -755,7 +758,7 @@ async function newReservation(reload, fija) {  // fija: {id, codigo, asset_id} p
     { k: "fecha_entrada", t: "Entrada", type: "date", req: true, def: today() }, { k: "fecha_salida", t: "Salida", type: "date", req: true, def: addDays(today(), 1) },
     { k: "adultos", t: "Adultos", type: "number", def: 2, req: true }, { k: "ninos", t: "Niños", type: "number", def: 0 },
   ], {}, async (q) => {
-    const disp = await get("/api/turistico/disponibilidad", { asset_id: aid, desde: q.fecha_entrada, hasta: q.fecha_salida, capacidad: q.adultos + (q.ninos || 0) });
+    const disp = await get("/api/turistico/disponibilidad", { asset_id: aid, desde: q.fecha_entrada, hasta: q.fecha_salida, capacidad: q.adultos + (q.ninos || 0), uso: fija?.uso === "garaje" ? "garaje" : null });
     if (fija) {
       disp.unidades = disp.unidades.filter((u) => u.id === fija.id);
       if (!disp.unidades.length) throw new Error(`El apartamento ${fija.codigo} no está libre esas fechas o no tiene plazas suficientes`);
@@ -1348,7 +1351,7 @@ async function go(view) {
   const el = document.createElement("div"); $("#view").replaceChildren(el); el.innerHTML = '<p class="muted">Cargando…</p>';
   try { await V[view](el); } catch (e) { el.innerHTML = `<p class="error">${esc(e.message)}</p>`; }
 }
-function setAsset(id) { S.asset = id ? String(id) : ""; $("#assetFilter").value = S.asset; localStorage.setItem("pms_asset", S.asset); }
+function setAsset(id) { S.plano = null; S.asset = id ? String(id) : ""; $("#assetFilter").value = S.asset; localStorage.setItem("pms_asset", S.asset); }
 function debounce(fn, ms = 300) { let h; return (...a) => { clearTimeout(h); h = setTimeout(() => fn(...a), ms); }; }
 
 async function loadAssets() {

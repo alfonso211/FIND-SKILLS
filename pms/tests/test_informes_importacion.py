@@ -111,7 +111,7 @@ def test_informes(client, admin, ids):
     wb = _libro(client.get(f"/api/informes/ocupacion?desde=2025-04-01&hasta=2025-05-31&asset_id={sae}", headers=admin))
     filas = {f["Mes"]: f for f in _filas(wb["Turísticos"])}
     assert filas["abr-2025"]["Unidades"] == 300 and filas["abr-2025"]["Noches disponibles"] == 9000
-    assert filas["abr-2025"]["Noches ocupadas"] == 1 and filas["abr-2025"]["Alojamiento facturado (base)"] == 0
+    assert filas["abr-2025"]["Noches ocupadas"] == 1 and filas["abr-2025"]["Facturado (base)"] == 0
     assert filas["may-2025"]["Noches ocupadas"] >= 2
     assert "Residencial" not in wb.sheetnames  # filtrado por activo turístico
 

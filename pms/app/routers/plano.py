@@ -25,6 +25,8 @@ ESTADOS_PLANO = ("alquilado", "reserva", "disponible", "bloqueado")
 
 
 def _tipo_corto(u: Unit) -> str:
+    if u.uso == "garaje":
+        return ""
     t = (u.tipologia or "").lower()
     base = "Est" if "estudio" in t else f"{u.dormitorios or 1}d"
     if "terraza grande" in t:
@@ -94,6 +96,7 @@ def floor_plan(asset_id: int, fecha: date | None = None, scope: Scope = Depends(
     dia = fecha or date.today()
     units = list(db.scalars(select(Unit).where(Unit.asset_id == asset_id)))
     por_num = {planos.numero(u.codigo): u for u in units}
+    por_cod = {u.codigo: u for u in units}
     est = estados(db, units, dia)
     ve_mto = scope.can_asset("mantenimiento.ver", asset_id)
     ve_res = scope.can_asset("reservas.ver", asset_id)
@@ -112,7 +115,7 @@ def floor_plan(asset_id: int, fecha: date | None = None, scope: Scope = Depends(
         for c in pl["celdas"]:
             c = dict(c)
             if c["t"] == "u":
-                u = por_num.get(c["num"])
+                u = por_cod.get(c["cod"]) if "cod" in c else por_num.get(c["num"])
                 if not u:
                     c["t"] = "falta"  # número del croquis que no existe en las unidades
                 else:

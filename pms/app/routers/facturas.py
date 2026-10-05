@@ -123,9 +123,10 @@ def rectify_invoice(fid: int, data: InvoiceRectify, scope: Scope = Depends(get_s
         c.estado = "pendiente" if c.importe_pagado <= 0 else "parcial"
         if c.importe_pagado <= 0:
             c.fecha_pago = None
-    if f.reservation_id and cobrado("alojamiento"):
+    reserva = cobrado("alojamiento") + cobrado("garaje")
+    if f.reservation_id and reserva:
         r = db.get(Reservation, f.reservation_id)
-        r.importe_pagado = max(Decimal(0), dinero(r.importe_pagado) - cobrado("alojamiento"))
+        r.importe_pagado = max(Decimal(0), dinero(r.importe_pagado) - reserva)
     rect = emitir(db, scope.user, company=db.get(Company, f.company_id), serie=f"{f.serie}R", asset_id=f.asset_id,
                   cliente=f.cliente, contact_id=f.contact_id, lineas=None, fecha_operacion=f.fecha_operacion,
                   forma_pago=f.forma_pago, charge_id=f.charge_id, reservation_id=f.reservation_id, rectifica=f,

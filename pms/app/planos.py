@@ -8,6 +8,9 @@ Cada plano es una cuadrícula de filas x columnas, igual que el croquis del PMS 
 Para añadir el plano de otro activo (Suite Florida) basta con escribir su función y registrarla en PLANOS.
 """
 
+import json
+from pathlib import Path
+
 # Suite Aeropuerto (C/ Campezo 8): 17 columnas x 11 filas, igual en todas las plantas salvo la 1ª y la 2ª.
 # La entrada del edificio son las flechas (a la derecha del croquis). Entrando, el bloque A queda a la derecha
 # (mitad superior, escalera roja) y el bloque B a la izquierda (mitad inferior, escalera verde).
@@ -126,7 +129,126 @@ def _sae() -> dict:
             "plantas": [{"planta": str(p), "etiqueta": f"{p}ª planta", "celdas": _sae_planta(p)} for p in range(1, 6)]}
 
 
-PLANOS = {"SAE": _sae()}
+# --------------------------------------------------------------------------- Suite Florida (C/ Campezo 2)
+# Plantas: 13 x 12 como el croquis anterior, más una columna exterior a cada lado para las zonas comunes, que
+# van junto al número de portal de cada esquina. La entrada (flecha) está a la derecha: entrando, los portales
+# 2 y 3 quedan a la derecha (arriba) y los portales 1 y 4 a la izquierda (abajo).
+# Garajes: 30 x 26 como el croquis anterior, más las mismas columnas exteriores.
+GARAJES_SFL = Path(__file__).parent / "data" / "planos_sfl_garajes.json"
+DOS_DORMITORIOS_SFL = {1: "IJ", 2: "GHMNO", 3: "ABCHI", 4: "IJOPQ"}  # letras de 2 dormitorios por portal
+
+# (fila, columna del croquis, portal, letra)
+_APARTAMENTOS_SFL = (
+    # portal 3 (arriba a la izquierda)
+    [(1, c, 3, l) for c, l in zip(range(2, 7), "HGFED")] + [(2, 1, 3, "I")]
+    + [(2, c, 3, l) for c, l in zip(range(3, 6), "ABC")]
+    + [(f, 1, 3, l) for f, l in zip(range(3, 6), "JKL")] + [(f, 2, 3, l) for f, l in zip(range(3, 6), "ONM")]
+    # portal 2 (arriba a la derecha)
+    + [(1, c, 2, l) for c, l in zip(range(8, 13), "LKJIH")]
+    + [(2, c, 2, l) for c, l in zip(range(9, 12), "MNO")] + [(2, 13, 2, "G")]
+    + [(f, 12, 2, l) for f, l in zip(range(3, 6), "ABC")] + [(f, 13, 2, l) for f, l in zip(range(3, 6), "FED")]
+    # portal 4 (abajo a la izquierda)
+    + [(f, 1, 4, l) for f, l in zip(range(7, 11), "EFGH")] + [(f, 2, 4, l) for f, l in zip(range(7, 11), "DCBA")]
+    + [(11, 1, 4, "I")] + [(11, c, 4, l) for c, l in zip(range(3, 6), "QPO")]
+    + [(12, c, 4, l) for c, l in zip(range(2, 7), "JKLMN")]
+    # portal 1 (abajo a la derecha)
+    + [(f, 12, 1, l) for f, l in zip(range(7, 11), "OPQR")] + [(f, 13, 1, l) for f, l in zip(range(7, 11), "NMLK")]
+    + [(11, c, 1, l) for c, l in zip(range(8, 12), "DCBA")] + [(11, 13, 1, "J")]
+    + [(12, c, 1, l) for c, l in zip(range(8, 13), "EFGHI")]
+)
+_ESQUINAS_SFL = {3: ("arriba", "izquierda"), 2: ("arriba", "derecha"), 4: ("abajo", "izquierda"), 1: ("abajo", "derecha")}
+
+
+def _sfl_esquinas(celdas: dict, filas: int, columnas: int, prefijo: str, nombre: str, negras: bool) -> None:
+    """Número de portal en cada esquina y, en la columna exterior a su lado, la zona común del portal.
+    `columnas` es el ancho del croquis original (sin las columnas exteriores)."""
+    for portal, (v, h) in _ESQUINAS_SFL.items():
+        f = 1 if v == "arriba" else filas
+        c = 1 if h == "izquierda" else columnas
+        celdas[(f, c + 1)] = {"t": "portal", "texto": str(portal)}
+        celdas[(f, 1 if h == "izquierda" else columnas + 2)] = {
+            "t": "zc", "zona": f"{prefijo}-PORTAL{portal}", "nombre": f"{nombre} · Portal {portal}"}
+        if negras:  # bloque negro de 2 x 2 de los garajes
+            f2 = f + 1 if v == "arriba" else f - 1
+            c2 = c + 1 if h == "izquierda" else c - 1
+            for fc in ((f, c2), (f2, c), (f2, c2)):
+                celdas[(fc[0], fc[1] + 1)] = {"t": "negro"}
+
+
+def _sfl_planta(p: int) -> dict:
+    celdas: dict[tuple[int, int], dict] = {}
+    pon = lambda f, c, t, texto=None: celdas.__setitem__((f, c + 1), {"t": t, **({"texto": texto} if texto else {})})  # noqa: E731
+    for f, c in ((2, 2), (2, 12), (11, 2), (11, 12)):  # escalera y ascensor de cada portal
+        pon(f, c, "esc")
+    for f in (4, 5):
+        for c in (4, 5):
+            pon(f, c, "jar")
+        for c in (9, 10):
+            pon(f, c, "plaza")
+    for f in (7, 8, 9):
+        for c in (4, 5):
+            pon(f, c, "pis")
+    for f in (8, 9):
+        for c in (8, 9, 10):
+            pon(f, c, "tarima")
+    pon(6, 7, "lbl", f"{p}º")
+    pon(6, 13, "acc", "←")
+    for f, c, portal, letra in _APARTAMENTOS_SFL:
+        celdas[(f, c + 1)] = {"t": "u", "cod": f"P{portal}-{p}{letra}", "num": letra}
+    _sfl_esquinas(celdas, 12, 13, f"P{p}", f"Planta {p}ª", negras=False)
+    return {"planta": str(p), "etiqueta": f"{p}ª planta", "columnas": 15, "filas": 12,
+            "celdas": [{"f": f, "c": c, **v} for (f, c), v in sorted(celdas.items())]}
+
+
+def _sfl_garaje(nivel: int, plazas: dict[str, int]) -> dict:
+    celdas: dict[tuple[int, int], dict] = {}
+    pon = lambda f, c, t, texto=None: celdas.__setitem__((f, c + 1), {"t": t, **({"texto": texto} if texto else {})})  # noqa: E731
+    for c in (4, 5, 26, 27):  # ascensores y escaleras de los portales
+        pon(5, c, "asc"), pon(6, c, "esc"), pon(21, c, "esc"), pon(22, c, "asc")
+    if nivel == 1:
+        for f in range(15, 23):
+            pon(f, 14, "rampa"), pon(f, 15, "rampa")
+        for c in (1, 30):
+            pon(15, c, "acc", "←"), pon(16, c, "acc", "→")
+        for f in (3, 24):
+            for c, t in ((8, "‹‹‹"), (11, "›››"), (20, "‹‹‹"), (23, "›››")):
+                pon(f, c, "sentido", t)
+    else:
+        for f in range(15, 21):
+            pon(f, 14, "rampa"), pon(f, 15, "rampa")
+        pon(14, 14, "acc", "↓"), pon(14, 15, "acc", "↑")
+    for rc, n in plazas.items():
+        f, c = map(int, rc.split(","))
+        celdas[(f, c + 1)] = {"t": "u", "cod": f"S{nivel}-{n}", "num": str(n)}
+    _sfl_esquinas(celdas, 26, 30, f"S{nivel}", f"Sótano -{nivel}", negras=True)
+    return {"planta": f"-{nivel}", "etiqueta": f"Sótano -{nivel}", "columnas": 32, "filas": 26,
+            "celdas": [{"f": f, "c": c, **v} for (f, c), v in sorted(celdas.items())]}
+
+
+def _sfl() -> dict:
+    garajes = json.loads(GARAJES_SFL.read_text(encoding="utf-8"))
+    return {"columnas": 15, "filas": 12,
+            "plantas": [_sfl_garaje(2, garajes["S2"]), _sfl_garaje(1, garajes["S1"])]
+            + [_sfl_planta(p) for p in range(1, 6)]}
+
+
+def unidades_sfl() -> list[dict]:
+    """Unidades de Suite Florida según el plano: apartamentos de 1 y 2 dormitorios y plazas de garaje."""
+    out = []
+    for p in range(1, 6):
+        for _, _, portal, letra in sorted(_APARTAMENTOS_SFL, key=lambda x: (x[2], x[3])):
+            dos = letra in DOS_DORMITORIOS_SFL[portal]
+            out.append({"codigo": f"P{portal}-{p}{letra}", "bloque": f"Portal {portal}", "planta": str(p),
+                        "uso": "apartamento", "dormitorios": 2 if dos else 1,
+                        "tipologia": "Apartamento 2 dormitorios" if dos else "Apartamento 1 dormitorio"})
+    garajes = json.loads(GARAJES_SFL.read_text(encoding="utf-8"))
+    for nivel in (1, 2):
+        for n in sorted(garajes[f"S{nivel}"].values()):
+            out.append({"codigo": f"S{nivel}-{n}", "bloque": f"Sótano -{nivel}", "planta": f"-{nivel}", "uso": "garaje"})
+    return out
+
+
+PLANOS = {"SAE": _sae(), "SFL": _sfl()}
 
 
 def plano(codigo_activo: str) -> dict | None:

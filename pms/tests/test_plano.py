@@ -16,8 +16,8 @@ def _celda(plano, codigo):
 
 def test_plano_y_estados(client, admin, ids):
     sae = ids["assets"]["SAE"]["id"]
-    assert [a["codigo"] for a in client.get("/api/plano/activos", headers=admin).json()] == ["SAE"]
-    assert client.get(f"/api/plano/{ids['assets']['SFL']['id']}", headers=admin).status_code == 404  # aún sin plano
+    assert [a["codigo"] for a in client.get("/api/plano/activos", headers=admin).json()] == ["SAE", "SFL"]
+    assert client.get(f"/api/plano/{ids['assets']['BAB35']['id']}", headers=admin).status_code == 404  # sin plano
 
     # tipologías de la ficha de apartamentos
     assert _unidad(client, admin, sae, "A-127")["dormitorios"] == 2
@@ -121,4 +121,62 @@ def test_zonas_comunes_y_permisos(client, admin, ids):
     h = login(client, email, "Provisional1")
     client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"})
     assert client.get(f"/api/plano/{sae}", headers=h).status_code == 403
-    assert client.get("/api/plano/activos", headers=h).json() == []
+    assert [a["codigo"] for a in client.get("/api/plano/activos", headers=h).json()] == ["SFL"]  # solo el suyo
+
+
+def test_plano_suite_florida_y_garajes(client, admin, ids):
+    """Suite Florida: sótanos -2 y -1 (plazas de garaje) y plantas 1ª a 5ª, con los portales en las esquinas."""
+    from conftest import domicilio_fiscal
+    domicilio_fiscal(client, admin)
+    sfl = ids["assets"]["SFL"]["id"]
+    p = client.get(f"/api/plano/{sfl}", headers=admin).json()
+    assert [x["planta"] for x in p["plantas"]] == ["-2", "-1", "1", "2", "3", "4", "5"]  # orden de las miniaturas
+    assert [x["etiqueta"] for x in p["plantas"][:3]] == ["Sótano -2", "Sótano -1", "1ª planta"]
+    assert [x["resumen"]["total"] for x in p["plantas"]] == [96, 251, 65, 65, 65, 65, 65]
+    assert [(x["columnas"], x["filas"]) for x in p["plantas"][1:3]] == [(32, 26), (15, 12)]
+    assert not any(c["t"] == "falta" for x in p["plantas"] for c in x["celdas"])
+    c = {(x["planta"], d["f"], d["c"]): d for x in p["plantas"] for d in x["celdas"]}
+    # 1ª planta: portal 3 arriba a la izquierda, 2 arriba a la derecha, 4 abajo a la izquierda, 1 abajo a la derecha
+    assert [c[("1", f, col)]["texto"] for f, col in ((1, 2), (1, 14), (12, 2), (12, 14))] == ["3", "2", "4", "1"]
+    assert (c[("1", 1, 3)]["codigo"], c[("1", 1, 3)]["num"], c[("1", 1, 3)]["tipo"]) == ("P3-1H", "H", "2d")
+    assert c[("1", 10, 13)]["codigo"] == "P1-1R" and c[("1", 11, 14)]["codigo"] == "P1-1J"
+    assert c[("1", 6, 14)]["t"] == "acc"  # la entrada, a la derecha
+    # la zona común de cada portal, en la casilla exterior junto a su número
+    assert (c[("1", 1, 1)]["zona"], c[("1", 1, 1)]["nombre"]) == ("P1-PORTAL3", "Planta 1ª · Portal 3")
+    assert c[("1", 12, 15)]["zona"] == "P1-PORTAL1" and c[("-1", 26, 32)]["nombre"] == "Sótano -1 · Portal 1"
+    # garajes, en la posición del croquis
+    assert c[("-1", 1, 4)]["codigo"] == "S1-1" and c[("-1", 26, 4)]["codigo"] == "S1-217"
+    assert c[("-1", 20, 5)]["codigo"] == "S1-251" and c[("-2", 20, 8)]["codigo"] == "S2-96"
+    assert c[("-1", 1, 4)]["tipo"] == "" and c[("-1", 1, 3)]["t"] == "negro"
+
+    # tipologías según el croquis
+    u = client.get(f"/api/unidades?asset_id={sfl}&q=P2-3M", headers=admin).json()[0]
+    assert (u["tipologia"], u["dormitorios"]) == ("Apartamento 2 dormitorios", 2)
+
+    # una plaza de garaje se reserva y factura como un apartamento, pero al 21 % y sin parte ni contrato
+    hoy = date.today()
+    dis = client.get(f"/api/turistico/disponibilidad?asset_id={sfl}&desde={hoy + timedelta(days=200)}"
+                     f"&hasta={hoy + timedelta(days=201)}", headers=admin).json()
+    assert dis["libres"] == 325 and all(x["uso"] == "apartamento" for x in dis["unidades"])
+    dis = client.get(f"/api/turistico/disponibilidad?asset_id={sfl}&desde={hoy + timedelta(days=200)}"
+                     f"&hasta={hoy + timedelta(days=201)}&uso=garaje", headers=admin).json()
+    assert dis["libres"] == 347
+    plaza = [x for x in client.get(f"/api/unidades?asset_id={sfl}&q=S1-25", headers=admin).json() if x["codigo"] == "S1-25"][0]
+    r = client.post("/api/turistico/reservas", headers=admin, json={
+        "unit_id": plaza["id"], "fecha_entrada": hoy.isoformat(), "fecha_salida": (hoy + timedelta(days=30)).isoformat(),
+        "importe_total": 121, "importe_pagado": 121, "guest": {"nombre": "Cliente Garaje"}}).json()
+    f = client.get(f"/api/facturas/{r['factura']['id']}", headers=admin).json()
+    assert [(x["tipo"], x["tipo_iva"], x["base"]) for x in f["lineas"]] == [("garaje", 21, 100)]
+    assert f["lineas"][0]["concepto"].startswith("Alquiler de plaza de garaje · Suite Florida · Sótano -1 plaza 25")
+    assert client.post(f"/api/turistico/reservas/{r['id']}/checkin", headers=admin).json()["estado"] == "checkin"
+    assert client.get(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin).status_code == 400
+    p = client.get(f"/api/plano/{sfl}", headers=admin).json()
+    s1 = [x for x in p["plantas"] if x["planta"] == "-1"][0]
+    assert s1["resumen"]["alquilado"] >= 1
+    panel = {a["codigo"]: a for a in client.get("/api/panel", headers=admin).json()["activos"]}
+    assert panel["SFL"]["garajes"] == 347 and panel["SFL"]["garajes_ocupados"] >= 1
+    # incidencia en la zona común de un portal del garaje
+    w = client.post("/api/mantenimiento/ordenes", headers=admin, json={
+        "asset_id": sfl, "zona": "S1-PORTAL2", "titulo": "Puerta del ascensor del garaje no cierra"}).json()
+    assert w["zona_nombre"] == "Sótano -1 · Portal 2"
+    client.post(f"/api/turistico/reservas/{r['id']}/checkout", headers=admin)

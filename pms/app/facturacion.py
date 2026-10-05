@@ -85,7 +85,7 @@ def _siguiente(db: Session, company: Company, serie: str, anio: int, fecha: date
     return (ultima.numero if ultima else 0) + 1, anterior
 
 
-TIPOS_LINEA = {"alojamiento": "Alojamiento", "renta": "Rentas", "servicio": "Servicios"}
+TIPOS_LINEA = {"alojamiento": "Alojamiento", "garaje": "Plazas de garaje", "renta": "Rentas", "servicio": "Servicios"}
 
 
 def linea(tipo: str, concepto: str, precio, tipo_iva, cantidad=1, servicio_id: int | None = None) -> dict:

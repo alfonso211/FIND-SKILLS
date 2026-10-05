@@ -6,8 +6,9 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from .. import contratos, importacion
-from ..facturacion import IVA_ALOJAMIENTO, datos_cliente, dinero, emitir, linea, lineas_servicios, serie_activo
+from .. import contratos, importacion, planos
+from ..facturacion import (IVA_ALOJAMIENTO, IVA_GENERAL, datos_cliente, dinero, emitir, linea, lineas_servicios,
+                           serie_activo)
 from ..models import MODALIDADES_RESERVA, AccommodationContract, Asset, Contact, Reservation, Unit, User
 from ..schemas import AccommodationContractIn, Payment, ReservationIn, ReservationUpdate
 from ..security import Scope, audit, get_scope
@@ -119,13 +120,19 @@ def _cobrar(db: Session, scope: Scope, r: Reservation, data: Payment):
     if data.importe:
         r.importe_pagado = dinero(r.importe_pagado) + dinero(data.importe)
         noches = (r.fecha_salida - r.fecha_entrada).days
-        concepto = (f"Alojamiento turístico · {a.nombre} · Apartamento {u.codigo} · "
-                    f"{r.fecha_entrada:%d/%m/%Y} a {r.fecha_salida:%d/%m/%Y} ({noches} noche{'s' if noches != 1 else ''})"
-                    f" · {r.adultos + r.ninos} huésped{'es' if r.adultos + r.ninos != 1 else ''}"
-                    + (f" · Reserva {r.localizador}" if r.localizador else f" · Reserva R-{r.id}"))
+        garaje = u.uso == "garaje"
+        if garaje:  # alquiler de plaza de garaje: 21 %
+            concepto = (f"Alquiler de plaza de garaje · {a.nombre} · {u.bloque or ''} plaza {planos.numero(u.codigo)} · "
+                        f"{r.fecha_entrada:%d/%m/%Y} a {r.fecha_salida:%d/%m/%Y} ({noches} día{'s' if noches != 1 else ''})")
+        else:
+            concepto = (f"Alojamiento turístico · {a.nombre} · Apartamento {u.codigo} · "
+                        f"{r.fecha_entrada:%d/%m/%Y} a {r.fecha_salida:%d/%m/%Y} ({noches} noche{'s' if noches != 1 else ''})"
+                        f" · {r.adultos + r.ninos} huésped{'es' if r.adultos + r.ninos != 1 else ''}")
+        concepto += f" · Reserva {r.localizador}" if r.localizador else f" · Reserva R-{r.id}"
         if dinero(data.importe) < pendiente:
             concepto = "Pago a cuenta · " + concepto
-        lineas.append(linea("alojamiento", concepto, data.importe, IVA_ALOJAMIENTO))
+        lineas.append(linea("garaje", concepto, data.importe, IVA_GENERAL) if garaje
+                      else linea("alojamiento", concepto, data.importe, IVA_ALOJAMIENTO))
     lineas += lineas_servicios(db, a.id, data.servicios)
     f = emitir(db, scope.user, company=a.company, serie=serie_activo(a), asset_id=a.id,
                cliente=datos_cliente(r.guest, data.facturar_a), contact_id=r.guest_id, lineas=lineas,
@@ -181,7 +188,7 @@ def checkin(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(g
     if r.fecha_entrada > date.today():
         bad_request("La fecha de entrada aún no ha llegado")
     g = r.guest
-    if not (g.documento_num and g.nacionalidad and g.fecha_nacimiento):
+    if r.unit.uso != "garaje" and not (g.documento_num and g.nacionalidad and g.fecha_nacimiento):
         bad_request("Faltan datos del huésped para el parte de viajeros (documento, nacionalidad, fecha nacimiento)")
     r.estado = "checkin"
     r.unit.estado = "ocupada"
@@ -234,30 +241,37 @@ def today(asset_id: int | None = None, fecha: date | None = None,
 
 
 @router.get("/disponibilidad")
-def availability(asset_id: int, desde: date, hasta: date, capacidad: int = 1,
+def availability(asset_id: int, desde: date, hasta: date, capacidad: int = 1, uso: str | None = None,
                  scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    """Unidades libres entre `desde` (entrada) y `hasta` (salida)."""
+    """Unidades libres entre `desde` (entrada) y `hasta` (salida). Por defecto, alojamientos; con
+    `uso=garaje`, plazas de garaje."""
     scope.require_asset("reservas.ver", asset_id)
     if hasta <= desde:
         bad_request("Rango de fechas no válido")
     busy = select(Reservation.unit_id).where(Reservation.estado.in_(ACTIVAS),
                                              Reservation.fecha_entrada < hasta, Reservation.fecha_salida > desde)
     stmt = select(Unit).where(Unit.asset_id == asset_id, Unit.estado.not_in(NO_ASIGNABLE),
-                              Unit.id.not_in(busy), or_(Unit.capacidad.is_(None), Unit.capacidad >= capacidad))
+                              Unit.id.not_in(busy), or_(Unit.capacidad.is_(None), Unit.capacidad >= capacidad),
+                              Unit.uso == uso if uso else Unit.uso != "garaje")
     units = [u.to_dict() for u in db.scalars(stmt.order_by(Unit.bloque, Unit.codigo))]
     return {"libres": len(units), "unidades": units}
 
 
 @router.get("/planning")
 def planning(asset_id: int, desde: date | None = None, dias: int = Query(14, ge=1, le=62),
-             bloque: str | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    """Cuadro de ocupación unidad x día."""
+             bloque: str | None = None, uso: str | None = None, scope: Scope = Depends(get_scope),
+             db: Session = Depends(get_db)):
+    """Cuadro de ocupación unidad x día (alojamientos; las plazas de garaje con `uso=garaje` o su bloque)."""
     scope.require_asset("reservas.ver", asset_id)
     d0 = desde or date.today()
     d1 = d0 + timedelta(days=dias)
     ustmt = select(Unit).where(Unit.asset_id == asset_id)
     if bloque:
         ustmt = ustmt.where(Unit.bloque == bloque)
+    elif uso:
+        ustmt = ustmt.where(Unit.uso == uso)
+    else:
+        ustmt = ustmt.where(Unit.uso != "garaje")
     units = list(db.scalars(ustmt.order_by(Unit.bloque, Unit.codigo)))
     unit_ids = {u.id for u in units}
     res = db.scalars(select(Reservation).join(Unit).where(
@@ -342,7 +356,7 @@ def import_reservations(fichero: UploadFile = File(...), asset_id: int = Form(..
                 r["asignada"] = False
             else:  # sin unidad: la primera libre con capacidad
                 u = next((x for x in sorted(unidades.values(), key=lambda x: (x.bloque or "", x.codigo))
-                          if x.estado not in NO_ASIGNABLE and (not x.capacidad or x.capacidad >= adultos + ninos)
+                          if x.uso != "garaje" and x.estado not in NO_ASIGNABLE and (not x.capacidad or x.capacidad >= adultos + ninos)
                           and libre(x.id, ent, sal)), None)
                 if not u:
                     raise ValueError("no queda ningún apartamento libre para esas fechas y ocupación")
@@ -453,6 +467,8 @@ def _datos_plantilla(r: Reservation, c: AccommodationContractIn) -> dict:
 def _contrato_reserva(rid: int, perm: str, scope: Scope, db: Session) -> tuple[Reservation, object]:
     r = get_or_404(db, Reservation, rid)
     scope.require_asset(perm, r.unit.asset_id)
+    if r.unit.uso == "garaje":
+        bad_request("Las plazas de garaje no llevan contrato de alojamiento")
     ruta = contratos.plantilla(r.unit.asset.codigo)
     if not ruta:
         bad_request("Este activo no tiene modelo de contrato de alojamiento")

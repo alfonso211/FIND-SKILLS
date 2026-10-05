@@ -22,7 +22,7 @@ en C/ Campezo 8, 28022 Madrid.
 | Código | Activo | Modalidad | Gestora | Propietaria | Unidades |
 |---|---|---|---|---|---|
 | BAB35 | C/ Babilonia 35, Madrid | Alquiler residencial (LAU) | COMERCIAL DEL CAMPO S.A. | COMERCIAL DEL CAMPO S.A. | 20 viviendas (trasteros como anejos) + 33 plazas de garaje (ST-1, ST-2, ST-3) |
-| SFL | Suite Florida (C/ Campezo 2, reg. AM 265) | Apartamentos turísticos | INVERSIETE S.A. | COMERCIAL DEL CAMPO S.A. | 325 en 4 portales (P1: 90, P2: 75, P3: 75, P4: 85). Código `P{portal}-{planta}{letra}`, p.ej. P1-1A |
+| SFL | Suite Florida (C/ Campezo 2, reg. AM 265) | Apartamentos turísticos | INVERSIETE S.A. | COMERCIAL DEL CAMPO S.A. | 325 apartamentos en 4 portales y 5 plantas (P1: 90, P2: 75, P3: 75, P4: 85; 240 de 1 dormitorio y 85 de 2), código `P{portal}-{planta}{letra}` (p.ej. P1-1A). Además, 347 plazas de garaje: sótano -1, 251 (S1-1 a S1-251), y sótano -2, 96 (S2-1 a S2-96) |
 | SAE | Suite Aeropuerto (C/ Campezo 8, reg. AM 259) | Apartamentos turísticos | INVERSIETE S.A. | COMERCIAL DEL CAMPO S.A. | 300 en 2 bloques (A: 147, B: 153) y 5 plantas: 267 de 1 dormitorio (8 con terraza, 5 con terraza grande y 10 grandes), 28 de 2 dormitorios y 5 estudios |
 
 Las unidades se cargan desde `pms/app/data/unidades_iniciales.json`, que se generó a partir de estos documentos:
@@ -47,7 +47,7 @@ Para añadir activos nuevos: *Activos → Nuevo activo* (se eligen la gestora, l
   - Quien solo ve su activo: la situación informativa y las plantas en miniatura, para empezar a trabajar.
   - Contenido: ocupación del día, llegadas y salidas, contratos vigentes, renta mensual,
   deuda vencida, producción del mes y OT abiertas o urgentes por activo.
-- **Plano de apartamentos** (Suite Aeropuerto; Suite Florida, pendiente de sus croquis):
+- **Plano de apartamentos** (Suite Aeropuerto y Suite Florida):
   - Croquis de cada planta igual que el del PMS anterior y con sus mismos colores: alquilado (cian), reserva
     pendiente de llegada (salmón), disponible (verde) y bloqueado (oliva).
   - En el panel de control salen las cinco plantas en miniatura con sus contadores. Al pulsar una se abre en grande,
@@ -63,7 +63,16 @@ Para añadir activos nuevos: *Activos → Nuevo activo* (se eligen la gestora, l
   - Limpieza y mantenimiento solo pueden abrir incidencias.
   - Las casillas amarillas (ZC), en las esquinas de los pasillos de cada planta, son las zonas comunes de cada lado
     del edificio: muestran sus incidencias y permiten abrir otras nuevas.
-  - Los croquis se definen en `pms/app/planos.py`.
+  - **Suite Florida:**
+    - Niveles en este orden: sótano -2, sótano -1 y plantas 1ª a 5ª.
+    - Las plazas de garaje funcionan como los apartamentos (estado, ficha, reserva, bloqueo e incidencias). Se
+      alquilan al 21 % de IVA, sin parte de viajeros ni contrato de alojamiento, y se cuentan aparte en el panel y en
+      los informes.
+    - Los portales 1 a 4 están en las esquinas. La zona común de cada portal es la casilla exterior junto a su
+      número.
+    - Con la entrada a la derecha, los portales 2 y 3 quedan arriba y el 1 y el 4 abajo.
+  - Los croquis se definen en `pms/app/planos.py`; las plazas de garaje de Suite Florida, en
+    `pms/app/data/planos_sfl_garajes.json`.
 - **Apartamentos turísticos**: reservas con control de solapes y de capacidad, búsqueda de disponibilidad,
   check-in (exige los datos del parte de viajeros, RD 933/2021), check-out y paso de la unidad a
   *pendiente de limpieza*. Incluye planning por unidad y día, y ficha de huéspedes.
