@@ -95,7 +95,8 @@ def floor_plan(asset_id: int, fecha: date | None = None, scope: Scope = Depends(
     a, p = _activo_plano(db, scope, asset_id)
     dia = fecha or date.today()
     units = list(db.scalars(select(Unit).where(Unit.asset_id == asset_id)))
-    por_num = {planos.numero(u.codigo): u for u in units}
+    # los apartamentos se buscan por número; las plazas de garaje, por su código (sus números se repiten)
+    por_num = {planos.numero(u.codigo): u for u in units if u.uso != "garaje"}
     por_cod = {u.codigo: u for u in units}
     est = estados(db, units, dia)
     ve_mto = scope.can_asset("mantenimiento.ver", asset_id)

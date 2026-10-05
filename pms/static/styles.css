@@ -285,7 +285,10 @@ dialog.ancho { width: min(940px, 96vw); }
 .plano .tarima { background: #f0a24a repeating-linear-gradient(90deg, transparent 0 9px, rgba(120, 60, 0, .35) 9px 10px); }
 .plano .rampa { background: repeating-linear-gradient(90deg, #fff 0 3px, #555 3px 4px); }
 .plano .sentido { color: #333; font-weight: 800; font-size: .9em; }
-.plano.denso:not(.mini) { min-width: 960px; }
+.plano.denso:not(.mini) { min-width: 840px; }
+.plano.muy-denso:not(.mini) { gap: 1px; padding: 3px; }
+.plano.muy-denso .pc { font-size: clamp(7px, .56vw, 10px); }
+.plano.muy-denso .pc.u b { font-size: 1em; letter-spacing: -.02em; }
 .plano.denso .pc { font-size: clamp(8px, .62vw, 11px); }
 .plano.denso .portal { font-size: 1.6em; }
 .plano.mini .portal, .plano.mini .negro { background: #222 !important; }
@@ -343,3 +346,11 @@ body.sin-scroll { overflow: hidden; }
 .firma-ok h2 { margin: 0; }
 .firma-check { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; font-size: 34px; color: #fff; background: #2e9e57; }
 @media (max-width: 700px) { .firma-envio { grid-template-columns: 1fr; } .ocupante { flex-wrap: wrap; } }
+
+/* ---------- garajes: entradas y salidas de vehículos, muros, arbolado ---------- */
+.plano .entrada { background: #fff; color: #111; font-size: 1.6em; font-weight: 900; }
+.plano .salida { background: #fff; color: #d9302c; font-size: 1.6em; font-weight: 900; }
+.plano .muro { background: #8a8f96; }
+.plano .puerta { background: #fff; border: 2px dashed #8a8f96; }
+.plano .arbol { background: #d7dbe0 radial-gradient(circle, #fff 0 34%, #555 35% 42%, transparent 43%); }
+.plano.mini .muro { background: #b9bec5 !important; }

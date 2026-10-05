@@ -32,7 +32,7 @@ en C/ Campezo 8, 28022 Madrid.
 |---|---|---|---|---|---|
 | BAB35 | C/ Babilonia 35, Madrid | Alquiler residencial (LAU) | COMERCIAL DEL CAMPO S.A. | COMERCIAL DEL CAMPO S.A. | 20 viviendas (trasteros como anejos) + 33 plazas de garaje (ST-1, ST-2, ST-3) |
 | SFL | Suite Florida (C/ Campezo 2, reg. AM 265) | Apartamentos turísticos | INVERSIETE S.A. | COMERCIAL DEL CAMPO S.A. | 325 apartamentos en 4 portales y 5 plantas (P1: 90, P2: 75, P3: 75, P4: 85; 240 de 1 dormitorio y 85 de 2), código `P{portal}-{planta}{letra}` (p.ej. P1-1A). Además, 347 plazas de garaje: sótano -1, 251 (S1-1 a S1-251), y sótano -2, 96 (S2-1 a S2-96) |
-| SAE | Suite Aeropuerto (C/ Campezo 8, reg. AM 259) | Apartamentos turísticos | INVERSIETE S.A. | COMERCIAL DEL CAMPO S.A. | 300 en 2 bloques (A: 147, B: 153) y 5 plantas: 267 de 1 dormitorio (8 con terraza, 5 con terraza grande y 10 grandes), 28 de 2 dormitorios y 5 estudios |
+| SAE | Suite Aeropuerto (C/ Campezo 8, reg. AM 259) | Apartamentos turísticos | INVERSIETE S.A. | COMERCIAL DEL CAMPO S.A. | 300 en 2 bloques (A: 147, B: 153) y 5 plantas: 267 de 1 dormitorio (8 con terraza, 5 con terraza grande y 10 grandes), 28 de 2 dormitorios y 5 estudios. Además, 242 plazas de garaje: exterior, 64 (EXT-1 a EXT-67, sin la 34, 35 y 36), e interior en el sótano -1, 178 (S1-1 a S1-186, sin la 13 a 18 ni la 38 a 43, más S1-601, S1-603, S1-604 y S1-605) |
 
 Las unidades se cargan desde `pms/app/data/unidades_iniciales.json`, que se generó a partir de estos documentos:
 - **Babilonia 35:** listado de cuotas de comunidad de octubre de 2026. Se cargan solo las viviendas y los garajes,
