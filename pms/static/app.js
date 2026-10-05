@@ -135,6 +135,16 @@ function form(title, fields, init = {}, onSubmit, submitLabel = "Guardar") {
     <p class="error" id="formErr"></p>
     <div class="actions"><button type="button" class="btn" id="fCancel">Cancelar</button><button class="btn primary" type="submit">${esc(submitLabel)}</button></div>`;
   $("#fCancel").onclick = () => dlg.close();
+  if (!f._avisoCampos) {  // el navegador no envía si falta un dato obligatorio: se dice cuál, bien visible
+    f._avisoCampos = new Set();
+    f.addEventListener("invalid", (ev) => {
+      const el = ev.target, lab = el.closest("label, fieldset");
+      const nombre = (lab?.querySelector("legend")?.textContent || lab?.childNodes[0]?.textContent || el.name || "").replace("*", "").trim();
+      f._avisoCampos.add(`${nombre}${el.validity.valueMissing ? "" : " (valor no válido)"}`);
+      clearTimeout(f._avisoT);
+      f._avisoT = setTimeout(() => { $("#formErr").textContent = `Revise: ${[...f._avisoCampos].join(", ")}`; f._avisoCampos.clear(); }, 0);
+    }, true);
+  }
   f.onsubmit = async (ev) => {
     ev.preventDefault();
     const data = {};
@@ -1014,9 +1024,14 @@ async function alquilarGaraje(reload, fija) {
     const c = await post("/api/garajes/contratos", clean({ ...d, unit_id: fija ? fija.id : Number(d.unit_id), cliente: clean(cliente), documentos: fr._docs.map((x) => x.id) }));
     toast(`Plaza ${c.unidad} alquilada a ${c.cliente}`);
     reload && reload();
-    if (c.proximo_recibo && confirm(`¿Cobrar ahora el primer recibo (${eur(c.proximo_recibo.pendiente)})?`))
-      setTimeout(() => cobroForm(`Cobro plaza ${c.unidad} · ${c.cliente} · ${c.proximo_recibo.periodo}`, c.proximo_recibo.pendiente, `/api/garajes/recibos/${c.proximo_recibo.id}/cobro`, reload), 0);
+    if (!c.proximo_recibo) return;
+    const r = c.proximo_recibo;  // primer recibo: se cobra y factura ahora o más tarde desde «Alquiler de garajes»
+    form(`Plaza ${c.unidad} alquilada a ${c.cliente}`, [{ html: `<p>Primer recibo <b>${esc(r.periodo)}</b>: <b>${eur(r.pendiente)}</b> (IVA incluido), vence el ${fdate(r.fecha_vencimiento)}.</p>
+      <p class="muted">Si lo cobra ahora se emite la factura. Si no, queda pendiente en «Alquiler de garajes → Recibos» y el PMS avisa si vence sin cobrar.</p>` }],
+    {}, async () => { setTimeout(() => cobroForm(`Cobro plaza ${c.unidad} · ${c.cliente} · ${r.periodo}`, r.pendiente, `/api/garajes/recibos/${r.id}/cobro`, reload), 0); }, "Cobrar y facturar ahora");
+    $("#fCancel").textContent = "Más tarde";
   }, "Alquilar plaza"));
+  if (!fija && !libres.unidades.length) $("#formErr", f).textContent = "No hay plazas libres hoy en este activo: libere una o elija otra fecha desde el plano.";
   const iva = () => { const v = Number(f.elements.renta_mensual.value || 0); $("[data-iva]", f).textContent = v ? `Recibo mensual: ${eur(v)} + 21 % IVA = ${eur(Math.round(v * 121) / 100)}` : ""; };
   f.elements.renta_mensual.oninput = iva;
   f._sinCamara = true;
