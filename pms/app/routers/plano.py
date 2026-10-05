@@ -1,7 +1,8 @@
 """Plano interactivo por plantas: estado de cada apartamento, ficha completa, bloqueos y zonas comunes.
 
 Colores (los mismos del PMS anterior): alquilado (huésped alojado), reserva (reserva confirmada pendiente de
-llegada para ese día), disponible y bloqueado (bloqueado, fuera de servicio o en mantenimiento que lo bloquea).
+llegada: ese día o más adelante, para que el plano cambie en cuanto se reserva), disponible y bloqueado
+(bloqueado, fuera de servicio o en mantenimiento que lo bloquea).
 """
 from datetime import date, datetime
 
@@ -49,15 +50,25 @@ def estados(db: Session, units: list[Unit], dia: date) -> dict[int, dict]:
         Reservation.unit_id.in_(ids or [-1]), Reservation.estado.in_(("confirmada", "checkin")),
         Reservation.fecha_entrada <= dia, Reservation.fecha_salida > dia)).all()
     por_unidad = {r.unit_id: (r, g) for r, g in res}
+    # libres ese día pero con una reserva confirmada más adelante: la próxima llegada (cambio de color inmediato)
+    futuras = db.execute(select(Reservation, Contact).join(Contact, Contact.id == Reservation.guest_id).where(
+        Reservation.unit_id.in_(ids or [-1]), Reservation.estado == "confirmada", Reservation.fecha_entrada > dia)
+        .order_by(Reservation.fecha_entrada.desc())).all()
+    proxima = {r.unit_id: (r, g) for r, g in futuras}  # al ir de la más lejana a la más cercana, queda la próxima
     # plazas de garaje alquiladas por meses a clientes externos
     alq = {x.unit_id: (x, t) for x, t in db.execute(
         select(Lease, Contact).join(Contact, Contact.id == Lease.tenant_id).where(
             Lease.unit_id.in_(ids or [-1]), Lease.estado == "vigente", Lease.fecha_inicio <= dia,
             or_(Lease.fecha_fin.is_(None), Lease.fecha_fin >= dia))).all()}
+    alq_futuro = set(db.scalars(select(Lease.unit_id).where(Lease.unit_id.in_(ids or [-1]), Lease.estado == "vigente",
+                                                            Lease.fecha_inicio > dia)))
     hoy = date.today()
     out = {}
     for u in units:
         r, g = por_unidad.get(u.id, (None, None))
+        futura = False
+        if r is None and u.id in proxima and u.id not in alq and not (u.estado == "ocupada" and dia == hoy):
+            (r, g), futura = proxima[u.id], True
         if u.estado in ESTADOS_BLOQUEO:
             e = "bloqueado"
         elif (r is not None and r.estado == "checkin") or u.id in alq:
@@ -66,12 +77,14 @@ def estados(db: Session, units: list[Unit], dia: date) -> dict[int, dict]:
             e = "reserva"
         elif u.estado == "ocupada" and dia == hoy:
             e = "alquilado"
+        elif u.id in alq_futuro:
+            e = "reserva"
         else:
             e = "disponible"
         out[u.id] = {"estado": e, "estado_unidad": u.estado, "limpieza": u.estado == "pendiente_limpieza",
                      "reserva": {"id": r.id, "localizador": r.localizador, "huesped": _nombre(g),
                                  "entrada": r.fecha_entrada.isoformat(), "salida": r.fecha_salida.isoformat(),
-                                 "estado": r.estado} if r else None,
+                                 "estado": r.estado, "proxima": futura} if r else None,
                      "alquiler": {"id": alq[u.id][0].id, "cliente": _nombre(alq[u.id][1]),
                                   "desde": alq[u.id][0].fecha_inicio.isoformat(),
                                   "hasta": alq[u.id][0].fecha_fin.isoformat() if alq[u.id][0].fecha_fin else None,
