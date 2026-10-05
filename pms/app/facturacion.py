@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .contratos import MESES
-from .models import Company, Contact, Invoice, Lease, Service, User
+from .models import Charge, Company, Contact, Invoice, Lease, Service, Unit, User
 from .utils import bad_request
 
 IVA_GENERAL = Decimal("21")
@@ -106,6 +106,23 @@ def lineas_de(f: Invoice) -> list[dict]:
     return [{"tipo": tipo, "concepto": f.concepto, "cantidad": 1.0, "precio": float(f.total),
              "tipo_iva": float(f.tipo_iva or 0), "base": float(f.base_imponible), "cuota": float(f.cuota_iva),
              "total": float(f.total)}]
+
+
+def bases_por_tipo(db: Session, facturas: list[Invoice]) -> list[tuple[Invoice, dict[str, float]]]:
+    """Base imponible de cada factura por tipo de línea, para la producción. El recibo mensual de una plaza de
+    garaje se factura como renta, pero cuenta como garaje: las plazas no computan en la producción del edificio."""
+    cargos = {f.charge_id for f in facturas if f.charge_id}
+    de_garaje = set(db.scalars(select(Charge.id).join(Lease, Lease.id == Charge.lease_id)
+                               .join(Unit, Unit.id == Lease.unit_id)
+                               .where(Charge.id.in_(cargos or {-1}), Unit.uso == "garaje"))) if cargos else set()
+    out = []
+    for f in facturas:
+        acc: dict[str, float] = {}
+        for x in lineas_de(f):
+            t = "garaje" if x["tipo"] == "renta" and f.charge_id in de_garaje else x["tipo"]
+            acc[t] = acc.get(t, 0) + x["base"]
+        out.append((f, acc))
+    return out
 
 
 def desglose(lineas: list[dict]) -> list[dict]:

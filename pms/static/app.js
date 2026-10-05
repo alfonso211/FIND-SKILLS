@@ -211,19 +211,22 @@ V.panel = async (el) => {
   el.innerHTML = `${planos.map((a) => `<section class="plano-resumen" data-plano="${a.id}"><div class="toolbar"><h3 style="margin:0">${esc(a.nombre)} · plano por plantas</h3><span class="spacer"></span>${leyendaHtml()}</div><div class="minis"><p class="muted">Cargando plano…</p></div></section>`).join("")}
     <p class="muted">Situación a ${fdate(p.fecha)}</p><div class="cards">${p.activos.filter((a) => !S.asset || String(a.id) === String(S.asset)).map((a) => {
     const k = [];
-    k.push([a.unidades, Object.entries(a.usos || {}).map(([u, n]) => `${n} ${n === 1 ? u : plural(u)}`).join(" · ") || "Unidades"]);
+    // los datos del edificio son de los alojamientos: las plazas de garaje van aparte y no computan
+    k.push([a.unidades, Object.entries(a.usos || {}).filter(([u]) => u !== "garaje").map(([u, n]) => `${n} ${n === 1 ? u : plural(u)}`).join(" · ") || "Unidades"]);
     if (a.ocupacion_hoy != null) k.push([a.ocupacion_hoy + " %", "Ocupación hoy"]);
     if (a.llegadas_hoy != null) k.push([a.llegadas_hoy, "Llegadas hoy"], [a.salidas_hoy, "Salidas hoy"]);
     if (a.estancias_vencidas) k.push([a.estancias_vencidas, "Estancias vencidas (renovar o salida)", "mal"]);
     if (a.contratos_vigentes != null) {
       const al = a.alquiladas_por_uso || {};
-      Object.entries(a.usos || {}).forEach(([u, n]) => {
+      Object.entries(a.usos || {}).filter(([u]) => u !== "garaje").forEach(([u, n]) => {
         const t = plural(u);
         k.push([`${al[u] || 0} / ${n}`, `${t[0].toUpperCase()}${t.slice(1)} alquilad${["vivienda", "oficina"].includes(u) ? "as" : "os"}`]);
       });
     }
-    if (a.garajes) k.push([`${a.garajes_ocupados} / ${a.garajes}`, "Garajes ocupados hoy"]);
-    if (a.produccion_mes != null) k.push([eur(a.produccion_mes), "Producción mes (facturado sin IVA)"]);
+    if (a.produccion_mes != null) k.push([eur(a.produccion_mes), "Producción mes (facturado sin IVA ni garajes)"]);
+    if (a.garajes) k.push([`${a.garajes_ocupados} / ${a.garajes}`, "Plazas de garaje alquiladas hoy (no computa)"]);
+    else if (a.usos?.garaje && a.alquiladas_por_uso) k.push([`${a.alquiladas_por_uso.garaje || 0} / ${a.usos.garaje}`, "Plazas de garaje alquiladas (no computa)"]);
+    if (a.garajes_facturado_mes) k.push([eur(a.garajes_facturado_mes), "Garajes facturados mes (aparte)"]);
     if (a.renta_mensual != null) k.push([eur(a.renta_mensual), "Renta mensual"], [eur(a.deuda_vencida), "Deuda vencida"]);
     if (a.ot_abiertas != null) k.push([a.ot_abiertas, "OT abiertas"], [a.ot_urgentes, "OT urgentes"], [a.ot_pendientes_cierre, "OT pendientes de cierre"]);
     const est = Object.entries(a.estados).map(([e, n]) => `${badge(e)} ${n}`).join(" ");

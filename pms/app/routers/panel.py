@@ -6,6 +6,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..facturacion import bases_por_tipo
 from ..models import MODALIDADES, Asset, Charge, Invoice, Lease, Reservation, Unit, WorkOrder
 from ..security import Scope, get_scope
 from .mantenimiento import ABIERTAS
@@ -23,7 +24,8 @@ def panel(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     assets = list(db.scalars(scoped(select(Asset).where(Asset.activo), Asset.id, ids).order_by(Asset.codigo)))
     out = []
     for a in assets:
-        estados = dict(db.execute(select(Unit.estado, func.count()).where(Unit.asset_id == a.id)
+        # estado de los alojamientos: las plazas de garaje no computan en los datos del edificio
+        estados = dict(db.execute(select(Unit.estado, func.count()).where(Unit.asset_id == a.id, Unit.uso != "garaje")
                                   .group_by(Unit.estado)).all())
         total = sum(estados.values())
         operativas = total - estados.get("fuera_servicio", 0)
@@ -73,7 +75,7 @@ def panel(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
             # ocupación sobre viviendas (los garajes/trasteros se informan aparte)
             base_uso = "vivienda" if usos.get("vivienda") else None
             denom = usos.get(base_uso, 0) if base_uso else operativas
-            num = alquiladas.get(base_uso, 0) if base_uso else k["contratos_vigentes"]
+            num = alquiladas.get(base_uso, 0) if base_uso else sum(n for u, n in alquiladas.items() if u != "garaje")
             k["ocupacion_hoy"] = round(100 * num / denom, 1) if denom else 0
             if ver_fin:
                 k["renta_mensual"] = float(db.scalar(select(func.coalesce(func.sum(Lease.renta_mensual), 0))
@@ -84,11 +86,15 @@ def panel(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
                     .join(Lease).join(Unit).where(Unit.asset_id == a.id, Charge.estado.in_(("pendiente", "parcial")),
                                                   Charge.fecha_vencimiento < hoy)) or 0)
 
-        if ver_fin:  # producción = facturado en el mes (fecha de factura), sin IVA
-            k["produccion_mes"] = float(db.scalar(
-                select(func.coalesce(func.sum(Invoice.base_imponible), 0)).where(
+        if ver_fin:  # producción = facturado en el mes (fecha de factura), sin IVA y sin las plazas de garaje
+            base = garaje = 0.0
+            for f, bases in bases_por_tipo(db, list(db.scalars(select(Invoice).where(
                     Invoice.asset_id == a.id, Invoice.fecha_expedicion >= ini_mes,
-                    Invoice.fecha_expedicion < fin_mes)) or 0)
+                    Invoice.fecha_expedicion < fin_mes)))):
+                base += float(f.base_imponible)
+                garaje += bases.get("garaje", 0)
+            k["produccion_mes"] = round(base - garaje, 2)
+            k["garajes_facturado_mes"] = round(garaje, 2)
 
         if scope.can_asset("mantenimiento.ver", a.id):
             wo = select(func.count()).select_from(WorkOrder).where(
