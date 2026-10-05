@@ -109,19 +109,19 @@ def test_informes(client, admin, ids):
         "unit_id": unit["id"], "guest": {"nombre": "Informe"}, "fecha_entrada": "2025-04-30",
         "fecha_salida": "2025-05-03", "importe_total": 330, "importe_pagado": 330}).status_code == 201
     wb = _libro(client.get(f"/api/informes/ocupacion?desde=2025-04-01&hasta=2025-05-31&asset_id={sae}", headers=admin))
-    todas = _filas(wb["Turísticos"])
-    filas = {f["Mes"]: f for f in todas if f["Uso"] == "apartamento"}
-    garajes = {f["Mes"]: f for f in todas if f["Uso"] == "garaje"}
-    assert garajes["abr-2025"]["Unidades"] == 242  # 64 plazas exteriores + 178 del sótano -1
-    assert filas["abr-2025"]["Unidades"] == 300 and filas["abr-2025"]["Noches disponibles"] == 9000
-    assert filas["abr-2025"]["Noches ocupadas"] == 1 and filas["abr-2025"]["Facturado (base)"] == 0
+    # la ocupación del edificio es solo de los apartamentos; los garajes van aparte y no computan
+    filas = {f["Mes"]: f for f in _filas(wb["Turísticos"])}
+    garajes = {f["Mes"]: f for f in _filas(wb["Garajes"])}
+    assert garajes["abr-2025"]["Plazas"] == 242  # 64 plazas exteriores + 178 del sótano -1
+    assert filas["abr-2025"]["Apartamentos"] == 300 and filas["abr-2025"]["Noches disponibles"] == 9000
+    assert filas["abr-2025"]["Noches ocupadas"] == 1 and filas["abr-2025"]["Alojamiento facturado (base)"] == 0
     assert filas["may-2025"]["Noches ocupadas"] >= 2
     assert "Residencial" not in wb.sheetnames  # filtrado por activo turístico
 
     hoy = date.today()
     mes = f"{['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][hoy.month - 1]}-{hoy.year}"
     assert _filas(_libro(client.get("/api/informes/produccion?desde=2025-04-01&hasta=2025-04-30",
-                                    headers=admin))["Producción"])[1]["Producción (base imponible)"] == 0
+                                    headers=admin))["Producción"])[1]["Producción del edificio (base, sin garajes)"] == 0
     wb = _libro(client.get(f"/api/informes/produccion?desde={hoy.replace(day=1)}&hasta={hoy}", headers=admin))
     prod = {f["Activo"]: f for f in _filas(wb["Producción"])}
     assert set(prod) == {"C/ Babilonia 35", "Suite Aeropuerto", "Suite Florida"} and prod["Suite Aeropuerto"]["Mes"] == mes
@@ -130,11 +130,14 @@ def test_informes(client, admin, ids):
                 if f["fecha_expedicion"][:7] == f"{hoy:%Y-%m}"]
     base = round(sum(f["base_imponible"] for f in facturas), 2)
     p = prod["Suite Aeropuerto"]
-    assert p["Producción (base imponible)"] == base and p["Nº facturas"] == len(facturas)
-    assert round(p["Alojamiento (base)"] + p["Rentas (base)"] + p["Servicios (base)"], 2) == base
+    garaje = p["Plazas de garaje (base, aparte)"]
+    assert round(p["Producción del edificio (base, sin garajes)"] + garaje, 2) == base
+    assert p["Nº facturas"] == len(facturas)
+    assert round(p["Alojamiento (base)"] + p["Rentas (base)"] + p["Servicios (base)"], 2) == round(base - garaje, 2)
     assert p["Alojamiento (base)"] >= 300  # 330 € con IVA del 10 %
     panel = {a["codigo"]: a for a in client.get("/api/panel", headers=admin).json()["activos"]}
-    assert panel["SAE"]["produccion_mes"] == base
+    assert panel["SAE"]["produccion_mes"] == round(base - garaje, 2)
+    assert panel["SAE"]["garajes_facturado_mes"] == garaje
 
     # morosidad: recibo de enero de 2025 sin cobrar
     bab = ids["assets"]["BAB35"]["id"]

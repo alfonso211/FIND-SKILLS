@@ -9,11 +9,11 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..facturacion import lineas_de
+from ..facturacion import bases_por_tipo
 from ..models import (MODALIDADES_CONTRATO, MODALIDADES_RESERVA, Asset, Charge, Contact, Invoice, Lease,
                       Reservation, Unit, WorkOrder)
 from ..security import Scope, audit, get_scope
@@ -101,9 +101,8 @@ def _ocupacion(db, scope, wb, desde, hasta, asset_id):
     residenciales = _activos(db, scope, "alquiler.ver", asset_id, MODALIDADES_CONTRATO)
     if not (turisticos or residenciales):
         raise HTTPException(403, "Sin permiso para ver la ocupación de ningún activo")
+    garajes = []  # plazas de garaje: se informan aparte y no computan en la ocupación del edificio
     if turisticos:
-        n_unid = {a.id: db.scalar(select(func.count()).select_from(Unit).where(
-            Unit.asset_id == a.id, Unit.estado != "fuera_servicio")) for a in turisticos}
         res = _reservas(db, [a.id for a in turisticos], desde, hasta)
         fact = _facturado(db, [a.id for a in turisticos], desde, hasta) if any(
             scope.can_asset("finanzas.ver", a.id) for a in turisticos) else {}
@@ -111,25 +110,37 @@ def _ocupacion(db, scope, wb, desde, hasta, asset_id):
         for a in turisticos:
             unidades = dict(db.execute(select(Unit.id, Unit.uso).where(Unit.asset_id == a.id,
                                                                        Unit.estado != "fuera_servicio")).all())
-            for uso in sorted(set(unidades.values()), key=lambda x: (x == "garaje", x)):  # apartamentos y garajes
-                ids_uso = {i for i, x in unidades.items() if x == uso}
-                propias = [r for r, aid in res if aid == a.id and r.unit_id in ids_uso]
-                clave = "garaje" if uso == "garaje" else "alojamiento"
-                for mes, ini, fin in _meses(desde, hasta):
-                    disp = len(ids_uso) * ((fin - ini).days + 1)
-                    ocup = sum(_noches(r.fecha_entrada, r.fecha_salida, ini, fin) for r in propias)
-                    ingresos = (round(fact.get((a.id, f"{ini:%Y-%m}"), {}).get(clave, 0), 2)
-                                if scope.can_asset("finanzas.ver", a.id) else None)
-                    llegadas = sum(1 for r in propias if ini <= r.fecha_entrada <= fin)
-                    filas.append([a.nombre, uso, mes, len(ids_uso), disp, ocup, ocup / disp if disp else 0, llegadas,
-                                  ingresos, None if ingresos is None else round(ingresos / ocup, 2) if ocup else 0,
-                                  None if ingresos is None else round(ingresos / disp, 2) if disp else 0])
-        _hoja(wb, "Turísticos", ["Activo", "Uso", "Mes", "Unidades", "Noches disponibles", "Noches ocupadas",
-                                 "% ocupación", "Llegadas", "Facturado (base)", "ADR (precio medio noche)", "RevPAR"],
-              filas, {4: ENTERO, 5: ENTERO, 6: PCT, 8: EUR, 9: EUR, 10: EUR}, totales=[4, 5, 7, 8],
-              nota="Noches: reservas confirmadas, alojadas o salidas (sin canceladas ni no presentadas); unidades fuera de "
-                   "servicio excluidas. Importes: alojamiento facturado en el mes según fecha de factura, sin IVA "
-                   "(solo con permiso de finanzas).")
+            ver_fin = scope.can_asset("finanzas.ver", a.id)
+            aloj = {i for i, x in unidades.items() if x != "garaje"}
+            plazas = {i for i, x in unidades.items() if x == "garaje"}
+            leases = db.execute(select(Lease.unit_id, Lease.fecha_inicio, Lease.fecha_fin).where(
+                Lease.unit_id.in_(plazas or {-1}), Lease.estado != "borrador")).all()
+            for mes, ini, fin in _meses(desde, hasta):
+                dias = (fin - ini).days + 1
+                propias = [r for r, aid in res if aid == a.id and r.unit_id in aloj]
+                disp = len(aloj) * dias
+                ocup = sum(_noches(r.fecha_entrada, r.fecha_salida, ini, fin) for r in propias)
+                v = fact.get((a.id, f"{ini:%Y-%m}"), {})
+                ingresos = round(v.get("alojamiento", 0), 2) if ver_fin else None
+                llegadas = sum(1 for r in propias if ini <= r.fecha_entrada <= fin)
+                filas.append([a.nombre, mes, len(aloj), disp, ocup, ocup / disp if disp else 0, llegadas, ingresos,
+                              None if ingresos is None else round(ingresos / ocup, 2) if ocup else 0,
+                              None if ingresos is None else round(ingresos / disp, 2) if disp else 0])
+                if plazas:
+                    por_dias = sum(_noches(r.fecha_entrada, r.fecha_salida, ini, fin)
+                                   for r, aid in res if aid == a.id and r.unit_id in plazas)
+                    por_meses = sum(_noches(max(fi, ini), (ff or fin) + timedelta(days=1), ini, fin)
+                                    for _, fi, ff in leases if fi <= fin and (ff is None or ff >= ini))
+                    garajes.append([a.nombre, mes, len(plazas), len(plazas) * dias, por_dias, por_meses,
+                                     round(v.get("garaje", 0), 2) if ver_fin else None])
+        _hoja(wb, "Turísticos", ["Activo", "Mes", "Apartamentos", "Noches disponibles", "Noches ocupadas",
+                                 "% ocupación", "Llegadas", "Alojamiento facturado (base)", "ADR (precio medio noche)",
+                                 "RevPAR"],
+              filas, {3: ENTERO, 4: ENTERO, 5: PCT, 7: EUR, 8: EUR, 9: EUR}, totales=[3, 4, 6, 7],
+              nota="Solo apartamentos: las plazas de garaje no computan en la ocupación del edificio (hoja «Garajes»). "
+                   "Noches: reservas confirmadas, alojadas o salidas (sin canceladas ni no presentadas); unidades "
+                   "fuera de servicio excluidas. Importes: alojamiento facturado en el mes según fecha de factura, sin "
+                   "IVA (solo con permiso de finanzas).")
     if residenciales:
         filas = []
         for a in residenciales:
@@ -142,21 +153,35 @@ def _ocupacion(db, scope, wb, desde, hasta, asset_id):
             for mes, ini, fin in _meses(desde, hasta):
                 alquiladas = {u for u, fi, ff in contratos if fi <= fin and (ff is None or ff >= ini)}
                 for uso, ids in sorted(usos.items()):
+                    if uso == "garaje":
+                        dias = sum(_noches(max(fi, ini), (ff or fin) + timedelta(days=1), ini, fin)
+                                   for u, fi, ff in contratos if u in ids and fi <= fin and (ff is None or ff >= ini))
+                        garajes.append([a.nombre, mes, len(ids), len(ids) * ((fin - ini).days + 1), 0, dias, None])
+                        continue
                     n = len(ids & alquiladas)
                     filas.append([a.nombre, mes, uso, len(ids), n, n / len(ids) if ids else 0])
         _hoja(wb, "Residencial", ["Activo", "Mes", "Uso", "Unidades", "Alquiladas", "% ocupación"], filas,
               {3: ENTERO, 4: ENTERO, 5: PCT},
-              nota="Unidad alquilada: con contrato vigente, finalizado o rescindido que cubre algún día del mes.")
+              nota="Unidad alquilada: con contrato vigente, finalizado o rescindido que cubre algún día del mes. "
+                   "Las plazas de garaje no computan (hoja «Garajes»).")
+    if garajes:
+        _hoja(wb, "Garajes", ["Activo", "Mes", "Plazas", "Días-plaza disponibles", "Días-plaza por reservas",
+                              "Días-plaza alquilados por meses", "Garaje facturado (base)"],
+              garajes, {2: ENTERO, 3: ENTERO, 4: ENTERO, 5: ENTERO, 6: EUR},
+              nota="Informativo: las plazas de garaje (detalle comercial con el apartamento, segunda plaza o cliente "
+                   "externo) no computan en la ocupación ni en la producción del edificio.")
 
 
 def _facturado(db, ids: list[int], desde: date, hasta: date) -> dict[tuple[int, str], dict[str, float]]:
     """Base imponible facturada por activo, mes (fecha de factura) y tipo de línea; también IVA, total y nº."""
     out: dict[tuple[int, str], dict[str, float]] = defaultdict(lambda: defaultdict(float))
-    for f in db.scalars(select(Invoice).where(Invoice.asset_id.in_(ids or [-1]), Invoice.fecha_expedicion >= desde,
-                                              Invoice.fecha_expedicion <= hasta)):
+    facturas = list(db.scalars(select(Invoice).where(Invoice.asset_id.in_(ids or [-1]),
+                                                     Invoice.fecha_expedicion >= desde,
+                                                     Invoice.fecha_expedicion <= hasta)))
+    for f, bases in bases_por_tipo(db, facturas):
         acc = out[(f.asset_id, f"{f.fecha_expedicion:%Y-%m}")]
-        for x in lineas_de(f):
-            acc[x["tipo"]] += x["base"]
+        for t, b in bases.items():
+            acc[t] += b
         acc["base"] += float(f.base_imponible)
         acc["iva"] += float(f.cuota_iva)
         acc["total"] += float(f.total)
@@ -174,15 +199,18 @@ def _produccion(db, scope, wb, desde, hasta, asset_id):
     for a in activos:
         for mes, ini, _ in _meses(desde, hasta):
             v = fact.get((a.id, f"{ini:%Y-%m}"), {})
-            filas.append([a.nombre, mes] + [round(v.get(k, 0), 2) for k in
-                                            ("alojamiento", "garaje", "renta", "servicio", "base", "iva", "total")]
-                         + [int(v.get("n", 0))])
-    _hoja(wb, "Producción", ["Activo", "Mes", "Alojamiento (base)", "Plazas de garaje (base)", "Rentas (base)",
-                             "Servicios (base)", "Producción (base imponible)", "IVA", "Total facturado", "Nº facturas"],
+            r = lambda k: round(v.get(k, 0), 2)  # noqa: E731
+            filas.append([a.nombre, mes, r("alojamiento"), r("renta"), r("servicio"),
+                          round(v.get("base", 0) - v.get("garaje", 0), 2), r("garaje"), r("iva"), r("total"),
+                          int(v.get("n", 0))])
+    _hoja(wb, "Producción", ["Activo", "Mes", "Alojamiento (base)", "Rentas (base)", "Servicios (base)",
+                             "Producción del edificio (base, sin garajes)", "Plazas de garaje (base, aparte)", "IVA",
+                             "Total facturado", "Nº facturas"],
           filas, {2: EUR, 3: EUR, 4: EUR, 5: EUR, 6: EUR, 7: EUR, 8: EUR, 9: ENTERO},
           totales=[2, 3, 4, 5, 6, 7, 8, 9],
           nota="Producción = lo facturado en cada mes según la fecha de la factura, sin IVA. Incluye las "
-               "rectificativas (en negativo).")
+               "rectificativas (en negativo). Las plazas de garaje no computan en la producción del edificio: se "
+               "muestran aparte (el total facturado sí las incluye).")
 
 
 def _tramo(dias: int) -> str:
