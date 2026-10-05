@@ -1003,8 +1003,8 @@ const clienteGarajeFields = [
   { k: "documento_num", t: "DNI / NIE / CIF" }, { k: "telefono", t: "Teléfono", req: true }, { k: "email", t: "Correo electrónico", type: "email" },
   { k: "direccion", t: "Domicilio (para la factura)", wide: true }, { k: "cp", t: "Código postal" }, { k: "municipio", t: "Municipio" }, { k: "pais", t: "País", def: "España" },
 ];
-async function alquilarGaraje(reload, fija) {
-  const aid = fija ? fija.asset_id : await pickAsset("apartamentos_turisticos");
+async function alquilarGaraje(reload, fija, assetId) {
+  const aid = fija ? fija.asset_id : assetId || await pickAsset("apartamentos_turisticos");
   const inicio = today();
   const libres = fija ? null : await get("/api/turistico/disponibilidad", { asset_id: aid, desde: inicio, hasta: addDays(inicio, 1), uso: "garaje" });
   const f = conEscaner(form(fija ? `Alquiler mensual · plaza ${fija.codigo}` : `Alquiler mensual de plaza de garaje · ${assetName(aid)}`, [
@@ -1081,7 +1081,7 @@ V.garajes = async (el) => {
   const marcar = () => el.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("primary", b.dataset.v === vista));
   el.querySelectorAll("#tabs button").forEach((b) => (b.onclick = () => { vista = b.dataset.v; marcar(); load(); }));
   $("#e", el).onchange = load; $("#q", el).oninput = debounce(load);
-  if ($("#new", el)) $("#new", el).onclick = () => alquilarGaraje(load);
+  if ($("#new", el)) $("#new", el).onclick = () => alquilarGaraje(load, null, aid);  // sin volver a preguntar el activo
   load();
 };
 function editarAlquilerGaraje(c, reload) {
