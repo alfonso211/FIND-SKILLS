@@ -1839,6 +1839,156 @@ V.personal = async (el) => {
   load();
 };
 
+// ---- documentos recibidos (carpeta de cada activo) y cuenta de gastos
+async function catGastos() { S.catGastos = S.catGastos || await get("/api/gastos/catalogos"); return S.catGastos; }
+// Campos del gasto (en el alta de un documento y en el gasto sin documento)
+function camposGasto(C, unidades) {
+  return [
+    { k: "categoria", t: "Categoría del gasto", type: "select", options: kv(C.categorias) },
+    { k: "ambito", t: "Imputado a", type: "select", options: kv(C.ambitos), def: "general" },
+    { k: "unit_id", t: "Apartamento", type: "select", options: unidades.map((u) => [u.id, `${u.codigo}${u.bloque ? " · " + u.bloque : ""}`]) },
+    { k: "ambito_detalle", t: "Detalle (zona, varios apartamentos…)" },
+    { k: "concepto", t: "Concepto del gasto", wide: true },
+    { k: "total", t: "Importe total € (IVA incluido)", type: "number" },
+    { k: "tipo_iva", t: "IVA %", type: "select", options: C.ivas.map((x) => [x, `${x} %`]), def: 21 },
+    { k: "base", t: "Base € (solo si hay varios tipos de IVA)", type: "number" },
+    { k: "forma_pago", t: "Forma de pago", type: "select", options: kv(C.formas_pago) },
+    { k: "pagado", t: "Pagado", type: "checkbox" }, { k: "fecha_pago", t: "Fecha de pago", type: "date" },
+  ];
+}
+const CAMPOS_GASTO = ["categoria", "ambito", "unit_id", "ambito_detalle", "concepto", "total", "tipo_iva", "base", "forma_pago", "pagado", "fecha_pago"];
+function verCampos(f, nombres, ver) { nombres.forEach((n) => { const el = f.elements[n]; if (el) (el.closest("label") || el).style.display = ver ? "" : "none"; }); }
+function bindAmbito(f) {
+  const pinta = () => { const a = f.elements.ambito.value; verCampos(f, ["unit_id"], a === "apartamento"); verCampos(f, ["ambito_detalle"], a === "otro"); };
+  f.elements.ambito.onchange = pinta; pinta();
+}
+function datosGasto(d, extra = {}) {
+  if (!d.categoria) throw new Error("Elija la categoría del gasto");
+  if (d.total == null) throw new Error("Indique el importe total del gasto");
+  if (d.ambito === "apartamento" && !d.unit_id) throw new Error("Elija el apartamento del gasto");
+  return clean({ categoria: d.categoria, ambito: d.ambito, unit_id: d.unit_id ? Number(d.unit_id) : null, ambito_detalle: d.ambito_detalle,
+    concepto: d.concepto, total: d.total, tipo_iva: Number(d.tipo_iva ?? 21), base: d.base, forma_pago: d.forma_pago, pagado: !!d.pagado, fecha_pago: d.fecha_pago, ...extra });
+}
+async function unidadesActivo(aid) { return (await get("/api/unidades", { asset_id: aid })).filter((u) => u.uso !== "garaje"); }
+
+async function subirDocumento(reload) {
+  const aid = await pickAsset();
+  const [C, unidades] = await Promise.all([catGastos(), unidadesActivo(aid)]);
+  const f = form(`Subir documento recibido · ${assetName(aid)}`, [
+    { k: "tipo", t: "Tipo de documento", type: "select", req: true, options: kv(C.tipos_documento), def: "factura" },
+    { html: fotosHtml("Documento escaneado: PDF, o fotos de cada página (se unen en un PDF)", true) },
+    { k: "fecha", t: "Fecha del documento", type: "date", req: true, def: today() },
+    { k: "emisor", t: "Emisor / proveedor" }, { k: "referencia", t: "Nº de factura / referencia" },
+    { k: "descripcion", t: "Descripción", type: "textarea", wide: true },
+    { k: "es_gasto", t: "Es un gasto: anotarlo en la cuenta de gastos del activo", type: "checkbox", wide: true, def: true },
+    ...camposGasto(C, unidades),
+  ], {}, async (d, fr) => {
+    const ficheros = ficherosElegidos(fr);
+    if (!ficheros.length) throw new Error("Adjunte el documento escaneado (foto o PDF)");
+    const fd = new FormData();
+    ficheros.forEach((x) => fd.append("ficheros", x));
+    fd.append("asset_id", aid); fd.append("tipo", d.tipo); fd.append("fecha", d.fecha);
+    ["emisor", "referencia", "descripcion"].forEach((k) => d[k] && fd.append(k, d[k]));
+    if (d.ambito === "apartamento" && d.unit_id) fd.append("unit_id", d.unit_id);
+    if (d.es_gasto) fd.append("gasto", JSON.stringify(datosGasto(d, { fecha: d.fecha, concepto: d.concepto || d.descripcion || `${C.tipos_documento[d.tipo]} ${d.emisor || ""}`.trim(),
+      proveedor: d.emisor, numero_factura: d.referencia })));
+    const r = await upload("/api/documentos-recibidos", fd);
+    toast(`Documento guardado en la carpeta de ${assetName(aid)}${r.gasto ? ` · gasto de ${eur(r.gasto.total)} anotado` : ""}`);
+    reload && reload();
+  }, "Guardar documento");
+  bindFotos(f); bindAmbito(f); sugerirProveedores(f, "emisor");
+  const gasto = () => { verCampos(f, CAMPOS_GASTO, f.elements.es_gasto.checked); if (f.elements.es_gasto.checked) bindAmbito(f); };
+  f.elements.es_gasto.onchange = gasto;
+  f.elements.tipo.onchange = () => { f.elements.es_gasto.checked = ["factura", "ticket", "albaran"].includes(f.elements.tipo.value); gasto(); };
+  gasto();
+}
+
+async function editarGasto(g, reload, aidNuevo) {
+  const aid = g ? g.asset_id : aidNuevo || await pickAsset();
+  const [C, unidades] = await Promise.all([catGastos(), unidadesActivo(aid)]);
+  const f = form(g ? `Gasto · ${g.concepto}` : `Nuevo gasto sin documento · ${assetName(aid)}`, [
+    { k: "fecha", t: "Fecha", type: "date", req: true, def: today() },
+    { k: "proveedor", t: "Proveedor" }, { k: "numero_factura", t: "Nº de factura" },
+    ...camposGasto(C, unidades), { k: "notas", t: "Notas", type: "textarea", wide: true },
+  ], g ? { ...g, base: null } : {}, async (d) => {
+    const body = datosGasto(d, { fecha: d.fecha, concepto: d.concepto, proveedor: d.proveedor, numero_factura: d.numero_factura, notas: d.notas });
+    if (!body.concepto) throw new Error("Indique el concepto del gasto");
+    await (g ? put(`/api/gastos/${g.id}`, body) : post("/api/gastos", { ...body, asset_id: aid }));
+    toast(g ? "Gasto actualizado" : "Gasto anotado"); reload && reload();
+  });
+  bindAmbito(f); sugerirProveedores(f, "proveedor");
+}
+
+V.docrecibidos = async (el) => {
+  const C = await catGastos();
+  const editar = can("documentos.editar");
+  const ini = `${today().slice(0, 4)}-01-01`;
+  el.innerHTML = `<div class="toolbar"><select id="tp"><option value="">Todos los tipos</option>${Object.entries(C.tipos_documento).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select>
+    <label>Desde<input type="date" id="d" value="${ini}"></label><label>Hasta<input type="date" id="h" value="${today()}"></label>
+    <input id="q" placeholder="Emisor, referencia, descripción"><span class="spacer"></span>${editar ? '<button class="btn primary" id="new">Subir documento</button>' : ""}</div>
+    <p class="muted">Carpeta de documentos recibidos del activo (facturas, tickets, cartas, notificaciones…), guardados cifrados. Cada activo ve solo los suyos.</p><div id="t"></div>`;
+  const load = async () => {
+    const docs = await get("/api/documentos-recibidos", { asset_id: S.asset, tipo: $("#tp", el).value, desde: $("#d", el).value, hasta: $("#h", el).value, q: $("#q", el).value });
+    table($("#t", el), [
+      { k: "fecha", t: "Fecha", f: fdate }, { k: "activo", t: "Activo" }, { k: "tipo_nombre", t: "Tipo" }, { k: "emisor", t: "Emisor" },
+      { k: "referencia", t: "Referencia" }, { k: "descripcion", t: "Descripción" }, { k: "unidad", t: "Apartamento" },
+      { k: "gasto", t: "Gasto", f: (v) => (v ? `${eur(v.total)} <span class="muted">${esc(v.categoria_nombre)}${v.pagado ? " · pagado" : " · pendiente"}</span>` : '<span class="muted">—</span>') },
+      { k: "usuario", t: "Subido por", f: (v, x) => `${esc(v || "")}<div class="muted peq">${fdt(x.subido)}</div>` },
+    ], docs, (x) => [
+      ["Ver", () => abrirFichero(`/api/documentos-recibidos/${x.id}/fichero`)],
+      editar && !x.gasto && ["Anotar gasto", async () => {
+        const [C2, unidades] = await Promise.all([catGastos(), unidadesActivo(x.asset_id)]);
+        const f = form(`Gasto del documento · ${x.tipo_nombre} ${x.emisor || ""}`, [{ k: "fecha", t: "Fecha", type: "date", req: true }, ...camposGasto(C2, unidades)],
+          { fecha: x.fecha, concepto: x.descripcion || `${x.tipo_nombre} ${x.emisor || ""}`.trim(), unit_id: x.unit_id, ambito: x.unit_id ? "apartamento" : "general" },
+          async (d) => { await post("/api/gastos", datosGasto(d, { fecha: d.fecha, concepto: d.concepto, documento_id: x.id, proveedor: x.emisor, numero_factura: x.referencia })); toast("Gasto anotado"); load(); });
+        bindAmbito(f);
+      }],
+      x.gasto && editar && ["Gasto", () => editarGasto(x.gasto, load)],
+      editar && ["Borrar", async () => { if (confirm(`¿Borrar el documento «${x.nombre}»? El apunte del gasto, si lo tiene, se conserva.`)) { await run(() => api("DELETE", `/api/documentos-recibidos/${x.id}`), "Documento borrado"); load(); } }, "danger"],
+    ]);
+  };
+  ["#tp", "#d", "#h"].forEach((s) => ($(s, el).onchange = load)); $("#q", el).oninput = debounce(load);
+  if ($("#new", el)) $("#new", el).onclick = () => subirDocumento(load);
+  load();
+};
+
+V.gastos = async (el) => {
+  const C = await catGastos();
+  const editar = can("documentos.editar");
+  const ini = `${today().slice(0, 4)}-01-01`;
+  el.innerHTML = `<div class="toolbar"><label>Desde<input type="date" id="d" value="${ini}"></label><label>Hasta<input type="date" id="h" value="${today()}"></label>
+    <select id="c"><option value="">Todas las categorías</option>${Object.entries(C.categorias).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select>
+    <select id="p"><option value="">Pagados y pendientes</option><option value="false">Pendientes de pago</option><option value="true">Pagados</option></select>
+    <span class="spacer"></span><button class="btn" id="xls">Excel</button>${editar ? '<button class="btn" id="sin">Gasto sin documento</button><button class="btn primary" id="doc">Subir factura / ticket</button>' : ""}</div>
+    <div class="kpis" id="k"></div><div id="t"></div>`;
+  const filtros = () => ({ asset_id: S.asset, desde: $("#d", el).value, hasta: $("#h", el).value, categoria: $("#c", el).value, pagado: $("#p", el).value });
+  const load = async () => {
+    const r = await get("/api/gastos", filtros());
+    const t = r.totales;
+    $("#k", el).innerHTML = [[eur(t.base), "Gasto (base sin IVA)"], [eur(t.cuota), "IVA soportado"], [eur(t.total), "Total con IVA"],
+      [eur(t.pendiente_pago), "Pendiente de pago", t.pendiente_pago > 0 ? "mal" : ""], [t.sin_documento, "Apuntes sin documento", t.sin_documento ? "mal" : ""],
+      ...Object.entries(t.por_categoria).slice(0, 4).map(([c, v]) => [eur(v), c])]
+      .map(([v, l, cls]) => `<div class="kpi ${cls || ""}"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("");
+    table($("#t", el), [
+      { k: "fecha", t: "Fecha", f: fdate }, { k: "activo", t: "Activo" }, { k: "lugar", t: "Imputado a" }, { k: "categoria_nombre", t: "Categoría" },
+      { k: "concepto", t: "Concepto" }, { k: "proveedor", t: "Proveedor", f: (v, g) => `${esc(v || "")}${g.numero_factura ? `<div class="muted peq">${esc(g.numero_factura)}</div>` : ""}` },
+      { k: "base", t: "Base", num: true, f: eur }, { k: "cuota", t: "IVA", num: true, f: (v, g) => `${eur(v)}<div class="muted peq">${g.tipo_iva} %</div>` },
+      { k: "total", t: "Total", num: true, f: eur },
+      { k: "pagado", t: "Pago", f: (v, g) => (v ? `<span class="badge b-vigente">pagado</span><div class="muted peq">${fdate(g.fecha_pago)}</div>` : '<span class="badge b-pendiente">pendiente</span>') },
+      { k: "documento_tipo", t: "Documento", f: (v) => (v ? esc(v) : '<span class="badge b-cancelada">sin documento</span>') },
+    ], r.gastos, (g) => [
+      g.documento_id && ["Ver", () => abrirFichero(`/api/documentos-recibidos/${g.documento_id}/fichero`)],
+      editar && !g.pagado && ["Pagado", () => run(() => put(`/api/gastos/${g.id}`, { ...g, pagado: true, fecha_pago: today(), base: null }), "Marcado como pagado").then(load)],
+      editar && ["Editar", () => editarGasto(g, load)],
+      editar && ["Borrar", async () => { if (confirm(`¿Borrar el gasto «${g.concepto}»?`)) { await run(() => api("DELETE", `/api/gastos/${g.id}`), "Gasto borrado"); load(); } }, "danger"],
+    ]);
+  };
+  ["#d", "#h", "#c", "#p"].forEach((s) => ($(s, el).onchange = load));
+  $("#xls", el).onclick = () => run(() => download("GET", `/api/gastos/excel?${new URLSearchParams(Object.entries(filtros()).filter(([k, v]) => v && k !== "pagado"))}`));
+  if ($("#sin", el)) { $("#sin", el).onclick = () => editarGasto(null, load); $("#doc", el).onclick = () => subirDocumento(load); }
+  load();
+};
+
 // ---- administración
 V.usuarios = async (el) => {
   const [users, roles] = await Promise.all([get("/api/admin/usuarios"), get("/api/admin/roles")]);
@@ -1953,6 +2103,7 @@ const MENU = [
   ["Apartamentos turísticos", [["plano", "Plano de apartamentos", "activos.ver"], ["hoy", "Llegadas / salidas", "reservas.ver"], ["reservas", "Reservas", "reservas.ver"], ["planning", "Planning", "reservas.ver"], ["huespedes", "Huéspedes", "reservas.ver"], ["ses", "Parte de viajeros (SES)", "reservas.ver"], ["garajes", "Alquiler de garajes", "reservas.ver"]]],
   ["Alquiler residencial", [["contratos", "Contratos", "alquiler.ver"], ["recibos", "Recibos y cobros", "alquiler.ver"], ["inquilinos", "Inquilinos", "alquiler.ver"]]],
   ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["servicios", "Servicios", "activos.ver"], ["informes", "Informes Excel", "informes"]]],
+  ["Documentos y gastos", [["docrecibidos", "Documentos recibidos", "documentos.ver"], ["gastos", "Cuenta de gastos", "documentos.ver"]]],
   ["Mantenimiento", [["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["personal", "Personal mto. y limpieza", "personal"], ["proveedores", "Proveedores", "mantenimiento.ver"]]],
   ["Administración", [["usuarios", "Usuarios", "admin"], ["roles", "Roles y permisos", "admin"], ["sociedades", "Sociedades", "admin"], ["avisos", "Avisos por correo", "admin"], ["auditoria", "Auditoría", "auditoria.ver"]]],
   ["", [["perfil", "Mi perfil", null]]],
