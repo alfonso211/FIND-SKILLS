@@ -104,7 +104,7 @@ def test_escanear_primero_y_crear_reserva(client, admin, ids):
 def test_alta_de_huesped_con_documento_y_purga(client, admin, ids):
     j = _leer(client, admin, reverso_dni(formato="JPEG")).json()
     c = client.post("/api/terceros", headers=admin, json={
-        "company_id": ids["companies"]["INVERSIETE SA"], "tipo": "huesped", "nombre": "Lucía",
+        "company_id": ids["companies"]["INVERSIETE S.A."], "tipo": "huesped", "nombre": "Lucía",
         "documentos": [d["id"] for d in j["documentos"]]})
     assert c.status_code == 201, c.text
     assert (c.json()["num_soporte"], c.json()["fecha_nacimiento"]) == ("BAA000589", "1980-01-01")

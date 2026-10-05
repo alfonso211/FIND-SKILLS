@@ -88,7 +88,7 @@ def test_adjuntos_y_parte(client, admin, ids):
     assert f'Parte_OT-{w["id"]:05d}.pdf' in r.headers["content-disposition"]
     texto = _pdf_texto(r.content)
     for esperado in ("PARTE DE INCIDENCIA", f"OT-{w['id']:05d}", "Gotera en baño", "Fontanería Ejemplo SL",
-                     "INVERSIETE SA", "A rellenar por la subcontrata", "FOTOS DE LA AVERÍA"):
+                     "INVERSIETE S.A.", "A rellenar por la subcontrata", "FOTOS DE LA AVERÍA"):
         assert esperado in texto, esperado
     imagenes = [o for o in pdfium.PdfDocument(r.content)[0].get_objects() if o.type == pdfium.raw.FPDF_PAGEOBJ_IMAGE]
     assert len(imagenes) == 1  # la foto de la avería que queda (la otra se borró)

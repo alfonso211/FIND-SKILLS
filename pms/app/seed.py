@@ -11,14 +11,15 @@ from .config import settings
 from .models import Asset, Assignment, Company, Role, Unit, User
 from .security import ROLES_POR_DEFECTO, hash_password
 
-# (razón social, CIF). CIF de INVERSIETE y COMERCIAL DEL CAMPO según Registro Mercantil (fuentes públicas,
-# a contrastar con escrituras); el resto, pendiente.
+# (razón social, CIF) según «Datos fiscales sociedades Grupo INVERSIETE S.A.». Todas con domicilio fiscal en
+# C/ Campezo 8, 28022 Madrid.
 SOCIEDADES = [
-    ("INVERSIETE SA", "A78072915"),
+    ("INVERSIETE S.A.", "A78072915"),
     ("COMERCIAL DEL CAMPO S.A.", "A28362309"),
-    ("EDIFICIOS CAMERANOS", None),
-    ("EMPRESA TURISTICA HOTELERA (ETHOSA)", None),
+    ("EDIFICIOS CAMERANOS S.A.", "A28309433"),
+    ("EMPRESA TURISTICA HOTELERA S.A.", "A28116853"),
 ]
+DOMICILIO_FISCAL = dict(direccion="C/ Campezo 8", cp="28022", municipio="Madrid", provincia="Madrid")
 
 # Unidades reales de cada activo (ver data/unidades_iniciales.json):
 #  - BAB35: listado de cuotas de comunidad oct-2026 (solo viviendas y garajes de COMERCIAL DEL CAMPO)
@@ -34,13 +35,13 @@ ACTIVOS = [
     # Registro de Empresas Turísticas de la Comunidad de Madrid (toma de nota de cambio de titular a
     # INVERSIETE S.A., presentada el 03/01/2025, resoluciones de 12/03/2025)
     dict(codigo="SFL", nombre="Suite Florida", modalidad="apartamentos_turisticos",
-         gestora="INVERSIETE SA", propietaria="COMERCIAL DEL CAMPO S.A.",
+         gestora="INVERSIETE S.A.", propietaria="COMERCIAL DEL CAMPO S.A.",
          direccion="Calle Campezo 2", municipio="Madrid", provincia="Madrid", cp="28022",
          num_registro_turistico="AM 265", serie_factura="SF",
          notas="Apartamentos turísticos 1 llave. Cambio de titular a INVERSIETE S.A. con efectos 03/01/2025 "
                "(Ref. 09/503253.9/25)."),
     dict(codigo="SAE", nombre="Suite Aeropuerto", modalidad="apartamentos_turisticos",
-         gestora="INVERSIETE SA", propietaria="COMERCIAL DEL CAMPO S.A.",
+         gestora="INVERSIETE S.A.", propietaria="COMERCIAL DEL CAMPO S.A.",
          direccion="Calle Campezo 8", municipio="Madrid", provincia="Madrid", cp="28022",
          num_registro_turistico="AM 259", serie_factura="SA",
          notas="Apartamentos turísticos 1 llave. Cambio de titular a INVERSIETE S.A. con efectos 03/01/2025 "
@@ -75,12 +76,12 @@ def _usuarios_iniciales(db: Session, assets: dict[str, Asset]) -> None:
 def seed(db: Session) -> None:
     if db.scalar(select(Company.id)):
         return
-    matriz = Company(nombre=SOCIEDADES[0][0], cif=SOCIEDADES[0][1])
+    matriz = Company(nombre=SOCIEDADES[0][0], cif=SOCIEDADES[0][1], **DOMICILIO_FISCAL)
     db.add(matriz)
     db.flush()
     soc = {matriz.nombre: matriz}
     for nombre, cif in SOCIEDADES[1:]:
-        soc[nombre] = Company(nombre=nombre, cif=cif, parent_id=matriz.id)
+        soc[nombre] = Company(nombre=nombre, cif=cif, parent_id=matriz.id, **DOMICILIO_FISCAL)
         db.add(soc[nombre])
     db.flush()
 

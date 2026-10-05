@@ -40,6 +40,8 @@ def test_base_existente_se_conserva(tmp_path):
     migrar(eng)
     migrar(eng)  # repetir no hace nada
     with eng.connect() as c:
-        assert c.execute(text("select nombre from sociedades")).scalars().all() == ["INVERSIETE SA"]
+        # la migración 0010 completa la razón social oficial, el CIF y el domicilio fiscal
+        assert c.execute(text("select nombre, cif, direccion, cp from sociedades")).all() == [
+            ("INVERSIETE S.A.", "A78072915", "C/ Campezo 8", "28022")]
         assert c.execute(text("select count(*) from alembic_version")).scalar() == 1
     assert _diferencias(eng) == []
