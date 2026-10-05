@@ -20,3 +20,5 @@ reportlab>=4.2
 openpyxl>=3.1
 # zona horaria de Madrid para los avisos
 tzdata>=2024.1
+# Peticiones IA (asistente de dirección y recepción)
+anthropic>=1.11,<2

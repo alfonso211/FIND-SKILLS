@@ -38,6 +38,10 @@ class Settings:
     avisos_hora: str = os.environ.get("PMS_AVISOS_HORA") or "07:30"  # hora del resumen diario
     avisos_auto: bool = (os.environ.get("PMS_AVISOS_AUTO") or "1") != "0"
     url: str = (os.environ.get("PMS_URL") or "").rstrip("/")  # enlace en los correos (https://pms.inversiete.es)
+    # Peticiones IA (asistente de dirección y recepción). Sin clave, la opción aparece desactivada.
+    ia_api_key: str | None = os.environ.get("PMS_ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY") or None
+    ia_modelo: str = os.environ.get("PMS_IA_MODELO") or "claude-opus-5-5"
+    ia_esfuerzo: str = os.environ.get("PMS_IA_ESFUERZO") or "medium"  # low | medium | high
 
 
 settings = Settings()

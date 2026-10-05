@@ -233,6 +233,24 @@ Cada usuario elige qué avisos recibe en *Mi perfil*.
   configuración del apartado 8 ter; el de WhatsApp abre WhatsApp en la tablet con el mensaje y el enlace preparados
   (caduca a los 7 días).
 
+## 8 quinquies. Peticiones IA
+
+El botón **✦ Peticiones IA** (arriba a la derecha) abre el asistente del PMS para dirección y recepción
+(permiso *Peticiones IA* en *Usuarios → Roles*). Puede preparar informes especiales y tablas Excel con los datos que
+el usuario ya puede ver, leer un documento escaneado (factura, carta…) y archivarlo en *Documentos recibidos* con su
+gasto. Nunca ve activos ni datos a los que el usuario no tenga acceso.
+
+1. Cree una cuenta de empresa en https://console.anthropic.com, añada un método de pago y fije un límite de gasto
+   mensual (*Settings → Limits*). Es una facturación por uso, independiente de las suscripciones a la web.
+2. *API Keys → Create Key* (nombre: «PMS»). Copie la clave (empieza por `sk-ant-`); solo se muestra una vez.
+3. En el servidor: `nano /opt/pms/deploy/.env`, añada `PMS_ANTHROPIC_API_KEY=sk-ant-...` y aplique con
+   `cd /opt/pms/deploy && docker compose up -d`.
+
+**Protección de datos:** los datos que el asistente consulta para responder (reservas, clientes, gastos…) y los
+documentos que se adjuntan se envían a la API de Anthropic para procesarlos. Con las condiciones comerciales de la
+API no se usan para entrenar modelos; incorpore a Anthropic como encargado del tratamiento (DPA disponible en su web)
+en el registro de actividades.
+
 ## 9. Actualizaciones del PMS
 
 ```bash

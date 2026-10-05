@@ -39,6 +39,7 @@
         <h2 id="viewTitle"></h2>
         <div class="topbar-right">
           <select id="assetFilter" title="Filtrar por activo"></select>
+          <button id="iaBtn" class="btn ia-btn hidden" title="Peticiones IA: informes, documentos y tablas Excel">✦ Peticiones IA</button>
           <div class="usuario"><span id="userAvatar" class="avatar"></span><span id="userName" class="user"></span></div>
           <button id="logoutBtn" class="btn ghost">Salir</button>
         </div>
@@ -48,6 +49,7 @@
   </div>
 
   <dialog id="modal"><form method="dialog" id="modalForm"></form></dialog>
+  <dialog id="iaPanel" class="ia-panel"></dialog>
   <div id="toast" class="toast"></div>
   <script src="/static/app.js"></script>
 </body>

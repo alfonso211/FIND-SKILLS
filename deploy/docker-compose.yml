@@ -44,6 +44,10 @@ services:
       PMS_SMTP_FROM: ${PMS_SMTP_FROM:-}
       PMS_SMTP_SEGURIDAD: ${PMS_SMTP_SEGURIDAD:-starttls}
       PMS_AVISOS_HORA: ${PMS_AVISOS_HORA:-07:30}
+      # Peticiones IA (dirección y recepción). Vacío = botón desactivado
+      PMS_ANTHROPIC_API_KEY: ${PMS_ANTHROPIC_API_KEY:-}
+      PMS_IA_MODELO: ${PMS_IA_MODELO:-}
+      PMS_IA_ESFUERZO: ${PMS_IA_ESFUERZO:-}
       TZ: Europe/Madrid
     volumes:
       - documentos:/data/documentos

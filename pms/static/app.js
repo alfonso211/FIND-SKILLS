@@ -2007,6 +2007,76 @@ V.gastos = async (el) => {
   load();
 };
 
+// ---- Peticiones IA (dirección y recepción): informes, lectura y archivo de documentos, tablas Excel
+S.ia = { historial: [], vista: [], adjuntos: [] };
+function mdBasico(t) {  // negritas, listas y tablas sencillas de la respuesta
+  const lineas = esc(t).split("\n"); let html = "", tabla = [];
+  const cierraTabla = () => { if (tabla.length) { html += `<table>${tabla.filter((f) => !/^\s*\|?\s*:?-{2,}/.test(f)).map((f, i) => `<tr>${f.replace(/^\s*\||\|\s*$/g, "").split("|").map((c) => (i ? `<td>${c.trim()}</td>` : `<th>${c.trim()}</th>`)).join("")}</tr>`).join("")}</table>`; tabla = []; } };
+  for (const l of lineas) {
+    if (/^\s*\|.*\|\s*$/.test(l)) { tabla.push(l); continue; }
+    cierraTabla();
+    html += (/^\s*[-*] /.test(l) ? `• ${l.replace(/^\s*[-*] /, "")}` : l) + "<br>";
+  }
+  cierraTabla();
+  return html.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(^|[^*\w])\*([^*\n]+?)\*(?!\*)/g, "$1<i>$2</i>").replace(/^#+ ?/gm, "");
+}
+function pintaIA() {
+  const p = $("#iaPanel"), m = $("[data-msgs]", p);
+  m.innerHTML = S.ia.vista.length ? S.ia.vista.map((x) => `<div class="ia-msg ${x.yo ? "yo" : "as"}">${x.yo ? esc(x.texto).replace(/\n/g, "<br>") : mdBasico(x.texto)}
+    ${(x.adjuntos || []).map((a) => `<div class="muted peq">📎 ${esc(a)}</div>`).join("")}
+    ${(x.ficheros || []).map((f, i) => `<div class="ia-fich"><a href="#" data-f="${esc(f.url)}" data-n="${esc(f.nombre)}">⬇ ${esc(f.nombre)}</a></div>`).join("")}
+    ${(x.acciones || []).map((a) => `<div class="ia-acc">✔ ${esc(a.texto)}</div>`).join("")}</div>`).join("")
+    : `<div class="ia-msg as">Hola, ${esc(S.me.nombre.split(" ")[0])}. Puedo preparar informes con los datos del programa, leer un documento escaneado y archivarlo donde corresponda (carpeta y cuenta de gastos) o hacer una tabla Excel.
+      <div class="ia-ejemplos" style="margin-top:10px">${["Informe de ocupación de esta semana por activo", "Excel de las estancias vencidas con teléfono del cliente", "Resumen de gastos del mes por categoría", "Lee la factura adjunta y archívala"].map((e) => `<button type="button" class="btn sm" data-ej="${esc(e)}">${esc(e)}</button>`).join("")}</div></div>`;
+  m.querySelectorAll("[data-f]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); run(() => download("GET", a.dataset.f)); }));
+  m.querySelectorAll("[data-ej]").forEach((b) => (b.onclick = () => { $("[data-texto]", p).value = b.dataset.ej; $("[data-texto]", p).focus(); }));
+  $("[data-adj]", p).textContent = S.ia.adjuntos.length ? `📎 ${S.ia.adjuntos.map((a) => a.nombre).join(", ")}` : "";
+  m.scrollTop = m.scrollHeight;
+}
+async function abrirIA() {
+  const st = await get("/api/ia/estado").catch(() => ({}));
+  const p = $("#iaPanel");
+  p.innerHTML = `<div class="ia-cab"><b>✦ Peticiones IA</b><span class="muted" style="color:#bbb">Asistente de INVERPMS</span><span class="spacer"></span>
+      <button type="button" class="btn sm ghost" data-nueva>Nueva conversación</button><button type="button" class="btn sm ghost" data-cerrar>✕</button></div>
+    <div class="ia-msgs" data-msgs></div>
+    <div class="ia-pie">${st.configurado ? "" : '<p class="error">Las Peticiones IA están pendientes de activar en el servidor (falta la clave del servicio de IA).</p>'}
+      <textarea data-texto placeholder="Escriba su petición: un informe, una tabla en Excel, o adjunte un documento para leerlo y archivarlo…"></textarea>
+      <div class="toolbar"><label class="btn">📎 Adjuntar documento<input type="file" accept="image/*,application/pdf" data-fich hidden multiple></label>
+        <span class="muted" data-adj></span><span class="spacer"></span><button type="button" class="btn primary" data-enviar ${st.configurado ? "" : "disabled"}>Enviar</button></div>
+      <p class="muted peq" style="margin:6px 0 0">Las respuestas se basan en los datos a los que usted tiene acceso. Revise la información antes de usarla.</p></div>`;
+  $("[data-cerrar]", p).onclick = () => p.close();
+  $("[data-nueva]", p).onclick = () => { S.ia = { historial: [], vista: [], adjuntos: [] }; pintaIA(); };
+  $("[data-fich]", p).onchange = async (e) => {
+    for (const fi of e.target.files) {
+      const fd = new FormData(); fd.append("fichero", fi);
+      try { S.ia.adjuntos.push(await upload("/api/ia/adjuntos", fd)); } catch (err) { toast(err.message, true); }
+    }
+    e.target.value = ""; pintaIA();
+  };
+  const enviar = async () => {
+    const t = $("[data-texto]", p).value.trim();
+    if (!t && !S.ia.adjuntos.length) return;
+    const adj = S.ia.adjuntos; S.ia.adjuntos = [];
+    S.ia.vista.push({ yo: true, texto: t || "(documento adjunto)", adjuntos: adj.map((a) => a.nombre) });
+    S.ia.vista.push({ texto: "Pensando… (puede tardar unos segundos)" });
+    $("[data-texto]", p).value = ""; $("[data-enviar]", p).disabled = true; pintaIA();
+    try {
+      const r = await post("/api/ia/peticion", { texto: t, historial: S.ia.historial, adjuntos: adj.map((a) => a.ref) });
+      S.ia.historial = r.historial;
+      S.ia.vista[S.ia.vista.length - 1] = { texto: r.respuesta, ficheros: r.ficheros, acciones: r.acciones };
+    } catch (err) {
+      S.ia.vista[S.ia.vista.length - 1] = { texto: `No se ha podido completar: ${err.message}` };
+      S.ia.adjuntos = adj;
+    }
+    $("[data-enviar]", p).disabled = false; pintaIA();
+  };
+  $("[data-enviar]", p).onclick = enviar;
+  $("[data-texto]", p).onkeydown = (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) enviar(); };
+  pintaIA();
+  if (!p.open) p.showModal();
+  $("[data-texto]", p).focus();
+}
+
 // ---- administración
 V.usuarios = async (el) => {
   const [users, roles] = await Promise.all([get("/api/admin/usuarios"), get("/api/admin/roles")]);
@@ -2189,6 +2259,7 @@ async function start() {
   go(location.hash.slice(1) || "panel");
 }
 function pintarUsuario() {
+  $("#iaBtn").classList.toggle("hidden", !can("ia.usar"));
   $("#userAvatar").textContent = iniciales(S.me.nombre); $("#userAvatar").title = S.me.nombre;
   $("#userName").innerHTML = `${esc(S.me.nombre)}<small>${esc(rolDe(S.me))}</small>`;
 }
@@ -2202,6 +2273,7 @@ $("#loginForm").onsubmit = async (e) => {
   catch (err) { $("#loginError").textContent = err.message; }
 };
 $("#logoutBtn").onclick = logout;
+$("#iaBtn").onclick = () => abrirIA();
 $("#menuBtn").onclick = () => $(".sidebar").classList.toggle("open");
 $("#assetFilter").onchange = (e) => { setAsset(e.target.value); go(location.hash.slice(1)); };
 window.onhashchange = () => S.me && go(location.hash.slice(1));

@@ -375,3 +375,23 @@ body.sin-scroll { overflow: hidden; }
 .busca-cliente input { width: 100%; }
 .cli-res { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .cli-ok { margin: 4px 0 0; color: #1f7a3d; }
+
+/* ---- Peticiones IA */
+.ia-btn { background: linear-gradient(135deg, #1a1a1c, #3a3226); color: #e9cf95; border-color: #c9a45a; font-weight: 600; }
+.ia-btn:hover { filter: brightness(1.15); }
+.ia-panel { width: min(760px, 96vw); height: min(86vh, 900px); padding: 0; border: 1px solid var(--line); border-radius: 14px; }
+.ia-panel[open] { display: flex; flex-direction: column; }
+.ia-cab { display: flex; align-items: center; gap: 10px; padding: 14px 18px; background: #0e0e10; color: #fff; border-bottom: 3px solid #c9a45a; }
+.ia-cab b { color: #e9cf95; letter-spacing: .04em; } .ia-cab .spacer { flex: 1; }
+.ia-cab .btn { color: #fff; }
+.ia-msgs { flex: 1; overflow-y: auto; padding: 16px 18px; background: var(--bg); display: flex; flex-direction: column; gap: 12px; }
+.ia-msg { max-width: 88%; padding: 10px 14px; border-radius: 12px; line-height: 1.45; font-size: 14px; }
+.ia-msg.yo { align-self: flex-end; background: #1a1a1c; color: #fff; }
+.ia-msg.as { align-self: flex-start; background: #fff; border: 1px solid var(--line); }
+.ia-msg table { border-collapse: collapse; margin: 6px 0; font-size: 13px; } .ia-msg td, .ia-msg th { border: 1px solid var(--line); padding: 3px 7px; }
+.ia-msg .ia-fich a, .ia-msg .ia-acc { display: inline-block; margin-top: 6px; }
+.ia-msg .ia-acc { color: #1f7a3c; font-weight: 600; }
+.ia-pie { padding: 12px 18px; border-top: 1px solid var(--line); background: #fff; }
+.ia-pie textarea { width: 100%; min-height: 64px; resize: vertical; }
+.ia-pie .toolbar { margin: 8px 0 0; }
+.ia-ejemplos { display: flex; flex-wrap: wrap; gap: 6px; }
