@@ -200,6 +200,17 @@ Para añadir activos nuevos: *Activos → Nuevo activo* (se eligen la gestora, l
   una página de evidencias (fecha, dispositivo, IP, huellas SHA-256), se guarda cifrado y se envía por correo (PDF
   adjunto) o WhatsApp (enlace de descarga de 7 días). Sin copias en papel (`app/firma_contrato.py`).
 
+### Alquiler mensual de plazas de garaje (clientes externos)
+
+En Suite Florida y Suite Aeropuerto, las plazas de garaje se pueden alquilar por meses a clientes que no se alojan
+en el edificio (*Alquiler de garajes*, o desde la ficha de la plaza en el plano). El cliente se da de alta como
+*cliente de garaje*, no como huésped: no lleva parte de viajeros ni contrato de alojamiento.
+- Contrato con renta mensual sin IVA (se factura al 21 %), día de pago, fianza, matrícula, vehículo y mandos.
+- Cada mes se emite solo el recibo (prorrateado el primer y el último mes), con vencimiento el día de pago.
+- Al cobrar se emite la factura con la serie del activo. Los recibos vencidos se marcan en rojo y llegan en el
+  resumen diario por correo a la recepción del activo, junto con las bajas de los próximos 30 días.
+- Mientras dura el alquiler la plaza figura como alquilada en el plano y no admite reservas.
+
 ## Control de accesos
 
 Cada usuario recibe uno o varios **roles**, y cada rol se asigna con un **ámbito**:

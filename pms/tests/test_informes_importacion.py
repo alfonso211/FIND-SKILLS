@@ -199,8 +199,12 @@ def test_resumen_diario(client, admin, ids):
     assert alfonso["asunto"].startswith(f"PMS · Resumen del {hoy:%d/%m/%Y}:")
     assert "Inspección periódica ascensores (OCA)" in alfonso["texto"] and "en 10 días" in alfonso["texto"]
     assert "Vence Pronto" in alfonso["texto"] and "45 días" in alfonso["texto"]
-    # la recepción no recibe resumen (no ve alquileres ni gestiona el preventivo)
-    assert not any(m["para"] == "jaime@apartamentossuitesaeropuerto.es" for m in avisos.BANDEJA)
+    # la recepción no recibe los alquileres de viviendas ni el preventivo; solo, si los hay, los recibos de las
+    # plazas de garaje alquiladas a clientes externos de su activo
+    for m in avisos.BANDEJA:
+        if m["para"] == "jaime@apartamentossuitesaeropuerto.es":
+            assert "Plazas de garaje" in m["html"] and "Recibos vencidos sin cobrar (" not in m["html"]
+            assert "Revisiones preventivas" not in m["html"]
     # el automático no repite a quien ya lo recibió hoy
     from app.database import SessionLocal
     with SessionLocal() as db:

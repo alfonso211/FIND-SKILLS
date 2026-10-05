@@ -250,7 +250,7 @@ function gridPlano(pl, planta, mini = false) {
   const celdas = planta.celdas.map((c) => {
     const pos = `grid-row:${c.f};grid-column:${c.c}`;
     if (c.t === "u") {
-      const tip = `${c.codigo} · ${c.tipologia || ""} · ${ESTADO_TXT[c.estado]}${c.reserva ? ` · ${c.reserva.huesped} ${fdate(c.reserva.entrada)} → ${fdate(c.reserva.salida)}` : ""}${c.ot ? ` · ${c.ot} incidencia(s) abierta(s)` : ""}${c.limpieza ? " · pendiente de limpieza" : ""}`;
+      const tip = `${c.codigo} · ${c.tipologia || ""} · ${ESTADO_TXT[c.estado]}${c.reserva ? ` · ${c.reserva.huesped} ${fdate(c.reserva.entrada)} → ${fdate(c.reserva.salida)}` : ""}${c.alquiler ? ` · alquiler mensual: ${c.alquiler.cliente}${c.alquiler.matricula ? " (" + c.alquiler.matricula + ")" : ""}` : ""}${c.ot ? ` · ${c.ot} incidencia(s) abierta(s)` : ""}${c.limpieza ? " · pendiente de limpieza" : ""}`;
       return `<div class="pc u pc-${c.estado}" style="${pos}" data-u="${c.unit_id}" title="${esc(tip)}">${mini ? "" : `<b>${esc(c.num)}</b><small>${esc(c.tipo)}</small>${c.ot ? `<span class="m${c.urgente ? " urg" : ""}">M</span>` : ""}${c.limpieza ? '<span class="lim" title="Pendiente de limpieza">L</span>' : ""}`}</div>`;
     }
     if (c.t === "zc") return `<div class="pc zc pc-zc" style="${pos}" data-z="${esc(c.zona)}" title="${esc(c.nombre)}${c.ot ? ` · ${c.ot} incidencia(s) abierta(s)` : ""}">${mini ? "" : `<b>ZC</b>${c.ot ? `<span class="m${c.urgente ? " urg" : ""}">${c.ot}</span>` : ""}`}</div>`;
@@ -316,6 +316,9 @@ async function fichaApartamento(uid, recarga) {
   clientes.forEach((c) => items.push({ tipo: "cliente", fecha: c.entrada, texto: [c.huesped, c.documento, c.telefono, c.email, c.nacionalidad].join(" "),
     html: `<b>${esc(c.huesped)}</b> · ${c.estancias} estancia(s)<br><span class="muted">${esc([c.documento, c.nacionalidad, c.telefono, c.email].filter(Boolean).join(" · "))}</span>`,
     acc: can("reservas.editar") ? [["Ficha", () => editGuest(c.guest_id)]] : [] }));
+  (d.alquileres || []).forEach((a) => items.push({ tipo: "alquiler", fecha: a.desde, texto: [a.cliente, a.telefono, a.matricula, a.estado].join(" "),
+    html: `<b>Alquiler mensual · ${esc(a.cliente)}</b> · desde ${fdate(a.desde)}${a.hasta ? " hasta " + fdate(a.hasta) : " (indefinido)"} · ${badge(a.estado)}<br><span class="muted">${eur(a.renta_mensual)}/mes + IVA${a.matricula ? " · " + esc(a.matricula) : ""}${a.telefono ? " · " + esc(a.telefono) : ""}</span>`,
+    acc: [["Ver", () => { $("#modal").close(); location.hash = "garajes"; }]] }));
   (d.incidencias || []).forEach((w) => items.push({ tipo: "incidencia", fecha: w.fecha_apertura, texto: [w.titulo, w.descripcion, w.categoria, w.estado, w.solucion, w.proveedor, w.abierta_por, "OT-" + w.id].join(" "),
     html: `<b>OT-${String(w.id).padStart(5, "0")} · ${esc(w.titulo)}</b> · ${badge(w.prioridad)} ${badge(w.estado)}<br><span class="muted">${fdate(w.fecha_apertura)} · ${esc(w.categoria)}${w.abierta_por ? " · aviso de " + esc(w.abierta_por) : ""}${w.solucion ? " · " + esc(w.solucion) : ""}</span>`,
     acc: [["📎", () => adjuntosOT(w)], ["Parte PDF", () => run(() => download("GET", `/api/mantenimiento/ordenes/${w.id}/parte`))]] }));
@@ -324,11 +327,13 @@ async function fichaApartamento(uid, recarga) {
   (d.facturas || []).forEach((x) => items.push({ tipo: "factura", fecha: x.fecha, texto: [x.codigo, x.cliente].join(" "),
     html: `<b>Factura ${esc(x.codigo)}</b> · ${esc(x.cliente)} · ${eur(x.total)}${x.tipo === "rectificativa" ? " · rectificativa" : ""}`, acc: [["PDF", () => descargarFactura(x.id)]] }));
   items.sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
-  const TIPOS = [["", "Todo"], ["reserva", "Reservas"], ["cliente", "Clientes"], ["incidencia", "Incidencias"], ["bloqueo", "Bloqueos"], ["factura", "Facturas"]].filter(([t]) => !t || items.some((i) => i.tipo === t));
+  const TIPOS = [["", "Todo"], ["alquiler", "Alquileres"], ["reserva", "Reservas"], ["cliente", "Clientes"], ["incidencia", "Incidencias"], ["bloqueo", "Bloqueos"], ["factura", "Facturas"]].filter(([t]) => !t || items.some((i) => i.tipo === t));
   const bloqueoVigente = (d.bloqueos || []).find((b) => !b.levantado);
-  const actual = d.actual ? `<p><b>${d.estado === "alquilado" ? "Alojado" : "Llega"}:</b> ${esc(d.actual.huesped)} · ${fdate(d.actual.entrada)} → ${fdate(d.actual.salida)}</p>` : "";
+  const actual = d.alquiler ? `<p><b>Alquilada por meses a:</b> ${esc(d.alquiler.cliente)} · desde ${fdate(d.alquiler.desde)}${d.alquiler.hasta ? " hasta " + fdate(d.alquiler.hasta) : ""}${d.alquiler.matricula ? " · " + esc(d.alquiler.matricula) : ""}</p>`
+    : d.actual ? `<p><b>${d.estado === "alquilado" ? "Alojado" : "Llega"}:</b> ${esc(d.actual.huesped)} · ${fdate(d.actual.entrada)} → ${fdate(d.actual.salida)}</p>` : "";
   const acciones = [
-    d.puede.reservar && ["reserva", "Reserva", garaje ? "Alquilar esta plaza (se factura al 21 %)" : "Nueva reserva en este apartamento"],
+    d.puede.reservar && ["reserva", "Reserva", garaje ? "Por días o semanas (huésped o cliente)" : "Nueva reserva en este apartamento"],
+    d.puede.alquilar && !d.alquiler && ["alquiler", "Alquiler mensual", "Cliente externo: recibo cada mes y factura al 21 %"],
     d.puede.bloquear && (d.estado === "bloqueado" ? ["desbloquear", "Bloqueado", bloqueoVigente ? `Motivo: ${bloqueoVigente.motivo}. Pulse para desbloquear` : "Pulse para desbloquear"] : ["bloqueo", "Bloqueado", "Sacarlo de venta indicando el motivo"]),
     d.puede.incidencia && ["incidencia", "Incidencia", "Abrir una incidencia (avería) con fotos"],
   ].filter(Boolean);
@@ -355,6 +360,7 @@ async function fichaApartamento(uid, recarga) {
   f.querySelectorAll("[data-acc]").forEach((b) => (b.onclick = () => {
     const acc = b.dataset.acc;
     if (acc === "reserva") newReservation(recarga, fija);
+    if (acc === "alquiler") alquilarGaraje(recarga, fija);
     if (acc === "incidencia") newWorkOrder(u.asset_id, u.id).then(recarga);
     if (acc === "bloqueo") form(`Bloquear apartamento ${u.codigo}`, [
       { html: '<p class="muted">El apartamento queda fuera de venta (no admite reservas) hasta que se desbloquee. Queda registrado quién lo bloquea y por qué.</p>' },
@@ -656,7 +662,7 @@ const guestFields = [
 async function editGuest(id, tipo = "huesped", onSaved) {
   const c = (await get("/api/terceros", { tipo })).find((x) => x.id === id);
   if (!c) return toast("Tercero no encontrado", true);
-  const f = form(`${tipo === "huesped" ? "Huésped" : "Inquilino"}: ${c.nombre}`, [{ html: scanHtml() }, ...guestFields, { k: "iban", t: "IBAN" }, { k: "notas", t: "Notas", type: "textarea", wide: true }], c,
+  const f = form(`${{ huesped: "Huésped", cliente_garaje: "Cliente de garaje" }[tipo] || "Inquilino"}: ${c.nombre}`, [{ html: scanHtml() }, ...guestFields, { k: "iban", t: "IBAN" }, { k: "notas", t: "Notas", type: "textarea", wide: true }], c,
     async (d) => { await put(`/api/terceros/${id}`, { ...d, company_id: c.company_id, tipo: c.tipo }); toast("Datos guardados"); onSaved && onSaved(); });
   bindScan(f, id, (lec) => rellenaFicha(f, lec));
 }
@@ -955,6 +961,98 @@ function reenviarContrato(r, cid, datos) {
     if (res.whatsapp) window.open(res.whatsapp, "_blank", "noopener");
     toast(res.enviado ? "Contrato enviado por correo" : "Se abre WhatsApp con el enlace del contrato");
   }, "Enviar");
+}
+
+
+// ---- alquiler mensual de plazas de garaje a clientes externos (no son huéspedes ni ocupantes del edificio)
+const clienteGarajeFields = [
+  { k: "nombre", t: "Nombre o razón social", req: true }, { k: "apellidos", t: "Apellidos" },
+  { k: "documento_tipo", t: "Tipo doc.", type: "select", options: list(["DNI", "NIE", "PAS", "CIF", "OTRO"]) },
+  { k: "documento_num", t: "DNI / NIE / CIF" }, { k: "telefono", t: "Teléfono", req: true }, { k: "email", t: "Correo electrónico", type: "email" },
+  { k: "direccion", t: "Domicilio (para la factura)", wide: true }, { k: "cp", t: "Código postal" }, { k: "municipio", t: "Municipio" }, { k: "pais", t: "País", def: "España" },
+];
+async function alquilarGaraje(reload, fija) {
+  const aid = fija ? fija.asset_id : await pickAsset("apartamentos_turisticos");
+  const inicio = today();
+  const libres = fija ? null : await get("/api/turistico/disponibilidad", { asset_id: aid, desde: inicio, hasta: addDays(inicio, 1), uso: "garaje" });
+  const f = conEscaner(form(fija ? `Alquiler mensual · plaza ${fija.codigo}` : `Alquiler mensual de plaza de garaje · ${assetName(aid)}`, [
+    { html: '<p class="muted">Cliente externo: no es huésped ni ocupante del edificio. Cada mes se emite su recibo (renta + 21 % de IVA) con vencimiento el día de pago; si no se cobra, el PMS avisa. Al cobrar se emite la factura.</p>' },
+    ...(fija ? [] : [{ k: "unit_id", t: "Plaza libre hoy", type: "select", req: true, options: libres.unidades.map((u) => [u.id, `${u.codigo} · ${u.bloque || ""}`]) }]),
+    { html: scanHtml("Documento del cliente (opcional: rellena los datos)") },
+    { html: "<h4>Cliente</h4>" }, ...clienteGarajeFields,
+    { html: "<h4>Alquiler</h4>" },
+    { k: "fecha_inicio", t: "Fecha de inicio", type: "date", req: true, def: inicio }, { k: "fecha_fin", t: "Fecha de fin (vacío: indefinido, mes a mes)", type: "date" },
+    { k: "renta_mensual", t: "Renta mensual € SIN IVA", type: "number", req: true }, { k: "dia_pago", t: "Día de pago (1–28)", type: "number", step: 1, def: 5, req: true },
+    { k: "fianza", t: "Fianza €", type: "number" }, { k: "referencia", t: "Referencia del contrato" },
+    { k: "matricula", t: "Matrícula" }, { k: "vehiculo", t: "Vehículo (marca, modelo, color)" }, { k: "mandos", t: "Mandos / tarjetas entregados", wide: true },
+    { k: "notas", t: "Notas", type: "textarea", wide: true },
+    { html: '<p class="muted" data-iva></p>' },
+  ], {}, async (d, fr) => {
+    const cliente = {}; clienteGarajeFields.forEach((x) => { cliente[x.k] = d[x.k]; delete d[x.k]; });
+    const c = await post("/api/garajes/contratos", clean({ ...d, unit_id: fija ? fija.id : Number(d.unit_id), cliente: clean(cliente), documentos: fr._docs.map((x) => x.id) }));
+    toast(`Plaza ${c.unidad} alquilada a ${c.cliente}`);
+    reload && reload();
+    if (c.proximo_recibo && confirm(`¿Cobrar ahora el primer recibo (${eur(c.proximo_recibo.pendiente)})?`))
+      setTimeout(() => cobroForm(`Cobro plaza ${c.unidad} · ${c.cliente} · ${c.proximo_recibo.periodo}`, c.proximo_recibo.pendiente, `/api/garajes/recibos/${c.proximo_recibo.id}/cobro`, reload), 0);
+  }, "Alquilar plaza"));
+  const iva = () => { const v = Number(f.elements.renta_mensual.value || 0); $("[data-iva]", f).textContent = v ? `Recibo mensual: ${eur(v)} + 21 % IVA = ${eur(Math.round(v * 121) / 100)}` : ""; };
+  f.elements.renta_mensual.oninput = iva;
+  f._sinCamara = true;
+}
+V.garajes = async (el) => {
+  const aid = await pickAsset("apartamentos_turisticos");
+  el.innerHTML = `<div class="toolbar"><strong>${esc(assetName(aid))}</strong><span class="tabs" id="tabs"><button class="btn primary" data-v="c">Alquileres</button><button class="btn" data-v="r">Recibos</button></span>
+    <label>Buscar<input id="q" placeholder="Plaza, cliente, matrícula"></label><label>Estado<select id="e"><option value="vigente">Vigentes</option><option value="">Todos</option><option value="finalizado">Finalizados</option></select></label>
+    <span class="spacer"></span>${can("reservas.editar") ? '<button class="btn primary" id="new">Nuevo alquiler</button>' : ""}</div>
+    <div class="kpis kpis-garaje" id="k"></div><div id="t"></div>`;
+  let vista = "c";
+  const load = async () => {
+    const [cs, rs] = await Promise.all([get("/api/garajes/contratos", { asset_id: aid, estado: $("#e", el).value, q: $("#q", el).value }), get("/api/garajes/recibos", { asset_id: aid })]);
+    const vig = cs.filter((c) => c.estado === "vigente"), venc = rs.filter((r) => r.vencido);
+    $("#k", el).innerHTML = `<div class="kpi"><b>${vig.length}</b><span>Plazas alquiladas por meses</span></div>
+      <div class="kpi"><b>${eur(vig.reduce((s, c) => s + c.renta_mensual, 0))}</b><span>Renta mensual sin IVA</span></div>
+      <div class="kpi ${venc.length ? "mal" : ""}"><b>${venc.length}</b><span>Recibos vencidos sin cobrar</span></div>
+      <div class="kpi ${venc.length ? "mal" : ""}"><b>${eur(venc.reduce((s, r) => s + r.pendiente, 0))}</b><span>Deuda vencida</span></div>`;
+    const cobrar = (r, c) => cobroForm(`Cobro plaza ${r.unidad} · ${r.cliente} · ${r.periodo}`, r.pendiente, `/api/garajes/recibos/${r.id}/cobro`, load);
+    if (vista === "c") table($("#t", el), [
+      { k: "unidad", t: "Plaza", f: (v, c) => `<b>${esc(v)}</b><div class="muted peq">${esc(c.bloque || "")}</div>` },
+      { k: "matricula", t: "Vehículo", f: (v, c) => `${esc(v || "")}<div class="muted peq">${esc(c.vehiculo || "")}</div>` },
+      { k: "cliente", t: "Cliente", f: (v, c) => `<span class="persona">${avatar(v, "sm")}<span>${esc(v)}<div class="muted peq">${esc(c.telefono || c.email || "")}</div></span></span>` },
+      { k: "fecha_inicio", t: "Periodo", f: (v, c) => `${fdate(v)}<div class="muted peq">${c.fecha_fin ? "hasta " + fdate(c.fecha_fin) : "indefinido"}</div>` },
+      { k: "renta_con_iva", t: "Recibo/mes", num: true, f: (v, c) => `${eur(v)}<div class="muted peq">día ${c.dia_pago}</div>` },
+      { k: "al_corriente", t: "Pagos", f: (v, c) => (c.estado !== "vigente" ? badge(c.estado) : (v ? '<span class="badge b-vigente">al corriente</span>' : `<span class="badge b-cancelada">${c.recibos_vencidos} vencido(s) · ${eur(c.deuda_vencida)}</span>`)
+        + (c.proximo_recibo ? `<div class="muted peq">próximo: ${esc(c.proximo_recibo.periodo)} · vence ${fdate(c.proximo_recibo.fecha_vencimiento)}</div>` : "")) },
+    ], cs, (c) => can("reservas.editar") ? [
+      c.proximo_recibo && ["Cobrar", () => cobrar(c.proximo_recibo, c)],
+      ["Cliente", () => editGuest(c.cliente_id, "cliente_garaje", load)],
+      c.estado === "vigente" && ["Editar", () => editarAlquilerGaraje(c, load)],
+      c.estado === "vigente" && ["Baja", () => form(`Baja del alquiler · plaza ${c.unidad} · ${c.cliente}`, [
+        { html: '<p class="muted">Se anulan los recibos posteriores a la baja que no tengan cobros. Si hay deuda pendiente, sigue en «Recibos».</p>' },
+        { k: "fecha_fin", t: "Fecha de baja (último día)", type: "date", req: true, def: today() }, { k: "motivo", t: "Motivo", wide: true },
+      ], {}, async (x) => { await post(`/api/garajes/contratos/${c.id}/finalizar`, clean(x)); toast("Alquiler dado de baja"); load(); }, "Dar de baja"), "danger"],
+    ] : []);
+    else {
+      const q = normaliza($("#q", el).value);
+      const filas = rs.filter((r) => !q || normaliza(`${r.unidad} ${r.cliente}`).includes(q));
+      table($("#t", el), [
+        { k: "periodo", t: "Mes" }, { k: "unidad", t: "Plaza" }, { k: "cliente", t: "Cliente" },
+        { k: "fecha_vencimiento", t: "Vence", f: fdate }, { k: "importe", t: "Importe", num: true, f: eur }, { k: "pendiente", t: "Pendiente", num: true, f: eur },
+        { k: "estado", t: "Estado", f: (v, r) => (r.vencido ? '<span class="badge b-cancelada">vencido</span>' : badge(v)) },
+      ], filas, (r) => can("reservas.editar") && r.pendiente > 0.004 && r.estado !== "anulado" ? [["Cobrar", () => cobrar(r)]] : []);
+    }
+  };
+  const marcar = () => el.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("primary", b.dataset.v === vista));
+  el.querySelectorAll("#tabs button").forEach((b) => (b.onclick = () => { vista = b.dataset.v; marcar(); load(); }));
+  $("#e", el).onchange = load; $("#q", el).oninput = debounce(load);
+  if ($("#new", el)) $("#new", el).onclick = () => alquilarGaraje(load);
+  load();
+};
+function editarAlquilerGaraje(c, reload) {
+  form(`Alquiler plaza ${c.unidad} · ${c.cliente}`, [
+    { k: "renta_mensual", t: "Renta mensual € SIN IVA (desde el próximo recibo)", type: "number", req: true }, { k: "dia_pago", t: "Día de pago", type: "number", step: 1 },
+    { k: "fecha_fin", t: "Fecha de fin prevista", type: "date" }, { k: "fianza", t: "Fianza €", type: "number" }, { k: "referencia", t: "Referencia" },
+    { k: "matricula", t: "Matrícula" }, { k: "vehiculo", t: "Vehículo" }, { k: "mandos", t: "Mandos / tarjetas", wide: true }, { k: "notas", t: "Notas", type: "textarea", wide: true },
+  ], c, async (d) => { await put(`/api/garajes/contratos/${c.id}`, d); toast("Alquiler actualizado"); reload(); });
 }
 
 // ---- parte de viajeros: fichero para SES.HOSPEDAJE (plazo: 24 h desde la llegada)
@@ -1556,7 +1654,7 @@ V.perfil = async (el) => {
 // ------------------------------------------------------------------ navegación
 const MENU = [
   ["General", [["panel", "Panel de control", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
-  ["Apartamentos turísticos", [["plano", "Plano de apartamentos", "activos.ver"], ["hoy", "Llegadas / salidas", "reservas.ver"], ["reservas", "Reservas", "reservas.ver"], ["planning", "Planning", "reservas.ver"], ["huespedes", "Huéspedes", "reservas.ver"], ["ses", "Parte de viajeros (SES)", "reservas.ver"]]],
+  ["Apartamentos turísticos", [["plano", "Plano de apartamentos", "activos.ver"], ["hoy", "Llegadas / salidas", "reservas.ver"], ["reservas", "Reservas", "reservas.ver"], ["planning", "Planning", "reservas.ver"], ["huespedes", "Huéspedes", "reservas.ver"], ["ses", "Parte de viajeros (SES)", "reservas.ver"], ["garajes", "Alquiler de garajes", "reservas.ver"]]],
   ["Alquiler residencial", [["contratos", "Contratos", "alquiler.ver"], ["recibos", "Recibos y cobros", "alquiler.ver"], ["inquilinos", "Inquilinos", "alquiler.ver"]]],
   ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["servicios", "Servicios", "activos.ver"], ["informes", "Informes Excel", "informes"]]],
   ["Mantenimiento", [["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["proveedores", "Proveedores", "mantenimiento.ver"]]],

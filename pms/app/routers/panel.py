@@ -2,7 +2,7 @@
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -45,8 +45,13 @@ def panel(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
             k["ocupacion_hoy"] = round(100 * ocupadas / alojamientos, 1) if alojamientos else 0
             garajes = db.scalar(select(func.count()).select_from(Unit).where(Unit.asset_id == a.id, Unit.uso == "garaje"))
             if garajes:
-                k["garajes_ocupados"] = db.scalar(select(func.count()).select_from(Reservation).join(Unit).where(
-                    Unit.asset_id == a.id, Unit.uso == "garaje", *hoy_activas))
+                por_reserva = set(db.scalars(select(Reservation.unit_id).join(Unit).where(
+                    Unit.asset_id == a.id, Unit.uso == "garaje", *hoy_activas)))
+                por_meses = set(db.scalars(select(Lease.unit_id).join(Unit).where(  # clientes externos
+                    Unit.asset_id == a.id, Unit.uso == "garaje", Lease.estado == "vigente", Lease.fecha_inicio <= hoy,
+                    or_(Lease.fecha_fin.is_(None), Lease.fecha_fin >= hoy))))
+                k["garajes_ocupados"] = len(por_reserva | por_meses)
+                k["garajes_alquiler_mensual"] = len(por_meses)
                 k["garajes"] = garajes
             k["llegadas_hoy"] = db.scalar(base.where(Reservation.fecha_entrada == hoy,
                                                      Reservation.estado.in_(("confirmada", "checkin"))))

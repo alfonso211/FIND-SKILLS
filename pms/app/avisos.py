@@ -21,7 +21,7 @@ from sqlalchemy import select
 
 from .config import settings
 from .database import SessionLocal
-from .models import Asset, Charge, Contact, EmailLog, Lease, PreventivePlan, Unit, User, WorkOrder
+from .models import MODALIDADES_RESERVA, Asset, Charge, Contact, EmailLog, Lease, PreventivePlan, Unit, User, WorkOrder
 from .planos import zonas
 from .security import Scope
 
@@ -35,8 +35,13 @@ TIPOS = {
     "contratos_vencen": ("Contratos de alquiler que vencen en los próximos 90 días (resumen diario)", "alquiler.ver"),
     "revisiones_normativas": ("Revisiones preventivas y normativas en los próximos 30 días o vencidas "
                               "(resumen diario)", "mantenimiento.editar"),
+    "garajes_impagados": ("Plazas de garaje alquiladas a clientes externos: recibos vencidos sin cobrar "
+                          "(resumen diario)", "reservas.ver"),
+    "garajes_vencen": ("Plazas de garaje alquiladas a clientes externos: bajas en los próximos 30 días "
+                       "(resumen diario)", "reservas.ver"),
 }
-RESUMEN = ("recibos_impagados", "contratos_vencen", "revisiones_normativas")
+RESUMEN = ("recibos_impagados", "contratos_vencen", "garajes_impagados", "garajes_vencen", "revisiones_normativas")
+DIAS_GARAJES = 30
 DIAS_CONTRATOS, DIAS_REVISIONES = 90, 30
 
 BANDEJA: list[dict] = []  # correos «enviados» con PMS_SMTP_HOST=memoria (pruebas automáticas)
@@ -173,14 +178,16 @@ def ot_urgente(wid: int, autor_id: int | None) -> int:
 def _datos_resumen(db, dia: date) -> dict[str, list[tuple[int, list]]]:
     """Todas las incidencias del día, cada una con su activo (luego se filtran por usuario)."""
     nombres = dict(db.execute(select(Asset.id, Asset.nombre)).all())
-    recibos = []
+    turisticos = set(db.scalars(select(Asset.id).where(Asset.modalidad.in_(MODALIDADES_RESERVA))))
+    garaje_ext = lambda u: u.uso == "garaje" and u.asset_id in turisticos  # noqa: E731  cliente externo de garaje
+    recibos, garajes, garajes_fin = [], [], []
     for c, l, u, t in db.execute(
             select(Charge, Lease, Unit, Contact).join(Lease, Lease.id == Charge.lease_id)
             .join(Unit, Unit.id == Lease.unit_id).join(Contact, Contact.id == Lease.tenant_id)
             .where(Charge.estado.in_(("pendiente", "parcial")), Charge.fecha_vencimiento < dia)
             .order_by(Charge.fecha_vencimiento)):
         pendiente = float(c.importe) - float(c.importe_pagado)
-        recibos.append((u.asset_id, [nombres[u.asset_id], u.codigo, f"{t.nombre} {t.apellidos or ''}".strip(),
+        (garajes if garaje_ext(u) else recibos).append((u.asset_id, [nombres[u.asset_id], u.codigo, f"{t.nombre} {t.apellidos or ''}".strip(),
                                      c.periodo, c.fecha_vencimiento.strftime("%d/%m/%Y"),
                                      f"{(dia - c.fecha_vencimiento).days} días", f"{pendiente:,.2f} €"
                                      .replace(",", "X").replace(".", ",").replace("X", ".")]))
@@ -189,6 +196,12 @@ def _datos_resumen(db, dia: date) -> dict[str, list[tuple[int, list]]]:
             select(Lease, Unit, Contact).join(Unit, Unit.id == Lease.unit_id).join(Contact, Contact.id == Lease.tenant_id)
             .where(Lease.estado == "vigente", Lease.fecha_fin.is_not(None), Lease.fecha_fin >= dia,
                    Lease.fecha_fin <= dia + timedelta(days=DIAS_CONTRATOS)).order_by(Lease.fecha_fin)):
+        if garaje_ext(u):
+            if l.fecha_fin <= dia + timedelta(days=DIAS_GARAJES):
+                garajes_fin.append((u.asset_id, [nombres[u.asset_id], u.codigo, f"{t.nombre} {t.apellidos or ''}".strip(),
+                                                 t.telefono or "", l.fecha_fin.strftime("%d/%m/%Y"),
+                                                 f"{(l.fecha_fin - dia).days} días"]))
+            continue
         contratos.append((u.asset_id, [nombres[u.asset_id], u.codigo, f"{t.nombre} {t.apellidos or ''}".strip(),
                                        l.fecha_fin.strftime("%d/%m/%Y"), f"{(l.fecha_fin - dia).days} días"]))
     revisiones = []
@@ -198,7 +211,8 @@ def _datos_resumen(db, dia: date) -> dict[str, list[tuple[int, list]]]:
         revisiones.append((p.asset_id, [nombres[p.asset_id], p.titulo, p.normativa or "", p.proveedor or "",
                                         p.proxima_fecha.strftime("%d/%m/%Y"),
                                         f"VENCIDA hace {-dias} días" if dias < 0 else f"en {dias} días"]))
-    return {"recibos_impagados": recibos, "contratos_vencen": contratos, "revisiones_normativas": revisiones}
+    return {"recibos_impagados": recibos, "contratos_vencen": contratos, "garajes_impagados": garajes,
+            "garajes_vencen": garajes_fin, "revisiones_normativas": revisiones}
 
 
 SECCIONES = {
@@ -206,6 +220,11 @@ SECCIONES = {
                                                           "Retraso", "Pendiente"], "recibo(s) impagado(s)"),
     "contratos_vencen": ("Contratos que vencen", ["Activo", "Unidad", "Inquilino", "Fin de contrato", "Quedan"],
                          "contrato(s) por vencer"),
+    "garajes_impagados": ("Plazas de garaje: recibos vencidos sin cobrar", ["Activo", "Plaza", "Cliente", "Periodo",
+                                                                            "Vencimiento", "Retraso", "Pendiente"],
+                          "recibo(s) de garaje impagado(s)"),
+    "garajes_vencen": ("Plazas de garaje: bajas próximas", ["Activo", "Plaza", "Cliente", "Teléfono", "Fecha de baja",
+                                                           "Quedan"], "baja(s) de garaje"),
     "revisiones_normativas": ("Revisiones preventivas y normativas", ["Activo", "Revisión", "Normativa", "Mantenedor",
                                                                       "Fecha", "Plazo"], "revisión(es)"),
 }
@@ -214,6 +233,8 @@ SECCIONES = {
 def resumen_diario(db, dia: date | None = None, forzar: bool = False) -> dict:
     """Envía a cada usuario su resumen. Sin `forzar`, no repite a quien ya lo recibió ese día."""
     dia = dia or hoy()
+    from .recibos import garajes_al_dia
+    garajes_al_dia(db, hoy=dia)  # emite los recibos de garaje del mes aunque nadie haya entrado en el PMS
     datos = _datos_resumen(db, dia)
     destinatarios: dict[int, tuple[User, dict]] = {}
     for tipo in RESUMEN:
