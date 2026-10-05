@@ -46,9 +46,13 @@ def _nombre(c: Contact | None) -> str:
 def estados(db: Session, units: list[Unit], dia: date) -> dict[int, dict]:
     """Estado de cada unidad para un día, con el huésped o la reserva que lo explica."""
     ids = [u.id for u in units]
+    hoy = date.today()
+    en_curso = Reservation.fecha_salida > dia
+    if dia >= hoy:  # alojados cuya salida ya pasó y siguen dentro (estancia vencida): siguen ocupando
+        en_curso = or_(en_curso, Reservation.estado == "checkin")
     res = db.execute(select(Reservation, Contact).join(Contact, Contact.id == Reservation.guest_id).where(
         Reservation.unit_id.in_(ids or [-1]), Reservation.estado.in_(("confirmada", "checkin")),
-        Reservation.fecha_entrada <= dia, Reservation.fecha_salida > dia)).all()
+        Reservation.fecha_entrada <= dia, en_curso).order_by(Reservation.fecha_entrada)).all()
     por_unidad = {r.unit_id: (r, g) for r, g in res}
     # libres ese día pero con una reserva confirmada más adelante: la próxima llegada (cambio de color inmediato)
     futuras = db.execute(select(Reservation, Contact).join(Contact, Contact.id == Reservation.guest_id).where(
@@ -62,7 +66,6 @@ def estados(db: Session, units: list[Unit], dia: date) -> dict[int, dict]:
             or_(Lease.fecha_fin.is_(None), Lease.fecha_fin >= dia))).all()}
     alq_futuro = set(db.scalars(select(Lease.unit_id).where(Lease.unit_id.in_(ids or [-1]), Lease.estado == "vigente",
                                                             Lease.fecha_inicio > dia)))
-    hoy = date.today()
     out = {}
     for u in units:
         r, g = por_unidad.get(u.id, (None, None))
@@ -84,7 +87,8 @@ def estados(db: Session, units: list[Unit], dia: date) -> dict[int, dict]:
         out[u.id] = {"estado": e, "estado_unidad": u.estado, "limpieza": u.estado == "pendiente_limpieza",
                      "reserva": {"id": r.id, "localizador": r.localizador, "huesped": _nombre(g),
                                  "entrada": r.fecha_entrada.isoformat(), "salida": r.fecha_salida.isoformat(),
-                                 "estado": r.estado, "proxima": futura} if r else None,
+                                 "estado": r.estado, "proxima": futura,
+                                 "vencida": r.estado == "checkin" and r.fecha_salida < dia} if r else None,
                      "alquiler": {"id": alq[u.id][0].id, "cliente": _nombre(alq[u.id][1]),
                                   "desde": alq[u.id][0].fecha_inicio.isoformat(),
                                   "hasta": alq[u.id][0].fecha_fin.isoformat() if alq[u.id][0].fecha_fin else None,
@@ -145,6 +149,7 @@ def floor_plan(asset_id: int, fecha: date | None = None, scope: Scope = Depends(
                     e = est[u.id]
                     c.update(unit_id=u.id, codigo=u.codigo, tipo=_tipo_corto(u), tipologia=u.tipologia,
                              estado=e["estado"], limpieza=e["limpieza"],
+                             vencida=bool(e["reserva"] and e["reserva"]["vencida"]),
                              ot=ot_unidad.get(u.id, [0, False])[0], urgente=ot_unidad.get(u.id, [0, False])[1])
                     if ve_res and e["reserva"]:
                         c["reserva"] = e["reserva"]

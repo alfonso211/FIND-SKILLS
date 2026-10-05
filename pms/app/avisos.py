@@ -21,7 +21,8 @@ from sqlalchemy import select
 
 from .config import settings
 from .database import SessionLocal
-from .models import MODALIDADES_RESERVA, Asset, Charge, Contact, EmailLog, Lease, PreventivePlan, Unit, User, WorkOrder
+from .models import (MODALIDADES_RESERVA, Asset, Charge, Contact, EmailLog, Lease, PreventivePlan, Reservation,
+                     Unit, User, WorkOrder)
 from .planos import zonas
 from .security import Scope
 
@@ -35,12 +36,16 @@ TIPOS = {
     "contratos_vencen": ("Contratos de alquiler que vencen en los próximos 90 días (resumen diario)", "alquiler.ver"),
     "revisiones_normativas": ("Revisiones preventivas y normativas en los próximos 30 días o vencidas "
                               "(resumen diario)", "mantenimiento.editar"),
+    "estancias_vencidas": ("Estancias vencidas (siguen alojados después de su fecha de salida) y las que terminan "
+                           "en 3 días (resumen diario)", "reservas.ver"),
     "garajes_impagados": ("Plazas de garaje alquiladas a clientes externos: recibos vencidos sin cobrar "
                           "(resumen diario)", "reservas.ver"),
     "garajes_vencen": ("Plazas de garaje alquiladas a clientes externos: bajas en los próximos 30 días "
                        "(resumen diario)", "reservas.ver"),
 }
-RESUMEN = ("recibos_impagados", "contratos_vencen", "garajes_impagados", "garajes_vencen", "revisiones_normativas")
+RESUMEN = ("estancias_vencidas", "recibos_impagados", "contratos_vencen", "garajes_impagados", "garajes_vencen",
+           "revisiones_normativas")
+DIAS_ESTANCIAS = 3
 DIAS_GARAJES = 30
 DIAS_CONTRATOS, DIAS_REVISIONES = 90, 30
 
@@ -211,7 +216,20 @@ def _datos_resumen(db, dia: date) -> dict[str, list[tuple[int, list]]]:
         revisiones.append((p.asset_id, [nombres[p.asset_id], p.titulo, p.normativa or "", p.proveedor or "",
                                         p.proxima_fecha.strftime("%d/%m/%Y"),
                                         f"VENCIDA hace {-dias} días" if dias < 0 else f"en {dias} días"]))
-    return {"recibos_impagados": recibos, "contratos_vencen": contratos, "garajes_impagados": garajes,
+    estancias = []
+    for r, u, t in db.execute(
+            select(Reservation, Unit, Contact).join(Unit, Unit.id == Reservation.unit_id)
+            .join(Contact, Contact.id == Reservation.guest_id)
+            .where(Reservation.estado == "checkin", Unit.uso != "garaje",
+                   Reservation.fecha_salida <= dia + timedelta(days=DIAS_ESTANCIAS))
+            .order_by(Reservation.fecha_salida, Unit.codigo)):
+        dias = (r.fecha_salida - dia).days
+        estancias.append((u.asset_id, [nombres[u.asset_id], u.codigo, f"{t.nombre} {t.apellidos or ''}".strip(),
+                                       t.telefono or "", r.fecha_salida.strftime("%d/%m/%Y"),
+                                       f"VENCIDA hace {-dias} días" if dias < 0 else "sale hoy" if dias == 0
+                                       else f"en {dias} días"]))
+    return {"estancias_vencidas": estancias, "recibos_impagados": recibos, "contratos_vencen": contratos,
+            "garajes_impagados": garajes,
             "garajes_vencen": garajes_fin, "revisiones_normativas": revisiones}
 
 
@@ -220,6 +238,8 @@ SECCIONES = {
                                                           "Retraso", "Pendiente"], "recibo(s) impagado(s)"),
     "contratos_vencen": ("Contratos que vencen", ["Activo", "Unidad", "Inquilino", "Fin de contrato", "Quedan"],
                          "contrato(s) por vencer"),
+    "estancias_vencidas": ("Estancias vencidas o que terminan en 3 días: renovar o dar la salida",
+                           ["Activo", "Apartamento", "Cliente", "Teléfono", "Salida", "Situación"], "estancia(s)"),
     "garajes_impagados": ("Plazas de garaje: recibos vencidos sin cobrar", ["Activo", "Plaza", "Cliente", "Periodo",
                                                                             "Vencimiento", "Retraso", "Pendiente"],
                           "recibo(s) de garaje impagado(s)"),
