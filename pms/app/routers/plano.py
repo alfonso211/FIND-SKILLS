@@ -119,6 +119,9 @@ def floor_plan(asset_id: int, fecha: date | None = None, scope: Scope = Depends(
                db: Session = Depends(get_db)):
     """Plano completo del activo con el estado de cada apartamento y las OT abiertas (apartamentos y zonas)."""
     a, p = _activo_plano(db, scope, asset_id)
+    from .turistico import cerrar_renovadas  # import local: turistico importa este módulo
+    cerrar_renovadas(db)
+    db.commit()
     dia = fecha or date.today()
     units = list(db.scalars(select(Unit).where(Unit.asset_id == asset_id)))
     # los apartamentos se buscan por número; las plazas de garaje, por su código (sus números se repiten)

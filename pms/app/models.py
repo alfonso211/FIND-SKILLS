@@ -187,6 +187,7 @@ class Reservation(Base):
     datos_contrato: Mapped[dict | None] = mapped_column(JSON)
     creada: Mapped[datetime] = mapped_column(DateTime, default=_now)
     ses_comunicado: Mapped[datetime | None] = mapped_column(DateTime)  # parte de viajeros generado para SES
+    renueva_id: Mapped[int | None] = mapped_column(ForeignKey("reservas.id"))  # renovación de esta reserva
     unit: Mapped[Unit] = relationship()
     guest: Mapped[Contact] = relationship()
     ocupantes: Mapped[list["ReservationGuest"]] = relationship(order_by="ReservationGuest.orden",

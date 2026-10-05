@@ -180,6 +180,11 @@ def ot_urgente(wid: int, autor_id: int | None) -> int:
 
 
 # --------------------------------------------------------------------------- resumen diario
+def _renovada():
+    from .routers.turistico import _renovada as cond  # import local: el router importa este módulo
+    return cond()
+
+
 def _datos_resumen(db, dia: date) -> dict[str, list[tuple[int, list]]]:
     """Todas las incidencias del día, cada una con su activo (luego se filtran por usuario)."""
     nombres = dict(db.execute(select(Asset.id, Asset.nombre)).all())
@@ -221,7 +226,7 @@ def _datos_resumen(db, dia: date) -> dict[str, list[tuple[int, list]]]:
             select(Reservation, Unit, Contact).join(Unit, Unit.id == Reservation.unit_id)
             .join(Contact, Contact.id == Reservation.guest_id)
             .where(Reservation.estado == "checkin", Unit.uso != "garaje",
-                   Reservation.fecha_salida <= dia + timedelta(days=DIAS_ESTANCIAS))
+                   Reservation.fecha_salida <= dia + timedelta(days=DIAS_ESTANCIAS), ~_renovada())
             .order_by(Reservation.fecha_salida, Unit.codigo)):
         dias = (r.fecha_salida - dia).days
         estancias.append((u.asset_id, [nombres[u.asset_id], u.codigo, f"{t.nombre} {t.apellidos or ''}".strip(),
