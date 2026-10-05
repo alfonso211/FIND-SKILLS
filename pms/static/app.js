@@ -150,7 +150,27 @@ function form(title, fields, init = {}, onSubmit, submitLabel = "Guardar") {
     catch (e) { if (gen === formGen) $("#formErr").textContent = e.message; }
   };
   if (!dlg.open) dlg.showModal();
+  ayudasDomicilio(f);
   return f;
+}
+// Países (lista) y municipios (nomenclátor del INE, filtrado por el C.P.) mientras se escribe
+function ayudasDomicilio(f) {
+  const campos = (re) => [...f.querySelectorAll("input")].filter((i) => re.test(i.name || ""));
+  const paises = campos(/^(cliente_)?(pais|nacionalidad)$/);
+  if (paises.length && S.cat?.paises) {
+    f.insertAdjacentHTML("beforeend", `<datalist id="dl-paises">${S.cat.paises.map((p) => `<option value="${esc(p)}">`).join("")}</datalist>`);
+    paises.forEach((i) => i.setAttribute("list", "dl-paises"));
+  }
+  campos(/^(cliente_)?municipio$/).forEach((i, n) => {
+    const id = `dl-mun-${n}`, cp = f.elements[i.name.replace("municipio", "cp")];
+    f.insertAdjacentHTML("beforeend", `<datalist id="${id}"></datalist>`);
+    i.setAttribute("list", id); i.setAttribute("autocomplete", "off");
+    i.addEventListener("input", debounce(async () => {
+      if (i.value.trim().length < 2) return;
+      const r = await get("/api/municipios", { q: i.value, cp: cp?.value }).catch(() => []);
+      f.querySelector("#" + id).innerHTML = r.map((m) => `<option value="${esc(m.nombre)}">`).join("");
+    }, 250));
+  });
 }
 const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null && v !== ""));
 const opts = (arr, v = "id", l = "nombre") => arr.map((x) => [x[v], typeof l === "function" ? l(x) : x[l]]);
@@ -382,6 +402,7 @@ V.activos = async (el) => {
     ...(isNew ? [{ k: "modalidad", t: "Modalidad", type: "select", req: true, options: kv(S.cat.modalidades) }] : []),
     { k: "direccion", t: "Dirección", wide: true }, { k: "municipio", t: "Municipio" }, { k: "provincia", t: "Provincia" },
     { k: "cp", t: "C.P." }, { k: "ref_catastral", t: "Ref. catastral" }, { k: "num_registro_turistico", t: "Nº registro turístico" },
+    { k: "ses_codigo_establecimiento", t: "Código de establecimiento SES.HOSPEDAJE" },
     { html: "<h4>Facturación</h4><p class='muted'>Factura la sociedad gestora. Cada activo tiene su serie y la numeración es correlativa por año (p.ej. SF/00001/2026). No cambie la serie de un activo que ya tiene facturas del año en curso.</p>" },
     { k: "serie_factura", t: "Serie de facturas (p.ej. B35, SF, SA)" },
     { html: "<h4>Datos de la empresa en los contratos de alojamiento</h4>" },
@@ -534,10 +555,11 @@ function cobroForm(titulo, pendiente, url, reload, assetId) {
 }
 function resActions(reload) {
   return (r) => can("reservas.editar") ? [
+    r.uso !== "garaje" && ["Ocupantes", () => ocupantesReserva(r, reload)],
     ["Contrato", () => accommodationContract(r)],
     [r.importe_total - r.importe_pagado > 0.004 ? "Cobro" : "Servicios", () => cobroForm(`Cobro reserva ${r.localizador || r.id} · ${r.unidad} · pendiente ${eur(r.importe_total - r.importe_pagado)}`,
       Math.round((r.importe_total - r.importe_pagado) * 100) / 100, `/api/turistico/reservas/${r.id}/cobro`, reload, r.asset_id)],
-    r.estado === "confirmada" && ["Check-in", () => run(() => post(`/api/turistico/reservas/${r.id}/checkin`), "Check-in realizado").then(reload).catch(() => editGuest(r.guest_id))],
+    r.estado === "confirmada" && ["Check-in", () => run(() => post(`/api/turistico/reservas/${r.id}/checkin`), "Check-in realizado").then(reload).catch(() => ocupantesReserva(r, reload))],
     r.estado === "checkin" && ["Check-out", () => run(() => post(`/api/turistico/reservas/${r.id}/checkout`), "Check-out realizado").then(reload)],
     ["Huésped", () => editGuest(r.guest_id)],
     ["Editar", () => editReservation(r, reload)],
@@ -547,8 +569,11 @@ function resActions(reload) {
 async function accommodationContract(r) {
   const info = await run(() => get(`/api/turistico/reservas/${r.id}/contrato`));
   const sel = (obj) => Object.entries(obj).map(([k, v]) => [k, v.replace(/:$/, "")]);
-  const historial = info.historial.length ? `<p class="muted">Impresos: ${info.historial.map((h) =>
-    `<a href="#" data-c="${h.id}">${fdt(h.creado)}${h.usuario ? " · " + esc(h.usuario) : ""}</a>`).join(" · ")}</p>` : "";
+  const firmados = info.historial.filter((h) => h.firmado), impresos = info.historial.filter((h) => !h.firmado);
+  const historial = (firmados.length ? `<p>Firmados en tablet: ${firmados.map((h) => `<b>${fdt(h.firmado)}</b> <a href="#" data-pdf="${h.id}">Ver PDF</a> · <a href="#" data-reenviar="${h.id}">Reenviar</a>${h.envios.length ? ` <span class="muted">(enviado por ${[...new Set(h.envios.map((e) => e.canal === "email" ? "correo" : "WhatsApp"))].join(" y ")})</span>` : ""}`).join(" · ")}</p>` : "") +
+    (impresos.length ? `<p class="muted">Impresos: ${impresos.map((h) =>
+    `<a href="#" data-c="${h.id}">${fdt(h.creado)}${h.usuario ? " · " + esc(h.usuario) : ""}</a>`).join(" · ")}</p>` : "");
+  let modo = "imprimir";
   const f = form(`Contrato de alojamiento · ${r.unidad} · ${r.huesped}`, [
     { html: `<p class="muted">Complete todo aquí: al imprimir, el cliente solo tendrá que firmar. Si falta algo, el sistema le avisará antes de imprimir. De la tarjeta solo se anotan los 4 últimos dígitos.</p>${historial}` },
     { html: scanHtml() },
@@ -567,7 +592,8 @@ async function accommodationContract(r) {
     { k: "garaje_sotano", t: "Garaje: sótano" }, { k: "garaje_plaza", t: "Garaje: plaza nº" },
     { k: "tarjeta_titular", t: "Tarjeta: titular" }, { k: "tarjeta_terminacion", t: "Tarjeta: últimos 4 dígitos" },
     { k: "tarjeta_caducidad", t: "Tarjeta: caducidad (MM/AA)" },
-    { k: "ocupantes", t: "Ocupantes autorizados (nombre, apellidos y documento de todos, incluidos menores)", type: "textarea", wide: true },
+    { html: `<fieldset><legend>Ocupantes autorizados (los registrados en la reserva; son los mismos del parte a SES.HOSPEDAJE)</legend>
+      <pre class="ocupantes-txt">${esc(info.datos.ocupantes || "")}</pre><button type="button" class="btn sm" id="gOcup">Gestionar ocupantes</button></fieldset>` },
     { k: "motivo", t: "Motivo de la estancia (marque las que correspondan)", type: "checks", options: sel(info.motivos) },
     { k: "motivo_otro", t: "Motivo «otro»: detalle", wide: true },
     { k: "acreditacion", t: "Acreditación del domicilio habitual (se une copia)", type: "checks", options: sel(info.acreditaciones) },
@@ -579,6 +605,13 @@ async function accommodationContract(r) {
     { k: "solo_guardar", t: "Solo guardar (imprimir más tarde, a la llegada del cliente)", type: "checkbox", wide: true },
     { k: "permitir_huecos", t: "Imprimir aunque falten datos (quedarán puntos para rellenar a mano)", type: "checkbox", wide: true },
   ], info.datos, async (d) => {
+    if (modo === "firma") {
+      modo = "imprimir";
+      const prep = await post(`/api/turistico/reservas/${r.id}/contrato/firma`, { ...d, solo_guardar: false, permitir_huecos: false });
+      $("#modal").close();
+      firmaTablet(r, prep);
+      return;
+    }
     if (d.solo_guardar) {
       const res = await post(`/api/turistico/reservas/${r.id}/contrato`, d);
       toast(res.faltan.length ? `Datos guardados. Aún faltan: ${res.faltan.join(", ")}` : "Datos guardados. El contrato está listo para imprimir.");
@@ -586,7 +619,15 @@ async function accommodationContract(r) {
     }
     await download("POST", `/api/turistico/reservas/${r.id}/contrato`, d);
     toast("Contrato generado. Ábralo e imprima dos copias para firmar.");
-  }, "Guardar e imprimir");
+  }, "Imprimir en papel");
+  if (info.firma_disponible) {
+    $(".actions", f).insertAdjacentHTML("beforeend", '<button type="button" class="btn primary" id="fFirma">✍ Firmar en tablet</button>');
+    $("#fFirma", f).onclick = () => { modo = "firma"; f.requestSubmit(); };
+    $("button[type=submit]", f).classList.remove("primary");
+  }
+  $("#gOcup", f).onclick = () => ocupantesReserva(r, null, () => accommodationContract(r));
+  f.querySelectorAll("[data-pdf]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); abrirFichero(`/api/turistico/reservas/${r.id}/contrato/${a.dataset.pdf}/pdf`); }));
+  f.querySelectorAll("[data-reenviar]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); reenviarContrato(r, a.dataset.reenviar, info.datos); }));
   f.querySelectorAll("[data-c]").forEach((a) => (a.onclick = (e) => {
     e.preventDefault(); run(() => download("GET", `/api/turistico/reservas/${r.id}/contrato/${a.dataset.c}`), "Contrato descargado");
   }));
@@ -594,11 +635,8 @@ async function accommodationContract(r) {
     const el = f.elements;
     const nombre = conTildes(el.cliente_nombre.value, [lec.nombre, lec.apellidos].filter(Boolean).join(" "));
     const dom = lec.domicilio || {};
-    const doc = `${lec.documento_tipo === "PAS" ? "Pasaporte" : lec.documento_tipo} ${lec.documento_num}`;
-    const ocup = el.ocupantes.value.includes(lec.documento_num) ? null
-      : [`${nombre} (${doc})`, ...el.ocupantes.value.split("\n").slice(1)].join("\n");
     rellena(f, { cliente_nombre: nombre, cliente_documento: lec.documento_num, cliente_nacionalidad: lec.nacionalidad,
-      cliente_domicilio: dom.direccion, cliente_municipio: dom.municipio, cliente_pais: dom.pais, ocupantes: ocup });
+      cliente_domicilio: dom.direccion, cliente_municipio: dom.municipio, cliente_pais: dom.pais });
   });
 }
 
@@ -718,7 +756,7 @@ function bindScan(f, cid, aplicar) {
     pinta(docs.length ? docs : f._docs);
     const tiene = await hayCamara();
     auto.checked = pref ? pref === "1" : tiene;  // por defecto, si el equipo tiene cámara se abre sola
-    if (tiene && auto.checked && !docs.length) encender();  // si ya hay copia del documento, no hace falta
+    if (tiene && auto.checked && !docs.length && !f._sinCamara) encender();  // si ya hay copia del documento, no hace falta
   })();
 }
 // formulario de alta con escáner: lo leído rellena la ficha y las copias se adjuntan al crear
@@ -788,9 +826,190 @@ async function newReservation(reload, fija) {  // fija: {id, codigo, asset_id} p
       toast("Reserva creada" + (nueva.factura ? ` · Factura ${nueva.factura.codigo}` : "") + ". Complete ahora el contrato (puede guardarlo e imprimirlo a la llegada).");
       reload && reload();
       if (nueva.factura) await descargarFactura(nueva.factura.id);
-      await accommodationContract(nueva);
+      if (nueva.adultos + nueva.ninos > 1) await ocupantesReserva(nueva, reload, () => accommodationContract(nueva));
+      else await accommodationContract(nueva);
     }, "Crear reserva")), 0);
   }, "Buscar disponibilidad");
+}
+
+// ---- ocupantes de la reserva: todos quedan registrados (contrato y parte de viajeros a SES.HOSPEDAJE)
+const PARENTESCO_OPC = () => kv(S.cat.parentescos || {});
+async function ocupantesReserva(r, reload, continuar) {
+  const o = await run(() => get(`/api/turistico/reservas/${r.id}/ocupantes`));
+  const n = o.ocupantes.length, req = o.requeridos;
+  const estado = (x) => x.faltan.length ? `<span class="badge b-pendiente">falta: ${esc(x.faltan.join(", "))}</span>` : '<span class="badge b-vigente">completo</span>';
+  const f = form(`Ocupantes · ${r.unidad} · ${r.localizador || "R-" + r.id}`, [
+    { html: `<div class="ocup-cab"><div class="ocup-cuenta ${o.pendiente.length ? "pend" : "ok"}"><b>${n}</b> de <b>${req}</b> registrados</div>
+      <p class="muted">Registre a <b>todas</b> las personas alojadas: los mayores de edad escaneando su documento; los menores sin documento, a mano con su parentesco. Todos figuran en el contrato y en el parte de viajeros.</p></div>
+      <div class="ocupantes">${o.ocupantes.map((x) => `<div class="ocupante">${avatar(x.nombre, "sm")}
+        <div class="ocup-datos"><b>${esc(x.nombre)}</b>${x.titular ? ' <span class="badge b-confirmada">titular</span>' : ""}${x.menor ? ` <span class="badge b-parcial">menor${x.edad != null ? ", " + x.edad + " años" : ""}</span>` : ""}
+          <div class="muted">${x.contact.documento_num ? esc(`${x.contact.documento_tipo || "Doc."} ${x.contact.documento_num}`) : "Sin documento"}${x.parentesco ? " · " + esc(S.cat.parentescos[x.parentesco]) : ""} · ${esc(x.contact.nacionalidad || "")}</div>
+          ${estado(x)}</div>
+        <div class="ocup-acc"><button type="button" class="btn sm" data-ficha="${x.contact.id}">Completar ficha</button>${x.menor && !x.titular ? `<button type="button" class="btn sm" data-par="${x.id}">Parentesco</button>` : ""}${x.titular ? "" : `<button type="button" class="btn sm danger" data-quitar="${x.id}">Quitar</button>`}</div></div>`).join("")}</div>
+      ${n < req ? `<div class="toolbar"><button type="button" class="btn primary" id="oAdulto">＋ Adulto (escanear documento)</button><button type="button" class="btn" id="oMenor">＋ Menor sin documento</button></div>` :
+        `<div class="toolbar"><button type="button" class="btn sm" id="oAdulto">＋ Añadir otro adulto</button><button type="button" class="btn sm" id="oMenor">＋ Añadir otro menor</button></div>`}` },
+  ], {}, async () => { reload && reload(); if (continuar) setTimeout(continuar, 0); }, continuar ? "Continuar al contrato" : "Cerrar");
+  const volver = () => ocupantesReserva(r, reload, continuar);
+  const titular = o.ocupantes.find((x) => x.titular)?.contact || {};
+  $("#oAdulto", f).onclick = () => nuevoOcupante(r, titular, false, volver);
+  $("#oMenor", f).onclick = () => nuevoOcupante(r, titular, true, volver);
+  f.querySelectorAll("[data-ficha]").forEach((b) => (b.onclick = () => editGuest(Number(b.dataset.ficha), "huesped", volver)));
+  f.querySelectorAll("[data-quitar]").forEach((b) => (b.onclick = async () => {
+    if (!confirm("¿Quitar este ocupante de la reserva? (su ficha de huésped se conserva)")) return;
+    await run(() => api("DELETE", `/api/turistico/reservas/${r.id}/ocupantes/${b.dataset.quitar}`), "Ocupante quitado"); volver();
+  }));
+  f.querySelectorAll("[data-par]").forEach((b) => (b.onclick = () => form("Parentesco del menor", [
+    { k: "parentesco", t: "Parentesco con un adulto de la reserva", type: "select", req: true, options: PARENTESCO_OPC() }],
+    { parentesco: o.ocupantes.find((x) => String(x.id) === b.dataset.par)?.parentesco }, async (d) => {
+      await put(`/api/turistico/reservas/${r.id}/ocupantes/${b.dataset.par}`, d); toast("Parentesco guardado"); setTimeout(volver, 0);
+    })));
+}
+function nuevoOcupante(r, titular, menor, volver) {
+  // el domicilio del titular se propone para el resto (familias); lo leído del documento lo sustituye
+  const dom = Object.fromEntries(["direccion", "cp", "municipio", "pais"].map((k) => [k, titular[k]]));
+  const campos = menor ? [
+    { html: '<p class="muted">Menor sin documento: registro manual. Si tiene DNI o pasaporte, escanéelo igualmente.</p>' },
+    { html: scanHtml("Documento del menor (opcional)") },
+    { k: "parentesco", t: "Parentesco con un adulto de la reserva", type: "select", req: true, options: PARENTESCO_OPC() },
+    ...guestFields.map((x) => (x.k === "fecha_nacimiento" || x.k === "sexo" || x.k === "nacionalidad" ? { ...x, req: true } : x)),
+  ] : [{ html: scanHtml("Escanee el documento del ocupante (DNI, NIE/TIE, pasaporte)") }, ...guestFields];
+  const f = form(menor ? "Nuevo ocupante menor de edad" : "Nuevo ocupante adulto", campos, { ...dom, nacionalidad: menor ? titular.nacionalidad : "" }, async (d, fr) => {
+    const parentesco = d.parentesco; delete d.parentesco;
+    await post(`/api/turistico/reservas/${r.id}/ocupantes`, { contact: clean(d), parentesco, documentos: fr._docs.map((x) => x.id) });
+    toast("Ocupante registrado"); setTimeout(volver, 0);
+  }, "Registrar ocupante");
+  f._sinCamara = menor;  // en los menores (normalmente sin documento) no se abre la cámara sola
+  bindScan(f, null, (lec) => rellenaFicha(f, lec));
+}
+
+// ---- firma del contrato en la tablet: el cliente lee, acepta y firma con el dedo; se envía por correo o WhatsApp
+function firmaTablet(r, prep) {
+  pararCamara();
+  const a = S.assets.find((x) => x.id === r.asset_id);
+  const ov = document.createElement("div");
+  ov.className = "firma-pantalla";
+  ov.innerHTML = `<header class="firma-cab">${a?.logo ? `<img src="${esc(a.logo)}" alt="">` : ""}<div><div class="wordmark">CONTRATO DE <b>ALOJAMIENTO</b></div>
+      <small>${esc(r.unidad)} · ${fdate(r.fecha_entrada)} – ${fdate(r.fecha_salida)} · ${esc(prep.cliente || "")}</small></div>
+      <button type="button" class="btn ghost firma-x" data-cancel>✕ Cancelar</button></header>
+    <div class="firma-doc">${prep.paginas.map((p, i) => `<img src="${p}" alt="Página ${i + 1}">`).join("")}<div class="firma-fin" data-fin></div></div>
+    <section class="firma-panel">
+      <p class="firma-aviso" data-leer>Desplácese hasta el final del contrato para poder firmar.</p>
+      <label class="check"><input type="checkbox" data-acepta> He leído el contrato completo y acepto expresamente sus condiciones, en especial las destacadas en <b>negrita</b>.</label>
+      <label class="check"><input type="checkbox" data-priv> He sido informado/a del tratamiento de mis datos personales (condición 13) y del envío del parte de viajeros a las autoridades (RD 933/2021).</label>
+      <div class="firma-lienzo"><canvas data-canvas></canvas><span class="firma-guia">Firme aquí</span><button type="button" class="btn sm" data-borrar>Borrar</button></div>
+      <div class="firma-envio"><label>Correo electrónico<input type="email" data-email value="${esc(prep.email || "")}"></label>
+        <label>Móvil (WhatsApp)<input data-movil value="${esc(prep.movil || "")}"></label></div>
+      <p class="error" data-err></p>
+      <div class="firma-acc"><button type="button" class="btn primary grande" data-firmar disabled>Firmar contrato</button></div>
+    </section>`;
+  document.body.appendChild(ov);
+  document.body.classList.add("sin-scroll");
+  const q = (s) => ov.querySelector(s);
+  const cerrar = () => { ov.remove(); document.body.classList.remove("sin-scroll"); };
+  q("[data-cancel]").onclick = () => confirm("¿Cancelar la firma? El contrato quedará sin firmar.") && cerrar();
+  // lienzo de firma (dedo, lápiz o ratón)
+  const cv = q("[data-canvas]"), ctx = cv.getContext("2d");
+  let trazos = 0, dibujando = false;
+  const ajustar = () => {
+    const rect = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    cv.width = rect.width * dpr; cv.height = rect.height * dpr;
+    ctx.scale(dpr, dpr); ctx.lineWidth = 2.6; ctx.lineCap = ctx.lineJoin = "round"; ctx.strokeStyle = "#0e0e10";
+    trazos = 0; q(".firma-guia").hidden = false;
+  };
+  requestAnimationFrame(ajustar);
+  const pos = (e) => { const b = cv.getBoundingClientRect(); return [e.clientX - b.left, e.clientY - b.top]; };
+  cv.onpointerdown = (e) => { dibujando = true; cv.setPointerCapture(e.pointerId); ctx.beginPath(); ctx.moveTo(...pos(e)); q(".firma-guia").hidden = true; };
+  cv.onpointermove = (e) => { if (!dibujando) return; ctx.lineTo(...pos(e)); ctx.stroke(); trazos++; };
+  cv.onpointerup = cv.onpointercancel = () => { dibujando = false; listo(); };
+  q("[data-borrar]").onclick = () => { ctx.clearRect(0, 0, cv.width, cv.height); ajustar(); listo(); };
+  // hay que llegar al final del documento y aceptar las dos casillas
+  let leido = false;
+  new IntersectionObserver((ents) => { if (ents.some((x) => x.isIntersecting)) { leido = true; q("[data-leer]").hidden = true; listo(); } },
+    { root: q(".firma-doc") }).observe(q("[data-fin]"));
+  const listo = () => (q("[data-firmar]").disabled = !(leido && trazos > 10 && q("[data-acepta]").checked && q("[data-priv]").checked));
+  q("[data-acepta]").onchange = q("[data-priv]").onchange = listo;
+  q("[data-firmar]").onclick = async () => {
+    const b = q("[data-firmar]"); b.disabled = true; b.textContent = "Firmando…"; q("[data-err]").textContent = "";
+    try {
+      const res = await post(`/api/turistico/reservas/${r.id}/contrato/${prep.contrato_id}/firmar`, {
+        firma: cv.toDataURL("image/png"), acepta: true, acepta_privacidad: true,
+        email: q("[data-email]").value.trim() || null, movil: q("[data-movil]").value.trim() || null });
+      const env = Object.fromEntries(res.envios.map((e) => [e.canal, e]));
+      ov.querySelector(".firma-panel").innerHTML = `<div class="firma-ok"><div class="firma-check">✓</div><h2>Contrato firmado</h2>
+        <p>${env.email ? (env.email.enviado ? `Enviado por correo a <b>${esc(q("[data-email]")?.value || "")}</b>.` : `<span class="error">Correo no enviado: ${esc(env.email.error)}</span>`) : ""}</p>
+        ${env.whatsapp?.whatsapp ? `<p><a class="btn primary grande" href="${esc(env.whatsapp.whatsapp)}" target="_blank" rel="noopener">Enviar por WhatsApp</a></p>` : env.whatsapp?.error ? `<p class="error">${esc(env.whatsapp.error)}</p>` : ""}
+        <p class="muted">No hace falta copia en papel: el contrato firmado queda guardado cifrado. Huella SHA-256: <code>${esc(res.sha256.slice(0, 16))}…</code></p>
+        <button type="button" class="btn" data-cerrar>Terminar</button></div>`;
+      ov.querySelector(".firma-doc").classList.add("hecho");
+      ov.querySelector("[data-cerrar]").onclick = cerrar;
+      ov.querySelector("[data-cancel]").hidden = true;
+    } catch (e) { q("[data-err]").textContent = e.message; b.disabled = false; b.textContent = "Firmar contrato"; }
+  };
+}
+function reenviarContrato(r, cid, datos) {
+  form("Enviar el contrato firmado al cliente", [
+    { k: "canal", t: "Por", type: "select", req: true, options: [["email", "Correo electrónico (con el PDF adjunto)"], ["whatsapp", "WhatsApp (enlace de descarga, 7 días)"]], def: datos.cliente_email ? "email" : "whatsapp" },
+    { k: "destino", t: "Correo o móvil", req: true, def: datos.cliente_email || datos.cliente_movil },
+  ], {}, async (d) => {
+    const res = await post(`/api/turistico/reservas/${r.id}/contrato/${cid}/enviar`, d);
+    if (res.whatsapp) window.open(res.whatsapp, "_blank", "noopener");
+    toast(res.enviado ? "Contrato enviado por correo" : "Se abre WhatsApp con el enlace del contrato");
+  }, "Enviar");
+}
+
+// ---- parte de viajeros: fichero para SES.HOSPEDAJE (plazo: 24 h desde la llegada)
+V.ses = async (el) => {
+  const aid = await pickAsset("apartamentos_turisticos");
+  el.innerHTML = `<div class="toolbar"><strong>${esc(assetName(aid))}</strong><label>Llegadas desde<input type="date" id="d" value="${addDays(today(), -1)}"></label>
+    <label>hasta<input type="date" id="h" value="${addDays(today(), 1)}"></label><span class="spacer"></span>
+    ${can("reservas.editar") ? '<button class="btn primary" id="xml">Generar fichero para SES.HOSPEDAJE</button>' : ""}</div>
+    <div id="aviso"></div><div id="t"></div>
+    <div class="card nota"><h4>Cómo se comunica</h4><p>1. Registre a todos los ocupantes de cada llegada (botón <b>Ocupantes</b>). 2. Marque las reservas completas y genere el fichero. 3. En la sede <a href="https://hospedajes.ses.mir.es" target="_blank" rel="noopener">hospedajes.ses.mir.es</a>, entre con el usuario del establecimiento y cárguelo en <i>Comunicaciones → Carga de ficheros</i>. El plazo es de <b>24 horas</b> desde la llegada. Las reservas quedan marcadas como comunicadas.</p></div>`;
+  const load = async () => {
+    const st = await get("/api/turistico/ses", { asset_id: aid, desde: $("#d", el).value, hasta: $("#h", el).value });
+    $("#aviso", el).innerHTML = st.codigo_establecimiento ? `<p class="muted">Código de establecimiento SES: <b>${esc(st.codigo_establecimiento)}</b></p>`
+      : '<p class="error">Falta el código de establecimiento de SES.HOSPEDAJE: indíquelo en Activos → Editar.</p>';
+    table($("#t", el), [
+      { k: "id", t: "", f: (v, x) => `<input type="checkbox" data-sel="${v}" ${x.completo && !x.ses_comunicado ? "checked" : ""} ${x.completo ? "" : "disabled"}>` },
+      { k: "localizador", t: "Localizador" }, { k: "unidad", t: "Unidad" }, { k: "huesped", t: "Titular" },
+      { k: "fecha_entrada", t: "Entrada", f: fdate }, { k: "ocupantes_registrados", t: "Ocupantes", f: (v, x) => `${v} / ${x.adultos + x.ninos}` },
+      { k: "completo", t: "Registro", f: (v, x) => (v ? '<span class="badge b-vigente">completo</span>' : `<span class="badge b-pendiente">pendiente</span><div class="muted peq">${esc(x.pendiente.join(" · "))}</div>`) },
+      { k: "ses_comunicado", t: "Comunicado", f: (v) => (v ? `<span class="badge b-confirmada">${fdt(v)}</span>` : '<span class="muted">no</span>') },
+    ], st.reservas, (x) => [["Ocupantes", () => ocupantesReserva(x, load)]]);
+  };
+  ["#d", "#h"].forEach((s) => ($(s, el).onchange = load));
+  if ($("#xml", el)) $("#xml", el).onclick = () => {
+    const ids = [...el.querySelectorAll("[data-sel]:checked")].map((c) => Number(c.dataset.sel));
+    if (!ids.length) return toast("Marque las reservas completas que quiere comunicar", true);
+    run(() => download("POST", `/api/turistico/ses/partes.xml?asset_id=${aid}`, ids), `Fichero generado con ${ids.length} reserva(s). Cárguelo en SES.HOSPEDAJE.`).then(load);
+  };
+  load();
+};
+
+// ---- encuesta mensual del INE (apartamentos turísticos)
+async function encuestaIne() {
+  const aid = await pickAsset("apartamentos_turisticos");
+  const prev = new Date(); prev.setDate(1); prev.setMonth(prev.getMonth() - 1);
+  form(`Encuesta INE · ${assetName(aid)}`, [
+    { html: '<p class="muted">Encuesta de Ocupación en Apartamentos Turísticos: viajeros entrados y pernoctaciones por día y residencia, apartamentos ocupados y tarifa media por tipo de cliente. Calculado con los ocupantes registrados de cada reserva.</p>' },
+    { k: "mes", t: "Mes", type: "month", req: true, def: prev.toISOString().slice(0, 7) },
+  ], {}, async (d) => {
+    const [anio, mes] = d.mes.split("-").map(Number);
+    const q = { asset_id: aid, anio, mes };
+    const x = await get("/api/turistico/ine", q), t = x.totales;
+    setTimeout(() => {
+      const f = form(`Encuesta INE · ${x.activo} · ${String(mes).padStart(2, "0")}/${anio}`, [{ html: `<div class="kpis">
+        <div class="kpi"><b>${t.viajeros_entrados}</b><span>Viajeros entrados</span></div><div class="kpi"><b>${t.pernoctaciones}</b><span>Pernoctaciones</span></div>
+        <div class="kpi"><b>${(t.ocupacion_apartamentos * 100).toFixed(1)} %</b><span>Ocupación apartamentos</span></div>
+        <div class="kpi"><b>${(t.ocupacion_plazas * 100).toFixed(1)} %</b><span>Ocupación plazas</span></div><div class="kpi"><b>${eur(t.tarifa_media)}</b><span>Tarifa media sin IVA</span></div>
+        <div class="kpi"><b>${x.apartamentos_disponibles}</b><span>Apartamentos abiertos</span></div></div>
+        <h4>Residencia de los viajeros</h4><p>${x.residencias.map((y) => `${esc(y.residencia)}: <b>${y.entradas.reduce((p, c) => p + c, 0)}</b>`).join(" · ") || "Sin viajeros"}</p>
+        ${x.avisos.length ? `<h4>Avisos</h4>${x.avisos.map((a) => `<p class="muted">• ${esc(a)}</p>`).join("")}` : ""}
+        <p class="muted">Traslade los datos al cuestionario del INE en IRIA (iria.ine.es) con el Excel, que trae el detalle por día.</p>` }], {},
+        async () => { await download("GET", "/api/turistico/ine.xlsx?" + new URLSearchParams(q)); }, "Descargar Excel");
+      return f;
+    }, 0);
+  }, "Calcular");
 }
 
 V.hoy = async (el) => {
@@ -987,6 +1206,10 @@ V.informes = async (el) => {
     <span class="muted">Activo: ${esc(S.asset ? assetName(Number(S.asset)) : "todos los de su ámbito")} (filtro de arriba)</span></div>
     <div class="cards">${INF.map(([k, t, d]) => `<div class="card"><h3>${esc(t)}</h3><p class="sub">${esc(d)}</p><button class="btn primary" data-inf="${k}">Descargar Excel</button></div>`).join("")}</div>`;
   el.querySelectorAll("[data-inf]").forEach((b) => (b.onclick = () => run(() => download("GET", `/api/informes/${b.dataset.inf}?` + new URLSearchParams(clean({ desde: $("#d", el).value, hasta: $("#h", el).value, asset_id: S.asset }))))));
+  if (can("reservas.ver") && assetsOf("apartamentos_turisticos").length) {
+    $(".cards", el).insertAdjacentHTML("beforeend", '<div class="card"><h3>Encuesta del INE</h3><p class="sub">Cuestionario mensual de ocupación en apartamentos turísticos: viajeros y pernoctaciones por día y residencia, ocupación y precios.</p><button class="btn primary" id="ine">Preparar encuesta</button></div>');
+    $("#ine", el).onclick = encuestaIne;
+  }
 };
 
 // Factura solo de servicios: a un cliente externo (p.ej. plaza de aparcamiento) o al huésped de una reserva
@@ -1333,7 +1556,7 @@ V.perfil = async (el) => {
 // ------------------------------------------------------------------ navegación
 const MENU = [
   ["General", [["panel", "Panel de control", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
-  ["Apartamentos turísticos", [["plano", "Plano de apartamentos", "activos.ver"], ["hoy", "Llegadas / salidas", "reservas.ver"], ["reservas", "Reservas", "reservas.ver"], ["planning", "Planning", "reservas.ver"], ["huespedes", "Huéspedes", "reservas.ver"]]],
+  ["Apartamentos turísticos", [["plano", "Plano de apartamentos", "activos.ver"], ["hoy", "Llegadas / salidas", "reservas.ver"], ["reservas", "Reservas", "reservas.ver"], ["planning", "Planning", "reservas.ver"], ["huespedes", "Huéspedes", "reservas.ver"], ["ses", "Parte de viajeros (SES)", "reservas.ver"]]],
   ["Alquiler residencial", [["contratos", "Contratos", "alquiler.ver"], ["recibos", "Recibos y cobros", "alquiler.ver"], ["inquilinos", "Inquilinos", "alquiler.ver"]]],
   ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["servicios", "Servicios", "activos.ver"], ["informes", "Informes Excel", "informes"]]],
   ["Mantenimiento", [["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["proveedores", "Proveedores", "mantenimiento.ver"]]],

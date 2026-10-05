@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, Upl
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import documentos, ocr_documentos
+from .. import documentos, ocr_documentos, registro_viajeros
 from ..database import get_db
 from ..models import Contact, ContactDocument, User
 from ..security import Scope, audit, get_scope
@@ -105,6 +105,7 @@ def aplicar_lectura(c: Contact, lectura: dict) -> list[str]:
         if valor and not getattr(c, campo):
             setattr(c, campo, valor)
             aplicado.append(campo)
+    registro_viajeros.completar_municipio(c)
     return aplicado
 
 

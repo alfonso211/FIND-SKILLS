@@ -66,6 +66,8 @@ class Asset(Base):
     contrato_representante: Mapped[str | None] = mapped_column(String(160))
     contrato_representante_dni: Mapped[str | None] = mapped_column(String(20))
     contrato_email: Mapped[str | None] = mapped_column(String(160))
+    # SES.HOSPEDAJE: código del establecimiento que asigna el Ministerio del Interior al darlo de alta
+    ses_codigo_establecimiento: Mapped[str | None] = mapped_column(String(20))
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
     notas: Mapped[str | None] = mapped_column(Text)
     company: Mapped[Company] = relationship(foreign_keys=[company_id])
@@ -118,6 +120,7 @@ class Contact(Base):
     cp: Mapped[str | None] = mapped_column(String(10))
     municipio: Mapped[str | None] = mapped_column(String(100))
     pais: Mapped[str | None] = mapped_column(String(60))
+    municipio_ine: Mapped[str | None] = mapped_column(String(5))  # código INE del municipio (residentes en España)
     iban: Mapped[str | None] = mapped_column(String(40))
     notas: Mapped[str | None] = mapped_column(Text)
 
@@ -179,8 +182,24 @@ class Reservation(Base):
     # Datos del contrato de alojamiento tecleados en la reserva (se imprimen cuando llega el cliente)
     datos_contrato: Mapped[dict | None] = mapped_column(JSON)
     creada: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    ses_comunicado: Mapped[datetime | None] = mapped_column(DateTime)  # parte de viajeros generado para SES
     unit: Mapped[Unit] = relationship()
     guest: Mapped[Contact] = relationship()
+    ocupantes: Mapped[list["ReservationGuest"]] = relationship(order_by="ReservationGuest.orden",
+                                                               cascade="all, delete-orphan")
+
+
+class ReservationGuest(Base):
+    """Ocupante de una reserva (todos, incluidos los menores) para el contrato y el parte de viajeros."""
+    __tablename__ = "reserva_ocupantes"
+    __table_args__ = (UniqueConstraint("reservation_id", "contact_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    reservation_id: Mapped[int] = mapped_column(ForeignKey("reservas.id"), index=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("terceros.id"))
+    titular: Mapped[bool] = mapped_column(Boolean, default=False)
+    parentesco: Mapped[str | None] = mapped_column(String(2))  # código SES (menores de edad)
+    orden: Mapped[int] = mapped_column(Integer, default=0)
+    contact: Mapped[Contact] = relationship()
 
 
 class UnitBlock(Base):
@@ -224,6 +243,14 @@ class AccommodationContract(Base):
     datos: Mapped[dict] = mapped_column(JSON)
     creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    # Firma digital en tablet: PDF firmado (cifrado), su huella y las evidencias de la firma
+    firmado: Mapped[datetime | None] = mapped_column(DateTime)
+    fichero: Mapped[str | None] = mapped_column(String(80))
+    sha256: Mapped[str | None] = mapped_column(String(64))
+    evidencias: Mapped[dict | None] = mapped_column(JSON)
+    token_hash: Mapped[str | None] = mapped_column(String(64), index=True)  # enlace de descarga para el cliente
+    token_expira: Mapped[datetime | None] = mapped_column(DateTime)
+    envios: Mapped[list | None] = mapped_column(JSON)  # [{canal, destino, fecha, usuario}]
 
 
 # --------------------------------------------------------------------------- facturación

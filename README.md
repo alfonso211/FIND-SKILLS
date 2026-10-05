@@ -187,6 +187,19 @@ Para añadir activos nuevos: *Activos → Nuevo activo* (se eligen la gestora, l
   sin Ctrl + F5. Si hay un formulario abierto, esperan a que se cierre.
 - **Administración**: usuarios, roles editables, sociedades y registro de auditoría de todas las operaciones.
 
+### Registro de viajeros, SES.HOSPEDAJE, INE y firma en tablet
+
+- **Ocupantes:** cada reserva registra a todas las personas alojadas: adultos escaneando su documento (el domicilio
+  del DNI pasa a la ficha y al contrato) y menores sin documento a mano, con su parentesco. El check-in exige el
+  registro completo. Los municipios españoles se codifican con el nomenclátor del INE (`app/data/municipios_ine.csv`).
+- **Parte de viajeros:** fichero XML de comunicación de partes para SES.HOSPEDAJE con todos los ocupantes
+  (`app/registro_viajeros.py`).
+- **Encuesta del INE:** viajeros entrados, salidos y pernoctaciones por día y residencia (comunidad autónoma o país),
+  ocupación y tarifa media por tipo de cliente, en Excel (`app/encuesta_ine.py`).
+- **Firma en tablet:** el cliente lee el contrato en PDF, acepta y firma con el dedo; se genera el PDF firmado con
+  una página de evidencias (fecha, dispositivo, IP, huellas SHA-256), se guarda cifrado y se envía por correo (PDF
+  adjunto) o WhatsApp (enlace de descarga de 7 días). Sin copias en papel (`app/firma_contrato.py`).
+
 ## Control de accesos
 
 Cada usuario recibe uno o varios **roles**, y cada rol se asigna con un **ámbito**:

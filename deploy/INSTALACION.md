@@ -220,6 +220,19 @@ usuario → Correo → Administrar aplicaciones de correo).
 
 Cada usuario elige qué avisos recibe en *Mi perfil*.
 
+## 8 quater. Registro de viajeros, encuesta del INE y firma en tablet
+
+- **SES.HOSPEDAJE:** en *Activos → Editar* de cada Suite, indique el **código de establecimiento** que asigna el
+  Ministerio del Interior. El fichero que genera *Parte de viajeros (SES)* se carga en
+  https://hospedajes.ses.mir.es (*Comunicaciones → Carga de ficheros*). Plazo: 24 horas desde la llegada.
+- **INE:** *Informes Excel → Encuesta del INE* prepara el cuestionario mensual de ocupación en apartamentos
+  turísticos para trasladarlo a IRIA. Para que las plazas sean correctas, indique la capacidad de cada apartamento.
+- **Firma en tablet:** la imagen Docker incluye LibreOffice para convertir el contrato a PDF (la primera
+  actualización tarda unos minutos más en construirse). El enlace de descarga que recibe el cliente usa el dominio
+  del PMS (`PMS_URL`, ya configurado en `docker-compose.yml`). El envío por correo usa la
+  configuración del apartado 8 ter; el de WhatsApp abre WhatsApp en la tablet con el mensaje y el enlace preparados
+  (caduca a los 7 días).
+
 ## 9. Actualizaciones del PMS
 
 ```bash
