@@ -24,7 +24,8 @@ def _esc(s) -> str:
     return str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
 
 
-def generar(w, asset, company, unidad, abierta_por: str | None, fotos: list[bytes], categoria: str) -> bytes:
+def generar(w, asset, company, unidad, abierta_por: str | None, fotos: list[bytes], categoria: str,
+            zona: str | None = None) -> bytes:
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=16 * mm, rightMargin=16 * mm, topMargin=14 * mm,
                             bottomMargin=14 * mm, title=f"Parte de incidencia OT-{w.id:05d}", author=company.nombre)
@@ -68,7 +69,7 @@ def generar(w, asset, company, unidad, abierta_por: str | None, fotos: list[byte
         lugar = " · ".join(x for x in (unidad.bloque, f"planta {unidad.planta}" if unidad.planta else None,
                                         f"{unidad.uso} {unidad.codigo}") if x)
     else:
-        lugar = "Zonas comunes"
+        lugar = f"Zonas comunes · {zona}" if zona else "Zonas comunes"
     c4 = 178 * mm / 4
     datos = rejilla([
         [celda("UBICACIÓN", lugar), celda("INSTALACIÓN / GREMIO", categoria), celda("TIPO", w.tipo.capitalize()),

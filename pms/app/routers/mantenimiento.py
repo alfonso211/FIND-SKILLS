@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import adjuntos, avisos, documentos, parte_pdf
+from .. import adjuntos, avisos, documentos, parte_pdf, planos
 from ..database import get_db
 from ..models import Asset, PreventivePlan, Unit, User, WorkOrder, WorkOrderAttachment
 from ..schemas import PlanIn, PlanUpdate, WorkOrderIn, WorkOrderUpdate
@@ -57,6 +57,7 @@ def _wo_out(w: WorkOrder, db: Session, n_adjuntos: int | None = None) -> dict:
         select(func.count()).select_from(WorkOrderAttachment).where(WorkOrderAttachment.work_order_id == w.id))
     d["requiere_limpieza"] = requiere_limpieza(w)
     d["unidad"] = db.get(Unit, w.unit_id).codigo if w.unit_id else None
+    d["zona_nombre"] = planos.zonas(db.get(Asset, w.asset_id).codigo).get(w.zona, w.zona) if w.zona else None
     for campo in ("abierta_por", "conf_mto_por", "conf_limpieza_por", "cerrada_por"):
         uid = getattr(w, campo)
         d[campo + "_nombre"] = db.get(User, uid).nombre if uid else None
@@ -98,7 +99,12 @@ def create_order(data: WorkOrderIn, tareas: BackgroundTasks, scope: Scope = Depe
     gestiona = scope.can_asset("mantenimiento.editar", data.asset_id)
     if not (gestiona or scope.can_asset("mantenimiento.abrir", data.asset_id)):
         raise HTTPException(403, "Sin permiso para abrir órdenes de trabajo en este activo")
-    get_or_404(db, Asset, data.asset_id)
+    asset = get_or_404(db, Asset, data.asset_id)
+    if data.zona:
+        if data.unit_id:
+            bad_request("Una incidencia es de un apartamento o de una zona común, no de ambos")
+        if data.zona not in planos.zonas(asset.codigo):
+            bad_request("Zona común no válida para este activo")
     unit = None
     if data.unit_id:
         unit = get_or_404(db, Unit, data.unit_id)
@@ -226,7 +232,8 @@ def work_order_sheet(wid: int, scope: Scope = Depends(get_scope), db: Session = 
         .order_by(WorkOrderAttachment.id).limit(4))]
     abierta = db.get(User, w.abierta_por).nombre if w.abierta_por else None
     pdf = parte_pdf.generar(w, asset, asset.company, db.get(Unit, w.unit_id) if w.unit_id else None, abierta, fotos,
-                            w.categoria.replace("_", " ").capitalize())
+                            w.categoria.replace("_", " ").capitalize(),
+                            planos.zonas(asset.codigo).get(w.zona) if w.zona else None)
     audit(db, scope.user, "imprimir_parte", "orden_trabajo", wid)
     db.commit()
     return Response(pdf, media_type="application/pdf",

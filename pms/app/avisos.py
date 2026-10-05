@@ -22,6 +22,7 @@ from sqlalchemy import select
 from .config import settings
 from .database import SessionLocal
 from .models import Asset, Charge, Contact, EmailLog, Lease, PreventivePlan, Unit, User, WorkOrder
+from .planos import zonas
 from .security import Scope
 
 log = logging.getLogger("pms.avisos")
@@ -136,7 +137,9 @@ def ot_urgente(wid: int, autor_id: int | None) -> int:
         a = db.get(Asset, w.asset_id)
         u = db.get(Unit, w.unit_id) if w.unit_id else None
         autor = db.get(User, autor_id) if autor_id else None
-        lugar = f"{u.uso} {u.codigo}" + (f" ({u.bloque})" if u.bloque else "") if u else "Zonas comunes"
+        zona = zonas(a.codigo).get(w.zona) if w.zona else None
+        lugar = (f"{u.uso} {u.codigo}" + (f" ({u.bloque})" if u.bloque else "") if u
+                 else f"Zonas comunes · {zona}" if zona else "Zonas comunes")
         asunto = f"OT URGENTE · {a.nombre} · {lugar}: {w.titulo}"[:200]
         filas = [("Orden", f"OT-{w.id:05d}"), ("Activo", a.nombre), ("Ubicación", lugar), ("Avería", w.titulo),
                  ("Instalación", w.categoria), ("Descripción", w.descripcion or "—"),

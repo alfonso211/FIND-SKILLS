@@ -314,6 +314,7 @@ class AccommodationContractIn(BaseModel):
 class WorkOrderIn(BaseModel):
     asset_id: int
     unit_id: int | None = None
+    zona: str | None = Field(default=None, max_length=40)  # zona común del plano (sin unidad)
     tipo: str = "correctivo"
     categoria: str = "general"
     prioridad: str = "media"
