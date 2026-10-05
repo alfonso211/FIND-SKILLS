@@ -317,7 +317,9 @@ async function fichaApartamento(uid, recarga) {
   const items = [];
   (d.reservas || []).forEach((r) => items.push({ tipo: "reserva", fecha: r.entrada, texto: [r.localizador, r.huesped, r.documento, r.canal, r.estado, r.notas].join(" "),
     html: `<b>Reserva ${esc(r.localizador || "R-" + r.id)}</b> · ${fdate(r.entrada)} → ${fdate(r.salida)} (${r.noches} noches) · ${esc(r.huesped)} · ${badge(r.estado)}${r.proxima ? ' <span class="badge b-pendiente">próxima</span>' : ""}<br><span class="muted">${esc(r.canal)} · ${r.adultos + r.ninos} pax · ${eur(r.importe_total)} (cobrado ${eur(r.importe_pagado)})${r.contrato ? " · contrato impreso" : ""}</span>`,
-    acc: can("reservas.editar") ? [...(garaje ? [] : [["Contrato", () => accommodationContract({ id: r.id, unidad: u.codigo, huesped: r.huesped })]]), ["Huésped", () => editGuest(r.guest_id)]] : [] }));
+    acc: can("reservas.editar") ? [...(garaje ? [] : [["Contrato", () => accommodationContract({ id: r.id, unidad: u.codigo, huesped: r.huesped })]]),
+      ...(!garaje && ["confirmada", "checkin"].includes(r.estado) ? [["Renovar", () => renovarEstancia({ id: r.id, unidad: u.codigo, huesped: r.huesped }, recarga)]] : []),
+      ["Huésped", () => editGuest(r.guest_id)]] : [] }));
   const clientes = new Map();
   (d.reservas || []).forEach((r) => { const c = clientes.get(r.guest_id) || { ...r, estancias: 0 }; c.estancias += 1; clientes.set(r.guest_id, c); });
   clientes.forEach((c) => items.push({ tipo: "cliente", fecha: c.entrada, texto: [c.huesped, c.documento, c.telefono, c.email, c.nacionalidad].join(" "),
@@ -573,6 +575,7 @@ function resActions(reload) {
     [r.importe_total - r.importe_pagado > 0.004 ? "Cobro" : "Servicios", () => cobroForm(`Cobro reserva ${r.localizador || r.id} · ${r.unidad} · pendiente ${eur(r.importe_total - r.importe_pagado)}`,
       Math.round((r.importe_total - r.importe_pagado) * 100) / 100, `/api/turistico/reservas/${r.id}/cobro`, reload, r.asset_id)],
     r.estado === "confirmada" && ["Check-in", () => run(() => post(`/api/turistico/reservas/${r.id}/checkin`), "Check-in realizado").then(reload).catch(() => ocupantesReserva(r, reload))],
+    ["confirmada", "checkin"].includes(r.estado) && r.uso !== "garaje" && ["Renovar", () => renovarEstancia(r, reload)],
     r.estado === "checkin" && ["Check-out", () => run(() => post(`/api/turistico/reservas/${r.id}/checkout`), "Check-out realizado").then(reload)],
     ["Huésped", () => editGuest(r.guest_id)],
     ["Editar", () => editReservation(r, reload)],
@@ -823,7 +826,8 @@ async function newReservation(reload, fija) {  // fija: {id, codigo, asset_id} p
       disp.libres = 1;
     }
     if (!disp.libres) throw new Error("No hay unidades disponibles para esas fechas y ocupación");
-    setTimeout(() => conEscaner(form(`Reserva ${fdate(q.fecha_entrada)} → ${fdate(q.fecha_salida)} · ${disp.libres} libres`, [
+    setTimeout(() => bindBuscaCliente(conEscaner(form(`Reserva ${fdate(q.fecha_entrada)} → ${fdate(q.fecha_salida)} · ${disp.libres} libres`, [
+      { html: buscaClienteHtml() },
       { html: scanHtml("1. Escanee el documento del huésped titular (DNI, NIE/TIE, pasaporte)") },
       { html: "<h4>Huésped titular</h4>" }, ...guestFields,
       { html: "<h4>Reserva</h4>" },
@@ -835,13 +839,18 @@ async function newReservation(reload, fija) {  // fija: {id, codigo, asset_id} p
       { k: "notas", t: "Notas", type: "textarea", wide: true },
     ], {}, async (d, fr) => {
       const g = {}; guestFields.filter((f) => f.k).forEach((f) => { g[f.k] = d[f.k]; delete d[f.k]; });
-      const nueva = await post("/api/turistico/reservas", { ...clean(d), ...q, unit_id: Number(d.unit_id), guest: clean(g), documentos: fr._docs.map((x) => x.id) });
+      let cliente = { guest: clean(g) };
+      if (fr._cliente) {  // cliente habitual: se actualiza su ficha y se reutiliza
+        await put(`/api/terceros/${fr._cliente.id}`, { ...clean(g), company_id: fr._cliente.company_id, tipo: "huesped" });
+        cliente = { guest_id: fr._cliente.id };
+      }
+      const nueva = await post("/api/turistico/reservas", { ...clean(d), ...q, unit_id: Number(d.unit_id), ...cliente, documentos: fr._docs.map((x) => x.id) });
       toast("Reserva creada" + (nueva.factura ? ` · Factura ${nueva.factura.codigo}` : "") + ". Complete ahora el contrato (puede guardarlo e imprimirlo a la llegada).");
       reload && reload();
       if (nueva.factura) await descargarFactura(nueva.factura.id);
       if (nueva.adultos + nueva.ninos > 1) await ocupantesReserva(nueva, reload, () => accommodationContract(nueva));
       else await accommodationContract(nueva);
-    }, "Crear reserva")), 0);
+    }, "Crear reserva"))), 0);
   }, "Buscar disponibilidad");
 }
 
@@ -1062,6 +1071,51 @@ function editarAlquilerGaraje(c, reload) {
   ], c, async (d) => { await put(`/api/garajes/contratos/${c.id}`, d); toast("Alquiler actualizado"); reload(); });
 }
 
+// ---- renovación de la estancia al mismo cliente: reserva nueva, datos completos y contrato nuevo firmado
+async function renovarEstancia(r, reload) {
+  const info = await run(() => get(`/api/turistico/reservas/${r.id}/renovacion`));
+  const res = info.reserva;
+  if (info.pendiente.length) {
+    const f = form(`Renovar · ${res.unidad} · ${res.huesped}: faltan datos`, [
+      { html: `<p>Para renovar hay que completar los datos del cliente y de los ocupantes (son los del contrato y del parte de viajeros):</p>
+        <ul>${info.pendiente.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>
+        <p class="muted">Pulse «Completar datos»: escanee el documento o rellene la ficha de cada uno. Al terminar, vuelva a «Renovar».</p>` },
+    ], {}, async () => { setTimeout(() => ocupantesReserva(res, reload, () => renovarEstancia(r, reload)), 0); }, "Completar datos");
+    return f;
+  }
+  form(`Renovar estancia · ${res.unidad} · ${res.huesped}`, [
+    { html: `<p>Renovación al <b>mismo cliente</b> en el mismo apartamento: nueva estancia desde el <b>${fdate(info.desde)}</b> (salida actual, ${info.noches_anteriores} noches la anterior).
+      El cliente firma un <b>contrato nuevo</b> y la renovación se cobra y factura aparte. Los datos del cliente y sus ocupantes se mantienen.</p>` },
+    { k: "fecha_salida", t: "Nueva fecha de salida", type: "date", req: true, def: info.hasta },
+    { k: "importe_total", t: "Importe de la renovación € (IVA incluido)", type: "number", def: 0 },
+    ...(info.garajes.length ? [{ k: "renovar_garaje", t: `Renovar también la plaza de garaje ${info.garajes.join(", ")}`, type: "checkbox", def: true, wide: true }] : []),
+    { k: "notas", t: "Notas", type: "textarea", wide: true },
+  ], {}, async (d) => {
+    const nueva = await post(`/api/turistico/reservas/${res.id}/renovar`, clean({ ...d, renovar_garaje: d.renovar_garaje !== false }));
+    toast(`Renovación ${nueva.localizador} creada. Ahora el cliente firma el contrato.`);
+    reload && reload();
+    setTimeout(() => accommodationContract(nueva), 0);
+  }, "Renovar y pasar al contrato");
+}
+// ---- cliente habitual: buscar su ficha (datos y documentos guardados) para no volver a pedirlos
+const buscaClienteHtml = () => `<fieldset class="busca-cliente"><legend>¿Ya ha estado alojado? Busque su ficha</legend>
+  <input type="search" data-buscacli placeholder="Nombre, apellidos, documento, teléfono o correo" autocomplete="off"><div data-clires class="cli-res"></div></fieldset>`;
+function bindBuscaCliente(f) {
+  const res = $("[data-clires]", f);
+  $("[data-buscacli]", f).oninput = debounce(async (e) => {
+    const q = e.target.value.trim();
+    if (q.length < 3) { res.innerHTML = ""; return; }
+    const lista = (await get("/api/terceros", { tipo: "huesped", q }).catch(() => [])).slice(0, 8);
+    res.innerHTML = lista.length ? lista.map((c, i) => `<button type="button" class="btn sm" data-c="${i}">${esc(`${c.nombre} ${c.apellidos || ""}`.trim())}${c.documento_num ? ` · ${esc(c.documento_num)}` : ""}${c.telefono ? ` · ${esc(c.telefono)}` : ""}</button>`).join("") : '<span class="muted">Sin coincidencias: es un cliente nuevo.</span>';
+    res.querySelectorAll("[data-c]").forEach((b) => (b.onclick = () => {
+      const c = lista[b.dataset.c];
+      f._cliente = c;
+      rellena(f, Object.fromEntries(guestFields.filter((x) => x.k).map((x) => [x.k, c[x.k]])));
+      res.innerHTML = `<p class="cli-ok">✔ Ficha de <b>${esc(c.nombre)} ${esc(c.apellidos || "")}</b>: se reutilizan sus datos y documentos. Revise y complete lo que falte.</p>`;
+    }));
+  }, 300);
+}
+
 // ---- estancias vencidas: siguen alojados después de su fecha de salida (y las que terminan en 3 días)
 async function estanciasVencidas(cont, reload) {
   if (!cont) return;
@@ -1069,6 +1123,7 @@ async function estanciasVencidas(cont, reload) {
   if (!v || !(v.vencidas.length + v.proximas.length)) { cont.innerHTML = ""; return; }
   const acc = (r) => [
     r.whatsapp && ["WhatsApp", () => window.open(r.whatsapp, "_blank", "noopener")],
+    can("reservas.editar") && ["Renovar", () => renovarEstancia(r, reload)],
     can("reservas.editar") && ["Ampliar", () => editReservation(r, reload)],
     can("reservas.editar") && ["Check-out", () => confirm(`¿Dar la salida a ${r.huesped} (${r.unidad})?`) && run(() => post(`/api/turistico/reservas/${r.id}/checkout`), "Check-out realizado").then(reload)],
     ["Cliente", () => editGuest(r.guest_id, "huesped", reload)],
@@ -1077,7 +1132,7 @@ async function estanciasVencidas(cont, reload) {
     { k: "fecha_entrada", t: "Entrada", f: fdate }, { k: "fecha_salida", t: "Salida", f: fdate },
     { k: "dias", t: "Situación", f: (d) => (d > 0 ? `<span class="badge b-cancelada">vencida hace ${d} día${d === 1 ? "" : "s"}</span>` : d === 0 ? '<span class="badge b-pendiente">sale hoy</span>' : `<span class="badge b-pendiente">termina en ${-d} día${d === -1 ? "" : "s"}</span>`) }];
   cont.innerHTML = `<div class="aviso-vencidas"><h4>⚠ Estancias vencidas o que terminan pronto (${v.vencidas.length} vencidas · ${v.proximas.length} en 3 días)</h4>
-    <p class="muted">Siguen alojados después de su fecha de salida, o la tienen muy próxima: renueve la estancia (Ampliar) o dé la salida. Con teléfono, «WhatsApp» abre el aviso al cliente ya escrito.</p><div data-t></div></div>`;
+    <p class="muted">Siguen alojados después de su fecha de salida, o la tienen muy próxima. <b>Renovar</b>: nueva estancia con contrato nuevo firmado por el cliente (pide los datos que falten). <b>Ampliar</b>: solo corrige la fecha de salida. O dé la salida. Con teléfono, «WhatsApp» abre el aviso al cliente ya escrito.</p><div data-t></div></div>`;
   table($("[data-t]", cont), cols, [...v.vencidas, ...v.proximas], acc);
 }
 // ---- ocupación actual exportada del PMS anterior

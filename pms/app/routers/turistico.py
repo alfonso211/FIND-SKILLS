@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from sqlalchemy import or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from ..config import settings
 from ..database import get_db
@@ -18,7 +18,7 @@ from ..facturacion import (IVA_ALOJAMIENTO, IVA_GENERAL, datos_cliente, dinero, 
                            serie_activo)
 from ..models import (MODALIDADES_RESERVA, AccommodationContract, Asset, Contact, Invoice, Lease, Reservation,
                       ReservationGuest, Unit, User)
-from ..schemas import (AccommodationContractIn, OccupantIn, Payment, ReservationIn, ReservationUpdate,
+from ..schemas import (AccommodationContractIn, OccupantIn, Payment, RenewalIn, ReservationIn, ReservationUpdate,
                        SendContractIn, SignatureIn)
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
@@ -96,9 +96,17 @@ def create_reservation(data: ReservationIn, scope: Scope = Depends(get_scope), d
         if guest.company_id != company_id or guest.tipo != "huesped":
             bad_request("El huésped no pertenece a la sociedad del activo")
     elif data.guest:
-        guest = Contact(company_id=company_id, tipo="huesped", **data.guest.model_dump())
+        doc = (data.guest.documento_num or "").strip().upper() or None
+        guest = db.scalar(select(Contact).where(Contact.company_id == company_id, Contact.tipo == "huesped",
+                                                Contact.documento_num == doc)) if doc else None
+        if guest is None:
+            guest = Contact(company_id=company_id, tipo="huesped", **data.guest.model_dump())
+            db.add(guest)
+        else:  # cliente que vuelve: se reutiliza su ficha y se actualiza con lo nuevo
+            for k, v in data.guest.model_dump(exclude_unset=True).items():
+                if v not in (None, ""):
+                    setattr(guest, k, v)
         registro_viajeros.completar_municipio(guest)
-        db.add(guest)
         db.flush()
     else:
         bad_request("Indique guest_id o los datos del huésped")
@@ -260,6 +268,8 @@ def cancel(rid: int, no_show: bool = False, scope: Scope = Depends(get_scope), d
 def today(asset_id: int | None = None, fecha: date | None = None,
           scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     """Llegadas, salidas y alojados de un día (por defecto hoy)."""
+    cerrar_renovadas(db)
+    db.commit()
     f = fecha or date.today()
     ids = scope.asset_ids("reservas.ver")
     base = scoped(select(Reservation).join(Unit), Unit.asset_id, ids)
@@ -781,12 +791,109 @@ def import_occupancy(fichero: UploadFile = File(...), asset_id: int = Form(...),
     return {"filas": resultado, **cuenta, "importado": confirmar}
 
 
+# --------------------------------------------------------------------------- renovaciones
+# datos del cliente que se reutilizan en su siguiente estancia; al renovar se mantienen además la fianza y el garaje
+DATOS_CLIENTE_CONTRATO = ("cliente_nombre", "cliente_nacionalidad", "cliente_documento", "cliente_domicilio",
+                          "cliente_cp", "cliente_municipio", "cliente_pais", "cliente_email", "cliente_movil",
+                          "motivo", "motivo_otro", "acreditacion", "acreditacion_otro", "tarjeta_titular",
+                          "tarjeta_terminacion", "tarjeta_caducidad")
+DATOS_RENOVACION = DATOS_CLIENTE_CONTRATO + ("fianza", "sin_garaje", "garaje_sotano", "garaje_plaza", "capacidad",
+                                            "dormitorios")
+
+
+def _localizador_renovacion(db: Session, r: Reservation) -> str:
+    base = (r.localizador or f"R-{r.id}").split("/R")[0]
+    n = 1
+    while db.scalar(select(Reservation.id).join(Unit).where(Unit.asset_id == r.unit.asset_id,
+                                                            Reservation.localizador == f"{base}/R{n}")):
+        n += 1
+    return f"{base}/R{n}"
+
+
+def cerrar_renovadas(db: Session) -> None:
+    """Cuando empieza una renovación, la estancia anterior se cierra (sin pasar por limpieza) y la renovación
+    queda con el cliente dentro (check-in), sin que recepción tenga que hacer nada."""
+    hoy = date.today()
+    nueva = aliased(Reservation)
+    for vieja, ren in db.execute(select(Reservation, nueva).join(nueva, nueva.renueva_id == Reservation.id).where(
+            Reservation.estado == "checkin", nueva.estado.in_(ACTIVAS), nueva.fecha_entrada <= hoy)).all():
+        vieja.estado = "checkout"
+        ren.estado = "checkin"
+
+
+@router.get("/reservas/{rid}/renovacion")
+def renewal_info(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Propuesta de renovación: mismas noches a partir de la salida actual y datos que faltan del cliente."""
+    r = get_or_404(db, Reservation, rid)
+    scope.require_asset("reservas.ver", r.unit.asset_id)
+    noches = max(1, (r.fecha_salida - r.fecha_entrada).days)
+    return {"reserva": _res_out(r), "desde": r.fecha_salida.isoformat(),
+            "hasta": (r.fecha_salida + timedelta(days=noches)).isoformat(), "noches_anteriores": noches,
+            "pendiente": _registro_incompleto(r) if r.unit.uso != "garaje" else [],
+            "garajes": [g.unit.codigo for g in _garajes_asociados(db, r)]}
+
+
+@router.post("/reservas/{rid}/renovar", status_code=201)
+def renew_stay(rid: int, data: RenewalIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Renueva la estancia al mismo cliente en el mismo apartamento, como una reserva nueva (con su contrato y su
+    factura) que empieza el día de la salida actual. Exige antes los datos del cliente y ocupantes completos."""
+    r = _reserva_editable(db, scope, rid)
+    if r.estado not in ACTIVAS:
+        bad_request("Solo se renuevan estancias en curso o reservas confirmadas")
+    if db.scalar(select(Reservation.id).where(Reservation.renueva_id == r.id, Reservation.estado.in_(ACTIVAS))):
+        bad_request("Esta estancia ya está renovada: renueve la última renovación")
+    if data.fecha_salida <= r.fecha_salida:
+        bad_request(f"La nueva salida debe ser posterior a la actual ({r.fecha_salida:%d/%m/%Y})")
+    if r.unit.uso != "garaje":
+        pendiente = _registro_incompleto(r)
+        if pendiente:
+            bad_request("Antes de renovar, complete los datos que faltan: " + "; ".join(pendiente))
+    if _conflict(db, r.unit_id, r.fecha_salida, data.fecha_salida, exclude_id=r.id):
+        bad_request(f"El apartamento {r.unit.codigo} ya está reservado entre el {r.fecha_salida:%d/%m/%Y} y el "
+                    f"{data.fecha_salida:%d/%m/%Y}")
+    hoy = date.today()
+    alojado = r.estado == "checkin"
+    datos = {k: v for k, v in (r.datos_contrato or {}).items() if k in DATOS_RENOVACION}
+    loc = _localizador_renovacion(db, r)
+    nueva = Reservation(unit_id=r.unit_id, guest_id=r.guest_id, localizador=loc, canal=r.canal,
+                        fecha_entrada=r.fecha_salida, fecha_salida=data.fecha_salida, adultos=r.adultos, ninos=r.ninos,
+                        importe_total=data.importe_total, importe_pagado=0,
+                        estado="checkin" if alojado and r.fecha_salida <= hoy else "confirmada", renueva_id=r.id,
+                        datos_contrato=datos or None, notas=data.notas or f"Renovación de la reserva {r.localizador or r.id}")
+    for o in r.ocupantes:
+        nueva.ocupantes.append(ReservationGuest(contact_id=o.contact_id, titular=o.titular, parentesco=o.parentesco,
+                                                orden=o.orden))
+    db.add(nueva)
+    if data.renovar_garaje:
+        for g in _garajes_asociados(db, r):
+            if _conflict(db, g.unit_id, r.fecha_salida, data.fecha_salida, exclude_id=g.id):
+                bad_request(f"La plaza de garaje {g.unit.codigo} está ocupada en las nuevas fechas: "
+                            "renueve sin garaje o cambie de plaza")
+            db.add(Reservation(unit_id=g.unit_id, guest_id=r.guest_id, localizador=f"{loc}-G", canal=g.canal,
+                               fecha_entrada=r.fecha_salida, fecha_salida=data.fecha_salida, adultos=1, ninos=0,
+                               importe_total=0, importe_pagado=0, estado=nueva.estado, renueva_id=g.id,
+                               notas=f"Plaza de garaje de la renovación {loc}"))
+    db.flush()
+    cerrar_renovadas(db)  # si la estancia anterior (y su plaza) ya terminó, queda cerrada
+    audit(db, scope.user, "renovar", "reserva", r.id, {"renovacion": nueva.id, "localizador": loc,
+                                                       "hasta": str(data.fecha_salida)})
+    db.commit()
+    db.refresh(nueva)
+    return _res_out(nueva)
+
+
 # --------------------------------------------------------------------------- estancias vencidas
 def vencidas_q(asset_ids: set[int] | None, dia: date):
     """Alojados (check-in hecho) cuya fecha de salida ya pasó: hay que renovar la estancia o dar la salida."""
     stmt = select(Reservation).join(Unit).where(Reservation.estado == "checkin", Reservation.fecha_salida < dia,
-                                                Unit.uso != "garaje")
+                                                Unit.uso != "garaje", ~_renovada())
     return scoped(stmt, Unit.asset_id, asset_ids)
+
+
+def _renovada():
+    """Condición: la reserva ya tiene una renovación activa (no hay que avisar de su fin)."""
+    nueva = aliased(Reservation)
+    return select(nueva.id).where(nueva.renueva_id == Reservation.id, nueva.estado.in_(ACTIVAS)).exists()
 
 
 @router.get("/vencidas")
@@ -795,9 +902,11 @@ def overdue_stays(asset_id: int | None = None, dias: int = Query(3, ge=0, le=30)
     """Estancias vencidas (ya pasó la salida y siguen alojados) y las que terminan en los próximos `dias` días,
     con el enlace de WhatsApp para avisar al cliente."""
     hoy = date.today()
+    cerrar_renovadas(db)
+    db.commit()
     ids = scope.asset_ids("reservas.ver")
     vencen = scoped(select(Reservation).join(Unit), Unit.asset_id, ids).where(
-        Reservation.estado == "checkin", Unit.uso != "garaje", Reservation.fecha_salida >= hoy,
+        Reservation.estado == "checkin", Unit.uso != "garaje", Reservation.fecha_salida >= hoy, ~_renovada(),
         Reservation.fecha_salida <= hoy + timedelta(days=dias))
     q_venc = vencidas_q(ids, hoy)
     if asset_id:
@@ -851,8 +960,15 @@ def _prefill(r: Reservation, db: Session) -> dict:
         "ocupantes": ocupantes_texto(r),
         "motivo": [], "acreditacion": [],
     }
-    # datos ya tecleados: borrador guardado en la reserva o, si no hay, la última impresión
+    # datos ya tecleados: borrador guardado en la reserva o, si no hay, la última impresión; si el cliente ya
+    # estuvo alojado (o renueva), los datos de su último contrato
     guardado = r.datos_contrato or (ultimo.datos if ultimo else None)
+    if not guardado:
+        previa = db.scalar(select(Reservation.datos_contrato).where(
+            Reservation.guest_id == r.guest_id, Reservation.id != r.id, Reservation.datos_contrato.is_not(None))
+            .order_by(Reservation.id.desc()))
+        if previa:
+            guardado = {k: v for k, v in previa.items() if k in DATOS_CLIENTE_CONTRATO}
     if guardado:
         base.update({k: v for k, v in guardado.items()
                      if k in AccommodationContractIn.model_fields and v not in (None, "", [])

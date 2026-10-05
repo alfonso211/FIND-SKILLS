@@ -325,6 +325,14 @@ class ReservationIn(BaseModel):
         return v
 
 
+class RenewalIn(BaseModel):
+    """Renovación de una estancia al mismo cliente: nueva reserva desde la salida actual hasta `fecha_salida`."""
+    fecha_salida: date
+    importe_total: float = Field(default=0, ge=0)
+    renovar_garaje: bool = True
+    notas: str | None = None
+
+
 class ReservationUpdate(BaseModel):
     unit_id: int | None = None
     localizador: str | None = None

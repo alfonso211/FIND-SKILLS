@@ -277,7 +277,8 @@ def list_contacts(tipo: str, company_id: int | None = None, q: str | None = None
     if q:
         like = f"%{q}%"
         stmt = stmt.where(or_(Contact.nombre.ilike(like), Contact.apellidos.ilike(like),
-                              Contact.documento_num.ilike(like), Contact.email.ilike(like)))
+                              Contact.documento_num.ilike(like), Contact.email.ilike(like),
+                              Contact.telefono.ilike(like)))
     return [c.to_dict() for c in db.scalars(stmt.order_by(Contact.nombre).limit(500))]
 
 

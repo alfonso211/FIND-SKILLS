@@ -368,3 +368,8 @@ body.sin-scroll { overflow: hidden; }
 .aviso-vencidas { background: #fff7f6; border: 1px solid #f3c4bf; border-left: 4px solid #c62828; border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; }
 .aviso-vencidas h4 { margin: 0 0 4px; color: #a12020; }
 .aviso-vencidas .table-wrap { background: #fff; }
+
+/* ---------- cliente habitual ---------- */
+.busca-cliente input { width: 100%; }
+.cli-res { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.cli-ok { margin: 4px 0 0; color: #1f7a3d; }
