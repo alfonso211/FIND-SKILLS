@@ -5,7 +5,7 @@ from io import BytesIO
 from openpyxl import Workbook, load_workbook
 
 from app import avisos
-from conftest import login
+from conftest import domicilio_fiscal, login
 
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -101,23 +101,37 @@ def test_importar_reservas(client, admin, ids):
 
 def test_informes(client, admin, ids):
     sae = ids["assets"]["SAE"]["id"]
-    # reserva de 3 noches 30/04-03/05/2025 (300 €): 1 noche en abril, 2 en mayo
+    domicilio_fiscal(client, admin)
+    # reserva de 3 noches 30/04-03/05/2025: 1 noche en abril, 2 en mayo. Se cobra (y factura) hoy: la producción
+    # cuenta en el mes de la factura, no en el de la estancia
     unit = client.get(f"/api/unidades?asset_id={sae}&q=B-529", headers=admin).json()[0]
     assert client.post("/api/turistico/reservas", headers=admin, json={
         "unit_id": unit["id"], "guest": {"nombre": "Informe"}, "fecha_entrada": "2025-04-30",
-        "fecha_salida": "2025-05-03", "importe_total": 300}).status_code == 201
+        "fecha_salida": "2025-05-03", "importe_total": 330, "importe_pagado": 330}).status_code == 201
     wb = _libro(client.get(f"/api/informes/ocupacion?desde=2025-04-01&hasta=2025-05-31&asset_id={sae}", headers=admin))
     filas = {f["Mes"]: f for f in _filas(wb["Turísticos"])}
     assert filas["abr-2025"]["Unidades"] == 300 and filas["abr-2025"]["Noches disponibles"] == 9000
-    assert filas["abr-2025"]["Noches ocupadas"] == 1 and filas["abr-2025"]["Ingresos alojamiento"] == 100
-    # mayo: esta reserva (2 noches, 200 €) + las importadas en test_importar si ya se ejecutó
-    assert filas["may-2025"]["Noches ocupadas"] >= 2 and filas["may-2025"]["Ingresos alojamiento"] >= 200
+    assert filas["abr-2025"]["Noches ocupadas"] == 1 and filas["abr-2025"]["Alojamiento facturado (base)"] == 0
+    assert filas["may-2025"]["Noches ocupadas"] >= 2
     assert "Residencial" not in wb.sheetnames  # filtrado por activo turístico
 
-    wb = _libro(client.get("/api/informes/produccion?desde=2025-04-01&hasta=2025-04-30", headers=admin))
+    hoy = date.today()
+    mes = f"{['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][hoy.month - 1]}-{hoy.year}"
+    assert _filas(_libro(client.get("/api/informes/produccion?desde=2025-04-01&hasta=2025-04-30",
+                                    headers=admin))["Producción"])[1]["Producción (base imponible)"] == 0
+    wb = _libro(client.get(f"/api/informes/produccion?desde={hoy.replace(day=1)}&hasta={hoy}", headers=admin))
     prod = {f["Activo"]: f for f in _filas(wb["Producción"])}
-    assert prod["Suite Aeropuerto"]["Alojamiento turístico (devengado)"] == 100
-    assert set(prod) == {"C/ Babilonia 35", "Suite Aeropuerto", "Suite Florida"}
+    assert set(prod) == {"C/ Babilonia 35", "Suite Aeropuerto", "Suite Florida"} and prod["Suite Aeropuerto"]["Mes"] == mes
+    # coincide con las facturas emitidas este mes en Suite Aeropuerto
+    facturas = [f for f in client.get(f"/api/facturas?asset_id={sae}&anio={hoy.year}", headers=admin).json()
+                if f["fecha_expedicion"][:7] == f"{hoy:%Y-%m}"]
+    base = round(sum(f["base_imponible"] for f in facturas), 2)
+    p = prod["Suite Aeropuerto"]
+    assert p["Producción (base imponible)"] == base and p["Nº facturas"] == len(facturas)
+    assert round(p["Alojamiento (base)"] + p["Rentas (base)"] + p["Servicios (base)"], 2) == base
+    assert p["Alojamiento (base)"] >= 300  # 330 € con IVA del 10 %
+    panel = {a["codigo"]: a for a in client.get("/api/panel", headers=admin).json()["activos"]}
+    assert panel["SAE"]["produccion_mes"] == base
 
     # morosidad: recibo de enero de 2025 sin cobrar
     bab = ids["assets"]["BAB35"]["id"]

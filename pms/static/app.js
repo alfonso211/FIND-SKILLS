@@ -167,7 +167,11 @@ const V = {};
 V.panel = async (el) => {
   const [p, conPlano] = await Promise.all([get("/api/panel"), get("/api/plano/activos")]);
   if (!p.activos.length) { el.innerHTML = `<div class="empty">No tiene activos asignados.</div>`; return; }
-  const planos = conPlano.filter((a) => !S.asset || String(a.id) === String(S.asset));
+  // Quien ve varios activos: tarjetas de situación interactivas (abren el plano del activo, si lo tiene).
+  // Quien solo ve su activo (o filtra uno): situación informativa y las plantas en miniatura para trabajar.
+  const varios = S.assets.length > 1 && !S.asset;
+  const conMapa = new Set(conPlano.map((a) => a.id));
+  const planos = varios ? [] : conPlano.filter((a) => !S.asset || String(a.id) === String(S.asset));
   el.innerHTML = `${planos.map((a) => `<section class="plano-resumen" data-plano="${a.id}"><div class="toolbar"><h3 style="margin:0">${esc(a.nombre)} · plano por plantas</h3><span class="spacer"></span>${leyendaHtml()}</div><div class="minis"><p class="muted">Cargando plano…</p></div></section>`).join("")}
     <p class="muted">Situación a ${fdate(p.fecha)}</p><div class="cards">${p.activos.filter((a) => !S.asset || String(a.id) === String(S.asset)).map((a) => {
     const k = [];
@@ -181,15 +185,20 @@ V.panel = async (el) => {
         k.push([`${al[u] || 0} / ${n}`, `${t[0].toUpperCase()}${t.slice(1)} alquilad${["vivienda", "oficina"].includes(u) ? "as" : "os"}`]);
       });
     }
-    if (a.produccion_mes != null) k.push([eur(a.produccion_mes), "Producción mes"]);
+    if (a.produccion_mes != null) k.push([eur(a.produccion_mes), "Producción mes (facturado sin IVA)"]);
     if (a.renta_mensual != null) k.push([eur(a.renta_mensual), "Renta mensual"], [eur(a.deuda_vencida), "Deuda vencida"]);
     if (a.ot_abiertas != null) k.push([a.ot_abiertas, "OT abiertas"], [a.ot_urgentes, "OT urgentes"], [a.ot_pendientes_cierre, "OT pendientes de cierre"]);
     const est = Object.entries(a.estados).map(([e, n]) => `${badge(e)} ${n}`).join(" ");
-    return `<div class="card"><h3>${esc(a.nombre)}</h3><div class="sub">${esc(a.modalidad_nombre)} · Gestiona ${esc(a.sociedad)} · Propiedad ${esc(a.propietaria)}</div>
+    const clic = varios && conMapa.has(a.id);
+    return `<div class="card${clic ? " clic" : ""}" ${clic ? `data-abrir="${a.id}" tabindex="0" role="button" title="Abrir el plano de ${esc(a.nombre)}"` : ""}><h3>${esc(a.nombre)}${clic ? '<span class="ver-plano">Ver plano →</span>' : ""}</h3><div class="sub">${esc(a.modalidad_nombre)} · Gestiona ${esc(a.sociedad)} · Propiedad ${esc(a.propietaria)}</div>
       ${a.ocupacion_hoy != null ? `<div class="bar"><i style="width:${Math.min(100, a.ocupacion_hoy)}%"></i></div>` : ""}
       <div class="kpis">${k.map(([v, l]) => `<div class="kpi"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("")}</div>
       <p style="margin-top:12px">${est || '<span class="muted">Sin unidades dadas de alta</span>'}</p></div>`;
   }).join("")}</div>`;
+  el.querySelectorAll("[data-abrir]").forEach((c) => {
+    const abrir = () => { S.plano = { asset: Number(c.dataset.abrir) }; go("plano"); };
+    c.onclick = abrir; c.onkeydown = (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), abrir());
+  });
   pintarMinis(el).catch((e) => el.querySelectorAll(".minis").forEach((m) => (m.innerHTML = `<p class="error">${esc(e.message)}</p>`)));
 };
 
@@ -448,16 +457,59 @@ const resCols = [
 ];
 // ---- cobros y facturas: al registrar un cobro se emite la factura y se descarga en PDF
 const descargarFactura = (id) => download("GET", `/api/facturas/${id}/pdf`).catch((e) => toast(e.message, true));
-function cobroForm(titulo, pendiente, url, reload) {
+// Líneas de servicios (limpieza, aparcamiento...) dentro de una factura: del catálogo o escritas a mano
+function serviciosHtml(titulo = "Servicios (IVA 21 % salvo que se indique otro)") {
+  return `<fieldset class="servicios"><legend>${esc(titulo)}</legend><div data-lineas></div>
+    <button type="button" class="btn sm" data-addsrv>+ Añadir servicio</button> <span class="muted" data-srvtot></span></fieldset>`;
+}
+async function bindServicios(f, assetId, inicial = 0) {
+  const cat = await get("/api/servicios", { asset_id: assetId });
+  const cont = $("[data-lineas]", f);
+  if (!cont) return;
+  const total = () => {
+    const t = leerServicios(f).reduce((a, x) => a + (x.precio || 0) * x.cantidad, 0);
+    $("[data-srvtot]", f).textContent = t ? `Servicios: ${eur(t)} (IVA incluido)` : "";
+  };
+  const fila = () => {
+    cont.insertAdjacentHTML("beforeend", `<div class="srv-fila">
+      <select data-s><option value="">— Otro (escribir) —</option>${cat.map((x) => `<option value="${x.id}" data-precio="${x.precio ?? ""}" data-iva="${x.tipo_iva}">${esc(x.nombre)}${x.unidad !== "ud" ? " (" + esc(x.unidad) + ")" : ""}${x.precio != null ? " · " + eur(x.precio) : ""}</option>`).join("")}</select>
+      <input data-c placeholder="Concepto" hidden><input data-n type="number" step="any" min="0" value="1" title="Cantidad">
+      <input data-p type="number" step="0.01" min="0" placeholder="Precio € IVA incl." title="Precio unitario, IVA incluido">
+      <select data-i title="IVA">${[21, 10, 4, 0].map((v) => `<option value="${v}">${v ? v + " %" : "Exento"}</option>`).join("")}</select>
+      <button type="button" class="btn sm danger" data-x>✕</button></div>`);
+    const r = cont.lastElementChild;
+    const sel = $("[data-s]", r);
+    sel.onchange = () => {
+      const o = sel.selectedOptions[0];
+      $("[data-c]", r).hidden = !!sel.value;
+      if (sel.value) { $("input[data-p]", r).value = o.dataset.precio; $("select[data-i]", r).value = String(Number(o.dataset.iva)); }
+      total();
+    };
+    sel.onchange();
+    r.querySelectorAll("input,select").forEach((i) => (i.oninput = total));
+    $("[data-x]", r).onclick = () => { r.remove(); total(); };
+  };
+  $("[data-addsrv]", f).onclick = fila;
+  for (let i = 0; i < inicial; i++) fila();
+}
+function leerServicios(f) {
+  return [...f.querySelectorAll(".srv-fila")].map((r) => {
+    const v = (q) => $(q, r).value;
+    return clean({ servicio_id: v("[data-s]") ? Number(v("[data-s]")) : null, concepto: v("[data-s]") ? null : v("[data-c]"),
+      cantidad: Number(v("[data-n]") || 1), precio: v("input[data-p]") === "" ? null : Number(v("input[data-p]")), tipo_iva: Number(v("select[data-i]")) });
+  }).filter((x) => x.servicio_id || x.concepto);
+}
+function cobroForm(titulo, pendiente, url, reload, assetId) {
   const f = form(titulo, [
-    { k: "importe", t: "Importe cobrado € (IVA incluido)", type: "number", req: true },
+    { k: "importe", t: pendiente > 0 ? "Importe cobrado € (IVA incluido)" : "Importe cobrado € (nada pendiente)", type: "number", req: true },
     { k: "fecha_pago", t: "Fecha del cobro", type: "date", def: today() },
     { k: "forma_pago", t: "Forma de pago", type: "select", options: kv(S.cat.formas_pago) },
+    ...(assetId ? [{ html: serviciosHtml("Servicios en la misma factura (limpieza, aparcamiento…)") }] : []),
     { k: "otra", t: "Facturar a una empresa u otra persona (no al cliente)", type: "checkbox", wide: true },
     { k: "fa_nombre", t: "Razón social / nombre" }, { k: "fa_nif", t: "CIF / NIF" }, { k: "fa_domicilio", t: "Domicilio fiscal completo", wide: true },
     { html: '<p class="muted">Al registrar el cobro se emite la factura con el siguiente número de la serie del activo y se descarga en PDF. Una factura emitida no se puede modificar: si hay un error, Administración emite una rectificativa.</p>' },
-  ], { importe: pendiente }, async (d) => {
-    const body = { importe: d.importe, fecha_pago: d.fecha_pago, forma_pago: d.forma_pago };
+  ], { importe: Math.max(0, pendiente) }, async (d, fr) => {
+    const body = { importe: d.importe || 0, fecha_pago: d.fecha_pago, forma_pago: d.forma_pago, servicios: leerServicios(fr) };
     if (d.otra) body.facturar_a = { nombre: d.fa_nombre, nif: d.fa_nif, domicilio: d.fa_domicilio };
     const r = await post(url, clean(body));
     toast(`Cobro registrado · Factura ${r.factura.codigo}`);
@@ -468,12 +520,13 @@ function cobroForm(titulo, pendiente, url, reload) {
     i.closest("label").style.display = f.elements.otra.checked ? "" : "none"; i.required = f.elements.otra.checked;
   });
   f.elements.otra.onchange = sync; sync();
+  if (assetId) bindServicios(f, assetId, pendiente > 0 ? 0 : 1).catch((e) => toast(e.message, true));
 }
 function resActions(reload) {
   return (r) => can("reservas.editar") ? [
     ["Contrato", () => accommodationContract(r)],
-    r.importe_total - r.importe_pagado > 0.004 && ["Cobro", () => cobroForm(`Cobro reserva ${r.localizador || r.id} · ${r.unidad} · pendiente ${eur(r.importe_total - r.importe_pagado)}`,
-      Math.round((r.importe_total - r.importe_pagado) * 100) / 100, `/api/turistico/reservas/${r.id}/cobro`, reload)],
+    [r.importe_total - r.importe_pagado > 0.004 ? "Cobro" : "Servicios", () => cobroForm(`Cobro reserva ${r.localizador || r.id} · ${r.unidad} · pendiente ${eur(r.importe_total - r.importe_pagado)}`,
+      Math.round((r.importe_total - r.importe_pagado) * 100) / 100, `/api/turistico/reservas/${r.id}/cobro`, reload, r.asset_id)],
     r.estado === "confirmada" && ["Check-in", () => run(() => post(`/api/turistico/reservas/${r.id}/checkin`), "Check-in realizado").then(reload).catch(() => editGuest(r.guest_id))],
     r.estado === "checkin" && ["Check-out", () => run(() => post(`/api/turistico/reservas/${r.id}/checkout`), "Check-out realizado").then(reload)],
     ["Huésped", () => editGuest(r.guest_id)],
@@ -872,7 +925,7 @@ V.recibos = async (el) => {
     { k: "pendiente", t: "Pendiente", num: true, f: eur }, { k: "estado", t: "Estado", f: badge },
   ], await get("/api/alquiler/recibos", { asset_id: S.asset, periodo: $("#p", el).value, estado: $("#e", el).value }), (c) =>
     can("alquiler.editar") && ["pendiente", "parcial"].includes(c.estado) ? [
-      ["Cobrar", () => cobroForm(`Cobro recibo ${c.unidad} ${c.periodo} · ${c.inquilino}`, c.pendiente, `/api/alquiler/recibos/${c.id}/cobro`, load)],
+      ["Cobrar", () => cobroForm(`Cobro recibo ${c.unidad} ${c.periodo} · ${c.inquilino}`, c.pendiente, `/api/alquiler/recibos/${c.id}/cobro`, load, c.asset_id)],
       c.importe_pagado == 0 && ["Anular", () => confirm("¿Anular recibo?") && run(() => post(`/api/alquiler/recibos/${c.id}/anular`), "Recibo anulado").then(load), "danger"],
     ] : []);
   $("#p", el).onchange = load; $("#e", el).onchange = load;
@@ -885,15 +938,15 @@ V.facturas = async (el) => {
   el.innerHTML = `<div class="toolbar"><label>Año<input type="number" id="y" value="${new Date().getFullYear()}" style="width:90px"></label>
     <label>Serie<select id="s"><option value="">Todas</option>${series.flatMap((x) => [x, x + "R"]).map((x) => `<option>${esc(x)}</option>`).join("")}</select></label>
     <label>Buscar<input id="q" placeholder="Nº de factura, cliente, concepto"></label><span class="spacer"></span>
-    <button class="btn" id="csv">Libro de facturas emitidas (Excel)</button></div><div id="t"></div><p id="tot"></p>`;
+    <button class="btn" id="csv">Libro de facturas emitidas (Excel)</button>${can("reservas.editar") || can("alquiler.editar") ? '<button class="btn primary" id="fsrv">Nueva factura de servicios</button>' : ""}</div><div id="t"></div><p id="tot"></p>`;
   const filtros = () => ({ asset_id: S.asset, anio: $("#y", el).value, serie: $("#s", el).value, q: $("#q", el).value });
   const load = async () => {
     const rows = await get("/api/facturas", filtros());
     table($("#t", el), [
       { k: "codigo", t: "Factura", f: (v) => `<b>${esc(v)}</b>` }, { k: "fecha_expedicion", t: "Fecha", f: fdate }, { k: "activo", t: "Activo" },
       { k: "cliente", t: "Cliente", f: (v) => esc(v.nombre) }, { k: "cliente", t: "NIF", f: (v) => esc(v.nif || "") },
-      { k: "concepto", t: "Concepto", f: (v) => `<span title="${esc(v)}">${esc(v.length > 60 ? v.slice(0, 60) + "…" : v)}</span>` },
-      { k: "base_imponible", t: "Base", num: true, f: eur }, { k: "tipo_iva", t: "IVA", num: true, f: (v) => (v == 0 ? "Exento" : v + " %") },
+      { k: "concepto", t: "Concepto", f: (v, r) => { const p = r.lineas[0].concepto; return `<span title="${esc(v)}">${esc(p.length > 55 ? p.slice(0, 55) + "…" : p)}${r.lineas.length > 1 ? ` <span class="badge">+${r.lineas.length - 1}</span>` : ""}</span>`; } },
+      { k: "base_imponible", t: "Base", num: true, f: eur }, { k: "tipo_iva", t: "IVA", num: true, f: (v, r) => r.desglose.map((x) => (x.tipo_iva == 0 ? "Exento" : x.tipo_iva + " %")).join(" + ") },
       { k: "cuota_iva", t: "Cuota", num: true, f: eur }, { k: "total", t: "Total", num: true, f: eur },
       { k: "tipo", t: "", f: (v, r) => (v === "rectificativa" ? badge("rectificativa") : r.rectificada_por ? `<span class="badge b-rectificada">rectificada por ${esc(r.rectificada_por)}</span>` : "") },
     ], rows, (r) => [
@@ -908,6 +961,7 @@ V.facturas = async (el) => {
   };
   $("#y", el).onchange = load; $("#s", el).onchange = load; $("#q", el).oninput = debounce(load);
   $("#csv", el).onclick = () => run(() => download("GET", "/api/facturas/libro.csv?" + new URLSearchParams(clean({ ...filtros(), q: null }))));
+  if ($("#fsrv", el)) $("#fsrv", el).onclick = () => facturaServicios(load);
   load();
 };
 
@@ -915,7 +969,7 @@ V.informes = async (el) => {
   const y = new Date().getFullYear();
   const INF = [
     ["ocupacion", "Ocupación", "Turísticos: noches disponibles y ocupadas, % de ocupación, ADR y RevPAR por mes. Residencial: unidades alquiladas por uso.", can("reservas.ver") || can("alquiler.ver")],
-    ["produccion", "Producción", "Alojamiento devengado por noches, rentas emitidas y facturado (base, IVA y total) por activo y mes.", can("finanzas.ver")],
+    ["produccion", "Producción", "Lo facturado cada mes según la fecha de factura: alojamiento, rentas y servicios (sin IVA), IVA y total, por activo.", can("finanzas.ver")],
     ["morosidad", "Morosidad", "Recibos vencidos sin cobrar y reservas con saldo, con contacto del cliente y antigüedad de la deuda (a la fecha final).", can("alquiler.ver") || can("reservas.ver")],
     ["mantenimiento", "Costes de mantenimiento", "Órdenes de trabajo del periodo con sus costes, y resúmenes por instalación, tipo y proveedor.", can("mantenimiento.ver")],
   ].filter((x) => x[3]);
@@ -923,6 +977,48 @@ V.informes = async (el) => {
     <span class="muted">Activo: ${esc(S.asset ? assetName(Number(S.asset)) : "todos los de su ámbito")} (filtro de arriba)</span></div>
     <div class="cards">${INF.map(([k, t, d]) => `<div class="card"><h3>${esc(t)}</h3><p class="sub">${esc(d)}</p><button class="btn primary" data-inf="${k}">Descargar Excel</button></div>`).join("")}</div>`;
   el.querySelectorAll("[data-inf]").forEach((b) => (b.onclick = () => run(() => download("GET", `/api/informes/${b.dataset.inf}?` + new URLSearchParams(clean({ desde: $("#d", el).value, hasta: $("#h", el).value, asset_id: S.asset }))))));
+};
+
+// Factura solo de servicios: a un cliente externo (p.ej. plaza de aparcamiento) o al huésped de una reserva
+async function facturaServicios(reload, reserva) {
+  const aid = reserva ? reserva.asset_id : await pickAsset();
+  const f = form(reserva ? `Factura de servicios · reserva ${reserva.localizador || reserva.id} · ${reserva.huesped}` : `Nueva factura de servicios · ${assetName(aid)}`, [
+    ...(reserva ? [] : [{ html: "<h4>Cliente</h4>" }, { k: "nombre", t: "Nombre / razón social", req: true }, { k: "nif", t: "NIF / CIF", req: true },
+      { k: "domicilio", t: "Domicilio fiscal completo", req: true, wide: true }]),
+    { html: serviciosHtml() },
+    { k: "forma_pago", t: "Forma de pago", type: "select", options: kv(S.cat.formas_pago) },
+    { k: "fecha_operacion", t: "Fecha del servicio", type: "date", def: today() },
+    { html: '<p class="muted">Se emite con el siguiente número de la serie del activo y se descarga en PDF.</p>' },
+  ], {}, async (d, fr) => {
+    const lineas = leerServicios(fr);
+    if (!lineas.length) throw new Error("Añada al menos un servicio");
+    const x = await post("/api/facturas/servicios", clean({ asset_id: aid, reservation_id: reserva?.id, lineas, forma_pago: d.forma_pago, fecha_operacion: d.fecha_operacion,
+      cliente: reserva ? null : { nombre: d.nombre, nif: d.nif, domicilio: d.domicilio } }));
+    toast(`Factura ${x.codigo} emitida`); reload && reload(); await descargarFactura(x.id);
+  }, "Emitir factura");
+  await bindServicios(f, aid, 1);
+}
+
+V.servicios = async (el) => {
+  const rows = await get("/api/servicios", { todos: true });
+  el.innerHTML = `<div class="toolbar"><span class="muted">Servicios que se pueden añadir a las facturas. Precio con IVA incluido; si se deja vacío, se indica al facturar.</span><span class="spacer"></span>${can("activos.editar") ? '<button class="btn primary" id="new">Nuevo servicio</button>' : ""}</div><div id="t"></div>`;
+  const fields = [
+    { k: "nombre", t: "Servicio", req: true, wide: true },
+    { k: "asset_id", t: "Activo (vacío = todos)", type: "select", options: opts(S.assets) },
+    { k: "precio", t: "Precio € (IVA incluido)", type: "number" }, { k: "unidad", t: "Unidad", type: "select", req: true, options: list(["ud", "día", "noche", "semana", "mes", "hora"]), def: "ud" },
+    { k: "tipo_iva", t: "IVA", type: "select", req: true, options: [["21", "21 %"], ["10", "10 %"], ["4", "4 %"], ["0", "Exento"]], def: "21" },
+    { k: "activo", t: "Disponible", type: "checkbox", def: true },
+  ];
+  const guardar = (sv) => form(sv ? sv.nombre : "Nuevo servicio", fields, sv ? { ...sv, tipo_iva: String(Number(sv.tipo_iva)) } : {}, async (d) => {
+    d.asset_id = d.asset_id ? Number(d.asset_id) : null; d.tipo_iva = Number(d.tipo_iva);
+    if (sv) await put(`/api/servicios/${sv.id}`, d); else await post("/api/servicios", d);
+    toast("Servicio guardado"); go("servicios");
+  });
+  if ($("#new", el)) $("#new", el).onclick = () => guardar(null);
+  table($("#t", el), [{ k: "nombre", t: "Servicio" }, { k: "asset_id", t: "Activo", f: (v) => esc(v ? assetName(v) : "Todos") },
+    { k: "unidad", t: "Unidad" }, { k: "precio", t: "Precio (IVA incl.)", num: true, f: (v) => (v == null ? '<span class="muted">al facturar</span>' : eur(v)) },
+    { k: "tipo_iva", t: "IVA", num: true, f: (v) => (v == 0 ? "Exento" : v + " %") }, { k: "activo", t: "Estado", f: (v) => (v ? badge("vigente").replace(">vigente<", ">disponible<") : badge("baja")) }],
+  rows, (sv) => (can("activos.editar") ? [["Editar", () => guardar(sv)]] : []));
 };
 
 V.inquilinos = (el) => contactsView(el, "inquilino");
@@ -1228,7 +1324,7 @@ const MENU = [
   ["General", [["panel", "Panel de control", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
   ["Apartamentos turísticos", [["plano", "Plano de apartamentos", "activos.ver"], ["hoy", "Llegadas / salidas", "reservas.ver"], ["reservas", "Reservas", "reservas.ver"], ["planning", "Planning", "reservas.ver"], ["huespedes", "Huéspedes", "reservas.ver"]]],
   ["Alquiler residencial", [["contratos", "Contratos", "alquiler.ver"], ["recibos", "Recibos y cobros", "alquiler.ver"], ["inquilinos", "Inquilinos", "alquiler.ver"]]],
-  ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["informes", "Informes Excel", "informes"]]],
+  ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["servicios", "Servicios", "activos.ver"], ["informes", "Informes Excel", "informes"]]],
   ["Mantenimiento", [["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["proveedores", "Proveedores", "mantenimiento.ver"]]],
   ["Administración", [["usuarios", "Usuarios", "admin"], ["roles", "Roles y permisos", "admin"], ["sociedades", "Sociedades", "admin"], ["avisos", "Avisos por correo", "admin"], ["auditoria", "Auditoría", "auditoria.ver"]]],
   ["", [["perfil", "Mi perfil", null]]],

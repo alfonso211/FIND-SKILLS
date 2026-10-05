@@ -227,6 +227,18 @@ class AccommodationContract(Base):
 
 
 # --------------------------------------------------------------------------- facturación
+class Service(Base):
+    """Servicio que se puede facturar (limpieza, plaza de aparcamiento...). Sin activo = para todos."""
+    __tablename__ = "servicios"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("activos.id"))
+    nombre: Mapped[str] = mapped_column(String(120))
+    precio: Mapped[float | None] = mapped_column(Numeric(10, 2))  # IVA incluido; vacío = se indica al facturar
+    tipo_iva: Mapped[float] = mapped_column(Numeric(5, 2), default=21)
+    unidad: Mapped[str] = mapped_column(String(20), default="ud")  # ud | día | noche | mes | hora
+    activo: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
 class Invoice(Base):
     """Factura emitida al registrar un cobro. Numeración correlativa por serie y año (SF/00001/2026).
     No se modifica ni se borra: los errores se corrigen con una factura rectificativa (serie propia, p.ej. SFR).
@@ -250,8 +262,11 @@ class Invoice(Base):
     fecha_expedicion: Mapped[date] = mapped_column(Date, index=True)
     fecha_operacion: Mapped[date] = mapped_column(Date)
     concepto: Mapped[str] = mapped_column(Text)
+    # líneas: [{tipo: alojamiento|renta|servicio, concepto, cantidad, precio, tipo_iva, base, cuota, total}]
+    # (vacío en las facturas de una sola línea emitidas antes de existir las líneas)
+    lineas: Mapped[list | None] = mapped_column(JSON)
     base_imponible: Mapped[float] = mapped_column(Numeric(12, 2))
-    tipo_iva: Mapped[float] = mapped_column(Numeric(5, 2))
+    tipo_iva: Mapped[float | None] = mapped_column(Numeric(5, 2))  # vacío si hay líneas con distinto IVA
     cuota_iva: Mapped[float] = mapped_column(Numeric(12, 2))
     total: Mapped[float] = mapped_column(Numeric(12, 2))
     exencion: Mapped[str | None] = mapped_column(String(200))

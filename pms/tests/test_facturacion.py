@@ -208,3 +208,73 @@ def test_serie_unica_y_requerida(client, admin, ids):
     assert client.put(f"/api/activos/{sfl}", headers=admin, json={"serie_factura": "sf/1"}).status_code == 422
     cats = client.get("/api/catalogos", headers=admin).json()
     assert "transferencia" in cats["formas_pago"]
+
+
+def test_servicios_en_factura(client, admin, ids):
+    """Servicios al 21 % dentro de la factura del alojamiento (10 %), o en una factura solo de servicios."""
+    domicilio_fiscal(client, admin)
+    sae = ids["assets"]["SAE"]["id"]
+    cat = client.get(f"/api/servicios?asset_id={sae}", headers=admin).json()
+    assert {(s["nombre"], s["unidad"]) for s in cat} >= {("Limpieza extra", "ud"), ("Plaza de garaje", "mes"),
+                                                           ("Plaza de aparcamiento exterior", "día")}
+    assert all(s["tipo_iva"] == 21 and s["asset_id"] is None for s in cat)
+    limpieza = [s for s in cat if s["nombre"] == "Limpieza extra"][0]
+    parking = client.post("/api/servicios", headers=admin, json={
+        "asset_id": sae, "nombre": "Parking exterior Campezo", "precio": 12.10, "unidad": "día"}).json()
+
+    r = _reserva(client, admin, sae, "A-136", 220)
+    c = client.post(f"/api/turistico/reservas/{r['id']}/cobro", headers=admin, json={
+        "importe": 220, "forma_pago": "tarjeta",
+        "servicios": [{"servicio_id": limpieza["id"], "precio": 30, "cantidad": 2},
+                      {"servicio_id": parking["id"], "cantidad": 3}]})
+    assert c.status_code == 200, c.text
+    assert c.json()["importe_pagado"] == 220  # lo cobrado de la reserva es solo el alojamiento
+    f = _factura(client, admin, c.json()["factura"]["id"])
+    assert [(x["tipo"], x["tipo_iva"], x["total"]) for x in f["lineas"]] == [
+        ("alojamiento", 10, 220), ("servicio", 21, 60), ("servicio", 21, 36.3)]
+    assert f["lineas"][2]["concepto"] == "Parking exterior Campezo (día)" and f["lineas"][2]["base"] == 30
+    assert f["desglose"] == [{"tipo_iva": 10, "base": 200, "cuota": 20}, {"tipo_iva": 21, "base": 79.59, "cuota": 16.71}]
+    assert (f["base_imponible"], f["cuota_iva"], f["total"], f["tipo_iva"]) == (279.59, 36.71, 316.3, None)
+    pdf = client.get(f"/api/facturas/{f['id']}/pdf", headers=admin)
+    assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")
+    libro = client.get(f"/api/facturas/libro.csv?anio={ANIO}", headers=admin).content.decode("utf-8-sig")
+    filas = [x for x in libro.splitlines() if f"{f['codigo']};" in x]
+    assert len(filas) == 2 and ";200,00;10,00;20,00;220,00;" in filas[0] and ";79,59;21,00;16,71;96,30;" in filas[1]
+
+    # la rectificativa deshace solo el cobro del alojamiento
+    rect = client.post(f"/api/facturas/{f['id']}/rectificar", headers=admin, json={"motivo": "Error en servicios"}).json()
+    assert rect["total"] == -316.3 and [x["total"] for x in rect["lineas"]] == [-220, -60, -36.3]
+    res = client.get(f"/api/turistico/reservas?q={r['localizador'] or ''}&desde={d(30)}", headers=admin).json()
+    assert [x for x in res if x["id"] == r["id"]][0]["importe_pagado"] == 0
+
+    # solo servicios dentro del cobro (sin importe de alojamiento)
+    c = client.post(f"/api/turistico/reservas/{r['id']}/cobro", headers=admin, json={
+        "servicios": [{"concepto": "Cuna", "precio": 15, "cantidad": 2, "tipo_iva": 21}]}).json()
+    f = _factura(client, admin, c["factura"]["id"])
+    assert [x["tipo"] for x in f["lineas"]] == ["servicio"] and f["total"] == 30 and c["importe_pagado"] == 0
+    assert client.post(f"/api/turistico/reservas/{r['id']}/cobro", headers=admin, json={}).status_code == 422
+    assert client.post(f"/api/turistico/reservas/{r['id']}/cobro", headers=admin, json={
+        "servicios": [{"servicio_id": limpieza["id"]}]}).status_code == 400  # sin precio en el catálogo
+
+    # factura de servicios a un cliente externo (alquiler de una plaza)
+    f = client.post("/api/facturas/servicios", headers=admin, json={
+        "asset_id": sae, "cliente": {"nombre": "Transportes Ejemplo SL", "nif": "B99999999",
+                                     "domicilio": "Calle Industria 4, 28022 Madrid"},
+        "lineas": [{"servicio_id": parking["id"], "cantidad": 30}], "forma_pago": "transferencia"})
+    assert f.status_code == 201, f.text
+    f = f.json()
+    assert f["codigo"].startswith("SA/") and f["total"] == 363 and f["base_imponible"] == 300
+    assert f["cliente"]["nombre"] == "Transportes Ejemplo SL" and f["tipo_iva"] == 21
+    assert client.post("/api/facturas/servicios", headers=admin, json={
+        "asset_id": sae, "lineas": [{"concepto": "x", "precio": 1}]}).status_code == 400  # falta el cliente
+
+    # catálogo: limpieza y recepción no lo gestionan; recepción sí factura servicios
+    email = "recepcion.servicios@inversiete.com"
+    client.post("/api/admin/usuarios", headers=admin, json={
+        "email": email, "nombre": "x", "password": "Provisional1",
+        "asignaciones": [{"role_id": ids["roles"]["Recepción"], "asset_id": sae}]})
+    h = login(client, email, "Provisional1")
+    client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"})
+    assert client.post("/api/servicios", headers=h, json={"asset_id": sae, "nombre": "Otro"}).status_code == 403
+    assert client.post("/api/facturas/servicios", headers=h, json={
+        "asset_id": sae, "reservation_id": r["id"], "lineas": [{"servicio_id": parking["id"]}]}).status_code == 201

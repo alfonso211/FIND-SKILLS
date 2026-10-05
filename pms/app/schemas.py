@@ -3,7 +3,7 @@ from datetime import date
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class Login(BaseModel):
@@ -205,9 +205,39 @@ class FacturarA(BaseModel):
     domicilio: str = Field(min_length=5)
 
 
+class ServiceLine(BaseModel):
+    """Servicio a facturar: del catálogo (servicio_id) o escrito a mano. Precio unitario con IVA incluido."""
+    servicio_id: int | None = None
+    concepto: str | None = Field(default=None, max_length=200)
+    cantidad: float = Field(default=1, gt=0)
+    precio: float | None = Field(default=None, ge=0)
+    tipo_iva: float | None = Field(default=None, ge=0, le=21)
+
+
+class ServiceIn(BaseModel):
+    asset_id: int | None = None  # vacío = para todos los activos
+    nombre: str = Field(min_length=2, max_length=120)
+    precio: float | None = Field(default=None, ge=0)
+    tipo_iva: float = Field(default=21, ge=0, le=21)
+    unidad: str = Field(default="ud", max_length=20)
+    activo: bool = True
+
+
+class ServiceInvoiceIn(BaseModel):
+    """Factura solo de servicios (p.ej. plaza de aparcamiento a un cliente externo)."""
+    asset_id: int
+    reservation_id: int | None = None  # se factura al huésped de la reserva
+    contact_id: int | None = None
+    cliente: FacturarA | None = None
+    lineas: list[ServiceLine] = Field(min_length=1)
+    forma_pago: Literal["efectivo", "tarjeta", "transferencia", "domiciliacion", "bizum", "plataforma"] | None = None
+    fecha_operacion: date | None = None
+
+
 class Payment(BaseModel):
-    """Cobro: al registrarlo se emite la factura."""
-    importe: float = Field(gt=0)
+    """Cobro: al registrarlo se emite la factura. Puede incluir servicios (limpieza, aparcamiento...)."""
+    importe: float = Field(default=0, ge=0)
+    servicios: list[ServiceLine] = []
     fecha_pago: date | None = None
     forma_pago: Literal["efectivo", "tarjeta", "transferencia", "domiciliacion", "bizum", "plataforma"] | None = None
     facturar_a: FacturarA | None = None
@@ -218,6 +248,12 @@ class Payment(BaseModel):
         if v and v > date.today():
             raise ValueError("La fecha de cobro no puede ser futura")
         return v
+
+    @model_validator(mode="after")
+    def _algo(self):
+        if not self.importe and not self.servicios:
+            raise ValueError("Indique el importe cobrado o añada algún servicio")
+        return self
 
 
 class InvoiceRectify(BaseModel):

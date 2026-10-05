@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .contratos import MESES
-from .models import Company, Contact, Invoice, Lease, User
+from .models import Company, Contact, Invoice, Lease, Service, User
 from .utils import bad_request
 
 IVA_GENERAL = Decimal("21")
@@ -85,34 +85,90 @@ def _siguiente(db: Session, company: Company, serie: str, anio: int, fecha: date
     return (ultima.numero if ultima else 0) + 1, anterior
 
 
+TIPOS_LINEA = {"alojamiento": "Alojamiento", "renta": "Rentas", "servicio": "Servicios"}
+
+
+def linea(tipo: str, concepto: str, precio, tipo_iva, cantidad=1, servicio_id: int | None = None) -> dict:
+    """Línea de factura. `precio` es unitario con IVA incluido (lo que paga el cliente)."""
+    cantidad, iva = Decimal(str(cantidad)), Decimal(str(tipo_iva))
+    total = dinero(cantidad * Decimal(str(precio)))
+    base = dinero(total / (1 + iva / 100))
+    return {"tipo": tipo, "concepto": concepto, "cantidad": float(cantidad), "precio": float(dinero(precio)),
+            "tipo_iva": float(iva), "base": float(base), "cuota": float(total - base), "total": float(total),
+            **({"servicio_id": servicio_id} if servicio_id else {})}
+
+
+def lineas_de(f: Invoice) -> list[dict]:
+    """Líneas de la factura (las antiguas, de una sola línea, se reconstruyen con sus totales)."""
+    if f.lineas:
+        return f.lineas
+    tipo = "alojamiento" if f.reservation_id else "renta" if f.charge_id else "servicio"
+    return [{"tipo": tipo, "concepto": f.concepto, "cantidad": 1.0, "precio": float(f.total),
+             "tipo_iva": float(f.tipo_iva or 0), "base": float(f.base_imponible), "cuota": float(f.cuota_iva),
+             "total": float(f.total)}]
+
+
+def desglose(lineas: list[dict]) -> list[dict]:
+    """Base y cuota por tipo de IVA (dato obligatorio de la factura)."""
+    g: dict[float, list[Decimal]] = {}
+    for x in lineas:
+        acc = g.setdefault(x["tipo_iva"], [Decimal(0), Decimal(0)])
+        acc[0] += dinero(x["base"])
+        acc[1] += dinero(x["cuota"])
+    return [{"tipo_iva": t, "base": float(b), "cuota": float(c)} for t, (b, c) in sorted(g.items())]
+
+
 def emitir(db: Session, user: User | None, *, company: Company, serie: str, asset_id: int, cliente: dict,
-           contact_id: int | None, concepto: str, total, tipo_iva, fecha_operacion: date,
+           contact_id: int | None, lineas: list[dict] | None, fecha_operacion: date,
            forma_pago: str | None = None, charge_id: int | None = None, reservation_id: int | None = None,
            rectifica: Invoice | None = None, motivo: str | None = None, fecha: date | None = None) -> Invoice:
     emisor = datos_emisor(company)
     fecha = fecha or date.today()
+    if rectifica:  # anulación exacta de la original, línea a línea
+        lineas = [{**x, "cantidad": -x["cantidad"], "base": -x["base"], "cuota": -x["cuota"], "total": -x["total"]}
+                  for x in lineas_de(rectifica)]
+    if not lineas:
+        bad_request("La factura no tiene ninguna línea")
     numero, anterior = _siguiente(db, company, serie, fecha.year, fecha)
     codigo = f"{serie}/{numero:05d}/{fecha.year}"
-    tipo_iva = Decimal(str(tipo_iva))
-    if rectifica:  # anulación exacta de la original
-        base, cuota, total = (-dinero(rectifica.base_imponible), -dinero(rectifica.cuota_iva),
-                              -dinero(rectifica.total))
-    else:
-        total = dinero(total)
-        base = dinero(total / (1 + tipo_iva / 100))
-        cuota = total - base
+    base = sum((dinero(x["base"]) for x in lineas), Decimal(0))
+    cuota = sum((dinero(x["cuota"]) for x in lineas), Decimal(0))
+    total = base + cuota
+    tipos = {x["tipo_iva"] for x in lineas}
+    concepto = "\n".join(x["concepto"] for x in lineas)
+    if rectifica:
+        concepto = f"Anulación de la factura {rectifica.codigo}. {rectifica.concepto}"
     f = Invoice(serie=serie, anio=fecha.year, numero=numero, codigo=codigo,
                 tipo="rectificativa" if rectifica else "ordinaria", rectifica_id=rectifica.id if rectifica else None,
                 motivo=motivo, company_id=company.id, asset_id=asset_id, emisor=emisor, contact_id=contact_id,
                 cliente=cliente, fecha_expedicion=fecha, fecha_operacion=fecha_operacion, concepto=concepto,
-                base_imponible=base, tipo_iva=tipo_iva, cuota_iva=cuota, total=total,
-                exencion=EXENCION_ARRENDAMIENTO if tipo_iva == 0 else None, forma_pago=forma_pago,
-                charge_id=charge_id, reservation_id=reservation_id,
+                lineas=lineas, base_imponible=base, tipo_iva=next(iter(tipos)) if len(tipos) == 1 else None,
+                cuota_iva=cuota, total=total, exencion=EXENCION_ARRENDAMIENTO if 0 in tipos else None,
+                forma_pago=forma_pago, charge_id=charge_id, reservation_id=reservation_id,
                 huella=huella(emisor["nif"], codigo, fecha, total, cuota, anterior), huella_anterior=anterior,
                 user_id=user.id if user else None)
     db.add(f)
     db.flush()
     return f
+
+
+def lineas_servicios(db: Session, asset_id: int, servicios) -> list[dict]:
+    """Líneas de servicios pedidas en un cobro o factura (del catálogo o escritas a mano)."""
+    out = []
+    for s in servicios or []:
+        cat = db.get(Service, s.servicio_id) if s.servicio_id else None
+        if s.servicio_id and (not cat or not cat.activo or cat.asset_id not in (None, asset_id)):
+            bad_request("Servicio no disponible para este activo")
+        concepto = (s.concepto or (f"{cat.nombre} ({cat.unidad})" if cat and cat.unidad != "ud" else
+                                   cat.nombre if cat else "")).strip()
+        precio = s.precio if s.precio is not None else (float(cat.precio) if cat and cat.precio is not None else None)
+        if not concepto:
+            bad_request("Indique el concepto del servicio")
+        if precio is None:
+            bad_request(f"Indique el precio de «{concepto}»")
+        iva = s.tipo_iva if s.tipo_iva is not None else (float(cat.tipo_iva) if cat else float(IVA_GENERAL))
+        out.append(linea("servicio", concepto, precio, iva, s.cantidad, cat.id if cat else None))
+    return out
 
 
 def serie_activo(asset) -> str:
@@ -123,6 +179,8 @@ def serie_activo(asset) -> str:
 
 def factura_out(f: Invoice, rectificada_por: str | None = None) -> dict:
     d = f.to_dict()
+    d["lineas"] = lineas_de(f)
+    d["desglose"] = desglose(d["lineas"])
     d["activo"] = f.asset.nombre
     d["forma_pago_nombre"] = FORMAS_PAGO.get(f.forma_pago or "", f.forma_pago)
     d["rectificada_por"] = rectificada_por
