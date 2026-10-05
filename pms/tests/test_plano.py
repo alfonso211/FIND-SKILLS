@@ -40,8 +40,11 @@ def test_plano_y_estados(client, admin, ids):
         "fecha_salida": (HOY + timedelta(days=1)).isoformat(), "guest": {"nombre": "Llega Hoy"}})
 
     p = client.get(f"/api/plano/{sae}", headers=admin).json()
-    assert [x["planta"] for x in p["plantas"]] == ["1", "2", "3", "4", "5"]
-    assert [x["resumen"]["total"] for x in p["plantas"]] == [48, 60, 64, 64, 64]
+    # miniaturas: primero el garaje exterior, después el interior y luego las plantas
+    assert [x["planta"] for x in p["plantas"]] == ["0", "-1", "1", "2", "3", "4", "5"]
+    assert [x["etiqueta"] for x in p["plantas"][:2]] == ["Garaje exterior", "Garaje interior (sótano -1)"]
+    assert [x["resumen"]["total"] for x in p["plantas"]] == [64, 178, 48, 60, 64, 64, 64]
+    assert [(x["columnas"], x["filas"]) for x in p["plantas"][:2]] == [(39, 23), (40, 24)]
     assert not any(c["t"] == "falta" for x in p["plantas"] for c in x["celdas"])
     c305, c306 = _celda(p, "B-305"), _celda(p, "B-306")
     assert c305["estado"] == "alquilado" and c305["reserva"]["huesped"] == "Rosa Plano Gil"
@@ -49,7 +52,7 @@ def test_plano_y_estados(client, admin, ids):
     assert _celda(p, "A-127")["tipo"] == "2d" and _celda(p, "B-111")["tipo"] == "Est"
     assert _celda(p, "B-213")["tipo"] == "1d TG" and _celda(p, "A-464")["tipo"] == "1d G"
     assert (_celda(p, "B-401")["f"], _celda(p, "B-401")["c"]) == (11, 13)  # misma posición que el croquis
-    zonas = [c for c in p["plantas"][3]["celdas"] if c["t"] == "zc"]
+    zonas = [c for c in p["plantas"][5]["celdas"] if c["t"] == "zc"]
     assert [z["zona"] for z in zonas] == ["P4-A-PISCINA", "P4-A-ENTRADA", "P4-B-PISCINA", "P4-B-ENTRADA"]
     # el día siguiente la reserva de PLANO-2 ya ha salido
     manana = client.get(f"/api/plano/{sae}?fecha={(HOY + timedelta(days=1)).isoformat()}", headers=admin).json()
@@ -94,7 +97,7 @@ def test_zonas_comunes_y_permisos(client, admin, ids):
     z = client.get(f"/api/plano/{sae}/zonas/P4-B-ENTRADA", headers=admin).json()
     assert z["nombre"] == "Planta 4ª · Bloque B (izquierda) · lado entrada" and z["incidencias"][0]["titulo"].startswith("Fluorescente")
     p = client.get(f"/api/plano/{sae}", headers=admin).json()
-    zc = [c for c in p["plantas"][3]["celdas"] if c.get("zona") == "P4-B-ENTRADA"][0]
+    zc = [c for c in p["plantas"][5]["celdas"] if c.get("zona") == "P4-B-ENTRADA"][0]
     assert zc["ot"] == 1
     parte = client.get(f"/api/mantenimiento/ordenes/{w.json()['id']}/parte", headers=admin)
     assert parte.status_code == 200
@@ -182,3 +185,29 @@ def test_plano_suite_florida_y_garajes(client, admin, ids):
         "asset_id": sfl, "zona": "S1-PORTAL2", "titulo": "Puerta del ascensor del garaje no cierra"}).json()
     assert w["zona_nombre"] == "Sótano -1 · Portal 2"
     client.post(f"/api/turistico/reservas/{r['id']}/checkout", headers=admin)
+
+
+def test_garajes_suite_aeropuerto(client, admin, ids):
+    """Garaje exterior (64 plazas) e interior, sótano -1 (178 plazas), con sus entradas y salidas de vehículos."""
+    sae = ids["assets"]["SAE"]["id"]
+    p = client.get(f"/api/plano/{sae}", headers=admin).json()
+    ext, s1 = p["plantas"][0], p["plantas"][1]
+    num = lambda pl, f, c: next(x for x in pl["celdas"] if (x["f"], x["c"]) == (f, c))  # noqa: E731
+    assert num(ext, 1, 1)["codigo"] == "EXT-63" and num(ext, 21, 4)["codigo"] == "EXT-6"
+    assert num(ext, 3, 37)["codigo"] == "EXT-37" and num(ext, 23, 1)["codigo"] == "EXT-5"
+    assert num(s1, 2, 3)["codigo"] == "S1-186" and num(s1, 24, 38)["codigo"] == "S1-1"
+    assert num(s1, 6, 9)["codigo"] == "S1-603" and num(s1, 20, 9)["codigo"] == "S1-601"
+    assert num(s1, 16, 30)["codigo"] == "S1-55" and num(s1, 17, 30)["codigo"] == "S1-54"
+    assert num(ext, 1, 38)["t"] == "entrada" and num(ext, 2, 38)["t"] == "salida"
+    assert num(s1, 2, 33)["t"] == "entrada" and num(s1, 2, 35)["t"] == "salida"
+    # las plazas no se confunden con los apartamentos del mismo número (S1-101 / B-101)
+    assert num(s1, 15, 15)["codigo"] == "S1-101" and _celda(p, "B-101")["tipo"] != ""
+    zonas = [c["zona"] for c in s1["celdas"] if c["t"] == "zc"]
+    assert "S1-RAMPA" in zonas and len(zonas) == 5
+    # funciona igual que una plaza de Suite Florida: ficha, reserva al 21 % y fuera de la ocupación de apartamentos
+    plaza = num(ext, 21, 4)
+    ficha = client.get(f"/api/plano/unidades/{plaza['unit_id']}/ficha", headers=admin).json()
+    assert ficha["unidad"]["uso"] == "garaje" and ficha["unidad"]["bloque"] == "Garaje exterior"
+    dis = client.get(f"/api/turistico/disponibilidad?asset_id={sae}&desde={HOY + timedelta(days=300)}"
+                     f"&hasta={HOY + timedelta(days=301)}&uso=garaje", headers=admin).json()
+    assert dis["libres"] == 242

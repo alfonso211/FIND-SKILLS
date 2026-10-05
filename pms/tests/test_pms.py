@@ -20,7 +20,7 @@ def test_seed(client, admin, ids):
     a = ids["assets"]
     assert set(a) == {"BAB35", "SFL", "SAE"}
     assert a["SFL"]["num_unidades"] == 672  # 325 apartamentos + 347 plazas de garaje (sótanos -1 y -2)
-    assert a["SAE"]["num_unidades"] == 300
+    assert a["SAE"]["num_unidades"] == 542  # 300 apartamentos + 242 plazas de garaje
     assert a["BAB35"]["num_unidades"] == 53
     assert (a["SFL"]["num_registro_turistico"], a["SFL"]["direccion"]) == ("AM 265", "Calle Campezo 2")
     assert (a["SAE"]["num_registro_turistico"], a["SAE"]["direccion"]) == ("AM 259", "Calle Campezo 8")
@@ -32,7 +32,7 @@ def test_seed(client, admin, ids):
     assert round(sum(u["cuota_comunidad"] for u in gar), 2) == 629.64
     assert client.get(f"/api/unidades/bloques?asset_id={a['SFL']['id']}", headers=admin).json() == \
         ["Portal 1", "Portal 2", "Portal 3", "Portal 4", "Sótano -1", "Sótano -2"]
-    assert client.get(f"/api/unidades/bloques?asset_id={a['SAE']['id']}", headers=admin).json() == ["Bloque A", "Bloque B"]
+    assert client.get(f"/api/unidades/bloques?asset_id={a['SAE']['id']}", headers=admin).json() == ["Bloque A", "Bloque B", "Garaje exterior", "Sótano -1"]
     sae = client.get(f"/api/unidades?asset_id={a['SAE']['id']}&q=A-148", headers=admin).json()[0]
     assert sae["tipologia"] == "Apartamento 2 dormitorios" and sae["dormitorios"] == 2
     assert a["BAB35"]["modalidad"] == "alquiler_residencial"

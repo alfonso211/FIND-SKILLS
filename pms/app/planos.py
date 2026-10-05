@@ -124,9 +124,86 @@ def _sae_planta(p: int) -> list[dict]:
     return [{"f": f, "c": c, **v} for (f, c), v in sorted(celdas.items())]
 
 
+# Garajes de Suite Aeropuerto según los croquis del PMS anterior: exterior (39 x 23) e interior, sótano -1
+# (40 x 24). Flechas negras: entrada de vehículos; rojas: salida.
+GARAJES_SAE = Path(__file__).parent / "data" / "planos_sae_garajes.json"
+GARAJES_SAE_INFO = {  # clave del fichero: (prefijo del código, bloque, planta, etiqueta, columnas, filas)
+    "EXT": ("EXT", "Garaje exterior", "0", "Garaje exterior", 39, 23),
+    "S1": ("S1", "Sótano -1", "-1", "Garaje interior (sótano -1)", 40, 24),
+}
+
+
+def _sae_garaje(clave: str, plazas: dict[str, int]) -> dict:
+    prefijo, _, planta, etiqueta, columnas, filas = GARAJES_SAE_INFO[clave]
+    celdas: dict[tuple[int, int], dict] = {}
+
+    def pon(f, c, t, texto=None):
+        celdas[(f, c)] = {"t": t, **({"texto": texto} if texto else {})}
+
+    zonas: list[tuple[int, int, str, str]] = []
+    if clave == "EXT":
+        for f in (1, 22):
+            pon(f, 38, "entrada", "←"), pon(f, 39, "entrada", "←")
+            pon(f + 1, 38, "salida", "→"), pon(f + 1, 39, "salida", "→")
+        for f in (11, 12, 13):  # piscina
+            for c in range(3, 11):
+                pon(f, c, "pis")
+        for f in (10, 14):
+            for c in range(30, 36):
+                pon(f, c, "arbol")
+        pon(9, 2, "esc"), pon(15, 2, "esc")
+        for f, negro in ((4, 5), (20, 19)):  # accesos a los bloques
+            for c in range(26, 30):
+                pon(f, c, "esc")
+            pon(negro, 27, "negro"), pon(negro, 28, "negro")
+        zonas = [(1, 37, "ACCESO-NORTE", "acceso de vehículos superior"),
+                 (23, 37, "ACCESO-SUR", "acceso de vehículos inferior"),
+                 (9, 3, "PEATONAL-1", "acceso peatonal (escalera superior)"),
+                 (15, 3, "PEATONAL-2", "acceso peatonal (escalera inferior)")]
+    else:
+        pon(2, 33, "entrada", "↓"), pon(2, 35, "salida", "↑")
+        for f in (2, 3, 4, 22, 23, 24):  # escaleras y ascensores de los extremos
+            pon(f, 2, "esc")
+        pon(5, 2, "asc"), pon(21, 2, "asc"), pon(5, 39, "asc"), pon(5, 40, "asc"), pon(21, 39, "asc"), pon(21, 40, "asc")
+        for c in (39, 40):
+            pon(2, c, "esc"), pon(24, c, "esc")
+        for f in (2, 24):  # accesos peatonales al edificio
+            pon(f, 24, "esc"), pon(f, 25, "negro"), pon(f, 26, "negro")
+        for c in range(31, 41):  # muros
+            pon(7, c, "muro")
+        for f in range(8, 18):
+            pon(f, 31, "muro")
+        for c in [*range(15, 28), *range(30, 41)]:
+            pon(18, c, "muro")
+        pon(18, 28, "puerta"), pon(18, 29, "puerta")
+        for f in range(19, 25):
+            pon(f, 15, "muro")
+        zonas = [(2, 34, "RAMPA", "rampa de entrada y salida"), (4, 3, "NO", "escalera noroeste"),
+                 (4, 38, "NE", "escalera noreste"), (23, 3, "SO", "escalera suroeste"), (23, 38, "SE", "escalera sureste")]
+    for rc, n in plazas.items():
+        f, c = map(int, rc.split(","))
+        celdas[(f, c)] = {"t": "u", "cod": f"{prefijo}-{n}", "num": str(n)}
+    for f, c, codigo, nombre in zonas:
+        celdas[(f, c)] = {"t": "zc", "zona": f"{prefijo}-{codigo}", "nombre": f"{etiqueta} · {nombre}"}
+    return {"planta": planta, "etiqueta": etiqueta, "columnas": columnas, "filas": filas,
+            "celdas": [{"f": f, "c": c, **v} for (f, c), v in sorted(celdas.items())]}
+
+
 def _sae() -> dict:
+    garajes = json.loads(GARAJES_SAE.read_text(encoding="utf-8"))
     return {"columnas": COLUMNAS_SAE, "filas": FILAS_SAE,
-            "plantas": [{"planta": str(p), "etiqueta": f"{p}ª planta", "celdas": _sae_planta(p)} for p in range(1, 6)]}
+            "plantas": [_sae_garaje("EXT", garajes["EXT"]), _sae_garaje("S1", garajes["S1"])]
+            + [{"planta": str(p), "etiqueta": f"{p}ª planta", "celdas": _sae_planta(p)} for p in range(1, 6)]}
+
+
+def unidades_sae_garajes() -> list[dict]:
+    """Plazas de garaje de Suite Aeropuerto (exterior y sótano -1) según los croquis."""
+    garajes = json.loads(GARAJES_SAE.read_text(encoding="utf-8"))
+    out = []
+    for clave, (prefijo, bloque, planta, *_) in GARAJES_SAE_INFO.items():
+        for n in sorted(garajes[clave].values()):
+            out.append({"codigo": f"{prefijo}-{n}", "bloque": bloque, "planta": planta, "uso": "garaje"})
+    return out
 
 
 # --------------------------------------------------------------------------- Suite Florida (C/ Campezo 2)
@@ -264,5 +341,5 @@ def zonas(codigo_activo: str) -> dict[str, str]:
 
 
 def numero(codigo_unidad: str) -> str:
-    """Número del apartamento sin el prefijo de bloque (B-432 -> 432)."""
+    """Número del apartamento o plaza sin el prefijo de bloque (B-432 -> 432, EXT-12 -> 12)."""
     return codigo_unidad.split("-")[-1]

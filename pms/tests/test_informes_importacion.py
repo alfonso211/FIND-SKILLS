@@ -109,7 +109,10 @@ def test_informes(client, admin, ids):
         "unit_id": unit["id"], "guest": {"nombre": "Informe"}, "fecha_entrada": "2025-04-30",
         "fecha_salida": "2025-05-03", "importe_total": 330, "importe_pagado": 330}).status_code == 201
     wb = _libro(client.get(f"/api/informes/ocupacion?desde=2025-04-01&hasta=2025-05-31&asset_id={sae}", headers=admin))
-    filas = {f["Mes"]: f for f in _filas(wb["Turísticos"])}
+    todas = _filas(wb["Turísticos"])
+    filas = {f["Mes"]: f for f in todas if f["Uso"] == "apartamento"}
+    garajes = {f["Mes"]: f for f in todas if f["Uso"] == "garaje"}
+    assert garajes["abr-2025"]["Unidades"] == 242  # 64 plazas exteriores + 178 del sótano -1
     assert filas["abr-2025"]["Unidades"] == 300 and filas["abr-2025"]["Noches disponibles"] == 9000
     assert filas["abr-2025"]["Noches ocupadas"] == 1 and filas["abr-2025"]["Facturado (base)"] == 0
     assert filas["may-2025"]["Noches ocupadas"] >= 2
