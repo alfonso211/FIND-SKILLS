@@ -1,16 +1,29 @@
 # PMS Grupo INVERSIETE
 
 Sistema de gestión de activos (Property Management System) común para todo el grupo
-**INVERSIETE SA** y sus sociedades (COMERCIAL DEL CAMPO, EDIFICIOS CAMERANOS, ETHOSA).
+**INVERSIETE S.A.** y sus sociedades (COMERCIAL DEL CAMPO S.A., EDIFICIOS CAMERANOS S.A. y EMPRESA TURISTICA
+HOTELERA S.A.).
 Hay una sola plataforma, pero cada usuario solo ve y gestiona lo que su rol y su ámbito le permiten.
+
+## Sociedades
+
+Datos fiscales según el documento «Datos fiscales sociedades Grupo INVERSIETE S.A.». Todas tienen el domicilio fiscal
+en C/ Campezo 8, 28022 Madrid.
+
+| Sociedad | CIF |
+|---|---|
+| INVERSIETE S.A. (matriz) | A78072915 |
+| COMERCIAL DEL CAMPO S.A. | A28362309 |
+| EDIFICIOS CAMERANOS S.A. | A28309433 |
+| EMPRESA TURISTICA HOTELERA S.A. | A28116853 |
 
 ## Activos cargados de inicio
 
 | Código | Activo | Modalidad | Gestora | Propietaria | Unidades |
 |---|---|---|---|---|---|
 | BAB35 | C/ Babilonia 35, Madrid | Alquiler residencial (LAU) | COMERCIAL DEL CAMPO S.A. | COMERCIAL DEL CAMPO S.A. | 20 viviendas (trasteros como anejos) + 33 plazas de garaje (ST-1, ST-2, ST-3) |
-| SFL | Suite Florida (C/ Campezo 2, reg. AM 265) | Apartamentos turísticos | INVERSIETE SA | COMERCIAL DEL CAMPO S.A. | 325 en 4 portales (P1: 90, P2: 75, P3: 75, P4: 85). Código `P{portal}-{planta}{letra}`, p.ej. P1-1A |
-| SAE | Suite Aeropuerto (C/ Campezo 8, reg. AM 259) | Apartamentos turísticos | INVERSIETE SA | COMERCIAL DEL CAMPO S.A. | 300 en 2 bloques (A: 147, B: 153) y 5 plantas: 267 de 1 dormitorio (8 con terraza, 5 con terraza grande y 10 grandes), 28 de 2 dormitorios y 5 estudios |
+| SFL | Suite Florida (C/ Campezo 2, reg. AM 265) | Apartamentos turísticos | INVERSIETE S.A. | COMERCIAL DEL CAMPO S.A. | 325 en 4 portales (P1: 90, P2: 75, P3: 75, P4: 85). Código `P{portal}-{planta}{letra}`, p.ej. P1-1A |
+| SAE | Suite Aeropuerto (C/ Campezo 8, reg. AM 259) | Apartamentos turísticos | INVERSIETE S.A. | COMERCIAL DEL CAMPO S.A. | 300 en 2 bloques (A: 147, B: 153) y 5 plantas: 267 de 1 dormitorio (8 con terraza, 5 con terraza grande y 10 grandes), 28 de 2 dormitorios y 5 estudios |
 
 Las unidades se cargan desde `pms/app/data/unidades_iniciales.json`, que se generó a partir de estos documentos:
 - **Babilonia 35:** listado de cuotas de comunidad de octubre de 2026. Se cargan solo las viviendas y los garajes,
@@ -81,8 +94,8 @@ Para añadir activos nuevos: *Activos → Nuevo activo* (se eligen la gestora, l
     | Activo | Emite | Serie | Ejemplo |
     |---|---|---|---|
     | C/ Babilonia 35 | COMERCIAL DEL CAMPO S.A. | B35 | B35/00001/2026 |
-    | Suite Florida | INVERSIETE SA | SF | SF/00001/2026 |
-    | Suite Aeropuerto | INVERSIETE SA | SA | SA/00001/2026 |
+    | Suite Florida | INVERSIETE S.A. | SF | SF/00001/2026 |
+    | Suite Aeropuerto | INVERSIETE S.A. | SA | SA/00001/2026 |
     Factura siempre la sociedad gestora del activo. Una serie no se puede repetir en dos activos ni mezclar emisores.
   - **Dónde se cobra:** botón *Cobro* en las reservas (también al crear la reserva, si ya viene pagada) y botón
     *Cobrar* en los recibos de alquiler. Los cobros parciales generan una factura por cada pago («Pago a cuenta»).

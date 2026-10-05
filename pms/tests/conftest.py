@@ -56,7 +56,7 @@ def ids(client, admin):
 def domicilio_fiscal(client, admin):
     """Las facturas exigen el domicilio fiscal del emisor (en pruebas, uno ficticio)."""
     for c in client.get("/api/sociedades", headers=admin).json():
-        if c["nombre"] in ("INVERSIETE SA", "COMERCIAL DEL CAMPO S.A.") and not c.get("direccion"):
+        if c["nombre"] in ("INVERSIETE S.A.", "COMERCIAL DEL CAMPO S.A.") and not c.get("direccion"):
             r = client.put(f"/api/sociedades/{c['id']}", headers=admin, json={
                 **{k: c[k] for k in ("nombre", "cif", "parent_id", "activa")},
                 "direccion": "Calle de Prueba 1", "cp": "28001", "municipio": "Madrid", "provincia": "Madrid"})

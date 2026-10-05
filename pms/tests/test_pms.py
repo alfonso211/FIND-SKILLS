@@ -39,10 +39,10 @@ def test_seed(client, admin, ids):
     # gestora / propietaria
     assert (a["BAB35"]["sociedad"], a["BAB35"]["propietaria"]) == ("COMERCIAL DEL CAMPO S.A.", "COMERCIAL DEL CAMPO S.A.")
     for c in ("SFL", "SAE"):
-        assert (a[c]["sociedad"], a[c]["propietaria"]) == ("INVERSIETE SA", "COMERCIAL DEL CAMPO S.A.")
+        assert (a[c]["sociedad"], a[c]["propietaria"]) == ("INVERSIETE S.A.", "COMERCIAL DEL CAMPO S.A.")
     assert len(ids["companies"]) == 4
     cifs = {c["nombre"]: c["cif"] for c in client.get("/api/sociedades", headers=admin).json()}
-    assert cifs["INVERSIETE SA"] == "A78072915" and cifs["COMERCIAL DEL CAMPO S.A."] == "A28362309"
+    assert cifs["INVERSIETE S.A."] == "A78072915" and cifs["COMERCIAL DEL CAMPO S.A."] == "A28362309"
     me = client.get("/api/auth/me", headers=admin).json()
     assert me["is_superadmin"] and all(me["permisos"].values())
 
@@ -192,7 +192,7 @@ def test_maintenance(client, admin, ids):
 
 
 def test_company_scope_includes_future_assets(client, admin, ids):
-    ethosa = ids["companies"]["EMPRESA TURISTICA HOTELERA (ETHOSA)"]
+    ethosa = ids["companies"]["EMPRESA TURISTICA HOTELERA S.A."]
     dir_ = _new_user(client, admin, "director.ethosa@inversiete.com",
                      [{"role_id": ids["roles"]["Dirección Sociedad"], "company_id": ethosa}])
     assert client.get("/api/activos", headers=dir_).json() == []
@@ -202,7 +202,7 @@ def test_company_scope_includes_future_assets(client, admin, ids):
     assert [a["codigo"] for a in client.get("/api/activos", headers=dir_).json()] == ["NUEVO1"]
     # no puede crear en otra sociedad ni gestionar usuarios
     assert client.post("/api/activos", headers=dir_, json={
-        "company_id": ids["companies"]["INVERSIETE SA"], "codigo": "NUEVO2", "nombre": "x",
+        "company_id": ids["companies"]["INVERSIETE S.A."], "codigo": "NUEVO2", "nombre": "x",
         "modalidad": "alquiler_residencial"}).status_code == 403
     assert client.get("/api/admin/usuarios", headers=dir_).status_code == 403
 
@@ -272,7 +272,7 @@ def test_staff_per_asset(client, admin, ids):
     assert client.get("/api/terceros?tipo=huesped&q=SoloAeropuerto", headers=rec_sf).json() == []
     gid = r.json()["guest_id"]
     assert client.put(f"/api/terceros/{gid}", headers=rec_sf, json={
-        "company_id": ids["companies"]["INVERSIETE SA"], "tipo": "huesped", "nombre": "x"}).status_code == 403
+        "company_id": ids["companies"]["INVERSIETE S.A."], "tipo": "huesped", "nombre": "x"}).status_code == 403
     assert client.get("/api/turistico/reservas", headers=rec_sf).json() == [] or \
         all(x["asset_id"] == sfl for x in client.get("/api/turistico/reservas", headers=rec_sf).json())
 

@@ -69,7 +69,7 @@ def test_series_correlativas_por_activo(client, admin, ids):
     assert (f1["total"], f1["base_imponible"], f1["cuota_iva"], f1["tipo_iva"]) == (100, 90.91, 9.09, 10)
     assert f1["concepto"].startswith("Pago a cuenta · Alojamiento turístico · Suite Florida · Apartamento P2-1A")
     # factura la gestora (INVERSIETE) y el cliente es el huésped
-    assert f1["emisor"]["nombre"] == "INVERSIETE SA" and f1["emisor"]["nif"] == "A78072915"
+    assert f1["emisor"]["nombre"] == "INVERSIETE S.A." and f1["emisor"]["nif"] == "A78072915"
     assert f1["cliente"] == {"nombre": "Marta Gil", "nif": "12345678Z", "domicilio": "Calle Mayor 1, 28013, Madrid"}
     # no se puede cobrar más de lo pendiente
     assert client.post(f"/api/turistico/reservas/{r1['id']}/cobro", headers=admin,
