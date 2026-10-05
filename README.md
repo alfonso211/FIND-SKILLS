@@ -1,9 +1,18 @@
-# PMS Grupo INVERSIETE
+# INVERPMS — Grupo INVERSIETE
 
 Sistema de gestión de activos (Property Management System) común para todo el grupo
 **INVERSIETE S.A.** y sus sociedades (COMERCIAL DEL CAMPO S.A., EDIFICIOS CAMERANOS S.A. y EMPRESA TURISTICA
 HOTELERA S.A.).
 Hay una sola plataforma, pero cada usuario solo ve y gestiona lo que su rol y su ámbito le permiten.
+
+## Imagen corporativa
+
+La aplicación se llama **INVERPMS** y usa la identidad del grupo (negro, blanco y dorado). Los logotipos están en
+`pms/static/marca/` en dos variantes: `-oscuro` (fondo negro: acceso y menú) y `-claro` (fondo blanco: facturas y
+partes). Las facturas llevan el logotipo de la sociedad emisora (INVERSIETE o COMERCIAL DEL CAMPO) y el del activo
+que factura (Suite Florida, Suite Aeropuerto). La correspondencia CIF / código de activo → logotipo está en
+`pms/app/marca.py`; para añadir el de ETHOSA basta con copiar `ethosa-claro.png` y `ethosa-oscuro.png` a esa carpeta
+y añadir su CIF (A28116853) a `LOGO_SOCIEDAD`.
 
 ## Sociedades
 

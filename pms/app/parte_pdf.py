@@ -12,10 +12,12 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Image, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-AZUL = colors.HexColor("#13294b")
+from . import marca
+
+AZUL = colors.HexColor(marca.NEGRO)
 GRIS = colors.HexColor("#6b7785")
-LINEA = colors.HexColor("#c9d1db")
-FONDO = colors.HexColor("#f4f6f9")
+LINEA = colors.HexColor("#ddd6c8")
+FONDO = colors.HexColor("#f7f3ea")
 
 PRIORIDADES = {"baja": "Baja", "media": "Media", "alta": "Alta", "urgente": "URGENTE"}
 
@@ -28,7 +30,8 @@ def generar(w, asset, company, unidad, abierta_por: str | None, fotos: list[byte
             zona: str | None = None) -> bytes:
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=16 * mm, rightMargin=16 * mm, topMargin=14 * mm,
-                            bottomMargin=14 * mm, title=f"Parte de incidencia OT-{w.id:05d}", author=company.nombre)
+                            bottomMargin=14 * mm, title=f"Parte de incidencia OT-{w.id:05d}", author=company.nombre,
+                            creator=marca.NOMBRE)
     ss = getSampleStyleSheet()
     n = ParagraphStyle("n", parent=ss["Normal"], fontName="Helvetica", fontSize=9.5, leading=12.5)
     peq = ParagraphStyle("p", parent=n, fontSize=8, leading=10, textColor=GRIS)
@@ -82,7 +85,8 @@ def generar(w, asset, company, unidad, abierta_por: str | None, fotos: list[byte
                       Paragraph("DESCRIPCIÓN DE LA AVERÍA", rot),
                       Paragraph(_esc(w.descripcion) or "&nbsp;", n)]]], [ancho])
 
-    cuerpo = [cab, Spacer(1, 6 * mm), seccion("1. Incidencia"), datos, desc]
+    logos = marca.cabecera_pdf(marca.clave_sociedad(company.cif), marca.clave_activo(asset.codigo), ancho, 20 * mm)
+    cuerpo = ([logos, Spacer(1, 5 * mm)] if logos else []) + [cab, Spacer(1, 6 * mm), seccion("1. Incidencia"), datos, desc]
     if fotos:
         cuerpo += [Spacer(1, 3 * mm), Paragraph("FOTOS DE LA AVERÍA", rot), Spacer(1, 1.5 * mm)]
         celdas = []

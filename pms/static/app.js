@@ -1,4 +1,4 @@
-/* PMS Grupo INVERSIETE — interfaz web (SPA sin dependencias) */
+/* INVERPMS — Grupo INVERSIETE · interfaz web (SPA sin dependencias) */
 const S = { token: localStorage.getItem("pms_token"), me: null, cat: null, assets: [], companies: [], asset: "" };
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -10,6 +10,12 @@ const today = () => iso(new Date());
 const addDays = (d, n) => { const x = new Date(d + "T00:00:00"); x.setDate(x.getDate() + n); return iso(x); };
 const can = (p) => !!S.me?.permisos?.[p];
 const label = (s) => String(s ?? "").replace(/_/g, " ");
+// ---- marca INVERPMS: avatares con iniciales y logotipos (variante clara para fondo blanco)
+const iniciales = (n) => String(n ?? "").replace(/[·|(].*$/, "").trim().split(/\s+/).filter((w) => w.length > 2 || /^[A-ZÁÉÍÓÚÑ]/.test(w)).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
+const avatar = (n, cls = "") => `<span class="avatar ${cls}" title="${esc(n)}">${esc(iniciales(n))}</span>`;
+const claro = (url) => (url ? url.replace("-oscuro.png", "-claro.png") : "");
+const logoActivo = (id, cls = "logo-activo") => { const a = S.assets.find((x) => String(x.id) === String(id)); const url = a?.logo || a?.logo_sociedad; return url ? `<img class="${cls}" src="${claro(url)}" alt="${esc(a.nombre)}">` : ""; };  // sin logo propio: el de la gestora
+const rolDe = (me) => (me.is_superadmin ? "Superadministrador" : me.ambitos?.[0]?.rol || "");
 const badge = (v) => (v == null || v === "" ? "" : `<span class="badge b-${esc(v)}">${esc(label(v))}</span>`);
 const assetName = (id) => S.assets.find((a) => a.id === id)?.nombre ?? id;
 const PLURAL = { vivienda: "viviendas", apartamento: "apartamentos", garaje: "garajes", trastero: "trasteros", local: "locales", oficina: "oficinas" };
@@ -191,7 +197,7 @@ V.panel = async (el) => {
     if (a.ot_abiertas != null) k.push([a.ot_abiertas, "OT abiertas"], [a.ot_urgentes, "OT urgentes"], [a.ot_pendientes_cierre, "OT pendientes de cierre"]);
     const est = Object.entries(a.estados).map(([e, n]) => `${badge(e)} ${n}`).join(" ");
     const clic = varios && conMapa.has(a.id);
-    return `<div class="card${clic ? " clic" : ""}" ${clic ? `data-abrir="${a.id}" tabindex="0" role="button" title="Abrir el plano de ${esc(a.nombre)}"` : ""}><h3>${esc(a.nombre)}${clic ? '<span class="ver-plano">Ver plano →</span>' : ""}</h3><div class="sub">${esc(a.modalidad_nombre)} · Gestiona ${esc(a.sociedad)} · Propiedad ${esc(a.propietaria)}</div>
+    return `<div class="card${clic ? " clic" : ""}" ${clic ? `data-abrir="${a.id}" tabindex="0" role="button" title="Abrir el plano de ${esc(a.nombre)}"` : ""}>${logoActivo(a.id)}<h3>${esc(a.nombre)}${clic ? '<span class="ver-plano">Ver plano →</span>' : ""}</h3><div class="sub">${esc(a.modalidad_nombre)} · Gestiona ${esc(a.sociedad)} · Propiedad ${esc(a.propietaria)}</div>
       ${a.ocupacion_hoy != null ? `<div class="bar"><i style="width:${Math.min(100, a.ocupacion_hoy)}%"></i></div>` : ""}
       <div class="kpis">${k.map(([v, l]) => `<div class="kpi"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("")}</div>
       <p style="margin-top:12px">${est || '<span class="muted">Sin unidades dadas de alta</span>'}</p></div>`;
@@ -244,7 +250,7 @@ V.plano = async (el) => {
   const elegido = activos.find((a) => a.id === S.plano.asset) || activos.find((a) => String(a.id) === String(S.asset)) || activos[0];
   S.plano.asset = elegido.id;
   const fecha = S.plano.fecha || today();
-  el.innerHTML = `<div class="toolbar">${activos.length > 1 ? `<select id="pa">${activos.map((a) => `<option value="${a.id}" ${a.id === elegido.id ? "selected" : ""}>${esc(a.nombre)}</option>`).join("")}</select>` : `<strong>${esc(elegido.nombre)}</strong>`}
+  el.innerHTML = `<div class="toolbar">${activos.length > 1 ? `<select id="pa">${activos.map((a) => `<option value="${a.id}" ${a.id === elegido.id ? "selected" : ""}>${esc(a.nombre)}</option>`).join("")}</select>` : `<strong>${esc(elegido.nombre)}</strong>`}${logoActivo(elegido.id)}
     <span id="tabs" class="tabs"></span><span class="spacer"></span>
     <label>Fecha<input type="date" id="pf" value="${fecha}"></label><button class="btn" id="hoy">Hoy</button><button class="btn" id="imp">Imprimir</button></div>
     <div class="plano-vista"><div id="grid" class="plano-wrap"><p class="muted">Cargando…</p></div><aside id="lat" class="plano-lat"></aside></div>`;
@@ -390,6 +396,7 @@ V.activos = async (el) => {
   });
   if ($("#new", el)) $("#new", el).onclick = () => edit(null);
   table($("#t", el), [
+    { k: "logo", t: "", f: (v, a) => (v ? `<img class="logo-tabla" src="${claro(v)}" alt="">` : `<span class="avatar sm">${esc(a.codigo.slice(0, 2))}</span>`) },
     { k: "codigo", t: "Código" }, { k: "nombre", t: "Nombre" }, { k: "modalidad_nombre", t: "Modalidad" },
     { k: "sociedad", t: "Gestora" }, { k: "propietaria", t: "Propietaria" }, { k: "municipio", t: "Municipio" }, { k: "num_unidades", t: "Unidades", num: true },
     { k: "serie_factura", t: "Serie facturas" },
@@ -1248,7 +1255,7 @@ V.usuarios = async (el) => {
   };
   $("#new", el).onclick = () => edit(null);
   table($("#t", el), [
-    { k: "nombre", t: "Nombre" }, { k: "email", t: "Email" },
+    { k: "nombre", t: "Nombre", f: (v) => `<span class="persona">${avatar(v, "sm")}${esc(v)}</span>` }, { k: "email", t: "Email" },
     { k: "asignaciones", t: "Roles / ámbito", f: (v, u) => u.is_superadmin ? "<b>Superadministrador</b>" : v.map((a) => `${esc(a.rol)} <span class="muted">(${esc(scopeTxt(a))})</span>`).join("<br>") || '<span class="muted">Sin acceso</span>' },
     { k: "activo", t: "Estado", f: (v, u) => (v ? badge("vigente") : badge("baja")) + (u.debe_cambiar_password ? ' <span class="badge b-pendiente">contraseña provisional</span>' : "") },
   ], users, (u) => [["Editar", () => edit(u)]]);
@@ -1282,7 +1289,8 @@ V.sociedades = async (el) => {
     toast("Sociedad guardada"); await loadCompanies(); go("sociedades");
   });
   $("#new", el).onclick = () => save(null);
-  table($("#t", el), [{ k: "nombre", t: "Razón social" }, { k: "cif", t: "CIF" },
+  table($("#t", el), [{ k: "logo", t: "", f: (v, c) => (v ? `<img class="logo-tabla" src="${claro(v)}" alt="">` : avatar(c.nombre, "sm")) },
+    { k: "nombre", t: "Razón social" }, { k: "cif", t: "CIF" },
     { k: "direccion", t: "Domicilio fiscal", f: (v, c) => v ? esc([v, c.cp, c.municipio].filter(Boolean).join(", ")) : '<span class="badge b-pendiente">falta (no puede facturar)</span>' },
     { k: "parent_id", t: "Matriz", f: (v) => esc(S.companies.find((c) => c.id === v)?.nombre ?? "") },
     { k: "activa", t: "Estado", f: (v) => (v ? badge("vigente") : badge("baja")) }], S.companies, (c) => [["Editar", () => save(c)]]);
@@ -1309,7 +1317,7 @@ V.auditoria = async (el) => {
 };
 
 V.perfil = async (el) => {
-  el.innerHTML = `<div class="card" style="max-width:640px"><h3>${esc(S.me.nombre)}</h3><div class="sub">${esc(S.me.email)}</div>
+  el.innerHTML = `<div class="card" style="max-width:640px"><div class="perfil-cab">${avatar(S.me.nombre, "lg")}<div><h3>${esc(S.me.nombre)}</h3><div class="sub">${esc(S.me.email)} · ${esc(rolDe(S.me))}</div></div></div>
     <h4>Accesos</h4>${S.me.is_superadmin ? "<p><b>Superadministrador</b> — acceso total</p>" : S.me.ambitos.map((a) => `<p>${esc(a.rol)} · <span class="muted">${esc(a.ambito)}</span></p>`).join("") || "<p class='muted'>Sin roles asignados</p>"}
     <button class="btn" id="pw">Cambiar contraseña</button>
     <h4>Avisos por correo</h4><div id="avisos"><p class="muted">Cargando…</p></div></div>`;
@@ -1364,7 +1372,7 @@ async function loadCompanies() { S.companies = await get("/api/sociedades"); }
 
 function forcePasswordChange() {
   $("#login").classList.add("hidden"); $("#app").classList.remove("hidden");
-  $("#userName").textContent = S.me.nombre; $("#nav").innerHTML = ""; $("#view").innerHTML = ""; $("#assetFilter").hidden = true;
+  pintarUsuario(); $("#nav").innerHTML = ""; $("#view").innerHTML = ""; $("#assetFilter").hidden = true;
   $("#viewTitle").textContent = "Cambio de contraseña obligatorio";
   const f = form("Primer acceso: cambie su contraseña provisional", [
     { html: '<p class="muted">Mínimo 10 caracteres. No puede ser la contraseña provisional.</p>' },
@@ -1388,9 +1396,13 @@ async function start() {
   S.asset = localStorage.getItem("pms_asset") || "";
   await Promise.all([loadAssets(), loadCompanies()]);
   $("#login").classList.add("hidden"); $("#app").classList.remove("hidden");
-  $("#userName").textContent = S.me.nombre;
+  pintarUsuario();
   renderNav();
   go(location.hash.slice(1) || "panel");
+}
+function pintarUsuario() {
+  $("#userAvatar").textContent = iniciales(S.me.nombre); $("#userAvatar").title = S.me.nombre;
+  $("#userName").innerHTML = `${esc(S.me.nombre)}<small>${esc(rolDe(S.me))}</small>`;
 }
 function showLogin() { $("#app").classList.add("hidden"); $("#login").classList.remove("hidden"); }
 function logout() { S.token = null; localStorage.removeItem("pms_token"); showLogin(); }

@@ -9,12 +9,14 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from . import marca
 from .facturacion import FORMAS_PAGO, desglose, lineas_de
 from .models import Invoice
 
-AZUL = colors.HexColor("#13294b")
+AZUL = colors.HexColor(marca.NEGRO)  # tono corporativo (negro) con acentos dorados
+ORO = colors.HexColor(marca.ORO)
 GRIS = colors.HexColor("#6b7785")
-LINEA = colors.HexColor("#d5dbe3")
+LINEA = colors.HexColor("#ddd6c8")
 
 
 def _eur(x) -> str:
@@ -33,7 +35,8 @@ def _esc(s) -> str:
 def generar(f: Invoice, asset, original: Invoice | None = None) -> bytes:
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm, topMargin=16 * mm,
-                            bottomMargin=16 * mm, title=f"Factura {f.codigo}", author=f.emisor["nombre"])
+                            bottomMargin=16 * mm, title=f"Factura {f.codigo}", author=f.emisor["nombre"],
+                            creator=marca.NOMBRE)
     ss = getSampleStyleSheet()
     normal = ParagraphStyle("n", parent=ss["Normal"], fontName="Helvetica", fontSize=9.5, leading=13)
     peq = ParagraphStyle("p", parent=normal, fontSize=8, leading=10.5, textColor=GRIS)
@@ -61,7 +64,7 @@ def generar(f: Invoice, asset, original: Invoice | None = None) -> bytes:
     if c.get("domicilio"):
         lineas_cli.append(_esc(c["domicilio"]))
     cli = Table([[Paragraph("CLIENTE", rotulo)], [Paragraph("<br/>".join(lineas_cli), normal)]], colWidths=[174 * mm])
-    cli.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.6, LINEA), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f4f6f9")),
+    cli.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.6, LINEA), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f7f3ea")),
                              ("LEFTPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 4),
                              ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
 
@@ -89,9 +92,12 @@ def generar(f: Invoice, asset, original: Invoice | None = None) -> bytes:
     tot = Table(filas_tot, colWidths=[48 * mm, 30 * mm], hAlign="RIGHT")
     tot.setStyle(TableStyle([("ALIGN", (1, 0), (1, -1), "RIGHT"), ("FONTSIZE", (0, 0), (-1, -1), 9.5),
                              ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"), ("TEXTCOLOR", (0, -1), (-1, -1), AZUL),
-                             ("LINEABOVE", (0, -1), (-1, -1), 1, AZUL), ("TOPPADDING", (0, 0), (-1, -1), 3)]))
+                             ("LINEABOVE", (0, -1), (-1, -1), 1.2, ORO), ("TOPPADDING", (0, 0), (-1, -1), 3)]))
 
-    cuerpo = [cab, Spacer(1, 9 * mm), cli, Spacer(1, 7 * mm), det, Spacer(1, 4 * mm), tot, Spacer(1, 6 * mm)]
+    # banda de logotipos: sociedad emisora (p.ej. INVERSIETE) y el activo que factura (p.ej. Suite Florida)
+    logos = marca.cabecera_pdf(marca.clave_sociedad(e["nif"]), marca.clave_activo(asset.codigo), 174 * mm, 24 * mm)
+    cuerpo = ([logos, Spacer(1, 6 * mm)] if logos else []) + [cab, Spacer(1, 9 * mm), cli, Spacer(1, 7 * mm), det,
+                                                              Spacer(1, 4 * mm), tot, Spacer(1, 6 * mm)]
     if rect and original is not None:
         cuerpo.append(Paragraph(
             f"<b>Rectifica la factura {_esc(original.codigo)}</b> de fecha {_fecha(original.fecha_expedicion)} "

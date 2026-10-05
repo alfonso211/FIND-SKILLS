@@ -105,6 +105,8 @@ def test_series_correlativas_por_activo(client, admin, ids):
     assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")
     assert pdf.headers["content-type"] == "application/pdf"
     assert f'Factura_SF-00001-{ANIO}.pdf' in pdf.headers["content-disposition"]
+    # cabecera corporativa: logotipo de INVERSIETE (emisora) y de Suite Florida (activo que factura)
+    assert pdf.content.count(b"/Subtype /Image") >= 2
 
 
 def test_alquiler_iva_por_uso(client, admin, ids):

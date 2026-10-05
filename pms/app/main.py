@@ -30,7 +30,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="PMS Grupo INVERSIETE", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="INVERPMS", version="0.1.0", lifespan=lifespan)
 for r in (auth, estructura, alquiler, turistico, plano, facturas, mantenimiento, informes, admin, panel, documentos):
     app.include_router(r.router)
 app.include_router(facturas.router_servicios)

@@ -62,7 +62,7 @@ def enviar(destino: str, asunto: str, texto: str, html: str) -> None:
         BANDEJA.append({"para": destino, "asunto": asunto, "texto": texto, "html": html})
         return
     msg = EmailMessage()
-    msg["From"] = formataddr(("PMS Grupo INVERSIETE", remitente()))
+    msg["From"] = formataddr(("INVERPMS · Grupo INVERSIETE", remitente()))
     msg["To"] = destino
     msg["Subject"] = asunto
     msg["Message-ID"] = make_msgid(domain=(remitente() or "pms").split("@")[-1])
@@ -95,18 +95,24 @@ def _enviar_registrado(db, user: User | None, destino: str, clave: str, tipo: st
 
 
 def _html(titulo: str, cuerpo: str) -> str:
-    enlace = (f'<p style="margin-top:18px"><a href="{escape(settings.url)}" style="background:#1f4e8c;color:#fff;'
-              f'padding:8px 14px;border-radius:6px;text-decoration:none">Abrir el PMS</a></p>') if settings.url else ""
-    return (f'<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#1d2733;max-width:760px">'
-            f'<h2 style="color:#13294b;margin:0 0 12px">{escape(titulo)}</h2>{cuerpo}{enlace}'
-            f'<p style="color:#6b7785;font-size:12px;margin-top:20px">Aviso automático del PMS Grupo INVERSIETE. '
-            f'Puede elegir qué avisos recibe en «Mi perfil».</p></div>')
+    enlace = (f'<p style="margin-top:20px"><a href="{escape(settings.url)}" style="background:#c9a45a;color:#0e0e10;'
+              f'padding:9px 16px;border-radius:8px;text-decoration:none;font-weight:600">Abrir INVERPMS</a></p>'
+              ) if settings.url else ""
+    cabecera = ('<div style="background:#0e0e10;padding:16px 22px;border-bottom:3px solid #c9a45a">'
+                '<span style="color:#fff;font-size:18px;letter-spacing:5px;font-weight:300">INVER'
+                '<b style="color:#c9a45a;font-weight:700">PMS</b></span>'
+                '<span style="color:#8d877b;font-size:11px;letter-spacing:2px;margin-left:12px">GRUPO INVERSIETE</span></div>')
+    return (f'<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#1a1a1c;max-width:760px;'
+            f'border:1px solid #e7e1d4;border-radius:10px;overflow:hidden">{cabecera}<div style="padding:20px 22px">'
+            f'<h2 style="color:#0e0e10;margin:0 0 12px;font-weight:600">{escape(titulo)}</h2>{cuerpo}{enlace}'
+            f'<p style="color:#8d877b;font-size:12px;margin-top:22px">Aviso automático de INVERPMS · Grupo INVERSIETE. '
+            f'Puede elegir qué avisos recibe en «Mi perfil».</p></div></div>')
 
 
 def _tabla(cabecera: list[str], filas: list[list]) -> str:
-    th = "".join(f'<th style="text-align:left;padding:5px 8px;background:#f4f6f9;border-bottom:1px solid #e1e6ec">'
+    th = "".join(f'<th style="text-align:left;padding:5px 8px;background:#f7f3ea;border-bottom:1px solid #e7e1d4">'
                  f'{escape(c)}</th>' for c in cabecera)
-    tr = "".join("<tr>" + "".join(f'<td style="padding:5px 8px;border-bottom:1px solid #e1e6ec">{escape(str(v))}</td>'
+    tr = "".join("<tr>" + "".join(f'<td style="padding:5px 8px;border-bottom:1px solid #eee8dc">{escape(str(v))}</td>'
                                   for v in f) + "</tr>" for f in filas)
     return f'<table style="border-collapse:collapse;width:100%;font-size:13px">{th and "<tr>" + th + "</tr>"}{tr}</table>'
 
