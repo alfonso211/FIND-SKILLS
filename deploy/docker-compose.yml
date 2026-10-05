@@ -35,6 +35,16 @@ services:
       # copias de documentos de identidad, cifradas con PMS_DOCS_KEY
       PMS_DOCS_DIR: /data/documentos
       PMS_DOCS_KEY: ${PMS_DOCS_KEY:-}
+      # avisos por correo (ver INSTALACION.md, apartado 8 ter)
+      PMS_URL: https://${PMS_DOMINIO}
+      PMS_SMTP_HOST: ${PMS_SMTP_HOST:-}
+      PMS_SMTP_PORT: ${PMS_SMTP_PORT:-587}
+      PMS_SMTP_USER: ${PMS_SMTP_USER:-}
+      PMS_SMTP_PASSWORD: ${PMS_SMTP_PASSWORD:-}
+      PMS_SMTP_FROM: ${PMS_SMTP_FROM:-}
+      PMS_SMTP_SEGURIDAD: ${PMS_SMTP_SEGURIDAD:-starttls}
+      PMS_AVISOS_HORA: ${PMS_AVISOS_HORA:-07:30}
+      TZ: Europe/Madrid
     volumes:
       - documentos:/data/documentos
 

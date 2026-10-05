@@ -24,9 +24,19 @@ async function api(method, path, body) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (res.status === 401 && S.token) { logout(); throw new Error("Sesión caducada"); }
+  nuevaVersion(res.headers.get("X-PMS-Version"));
   const data = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) throw new Error(errMsg(data, res));
   return data;
+}
+// Tras actualizar el programa en el servidor, la pantalla se recarga sola (sin Ctrl + F5).
+// Si hay un formulario abierto espera a que se cierre, para no perder lo que se está tecleando.
+function nuevaVersion(v) {
+  if (!v || !window.PMS_VERSION || v === window.PMS_VERSION || S.recargando) return;
+  S.recargando = true;
+  const recargar = () => ($("#modal").open ? setTimeout(recargar, 5000) : location.reload());
+  toast("Hay una versión nueva del PMS: se actualiza la pantalla…");
+  setTimeout(recargar, 2500);
 }
 function errMsg(data, res) {
   let msg = data?.detail ?? res.statusText;
@@ -45,6 +55,24 @@ async function download(method, path, body) {
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
   return res;
+}
+// Envío de ficheros (multipart). No lleva Content-Type: lo pone el navegador con el separador.
+async function upload(path, fd) {
+  const res = await fetch(path, { method: "POST", headers: { Authorization: `Bearer ${S.token}` }, body: fd });
+  if (res.status === 401) { logout(); throw new Error("Sesión caducada"); }
+  nuevaVersion(res.headers.get("X-PMS-Version"));
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(errMsg(data, res));
+  return data;
+}
+async function blobUrl(path) {
+  const res = await fetch(path, { headers: { Authorization: `Bearer ${S.token}` } });
+  if (!res.ok) throw new Error(errMsg(await res.json().catch(() => null), res));
+  return URL.createObjectURL(await res.blob());
+}
+async function abrirFichero(path) {  // abre una foto o PDF en otra pestaña
+  const w = window.open("", "_blank");
+  try { w.location = await blobUrl(path); } catch (e) { w && w.close(); toast(e.message, true); }
 }
 const get = (p, q) => api("GET", q ? `${p}?${new URLSearchParams(Object.entries(q).filter(([, v]) => v !== "" && v != null))}` : p);
 const post = (p, b = {}) => api("POST", p, b);
@@ -550,12 +578,42 @@ V.hoy = async (el) => {
 V.reservas = async (el) => {
   el.innerHTML = `<div class="toolbar"><label>Desde<input type="date" id="d" value="${today()}"></label><label>Hasta<input type="date" id="h" value="${addDays(today(), 30)}"></label>
     <label>Estado<select id="e"><option value="">Todos</option>${["confirmada", "checkin", "checkout", "cancelada", "no_show"].map((x) => `<option>${x}</option>`).join("")}</select></label>
-    <label>Buscar<input id="q" placeholder="Localizador, huésped, unidad"></label><span class="spacer"></span>${can("reservas.editar") ? '<button class="btn primary" id="new">Nueva reserva</button>' : ""}</div><div id="t"></div>`;
+    <label>Buscar<input id="q" placeholder="Localizador, huésped, unidad"></label><span class="spacer"></span>${can("reservas.editar") ? '<button class="btn" id="imp">Importar Excel</button><button class="btn primary" id="new">Nueva reserva</button>' : ""}</div><div id="t"></div>`;
   const load = async () => table($("#t", el), resCols, await get("/api/turistico/reservas", { asset_id: S.asset, desde: $("#d", el).value, hasta: $("#h", el).value, estado: $("#e", el).value, q: $("#q", el).value }), resActions(load));
   ["#d", "#h", "#e"].forEach((s) => ($(s, el).onchange = load)); $("#q", el).oninput = debounce(load);
   if ($("#new", el)) $("#new", el).onclick = () => newReservation(load);
+  if ($("#imp", el)) $("#imp", el).onclick = () => importarReservas(load);
   load();
 };
+
+// Importación de reservas: primero vista previa fila a fila; después se importan las válidas
+async function importarReservas(reload) {
+  const aid = await pickAsset("apartamentos_turisticos");
+  const f = form(`Importar reservas · ${assetName(aid)}`, [
+    { html: `<p>Excel (.xlsx) o CSV con una fila por reserva. Use la <a href="#" data-plantilla>plantilla</a> o la exportación de Booking.
+      Si no se indica la unidad, el PMS asigna un apartamento libre. No se registran cobros ni se emiten facturas.</p>` },
+    { html: '<label>Fichero *<input type="file" accept=".xlsx,.csv" data-fich required></label>' },
+  ], {}, async (_, fr) => {
+    const fich = $("[data-fich]", fr).files[0];
+    const enviar = (confirmar) => { const fd = new FormData(); fd.append("fichero", fich); fd.append("asset_id", aid); fd.append("confirmar", confirmar); return upload("/api/turistico/importar", fd); };
+    const prev = await enviar(false);
+    setTimeout(() => {
+      const filas = prev.filas.map((x) => `<tr><td>${x.fila}</td><td>${esc(x.localizador || "")}</td><td>${esc(x.unidad || "")}${x.asignada ? ' <span class="muted">(auto)</span>' : ""}</td>
+        <td>${fdate(x.entrada)}</td><td>${fdate(x.salida)}</td><td>${esc(x.huesped || "")}</td><td class="num">${x.importe_total != null ? eur(x.importe_total) : ""}</td>
+        <td style="white-space:normal;min-width:220px">${x.estado === "valida" ? '<span class="badge b-vigente">válida</span>' : x.estado === "omitida" ? `<span class="badge">omitida</span> ${esc(x.motivo)}` : `<span class="badge b-cancelada">error</span> ${esc(x.motivo)}`}</td></tr>`).join("");
+      form(`Vista previa · ${prev.validas} válidas, ${prev.errores} con error, ${prev.omitidas} omitidas`, [
+        { html: `${prev.columnas_ignoradas.length ? `<p class="muted">Columnas no usadas: ${esc(prev.columnas_ignoradas.join(", "))}</p>` : ""}
+          <div class="table-wrap" style="max-height:50vh;overflow:auto"><table><thead><tr><th>Fila</th><th>Localizador</th><th>Unidad</th><th>Entrada</th><th>Salida</th><th>Huésped</th><th class="num">Importe</th><th>Resultado</th></tr></thead><tbody>${filas}</tbody></table></div>
+          <p>${prev.errores ? "Las filas con error no se importan: corríjalas en el fichero y vuelva a importarlo (las ya importadas no se duplican)." : ""}</p>` },
+      ], {}, async () => {
+        if (!prev.validas) throw new Error("No hay ninguna reserva válida que importar");
+        const r = await enviar(true);
+        toast(`${r.importadas} reservas importadas`); reload && reload();
+      }, `Importar ${prev.validas} reservas`);
+    }, 0);
+  }, "Comprobar fichero");
+  $("[data-plantilla]", f).onclick = (e) => { e.preventDefault(); run(() => download("GET", "/api/turistico/importar/plantilla")); };
+}
 
 V.planning = async (el) => {
   const pool = assetsOf("apartamentos_turisticos");
@@ -684,6 +742,20 @@ V.facturas = async (el) => {
   load();
 };
 
+V.informes = async (el) => {
+  const y = new Date().getFullYear();
+  const INF = [
+    ["ocupacion", "Ocupación", "Turísticos: noches disponibles y ocupadas, % de ocupación, ADR y RevPAR por mes. Residencial: unidades alquiladas por uso.", can("reservas.ver") || can("alquiler.ver")],
+    ["produccion", "Producción", "Alojamiento devengado por noches, rentas emitidas y facturado (base, IVA y total) por activo y mes.", can("finanzas.ver")],
+    ["morosidad", "Morosidad", "Recibos vencidos sin cobrar y reservas con saldo, con contacto del cliente y antigüedad de la deuda (a la fecha final).", can("alquiler.ver") || can("reservas.ver")],
+    ["mantenimiento", "Costes de mantenimiento", "Órdenes de trabajo del periodo con sus costes, y resúmenes por instalación, tipo y proveedor.", can("mantenimiento.ver")],
+  ].filter((x) => x[3]);
+  el.innerHTML = `<div class="toolbar"><label>Desde<input type="date" id="d" value="${y}-01-01"></label><label>Hasta<input type="date" id="h" value="${today()}"></label>
+    <span class="muted">Activo: ${esc(S.asset ? assetName(Number(S.asset)) : "todos los de su ámbito")} (filtro de arriba)</span></div>
+    <div class="cards">${INF.map(([k, t, d]) => `<div class="card"><h3>${esc(t)}</h3><p class="sub">${esc(d)}</p><button class="btn primary" data-inf="${k}">Descargar Excel</button></div>`).join("")}</div>`;
+  el.querySelectorAll("[data-inf]").forEach((b) => (b.onclick = () => run(() => download("GET", `/api/informes/${b.dataset.inf}?` + new URLSearchParams(clean({ desde: $("#d", el).value, hasta: $("#h", el).value, asset_id: S.asset }))))));
+};
+
 V.inquilinos = (el) => contactsView(el, "inquilino");
 V.huespedes = (el) => contactsView(el, "huesped");
 V.proveedores = (el) => contactsView(el, "proveedor");
@@ -716,7 +788,7 @@ async function contactsView(el, tipo) {
 async function newWorkOrder(assetId, unitId) {
   const aid = assetId || await pickAsset();
   const units = await get("/api/unidades", { asset_id: aid });
-  return new Promise((resolve) => form(`Nueva orden de trabajo · ${assetName(aid)}`, [
+  return new Promise((resolve) => bindFotos(form(`Nueva orden de trabajo · ${assetName(aid)}`, [
     { k: "titulo", t: "Título", req: true, wide: true },
     { k: "unit_id", t: "Unidad (vacío = zonas comunes)", type: "select", options: units.map((u) => [u.id, u.codigo]) },
     ...(can("mantenimiento.editar") ? [{ k: "tipo", t: "Tipo", type: "select", req: true, options: list(["correctivo", "preventivo", "normativo", "mejora"]), def: "correctivo" }] : []),
@@ -726,10 +798,74 @@ async function newWorkOrder(assetId, unitId) {
       { k: "coste_estimado", t: "Coste estimado €", type: "number" }, { k: "fecha_prevista", t: "Fecha prevista", type: "date" }] : []),
     { k: "bloquea_unidad", t: "Bloquear unidad (fuera de venta hasta cierre)", type: "checkbox", wide: true },
     { k: "descripcion", t: "Descripción de la avería", type: "textarea", wide: true },
-  ], { unit_id: unitId }, async (d) => {
-    await post("/api/mantenimiento/ordenes", clean({ ...d, asset_id: aid, unit_id: d.unit_id ? Number(d.unit_id) : null }));
-    toast("Orden de trabajo creada"); resolve();
+    { html: fotosHtml("Fotos de la avería (opcional)") },
+  ], { unit_id: unitId }, async (d, f) => {
+    const w = await post("/api/mantenimiento/ordenes", clean({ ...d, asset_id: aid, unit_id: d.unit_id ? Number(d.unit_id) : null }));
+    const n = await subirFotos(f, w.id, "averia");
+    toast(`Orden de trabajo OT-${String(w.id).padStart(5, "0")} creada` + (n ? ` con ${n} foto(s)` : "") + (w.prioridad === "urgente" ? ". Se ha avisado por correo." : ""));
+    resolve();
+  })));
+}
+// Bloque de fotos: en el móvil «Hacer foto» abre directamente la cámara trasera
+function fotosHtml(titulo, pdf = false) {
+  return `<fieldset><legend>${esc(titulo)}</legend><div class="toolbar" style="margin:0">
+    <label class="btn">📷 Hacer foto<input type="file" accept="image/*" capture="environment" multiple data-fotos hidden></label>
+    <label class="btn">📁 Elegir ${pdf ? "fotos o PDF" : "fotos"}<input type="file" accept="image/*${pdf ? ",application/pdf" : ""}" multiple data-fotos hidden></label>
+    <span class="muted" data-fotosmsg>Ninguna seleccionada</span></div></fieldset>`;
+}
+function ficherosElegidos(f) { return [...f.querySelectorAll("[data-fotos]")].flatMap((i) => [...i.files]); }
+function bindFotos(f) {
+  f.querySelectorAll("[data-fotos]").forEach((i) => (i.onchange = () => {
+    const n = ficherosElegidos(f);
+    $("[data-fotosmsg]", f).textContent = n.length ? `${n.length} fichero(s): ${n.map((x) => x.name).join(", ").slice(0, 80)}` : "Ninguna seleccionada";
   }));
+}
+async function subirFotos(f, wid, tipo, descripcion) {
+  const files = ficherosElegidos(f);
+  if (!files.length) return 0;
+  const fd = new FormData(); fd.append("tipo", tipo); if (descripcion) fd.append("descripcion", descripcion);
+  files.forEach((x) => fd.append("ficheros", x));
+  return (await upload(`/api/mantenimiento/ordenes/${wid}/adjuntos`, fd)).length;
+}
+async function adjuntosOT(w, reload) {
+  const editar = can("mantenimiento.editar");
+  const tipos = Object.entries({ averia: "Foto de la avería", trabajo: "Foto del trabajo terminado", oca: "Certificado OCA / inspección", factura: "Factura de proveedor", presupuesto: "Presupuesto", otro: "Otro documento" })
+    .filter(([k]) => editar || ["averia", "otro"].includes(k));
+  const f = form(`OT-${String(w.id).padStart(5, "0")} · ${w.titulo} · fotos y documentos`, [
+    { html: '<div data-lista class="adjuntos"><p class="muted">Cargando…</p></div>' },
+    ...(canOpenOT() || editar ? [
+      { html: "<h4>Añadir</h4>" },
+      { k: "tipo", t: "Tipo", type: "select", req: true, options: tipos, def: w.conf_mto_por || w.estado === "cerrada" ? (editar ? "trabajo" : "otro") : "averia" },
+      { k: "descripcion", t: "Descripción (opcional)" },
+      { html: fotosHtml("Ficheros", true) }] : []),
+  ], {}, async (d, fr) => {
+    if (!ficherosElegidos(fr).length) throw new Error("Elija o haga al menos una foto");
+    const n = await subirFotos(fr, w.id, d.tipo, d.descripcion);
+    toast(`${n} fichero(s) adjuntado(s)`); reload && reload();
+    setTimeout(() => adjuntosOT(w, reload), 0);
+  }, "Subir");
+  bindFotos(f);
+  const lista = await get(`/api/mantenimiento/ordenes/${w.id}/adjuntos`);
+  const cont = $("[data-lista]", f);
+  if (!cont) return;
+  if (!lista.length) { cont.innerHTML = '<p class="muted">Sin fotos ni documentos.</p>'; return; }
+  cont.innerHTML = lista.map((a) => `<figure data-a="${a.id}">
+      <div class="thumb">${a.mime.startsWith("image/") ? "" : '<span class="pdf">PDF</span>'}</div>
+      <figcaption><b>${esc(a.tipo_nombre)}</b><br>${esc(a.descripcion || a.nombre)}<br><span class="muted">${esc(a.usuario || "")} · ${fdt(a.subido)}</span>
+      <br><a href="#" data-ver>Abrir</a>${editar || a.user_id === S.me.id ? ' · <a href="#" class="danger" data-borrar>Borrar</a>' : ""}</figcaption></figure>`).join("");
+  for (const a of lista) {
+    const fig = cont.querySelector(`[data-a="${a.id}"]`);
+    $("[data-ver]", fig).onclick = (e) => { e.preventDefault(); abrirFichero(`/api/mantenimiento/adjuntos/${a.id}`); };
+    $(".thumb", fig).onclick = () => abrirFichero(`/api/mantenimiento/adjuntos/${a.id}`);
+    const del = $("[data-borrar]", fig);
+    if (del) del.onclick = async (e) => {
+      e.preventDefault();
+      if (!confirm(`¿Borrar «${a.nombre}»?`)) return;
+      await run(() => api("DELETE", `/api/mantenimiento/adjuntos/${a.id}`), "Adjunto borrado");
+      fig.remove(); reload && reload();
+    };
+    if (a.mime.startsWith("image/")) blobUrl(`/api/mantenimiento/adjuntos/${a.id}`).then((u) => ($(".thumb", fig).style.backgroundImage = `url(${u})`)).catch(() => {});
+  }
 }
 
 V.ordenes = async (el) => {
@@ -742,16 +878,20 @@ V.ordenes = async (el) => {
     const e = $("#e", el).value;
     const rows = await get("/api/mantenimiento/ordenes", { asset_id: S.asset, tipo: $("#tp", el).value, ...(e === "abiertas" ? { abiertas: true } : { estado: e }) });
     table($("#t", el), [
-      { k: "id", t: "Nº", num: true }, { k: "fecha_apertura", t: "Apertura", f: fdate }, { k: "asset_id", t: "Activo", f: (v) => esc(assetName(v)) },
+      { k: "id", t: "Nº", f: (v) => `OT-${String(v).padStart(5, "0")}` }, { k: "fecha_apertura", t: "Apertura", f: fdate }, { k: "asset_id", t: "Activo", f: (v) => esc(assetName(v)) },
       { k: "unidad", t: "Unidad", f: (v) => esc(v || "Z. comunes") }, { k: "titulo", t: "Título" },
       { k: "categoria", t: "Instalación" }, { k: "prioridad", t: "Prioridad", f: badge }, { k: "abierta_por_nombre", t: "Abierta por" },
       { k: "asignado_a", t: "Asignado" }, { k: "conf_mto_por_nombre", t: "Mantenimiento", f: (v, w) => check(v, w.conf_mto_fecha) },
       { k: "conf_limpieza_por_nombre", t: "Limpieza", f: (v, w) => (w.requiere_limpieza ? check(v, w.conf_limpieza_fecha) : '<span class="muted">no aplica</span>') },
       { k: "coste_real", t: "Coste", num: true, f: eur }, { k: "estado", t: "Estado", f: badge },
     ], rows, (w) => {
-      if (["cerrada", "cancelada"].includes(w.estado)) return [];
+      const comunes = [
+        [`📎 ${w.n_adjuntos || ""}`.trim(), () => adjuntosOT(w, load)],
+        ["Parte PDF", () => run(() => download("GET", `/api/mantenimiento/ordenes/${w.id}/parte`))],
+      ];
+      if (["cerrada", "cancelada"].includes(w.estado)) return comunes;
       const enTrabajo = !w.conf_mto_por;
-      return [
+      return [...comunes,
         can("mantenimiento.editar") && enTrabajo && ["Editar", () => form(`OT ${w.id}: ${w.titulo}`, [
           { k: "titulo", t: "Título", req: true, wide: true }, { k: "estado", t: "Estado", type: "select", options: list(["abierta", "asignada", "en_curso", "pendiente_material"]) },
           { k: "prioridad", t: "Prioridad", type: "select", options: list(S.cat.prioridades) }, { k: "categoria", t: "Instalación", type: "select", options: list(S.cat.categorias_mto) },
@@ -759,9 +899,14 @@ V.ordenes = async (el) => {
           { k: "asignado_a", t: "Asignado a" }, { k: "proveedor", t: "Proveedor" }, { k: "coste_estimado", t: "Coste estimado €", type: "number" },
           { k: "fecha_prevista", t: "Fecha prevista", type: "date" }, { k: "descripcion", t: "Descripción", type: "textarea", wide: true },
         ], w, async (d) => { await put(`/api/mantenimiento/ordenes/${w.id}`, d); toast("OT actualizada"); load(); })],
-        can("mantenimiento.editar") && enTrabajo && ["Trabajo realizado", () => form(`OT ${w.id}: confirmar trabajo realizado`, [
-          { k: "solucion", t: "Trabajo realizado / solución", type: "textarea", wide: true, req: true }, { k: "coste_real", t: "Coste real €", type: "number" }],
-          {}, async (d) => { await post(`/api/mantenimiento/ordenes/${w.id}/confirmar-mantenimiento`, d); toast("Trabajo confirmado. Pendiente de limpieza"); load(); })],
+        can("mantenimiento.editar") && enTrabajo && ["Trabajo realizado", () => bindFotos(form(`OT ${w.id}: confirmar trabajo realizado`, [
+          { k: "solucion", t: "Trabajo realizado / solución", type: "textarea", wide: true, req: true }, { k: "coste_real", t: "Coste real €", type: "number" },
+          { html: fotosHtml("Fotos del trabajo terminado (opcional)") }],
+          {}, async (d, f) => {
+            const n = await subirFotos(f, w.id, "trabajo");
+            const r = await post(`/api/mantenimiento/ordenes/${w.id}/confirmar-mantenimiento`, d);
+            toast((r.requiere_limpieza ? "Trabajo confirmado. Pendiente de limpieza" : "Trabajo confirmado. Pendiente de cierre") + (n ? ` · ${n} foto(s)` : "")); load();
+          }))],
         can("limpieza.confirmar_ot") && w.requiere_limpieza && w.conf_mto_por && !w.conf_limpieza_por && ["Unidad OK", () => run(() => post(`/api/mantenimiento/ordenes/${w.id}/confirmar-limpieza`), "Confirmado por limpieza. Pendiente de cierre").then(load)],
         (can("mantenimiento.cerrar") || (can("limpieza.confirmar_ot") && w.requiere_limpieza)) && w.conf_mto_por && ["Rechazar", () => form(`OT ${w.id}: devolver a mantenimiento`, [
           { k: "motivo", t: "Motivo (qué no está bien)", type: "textarea", wide: true, req: true }], {},
@@ -874,6 +1019,20 @@ V.sociedades = async (el) => {
     { k: "activa", t: "Estado", f: (v) => (v ? badge("vigente") : badge("baja")) }], S.companies, (c) => [["Editar", () => save(c)]]);
 };
 
+V.avisos = async (el) => {
+  const st = await get("/api/admin/avisos");
+  el.innerHTML = `<div class="card" style="max-width:820px"><h3>Envío de correos</h3>
+    ${st.configurado ? `<p>Servidor <b>${esc(st.servidor)}</b> · remitente <b>${esc(st.remitente || "")}</b> · resumen diario a las <b>${esc(st.hora_resumen)}</b> (hora de Madrid).</p>`
+      : '<p class="error">No configurado. Hay que indicar el servidor de correo en el fichero .env del servidor (ver deploy/INSTALACION.md, apartado «Avisos por correo»).</p>'}
+    <p class="muted">OT urgentes: al momento, a quien ve el mantenimiento del activo. Resumen diario: recibos impagados, contratos que vencen en 90 días y revisiones preventivas/normativas en 30 días o vencidas; solo a quien tenga algo pendiente en sus activos. Cada usuario elige sus avisos en «Mi perfil».</p>
+    <div class="toolbar"><button class="btn" id="probar">Enviarme un correo de prueba</button><button class="btn" id="resumen">Enviar el resumen diario ahora</button></div></div>
+    <h4>Últimos envíos</h4><div id="t"></div>`;
+  $("#probar", el).onclick = () => run(() => post("/api/admin/avisos/probar", {}), (r) => `Correo de prueba enviado a ${r.destino}`).then(() => go("avisos"));
+  $("#resumen", el).onclick = () => confirm("¿Enviar ahora el resumen a todos los usuarios con avisos pendientes?") && run(() => post("/api/admin/avisos/resumen"), (r) => `Resumen enviado a ${r.enviados} usuario(s)` + (r.errores ? `, ${r.errores} error(es)` : "")).then(() => go("avisos"));
+  table($("#t", el), [{ k: "fecha", t: "Fecha", f: fdt }, { k: "tipo", t: "Tipo", f: (v) => esc(label(v)) }, { k: "usuario", t: "Usuario" }, { k: "destinatario", t: "Correo" },
+    { k: "asunto", t: "Asunto" }, { k: "ok", t: "Estado", f: (v, r) => (v ? '<span class="badge b-vigente">enviado</span>' : `<span class="badge b-cancelada" title="${esc(r.error)}">error</span> <span class="muted">${esc((r.error || "").slice(0, 60))}</span>`) }], st.registro);
+};
+
 V.auditoria = async (el) => {
   table(el, [{ k: "fecha", t: "Fecha", f: fdt }, { k: "usuario", t: "Usuario" }, { k: "accion", t: "Acción" }, { k: "entidad", t: "Entidad" },
     { k: "entidad_id", t: "ID" }, { k: "detalle", t: "Detalle", f: (v) => `<code>${esc(v ? JSON.stringify(v).slice(0, 140) : "")}</code>` }],
@@ -883,7 +1042,13 @@ V.auditoria = async (el) => {
 V.perfil = async (el) => {
   el.innerHTML = `<div class="card" style="max-width:640px"><h3>${esc(S.me.nombre)}</h3><div class="sub">${esc(S.me.email)}</div>
     <h4>Accesos</h4>${S.me.is_superadmin ? "<p><b>Superadministrador</b> — acceso total</p>" : S.me.ambitos.map((a) => `<p>${esc(a.rol)} · <span class="muted">${esc(a.ambito)}</span></p>`).join("") || "<p class='muted'>Sin roles asignados</p>"}
-    <button class="btn" id="pw">Cambiar contraseña</button></div>`;
+    <button class="btn" id="pw">Cambiar contraseña</button>
+    <h4>Avisos por correo</h4><div id="avisos"><p class="muted">Cargando…</p></div></div>`;
+  const av = await get("/api/auth/avisos");
+  $("#avisos", el).innerHTML = (av.correo_configurado ? "" : '<p class="muted">El envío de correos aún no está configurado en el servidor: puede dejar elegidos sus avisos y empezarán a llegar cuando se configure.</p>') +
+    (av.tipos.length ? `<p class="muted">Se envían a ${esc(av.email)}, solo de los activos a los que tiene acceso.</p>${av.tipos.map((t) => `<label class="check"><input type="checkbox" data-av="${t.tipo}" ${t.activo ? "checked" : ""}> ${esc(t.descripcion)}</label>`).join("")}
+      <p><button class="btn" id="avSave">Guardar avisos</button></p>` : '<p class="muted">Su perfil no tiene avisos disponibles.</p>');
+  if ($("#avSave", el)) $("#avSave", el).onclick = () => run(() => put("/api/auth/avisos", { avisos: [...el.querySelectorAll("[data-av]:checked")].map((c) => c.dataset.av) }), "Avisos guardados");
   $("#pw", el).onclick = () => form("Cambiar contraseña", [{ k: "actual", t: "Contraseña actual", type: "password", req: true }, { k: "nueva", t: "Nueva (mín. 10 caracteres)", type: "password", req: true }], {},
     async (d) => { await post("/api/auth/password", d); toast("Contraseña cambiada"); });
 };
@@ -893,12 +1058,12 @@ const MENU = [
   ["General", [["panel", "Panel de control", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
   ["Apartamentos turísticos", [["hoy", "Llegadas / salidas", "reservas.ver"], ["reservas", "Reservas", "reservas.ver"], ["planning", "Planning", "reservas.ver"], ["huespedes", "Huéspedes", "reservas.ver"]]],
   ["Alquiler residencial", [["contratos", "Contratos", "alquiler.ver"], ["recibos", "Recibos y cobros", "alquiler.ver"], ["inquilinos", "Inquilinos", "alquiler.ver"]]],
-  ["Facturación", [["facturas", "Facturas emitidas", "facturas.ver"]]],
+  ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["informes", "Informes Excel", "informes"]]],
   ["Mantenimiento", [["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["proveedores", "Proveedores", "mantenimiento.ver"]]],
-  ["Administración", [["usuarios", "Usuarios", "admin"], ["roles", "Roles y permisos", "admin"], ["sociedades", "Sociedades", "admin"], ["auditoria", "Auditoría", "auditoria.ver"]]],
+  ["Administración", [["usuarios", "Usuarios", "admin"], ["roles", "Roles y permisos", "admin"], ["sociedades", "Sociedades", "admin"], ["avisos", "Avisos por correo", "admin"], ["auditoria", "Auditoría", "auditoria.ver"]]],
   ["", [["perfil", "Mi perfil", null]]],
 ];
-const allowed = (p) => !p || (p === "admin" ? S.me.admin_grupo : can(p));
+const allowed = (p) => !p || (p === "admin" ? S.me.admin_grupo : p === "informes" ? ["reservas.ver", "alquiler.ver", "finanzas.ver", "mantenimiento.ver"].some(can) : can(p));
 const TITLES = Object.fromEntries(MENU.flatMap(([, items]) => items.map(([id, t]) => [id, t])));
 
 function renderNav() {

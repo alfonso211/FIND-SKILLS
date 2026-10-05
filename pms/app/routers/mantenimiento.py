@@ -1,13 +1,14 @@
 """Mantenimiento correctivo y preventivo (órdenes de trabajo y planes periódicos)."""
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .. import adjuntos, avisos, documentos, parte_pdf
 from ..database import get_db
-from ..models import Asset, PreventivePlan, Unit, User, WorkOrder
+from ..models import Asset, PreventivePlan, Unit, User, WorkOrder, WorkOrderAttachment
 from ..schemas import PlanIn, PlanUpdate, WorkOrderIn, WorkOrderUpdate
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
@@ -50,8 +51,10 @@ def requiere_limpieza(w: WorkOrder) -> bool:
     return not (w.unit_id is None and w.tipo in TIPOS_PREVENTIVOS)
 
 
-def _wo_out(w: WorkOrder, db: Session) -> dict:
+def _wo_out(w: WorkOrder, db: Session, n_adjuntos: int | None = None) -> dict:
     d = w.to_dict()
+    d["n_adjuntos"] = n_adjuntos if n_adjuntos is not None else db.scalar(
+        select(func.count()).select_from(WorkOrderAttachment).where(WorkOrderAttachment.work_order_id == w.id))
     d["requiere_limpieza"] = requiere_limpieza(w)
     d["unidad"] = db.get(Unit, w.unit_id).codigo if w.unit_id else None
     for campo in ("abierta_por", "conf_mto_por", "conf_limpieza_por", "cerrada_por"):
@@ -82,11 +85,16 @@ def list_orders(asset_id: int | None = None, estado: str | None = None, abiertas
     if tipo:
         stmt = stmt.where(WorkOrder.tipo == tipo)
     stmt = stmt.order_by(WorkOrder.fecha_apertura.desc(), WorkOrder.id.desc())
-    return [_wo_out(w, db) for w in db.scalars(stmt.limit(2000))]
+    filas = list(db.scalars(stmt.limit(2000)))
+    n = dict(db.execute(select(WorkOrderAttachment.work_order_id, func.count()).where(
+        WorkOrderAttachment.work_order_id.in_([w.id for w in filas] or [-1]))
+        .group_by(WorkOrderAttachment.work_order_id)).all())
+    return [_wo_out(w, db, n.get(w.id, 0)) for w in filas]
 
 
 @router.post("/ordenes", status_code=201)
-def create_order(data: WorkOrderIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+def create_order(data: WorkOrderIn, tareas: BackgroundTasks, scope: Scope = Depends(get_scope),
+                 db: Session = Depends(get_db)):
     gestiona = scope.can_asset("mantenimiento.editar", data.asset_id)
     if not (gestiona or scope.can_asset("mantenimiento.abrir", data.asset_id)):
         raise HTTPException(403, "Sin permiso para abrir órdenes de trabajo en este activo")
@@ -107,11 +115,14 @@ def create_order(data: WorkOrderIn, scope: Scope = Depends(get_scope), db: Sessi
     db.flush()
     audit(db, scope.user, "crear", "orden_trabajo", w.id, {"titulo": w.titulo, "prioridad": w.prioridad})
     db.commit()
+    if w.prioridad == "urgente":
+        tareas.add_task(avisos.ot_urgente, w.id, scope.user.id)
     return _wo_out(w, db)
 
 
 @router.put("/ordenes/{wid}")
-def update_order(wid: int, data: WorkOrderUpdate, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+def update_order(wid: int, data: WorkOrderUpdate, tareas: BackgroundTasks, scope: Scope = Depends(get_scope),
+                 db: Session = Depends(get_db)):
     w = get_or_404(db, WorkOrder, wid)
     scope.require_asset("mantenimiento.editar", w.asset_id)
     if w.estado not in ESTADOS_TRABAJO:
@@ -121,7 +132,105 @@ def update_order(wid: int, data: WorkOrderUpdate, scope: Scope = Depends(get_sco
     ch = apply(w, data)
     audit(db, scope.user, "editar", "orden_trabajo", wid, ch)
     db.commit()
+    if "prioridad" in ch and w.prioridad == "urgente":
+        tareas.add_task(avisos.ot_urgente, w.id, scope.user.id)
     return _wo_out(w, db)
+
+
+# --------------------------------------------------------------------------- fotos y documentos de la OT
+def _adjunto_out(a: WorkOrderAttachment, usuario: str | None) -> dict:
+    d = a.to_dict(exclude=("fichero", "sha256"))
+    d["tipo_nombre"] = adjuntos.TIPOS_ADJUNTO.get(a.tipo, a.tipo)
+    d["usuario"] = usuario
+    return d
+
+
+@router.get("/ordenes/{wid}/adjuntos")
+def list_attachments(wid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    w = get_or_404(db, WorkOrder, wid)
+    scope.require_asset("mantenimiento.ver", w.asset_id)
+    filas = db.execute(select(WorkOrderAttachment, User.nombre).outerjoin(User, User.id == WorkOrderAttachment.user_id)
+                       .where(WorkOrderAttachment.work_order_id == wid).order_by(WorkOrderAttachment.id)).all()
+    return [_adjunto_out(a, n) for a, n in filas]
+
+
+@router.post("/ordenes/{wid}/adjuntos", status_code=201)
+def upload_attachments(wid: int, ficheros: list[UploadFile] = File(...), tipo: str = Form("averia"),
+                       descripcion: str | None = Form(None), scope: Scope = Depends(get_scope),
+                       db: Session = Depends(get_db)):
+    """Sube fotos (se reducen y orientan solas) o PDF. Recepción y limpieza pueden subir fotos de la avería;
+    fotos del trabajo, certificados, facturas y presupuestos son de mantenimiento."""
+    w = get_or_404(db, WorkOrder, wid)
+    if tipo not in adjuntos.TIPOS_ADJUNTO:
+        bad_request("Tipo de adjunto no válido")
+    if not scope.can_asset("mantenimiento.editar", w.asset_id):
+        if tipo not in adjuntos.TIPOS_AVISO or not scope.can_asset("mantenimiento.abrir", w.asset_id):
+            raise HTTPException(403, "Sin permiso para adjuntar este tipo de documento")
+    if len(ficheros) > 10:
+        bad_request("Máximo 10 ficheros por envío")
+    nuevos = []
+    for f in ficheros:
+        datos = f.file.read(adjuntos.TAM_MAX + 1)
+        try:
+            datos, mime, nombre = adjuntos.normalizar(datos, (f.filename or "fichero")[-150:])
+        except ValueError as e:
+            bad_request(f"{f.filename}: {e}")
+        a = WorkOrderAttachment(work_order_id=wid, tipo=tipo, nombre=nombre, descripcion=descripcion,
+                                fichero=documentos.guardar(datos), mime=mime, tamano=len(datos),
+                                sha256=documentos.huella(datos), user_id=scope.user.id)
+        db.add(a)
+        nuevos.append(a)
+    db.flush()
+    audit(db, scope.user, "adjuntar", "orden_trabajo", wid, {"tipo": tipo, "adjuntos": [a.id for a in nuevos]})
+    db.commit()
+    return [_adjunto_out(a, scope.user.nombre) for a in nuevos]
+
+
+def _adjunto(db: Session, scope: Scope, aid: int, perm: str) -> tuple[WorkOrderAttachment, WorkOrder]:
+    a = get_or_404(db, WorkOrderAttachment, aid)
+    w = db.get(WorkOrder, a.work_order_id)
+    scope.require_asset(perm, w.asset_id)
+    return a, w
+
+
+@router.get("/adjuntos/{aid}")
+def view_attachment(aid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    a, _ = _adjunto(db, scope, aid, "mantenimiento.ver")
+    return Response(documentos.leer(a.fichero), media_type=a.mime, headers={
+        "Content-Disposition": f'inline; filename="{a.nombre}"', "Cache-Control": "private, max-age=3600"})
+
+
+@router.delete("/adjuntos/{aid}")
+def delete_attachment(aid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Lo borra mantenimiento, o quien lo subió mientras la OT siga abierta."""
+    a, w = _adjunto(db, scope, aid, "mantenimiento.ver")
+    propio = a.user_id == scope.user.id and w.estado in ABIERTAS
+    if not (propio or scope.can_asset("mantenimiento.editar", w.asset_id)):
+        raise HTTPException(403, "Sin permiso para borrar este adjunto")
+    documentos.borrar(a.fichero)
+    audit(db, scope.user, "borrar_adjunto", "orden_trabajo", w.id, {"adjunto": aid, "nombre": a.nombre})
+    db.delete(a)
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/ordenes/{wid}/parte")
+def work_order_sheet(wid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Parte de incidencia en PDF para entregar a la subcontrata (con las fotos de la avería)."""
+    w = get_or_404(db, WorkOrder, wid)
+    scope.require_asset("mantenimiento.ver", w.asset_id)
+    asset = db.get(Asset, w.asset_id)
+    fotos = [documentos.leer(a.fichero) for a in db.scalars(
+        select(WorkOrderAttachment).where(WorkOrderAttachment.work_order_id == wid, WorkOrderAttachment.tipo == "averia",
+                                          WorkOrderAttachment.mime == "image/jpeg")
+        .order_by(WorkOrderAttachment.id).limit(4))]
+    abierta = db.get(User, w.abierta_por).nombre if w.abierta_por else None
+    pdf = parte_pdf.generar(w, asset, asset.company, db.get(Unit, w.unit_id) if w.unit_id else None, abierta, fotos,
+                            w.categoria.replace("_", " ").capitalize())
+    audit(db, scope.user, "imprimir_parte", "orden_trabajo", wid)
+    db.commit()
+    return Response(pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="Parte_OT-{w.id:05d}.pdf"'})
 
 
 class ConfirmWork(BaseModel):

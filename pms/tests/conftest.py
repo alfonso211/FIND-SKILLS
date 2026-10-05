@@ -12,6 +12,9 @@ os.environ["PMS_DATABASE_URL"] = os.environ.get("PMS_TEST_DATABASE_URL", f"sqlit
 os.environ["PMS_SECRET_KEY"] = "test-secret-key-for-pytest-only-0123456789"
 os.environ["PMS_ADMIN_PASSWORD"] = "AdminTest!2026"
 os.environ["PMS_DOCS_DIR"] = f"{_tmp}/documentos"
+os.environ["PMS_SMTP_HOST"] = "memoria"  # los avisos se guardan en avisos.BANDEJA, no se envían
+os.environ["PMS_SMTP_FROM"] = "avisos@inversiete.es"
+os.environ["PMS_AVISOS_AUTO"] = "0"
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient  # noqa: E402

@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import avisos
 from ..database import get_db
 from ..models import Asset, Company, User
 from ..schemas import Login, PasswordChange
@@ -64,3 +66,30 @@ def change_password(data: PasswordChange, user: User = Depends(current_user), db
     audit(db, user, "cambio_password", "usuario", user.id)
     db.commit()
     return {"ok": True}
+
+
+# --------------------------------------------------------------------------- avisos por correo del propio usuario
+@router.get("/avisos")
+def my_alerts(scope: Scope = Depends(get_scope)):
+    permitidos = avisos.tipos_permitidos(scope)
+    elegidos = permitidos if scope.user.avisos is None else [t for t in scope.user.avisos if t in permitidos]
+    return {"correo_configurado": avisos.configurado(), "email": scope.user.email,
+            "tipos": [{"tipo": t, "descripcion": avisos.TIPOS[t][0], "activo": t in elegidos} for t in permitidos]}
+
+
+class AlertPrefs(BaseModel):
+    avisos: list[str]
+
+
+@router.put("/avisos")
+def set_my_alerts(data: AlertPrefs, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    permitidos = set(avisos.tipos_permitidos(scope))
+    otros = set(data.avisos) - set(avisos.TIPOS)
+    if otros:
+        raise HTTPException(400, f"Avisos no válidos: {', '.join(sorted(otros))}")
+    # se guardan también los no permitidos hoy que ya tuviera, por si recupera el permiso
+    previos = set(scope.user.avisos or []) - permitidos
+    scope.user.avisos = sorted((set(data.avisos) & permitidos) | previos)
+    audit(db, scope.user, "avisos", "usuario", scope.user.id, {"avisos": scope.user.avisos})
+    db.commit()
+    return my_alerts(scope)

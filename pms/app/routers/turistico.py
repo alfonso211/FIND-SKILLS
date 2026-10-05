@@ -1,14 +1,14 @@
 """Apartamentos turísticos: reservas, llegadas/salidas, disponibilidad y planning."""
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from .. import contratos
+from .. import contratos, importacion
 from ..facturacion import IVA_ALOJAMIENTO, datos_cliente, dinero, emitir, serie_activo
-from ..models import MODALIDADES_RESERVA, AccommodationContract, Contact, Reservation, Unit, User
+from ..models import MODALIDADES_RESERVA, AccommodationContract, Asset, Contact, Reservation, Unit, User
 from ..schemas import AccommodationContractIn, Payment, ReservationIn, ReservationUpdate
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
@@ -270,6 +270,118 @@ def planning(asset_id: int, desde: date | None = None, dias: int = Query(14, ge=
     return {"desde": d0.isoformat(), "dias": dias,
             "unidades": [{"id": u.id, "codigo": u.codigo, "bloque": u.bloque, "estado": u.estado, "reservas": by_unit.get(u.id, [])}
                          for u in units]}
+
+
+# --------------------------------------------------------------------------- importación desde Excel
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@router.get("/importar/plantilla")
+def import_template(scope: Scope = Depends(get_scope)):
+    scope.require_any("reservas.editar")
+    return Response(importacion.plantilla(), media_type=XLSX,
+                    headers={"Content-Disposition": 'attachment; filename="Plantilla_importar_reservas.xlsx"'})
+
+
+@router.post("/importar")
+def import_reservations(fichero: UploadFile = File(...), asset_id: int = Form(...), confirmar: bool = Form(False),
+                        scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Importa reservas de un Excel o CSV. Sin `confirmar` solo comprueba y devuelve la vista previa, fila a fila.
+    Con `confirmar` crea las reservas válidas; las filas con error no se importan. No registra cobros."""
+    scope.require_asset("reservas.editar", asset_id)
+    asset = get_or_404(db, Asset, asset_id)
+    if asset.modalidad not in MODALIDADES_RESERVA:
+        bad_request("Este activo no admite reservas turísticas")
+    datos = fichero.file.read(10 * 1024 * 1024 + 1)
+    if len(datos) > 10 * 1024 * 1024:
+        bad_request("El fichero supera los 10 MB")
+    try:
+        filas, ignoradas = importacion.leer(datos, fichero.filename or "")
+    except ValueError as e:
+        bad_request(str(e))
+    if len(filas) > 3000:
+        bad_request("Máximo 3.000 reservas por fichero")
+
+    unidades = {u.codigo.upper(): u for u in db.scalars(select(Unit).where(Unit.asset_id == asset_id))}
+    existentes = set(db.scalars(select(Reservation.localizador).join(Unit).where(
+        Unit.asset_id == asset_id, Reservation.localizador.is_not(None))))
+    ocupadas: dict[int, list[tuple[date, date]]] = {}  # reservas del propio fichero, para detectar solapes entre filas
+    libre = lambda uid, e, s: (not _conflict(db, uid, e, s)  # noqa: E731
+                               and all(not (e < s2 and s > e2) for e2, s2 in ocupadas.get(uid, [])))
+    resultado, creadas = [], 0
+    for f in filas:
+        r = {"fila": f["fila"], "localizador": str(f.get("localizador") or "").strip() or None}
+        try:
+            if "cancel" in importacion._norm(f.get("estado")) or "no show" in importacion._norm(f.get("estado")):
+                r.update(estado="omitida", motivo="Reserva cancelada en el fichero")
+                resultado.append(r)
+                continue
+            ent, sal = importacion.fecha(f.get("fecha_entrada")), importacion.fecha(f.get("fecha_salida"))
+            if sal <= ent:
+                raise ValueError("la salida debe ser posterior a la entrada")
+            adultos, ninos = importacion.entero(f.get("adultos"), 1), importacion.entero(f.get("ninos"), 0)
+            total = importacion.importe(f["importe_total"]) if f.get("importe_total") not in (None, "") else 0
+            if r["localizador"] and r["localizador"] in existentes:
+                r.update(estado="omitida", motivo="Ya existe una reserva con este localizador")
+                resultado.append(r)
+                continue
+            codigo = str(f.get("unidad") or "").strip().upper()
+            if codigo:
+                u = unidades.get(codigo)
+                if not u:
+                    raise ValueError(f"la unidad {codigo} no existe en {asset.nombre}")
+                if u.estado in NO_ASIGNABLE:
+                    raise ValueError(f"la unidad {u.codigo} está en estado «{u.estado}»")
+                if u.capacidad and adultos + ninos > u.capacidad:
+                    raise ValueError(f"supera la capacidad de {u.codigo} ({u.capacidad} plazas)")
+                if not libre(u.id, ent, sal):
+                    raise ValueError(f"{u.codigo} ya está reservada en esas fechas")
+                r["asignada"] = False
+            else:  # sin unidad: la primera libre con capacidad
+                u = next((x for x in sorted(unidades.values(), key=lambda x: (x.bloque or "", x.codigo))
+                          if x.estado not in NO_ASIGNABLE and (not x.capacidad or x.capacidad >= adultos + ninos)
+                          and libre(x.id, ent, sal)), None)
+                if not u:
+                    raise ValueError("no queda ningún apartamento libre para esas fechas y ocupación")
+                r["asignada"] = True
+            nombre = str(f.get("nombre") or "").strip()
+            if not nombre:
+                raise ValueError("falta el nombre del huésped")
+            ocupadas.setdefault(u.id, []).append((ent, sal))
+            if r["localizador"]:
+                existentes.add(r["localizador"])
+            r.update(estado="valida", unidad=u.codigo, entrada=ent.isoformat(), salida=sal.isoformat(),
+                     huesped=f"{nombre} {f.get('apellidos') or ''}".strip(), importe_total=total,
+                     adultos=adultos, ninos=ninos)
+            if confirmar:
+                doc = str(f.get("documento_num") or "").strip().upper() or None
+                g = db.scalar(select(Contact).where(Contact.company_id == asset.company_id, Contact.tipo == "huesped",
+                                                    Contact.documento_num == doc)) if doc else None
+                if g is None:
+                    g = Contact(company_id=asset.company_id, tipo="huesped", nombre=nombre[:120],
+                                apellidos=(str(f.get("apellidos") or "").strip() or None),
+                                documento_num=doc, nacionalidad=(str(f.get("nacionalidad") or "").strip() or None),
+                                email=(str(f.get("email") or "").strip() or None),
+                                telefono=(str(f.get("telefono") or "").strip() or None))
+                    db.add(g)
+                    db.flush()
+                db.add(Reservation(unit_id=u.id, guest_id=g.id, localizador=r["localizador"],
+                                   canal=importacion.canal(f.get("canal")), fecha_entrada=ent, fecha_salida=sal,
+                                   adultos=adultos, ninos=ninos, importe_total=total,
+                                   notas=(str(f.get("notas") or "").strip() or None)))
+                db.flush()
+                creadas += 1
+                r["estado"] = "importada"
+        except (ValueError, KeyError) as e:
+            r.update(estado="error", motivo=str(e)[:1].upper() + str(e)[1:])
+        resultado.append(r)
+    cuenta = lambda e: sum(1 for x in resultado if x["estado"] == e)  # noqa: E731
+    if confirmar:
+        audit(db, scope.user, "importar_reservas", "reserva", None,
+              {"activo": asset.codigo, "fichero": fichero.filename, "importadas": creadas, "errores": cuenta("error")})
+        db.commit()
+    return {"filas": resultado, "validas": cuenta("valida") + cuenta("importada"), "importadas": creadas,
+            "errores": cuenta("error"), "omitidas": cuenta("omitida"), "columnas_ignoradas": ignoradas}
 
 
 # --------------------------------------------------------------------------- contrato de alojamiento

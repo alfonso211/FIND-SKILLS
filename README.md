@@ -93,10 +93,38 @@ Para añadir activos nuevos: *Activos → Nuevo activo* (se eligen la gestora, l
     Al cerrar, la unidad queda disponible. Cada paso queda registrado con usuario y fecha.
     Las OT preventivas y normativas de zonas comunes (sin unidad) no pasan por Limpieza: Mantenimiento confirma
     y Recepción cierra.
+  - **Fotos y documentos** en cada OT (botón 📎):
+    - Fotos de la avería y del trabajo terminado, hechas con la cámara del móvil desde el propio PMS.
+    - Certificados OCA, facturas de proveedor y presupuestos en PDF.
+    - Las fotos se giran solas, se reducen a 2000 px y pierden los datos de ubicación del teléfono.
+    - Todo se guarda cifrado en el servidor.
+    - Recepción y limpieza pueden subir fotos de la avería; el resto de tipos es de mantenimiento.
+  - **Parte de incidencia en PDF** para la subcontrata (botón *Parte PDF*):
+    - Datos de la avería, ubicación y fotos.
+    - Espacio para técnico, horas, trabajos, materiales, estado final y firmas.
   - Planes preventivos periódicos que generan sus OT automáticamente.
   - Plantilla normativa cargable por activo: RITE, RIPCI (RD 513/2017), legionela (RD 487/2022),
     ascensores (RD 355/2024), REBT ITC-BT-05 y buenas prácticas. Es orientativa: hay que ajustar
     las periodicidades a cada instalación.
+- **Informes Excel** (*Facturación e informes → Informes Excel*), por activo y mes, en el periodo elegido:
+  - **Ocupación:** noches disponibles y ocupadas, ADR y RevPAR en turísticos; unidades alquiladas por uso en residencial.
+  - **Producción:** alojamiento devengado, rentas emitidas y facturado.
+  - **Morosidad:** recibos y reservas con saldo, con contacto y antigüedad de la deuda.
+  - **Costes de mantenimiento:** por OT, instalación, tipo y proveedor.
+- **Importación de reservas desde Excel o CSV** (*Reservas → Importar Excel*):
+  - Admite la plantilla del PMS o la exportación de Booking.
+  - Primero muestra una vista previa fila a fila: unidad inexistente, solapes, capacidad, fechas.
+  - Después importa las válidas. No duplica localizadores ya importados.
+  - Si falta la unidad, asigna un apartamento libre.
+  - No registra cobros.
+- **Avisos por correo:**
+  - **OT urgentes:** al momento, a quien ve el mantenimiento del activo.
+  - **Resumen diario** (07:30): recibos vencidos, contratos que vencen en 90 días y revisiones preventivas o
+    normativas en 30 días o vencidas.
+  - Cada usuario recibe solo lo de sus activos y elige sus avisos en *Mi perfil*.
+  - Configuración del buzón: [`deploy/INSTALACION.md`](deploy/INSTALACION.md), apartado 8 ter.
+- **Actualización automática:** tras actualizar el servidor, las pantallas abiertas cargan solas la versión nueva,
+  sin Ctrl + F5. Si hay un formulario abierto, esperan a que se cierre.
 - **Administración**: usuarios, roles editables, sociedades y registro de auditoría de todas las operaciones.
 
 ## Control de accesos
