@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from .. import recibos
+from .. import clientes, recibos
 from ..database import get_db
 from ..facturacion import IVA_GENERAL
 from ..models import MODALIDADES_RESERVA, Charge, Contact, Lease, Reservation, Unit
@@ -118,13 +118,10 @@ def create_garage_lease(data: GarageLeaseIn, scope: Scope = Depends(get_scope), 
         bad_request(f"La plaza {u.codigo} ya está alquilada en esas fechas")
     if reservada(db, u.id, data.fecha_inicio, data.fecha_fin):
         bad_request(f"La plaza {u.codigo} tiene reservas en esas fechas")
-    company_id = u.asset.company_id
     if data.cliente_id:
-        cliente = get_or_404(db, Contact, data.cliente_id)
-        if cliente.company_id != company_id or cliente.tipo != TIPO_CLIENTE:
-            bad_request("El cliente no pertenece a la sociedad del activo")
+        cliente = clientes.del_activo(db, scope, data.cliente_id, u.asset, TIPO_CLIENTE)
     elif data.cliente:
-        cliente = Contact(company_id=company_id, tipo=TIPO_CLIENTE, **data.cliente.model_dump())
+        cliente = clientes.nueva(u.asset, TIPO_CLIENTE, **data.cliente.model_dump())
         db.add(cliente)
         db.flush()
     else:

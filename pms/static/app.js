@@ -678,7 +678,7 @@ function unidadesHtml(c) {
 async function editGuest(id, tipo = "huesped", onSaved) {
   const c = await get(`/api/terceros/${id}`).catch(() => null);
   if (!c) return toast("Cliente no encontrado", true);
-  const f = form(`${{ huesped: "Huésped", cliente_garaje: "Cliente de garaje" }[tipo] || "Inquilino"}: ${c.nombre} ${c.apellidos || ""}`.trim(), [{ html: unidadesHtml(c) }, { html: scanHtml() }, ...guestFields, { k: "iban", t: "IBAN" }, { k: "notas", t: "Notas", type: "textarea", wide: true }], c,
+  const f = form(`${{ huesped: "Huésped", cliente_garaje: "Cliente de garaje" }[tipo] || "Inquilino"}: ${c.nombre} ${c.apellidos || ""}${c.activo ? ` · ${c.activo}` : ""}`.trim(), [{ html: unidadesHtml(c) }, { html: scanHtml() }, ...guestFields, { k: "iban", t: "IBAN" }, { k: "notas", t: "Notas", type: "textarea", wide: true }], c,
     async (d) => { await put(`/api/terceros/${id}`, { ...d, company_id: c.company_id, tipo: c.tipo }); toast("Datos guardados"); onSaved && onSaved(); });
   bindScan(f, id, (lec) => rellenaFicha(f, lec));
 }
@@ -856,7 +856,7 @@ async function newReservation(reload, fija) {  // fija: {id, codigo, asset_id} p
       if (nueva.factura) await descargarFactura(nueva.factura.id);
       if (nueva.adultos + nueva.ninos > 1) await ocupantesReserva(nueva, reload, () => accommodationContract(nueva));
       else await accommodationContract(nueva);
-    }, "Crear reserva"))), 0);
+    }, "Crear reserva")), aid), 0);
   }, "Buscar disponibilidad");
 }
 
@@ -1106,12 +1106,12 @@ async function renovarEstancia(r, reload) {
 // ---- cliente habitual: buscar su ficha (datos y documentos guardados) para no volver a pedirlos
 const buscaClienteHtml = () => `<fieldset class="busca-cliente"><legend>¿Ya ha estado alojado? Busque su ficha</legend>
   <input type="search" data-buscacli placeholder="Nombre, apellidos, documento, teléfono o correo" autocomplete="off"><div data-clires class="cli-res"></div></fieldset>`;
-function bindBuscaCliente(f) {
+function bindBuscaCliente(f, assetId) {  // solo las fichas de clientes de ese activo
   const res = $("[data-clires]", f);
   $("[data-buscacli]", f).oninput = debounce(async (e) => {
     const q = e.target.value.trim();
     if (q.length < 3) { res.innerHTML = ""; return; }
-    const lista = (await get("/api/terceros", { tipo: "huesped", q }).catch(() => [])).slice(0, 8);
+    const lista = (await get("/api/terceros", { tipo: "huesped", q, asset_id: assetId }).catch(() => [])).slice(0, 8);
     res.innerHTML = lista.length ? lista.map((c, i) => `<button type="button" class="btn sm" data-c="${i}">${esc(`${c.nombre} ${c.apellidos || ""}`.trim())}${c.documento_num ? ` · ${esc(c.documento_num)}` : ""}${c.telefono ? ` · ${esc(c.telefono)}` : ""}</button>`).join("") : '<span class="muted">Sin coincidencias: es un cliente nuevo.</span>';
     res.querySelectorAll("[data-c]").forEach((b) => (b.onclick = () => {
       const c = lista[b.dataset.c];
@@ -1480,8 +1480,8 @@ async function contactsView(el, tipo) {
     { k: "nombre", t: "Nombre" }, { k: "apellidos", t: "Apellidos" }, { k: "documento_num", t: "Documento" },
     { k: "unidades", t: "Apartamentos", f: (v, c) => (v.length ? `<b>${c.n_apartamentos}</b> <span class="muted">${esc(v.join(", "))}</span>` : '<span class="muted">—</span>') },
     { k: "email", t: "Email" }, { k: "telefono", t: "Teléfono" },
-    { k: "company_id", t: "Sociedad", f: (v) => esc(S.companies.find((c) => c.id === v)?.nombre ?? v) },
-  ], await get("/api/terceros", { tipo, q: $("#q", el).value }), (c) => [[can(perm + ".editar") ? "Ficha" : "Ver", () => editGuest(c.id, tipo, load)]]);
+    { k: "activo", t: "Activo", f: (v) => esc(v || "Sin activo") },
+  ], await get("/api/terceros", { tipo, q: $("#q", el).value, asset_id: S.asset }), (c) => [[can(perm + ".editar") ? "Ficha" : "Ver", () => editGuest(c.id, tipo, load)]]);
   const repetidos = async () => {
     if (!can(perm + ".editar")) return;
     const g = await get("/api/terceros/duplicados", { tipo }).catch(() => []);
@@ -1490,10 +1490,12 @@ async function contactsView(el, tipo) {
   };
   $("#q", el).oninput = debounce(load);
   if ($("#new", el)) $("#new", el).onclick = () => {
+    const activos = assetsOf(tipo === "inquilino" ? "alquiler_residencial" : "apartamentos_turisticos");
     const f = form("Nuevo", [{ html: scanHtml("1. Escanee el documento del cliente (DNI, NIE/TIE, pasaporte)") },
-      { k: "company_id", t: "Sociedad", type: "select", req: true, options: opts(S.companies) }, ...fields], {},
+      { k: "asset_id", t: "Activo (cada recepción ve solo sus clientes)", type: "select", req: true, options: opts(activos), def: S.asset }, ...fields], {},
       async (d, fr) => {
-        await post("/api/terceros", clean({ ...d, company_id: Number(d.company_id), tipo, documentos: fr._docs.map((x) => x.id) }));
+        const a = S.assets.find((x) => x.id === Number(d.asset_id));
+        await post("/api/terceros", clean({ ...d, asset_id: a.id, company_id: a.company_id, tipo, documentos: fr._docs.map((x) => x.id) }));
         toast("Creado"); load(); repetidos();
       });
     conEscaner(f);
@@ -1506,7 +1508,7 @@ function unirFichas(grupos, done) {
   const g = grupos[0];
   if (!g) return done();
   const desc = (c) => `Ficha ${c.id}: ${c.documento_num || "sin documento"} · ${c.telefono || "sin teléfono"} · ${c.email || "sin correo"} · ${c.reservas} reserva(s)${c.unidades.length ? ` · ${c.unidades.join(", ")}` : ""}`;
-  form(`Ficha repetida: ${g.nombre} (${grupos.length} pendiente(s))`, [
+  form(`Ficha repetida: ${g.nombre}${g.activo ? ` · ${g.activo}` : ""} (${grupos.length} pendiente(s))`, [
     { html: g.documentos_distintos
       ? '<p class="error">Estas fichas tienen documentos distintos: son personas diferentes con el mismo nombre. Solo se pueden unir las que coinciden.</p>'
       : '<p class="muted">Se conserva la ficha elegida; las demás se unen a ella: pasan sus reservas, contratos, documentos escaneados y facturas, y se completan los datos que falten.</p>' },

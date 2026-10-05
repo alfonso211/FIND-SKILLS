@@ -7,9 +7,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from .. import recibos
+from .. import clientes, recibos
 from ..database import get_db
-from ..models import MODALIDADES_CONTRATO, Asset, Charge, Contact, Lease, Unit
+from ..models import MODALIDADES_CONTRATO, Asset, Charge, Lease, Unit
 from ..schemas import ChargeGenerate, LeaseIn, LeaseUpdate, Payment, RentUpdate
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
@@ -81,11 +81,9 @@ def create_lease(data: LeaseIn, scope: Scope = Depends(get_scope), db: Session =
         bad_request("La unidad ya tiene un contrato vigente o en borrador en esas fechas")
 
     if data.tenant_id:
-        tenant = get_or_404(db, Contact, data.tenant_id)
-        if tenant.company_id != asset.company_id or tenant.tipo != "inquilino":
-            bad_request("El inquilino no pertenece a la sociedad del activo")
+        tenant = clientes.del_activo(db, scope, data.tenant_id, asset, "inquilino")
     elif data.tenant:
-        tenant = Contact(company_id=asset.company_id, tipo="inquilino", **data.tenant.model_dump())
+        tenant = clientes.nueva(asset, "inquilino", **data.tenant.model_dump())
         db.add(tenant)
         db.flush()
     else:
