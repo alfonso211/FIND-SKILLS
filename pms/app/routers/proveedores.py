@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from .. import nif
 from ..database import get_db
-from ..models import TIPOS_PERSONA, Supplier
+from ..models import TIPOS_PERSONA, Expense, Supplier
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request, get_or_404
 
@@ -65,15 +65,35 @@ def _validar(db: Session, data: SupplierIn, pid: int | None = None) -> dict:
     return v
 
 
+def _puede_ver(scope: Scope) -> None:
+    if not (scope.has_any("mantenimiento.ver") or scope.has_any("documentos.ver")):
+        raise HTTPException(403, "Sin permiso para ver proveedores")
+
+
 def _puede_editar(scope: Scope) -> None:
-    if not scope.has_any("mantenimiento.editar"):
+    """Dan de alta proveedores mantenimiento y quien registra documentos y gastos (recepción, administración…):
+    el fichero es común a todos los activos y se va completando según llegan facturas."""
+    if not (scope.has_any("mantenimiento.editar") or scope.has_any("documentos.editar")):
         raise HTTPException(403, "Sin permiso para gestionar proveedores")
+
+
+def _puede_borrar(scope: Scope) -> None:
+    comp = scope.company_level_ids("documentos.editar")
+    if not (scope.has_any("mantenimiento.editar") or comp is None or comp):
+        raise HTTPException(403, "Solo mantenimiento o la dirección pueden borrar proveedores")
+
+
+def _enlazar_gastos(db: Session, p: Supplier) -> None:
+    """Los gastos anotados con ese proveedor antes de tener ficha quedan enlazados a ella."""
+    for g in db.scalars(select(Expense).where(Expense.supplier_id.is_(None), Expense.proveedor.is_not(None))):
+        if nif.nombre_clave(g.proveedor) == nif.nombre_clave(p.nombre):
+            g.supplier_id = p.id
 
 
 @router.get("")
 def list_suppliers(q: str | None = None, solo_activos: bool = False, scope: Scope = Depends(get_scope),
                    db: Session = Depends(get_db)):
-    scope.require_any("mantenimiento.ver")
+    _puede_ver(scope)
     stmt = select(Supplier)
     if q:
         like = f"%{q}%"
@@ -87,7 +107,7 @@ def list_suppliers(q: str | None = None, solo_activos: bool = False, scope: Scop
 
 @router.get("/{pid}")
 def get_supplier(pid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    scope.require_any("mantenimiento.ver")
+    _puede_ver(scope)
     return _out(get_or_404(db, Supplier, pid))
 
 
@@ -97,6 +117,7 @@ def create_supplier(data: SupplierIn, scope: Scope = Depends(get_scope), db: Ses
     p = Supplier(**_validar(db, data))
     db.add(p)
     db.flush()
+    _enlazar_gastos(db, p)
     audit(db, scope.user, "crear", "proveedor", p.id, {"nombre": p.nombre, "nif": p.nif})
     db.commit()
     return _out(p)
@@ -109,6 +130,7 @@ def update_supplier(pid: int, data: SupplierIn, scope: Scope = Depends(get_scope
     antes = p.to_dict()
     for k, v in _validar(db, data, pid).items():
         setattr(p, k, v)
+    _enlazar_gastos(db, p)
     audit(db, scope.user, "editar", "proveedor", pid, {k: v for k, v in p.to_dict().items() if antes.get(k) != v})
     db.commit()
     return _out(p)
@@ -116,9 +138,11 @@ def update_supplier(pid: int, data: SupplierIn, scope: Scope = Depends(get_scope
 
 @router.delete("/{pid}")
 def delete_supplier(pid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    """Las órdenes de trabajo guardan el nombre del proveedor, así que borrar la ficha no cambia el histórico."""
-    _puede_editar(scope)
+    """Las órdenes de trabajo y los gastos guardan el nombre del proveedor: borrar la ficha no cambia el histórico."""
+    _puede_borrar(scope)
     p = get_or_404(db, Supplier, pid)
+    for g in db.scalars(select(Expense).where(Expense.supplier_id == pid)):
+        g.supplier_id = None  # el gasto conserva el nombre del proveedor
     audit(db, scope.user, "borrar", "proveedor", pid, {"nombre": p.nombre, "nif": p.nif})
     db.delete(p)
     db.commit()

@@ -1544,22 +1544,36 @@ function unirFichas(grupos, done) {
 
 // ---- proveedores del grupo (no dependen de ninguna sociedad)
 const TIPOS_PERSONA = [["empresa", "Empresa (CIF)"], ["autonomo", "Autónomo (DNI/NIE)"], ["particular", "Persona física (DNI/NIE)"]];
+const CAMPOS_PROVEEDOR = [
+  { k: "nombre", t: "Nombre o razón social", req: true, wide: true },
+  { k: "tipo_persona", t: "Tipo", type: "select", req: true, options: TIPOS_PERSONA, def: "empresa" },
+  { k: "nif", t: "CIF / DNI / NIE" },
+  { k: "direccion", t: "Domicilio", wide: true }, { k: "cp", t: "C.P." }, { k: "municipio", t: "Municipio" },
+  { k: "provincia", t: "Provincia" }, { k: "pais", t: "País", def: "España" },
+  { k: "email", t: "Correo electrónico", type: "email" }, { k: "telefono", t: "Teléfono" },
+  { k: "persona_contacto", t: "Persona de contacto" }, { k: "actividad", t: "Actividad / gremio" },
+  { k: "activo", t: "Proveedor en activo", type: "checkbox", def: true },
+  { k: "notas", t: "Notas", type: "textarea", wide: true },
+];
+const verProveedores = () => can("mantenimiento.ver") || can("documentos.ver");
+const editarProveedores = () => can("mantenimiento.editar") || can("documentos.editar");
+// Proveedor escrito que no está en el fichero del grupo: se abre su ficha para completarla y que quede guardada
+async function altaProveedorSiNuevo(nombre, actividad) {
+  nombre = String(nombre || "").trim();
+  if (!nombre || !editarProveedores()) return;
+  const todos = await get("/api/proveedores").catch(() => null);
+  if (!todos || todos.some((p) => normaliza(p.nombre).replace(/\s+/g, " ") === normaliza(nombre).replace(/\s+/g, " "))) return;
+  form(`Proveedor nuevo: ${nombre}`, [{ html: '<p class="muted">No está en el fichero de proveedores. Complete su ficha (CIF o DNI, domicilio, correo, teléfono…): queda guardada para todos los activos del grupo. Si ahora no tiene los datos, pulse «Ahora no».</p>' },
+    ...CAMPOS_PROVEEDOR], { nombre, actividad, pais: "España", tipo_persona: "empresa", activo: true },
+  async (d) => { await post("/api/proveedores", d); S.proveedores = null; toast(`${d.nombre} guardado en el fichero de proveedores`); }, "Guardar proveedor");
+  $("#fCancel").textContent = "Ahora no";
+}
 V.proveedores = async (el) => {
-  const editar = can("mantenimiento.editar");
+  const editar = editarProveedores();
   el.innerHTML = `<div class="toolbar"><input id="q" placeholder="Nombre, CIF/DNI, actividad, municipio"><label class="check"><input type="checkbox" id="baja"> Ver también los de baja</label>
     <span class="spacer"></span>${editar ? '<button class="btn primary" id="new">Nuevo proveedor</button>' : ""}</div>
     <p class="muted">Fichero de proveedores del grupo, común a todas las sociedades. Se usa al indicar el proveedor de una orden de trabajo, la empresa mantenedora de un plan preventivo o la empresa del personal.</p><div id="t"></div>`;
-  const fields = [
-    { k: "nombre", t: "Nombre o razón social", req: true, wide: true },
-    { k: "tipo_persona", t: "Tipo", type: "select", req: true, options: TIPOS_PERSONA, def: "empresa" },
-    { k: "nif", t: "CIF / DNI / NIE" },
-    { k: "direccion", t: "Domicilio", wide: true }, { k: "cp", t: "C.P." }, { k: "municipio", t: "Municipio" },
-    { k: "provincia", t: "Provincia" }, { k: "pais", t: "País", def: "España" },
-    { k: "email", t: "Correo electrónico", type: "email" }, { k: "telefono", t: "Teléfono" },
-    { k: "persona_contacto", t: "Persona de contacto" }, { k: "actividad", t: "Actividad / gremio" },
-    { k: "activo", t: "Proveedor en activo", type: "checkbox", def: true },
-    { k: "notas", t: "Notas", type: "textarea", wide: true },
-  ];
+  const fields = CAMPOS_PROVEEDOR;
   const guardar = (p) => async (d) => {
     await (p ? put(`/api/proveedores/${p.id}`, d) : post("/api/proveedores", d));
     S.proveedores = null; toast(p ? "Proveedor guardado" : "Proveedor dado de alta"); load();
@@ -1578,7 +1592,7 @@ V.proveedores = async (el) => {
 };
 // Sugerencias del fichero de proveedores en los campos de texto «proveedor» / «empresa»
 async function sugerirProveedores(f, ...campos) {
-  if (!can("mantenimiento.ver")) return;
+  if (!verProveedores()) return;
   S.proveedores = S.proveedores || await get("/api/proveedores", { solo_activos: true }).catch(() => []);
   if (!f.querySelector("#dl-prov")) f.insertAdjacentHTML("beforeend", `<datalist id="dl-prov">${S.proveedores.map((p) => `<option value="${esc(p.nombre)}">${esc(p.actividad || "")}</option>`).join("")}</datalist>`);
   campos.forEach((c) => f.elements[c]?.setAttribute("list", "dl-prov"));
@@ -1605,6 +1619,7 @@ async function newWorkOrder(assetId, unitId, zona) {  // zona: {zona, nombre} de
     const n = await subirFotos(f, w.id, "averia");
     toast(`Orden de trabajo OT-${String(w.id).padStart(5, "0")} creada` + (n ? ` con ${n} foto(s)` : "") + (w.prioridad === "urgente" ? ". Se ha avisado por correo." : ""));
     resolve();
+    await altaProveedorSiNuevo(d.proveedor, d.categoria);
   })), "proveedor"));
 }
 // Bloque de fotos: en el móvil «Hacer foto» abre directamente la cámara trasera
@@ -1700,7 +1715,7 @@ V.ordenes = async (el) => {
           { k: "tipo", t: "Tipo", type: "select", options: list(["correctivo", "preventivo", "normativo", "mejora"]) },
           { k: "asignado_a", t: "Asignado a" }, { k: "proveedor", t: "Proveedor" }, { k: "coste_estimado", t: "Coste estimado €", type: "number" },
           { k: "fecha_prevista", t: "Fecha prevista", type: "date" }, { k: "descripcion", t: "Descripción", type: "textarea", wide: true },
-        ], w, async (d) => { await put(`/api/mantenimiento/ordenes/${w.id}`, d); toast("OT actualizada"); load(); }), "proveedor")],
+        ], w, async (d) => { await put(`/api/mantenimiento/ordenes/${w.id}`, d); toast("OT actualizada"); load(); await altaProveedorSiNuevo(d.proveedor, d.categoria); }), "proveedor")],
         can("mantenimiento.editar") && enTrabajo && ["Trabajo realizado", () => bindFotos(form(`OT ${w.id}: confirmar trabajo realizado`, [
           { k: "solucion", t: "Trabajo realizado / solución", type: "textarea", wide: true, req: true }, { k: "coste_real", t: "Coste real €", type: "number" },
           { html: fotosHtml("Fotos del trabajo terminado (opcional)") }],
@@ -1738,9 +1753,9 @@ V.preventivo = async (el) => {
     { k: "normativa", t: "Normativa" }, { k: "periodicidad_dias", t: "Cada (días)", num: true },
     { k: "proxima_fecha", t: "Próxima", f: (v) => (v < today() ? `<b style="color:var(--bad)">${fdate(v)}</b>` : fdate(v)) },
     { k: "proveedor", t: "Mantenedor" }, { k: "activo", t: "Activo", f: (v) => (v ? "Sí" : "No") },
-  ], await get("/api/mantenimiento/planes", { asset_id: S.asset }), (p) => can("mantenimiento.editar") ? [["Editar", () => sugerirProveedores(form(p.titulo, fields, p, async (d) => { await put(`/api/mantenimiento/planes/${p.id}`, d); toast("Plan guardado"); load(); }), "proveedor")]] : []);
+  ], await get("/api/mantenimiento/planes", { asset_id: S.asset }), (p) => can("mantenimiento.editar") ? [["Editar", () => sugerirProveedores(form(p.titulo, fields, p, async (d) => { await put(`/api/mantenimiento/planes/${p.id}`, d); toast("Plan guardado"); load(); await altaProveedorSiNuevo(d.proveedor, d.categoria); }), "proveedor")]] : []);
   if ($("#new", el)) {
-    $("#new", el).onclick = async () => { const aid = await pickAsset(); sugerirProveedores(form("Nuevo plan preventivo", fields, {}, async (d) => { await post("/api/mantenimiento/planes", clean({ ...d, asset_id: aid })); toast("Plan creado"); load(); }), "proveedor"); };
+    $("#new", el).onclick = async () => { const aid = await pickAsset(); sugerirProveedores(form("Nuevo plan preventivo", fields, {}, async (d) => { await post("/api/mantenimiento/planes", clean({ ...d, asset_id: aid })); toast("Plan creado"); load(); await altaProveedorSiNuevo(d.proveedor, d.categoria); }), "proveedor"); };
     $("#tpl", el).onclick = async () => { const aid = await pickAsset(); run(() => post("/api/mantenimiento/planes/plantilla", { asset_id: aid }), (r) => `${r.creados} planes cargados`).then(load); };
     $("#gen", el).onclick = () => form("Generar órdenes preventivas", [{ k: "dias_antelacion", t: "Días de antelación", type: "number", def: 7, req: true }], {},
       async (d) => { const r = await post("/api/mantenimiento/planes/generar", clean({ ...d, asset_id: S.asset ? Number(S.asset) : null })); toast(`${r.creadas} órdenes generadas`); load(); });
@@ -1823,6 +1838,7 @@ V.personal = async (el) => {
     const body = { ...d, asset_id: d.asset_id ? Number(d.asset_id) : null };
     await (p ? put(`/api/personal/${p.id}`, body) : post("/api/personal", body));
     toast(p ? "Ficha guardada" : "Persona dada de alta"); load();
+    await altaProveedorSiNuevo(d.empresa, d.area === "limpieza" ? "Limpieza" : "Mantenimiento");
   };
   const load = async () => table($("#t", el), [
     { k: "area_nombre", t: "Área" }, { k: "nombre", t: "Nombre" }, { k: "empresa", t: "Empresa" },
@@ -1895,6 +1911,7 @@ async function subirDocumento(reload) {
     const r = await upload("/api/documentos-recibidos", fd);
     toast(`Documento guardado en la carpeta de ${assetName(aid)}${r.gasto ? ` · gasto de ${eur(r.gasto.total)} anotado` : ""}`);
     reload && reload();
+    await altaProveedorSiNuevo(d.emisor, d.es_gasto ? C.categorias[d.categoria] : null);
   }, "Guardar documento");
   bindFotos(f); bindAmbito(f); sugerirProveedores(f, "emisor");
   const gasto = () => { verCampos(f, CAMPOS_GASTO, f.elements.es_gasto.checked); if (f.elements.es_gasto.checked) bindAmbito(f); };
@@ -1915,6 +1932,7 @@ async function editarGasto(g, reload, aidNuevo) {
     if (!body.concepto) throw new Error("Indique el concepto del gasto");
     await (g ? put(`/api/gastos/${g.id}`, body) : post("/api/gastos", { ...body, asset_id: aid }));
     toast(g ? "Gasto actualizado" : "Gasto anotado"); reload && reload();
+    await altaProveedorSiNuevo(d.proveedor, C.categorias[d.categoria]);
   });
   bindAmbito(f); sugerirProveedores(f, "proveedor");
 }
@@ -2104,12 +2122,13 @@ const MENU = [
   ["Alquiler residencial", [["contratos", "Contratos", "alquiler.ver"], ["recibos", "Recibos y cobros", "alquiler.ver"], ["inquilinos", "Inquilinos", "alquiler.ver"]]],
   ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["servicios", "Servicios", "activos.ver"], ["informes", "Informes Excel", "informes"]]],
   ["Documentos y gastos", [["docrecibidos", "Documentos recibidos", "documentos.ver"], ["gastos", "Cuenta de gastos", "documentos.ver"]]],
-  ["Mantenimiento", [["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["personal", "Personal mto. y limpieza", "personal"], ["proveedores", "Proveedores", "mantenimiento.ver"]]],
+  ["Mantenimiento", [["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["personal", "Personal mto. y limpieza", "personal"], ["proveedores", "Proveedores", "proveedores"]]],
   ["Administración", [["usuarios", "Usuarios", "admin"], ["roles", "Roles y permisos", "admin"], ["sociedades", "Sociedades", "admin"], ["avisos", "Avisos por correo", "admin"], ["auditoria", "Auditoría", "auditoria.ver"]]],
   ["", [["perfil", "Mi perfil", null]]],
 ];
 const allowed = (p) => !p || (p === "admin" ? S.me.admin_grupo : p === "informes" ? ["reservas.ver", "alquiler.ver", "finanzas.ver", "mantenimiento.ver"].some(can)
-  : p === "personal" ? ["mantenimiento.ver", "limpieza.editar", "limpieza.confirmar_ot"].some(can) : can(p));
+  : p === "personal" ? ["mantenimiento.ver", "limpieza.editar", "limpieza.confirmar_ot"].some(can)
+  : p === "proveedores" ? verProveedores() : can(p));
 const TITLES = Object.fromEntries(MENU.flatMap(([, items]) => items.map(([id, t]) => [id, t])));
 
 function renderNav() {
