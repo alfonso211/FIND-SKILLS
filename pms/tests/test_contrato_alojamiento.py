@@ -47,7 +47,7 @@ def test_contrato_suite_florida(client, admin, ids):
     # faltan capacidad, dormitorios, correo y móvil: no se imprime y se dice qué falta
     res = client.post(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin, json=datos)
     assert res.status_code == 400
-    for falta in ("Capacidad máxima", "Dormitorios", "Correo del cliente", "Móvil del cliente"):
+    for falta in ("Capacidad máxima", "Correo del cliente", "Móvil del cliente"):  # dormitorios: de la tipología
         assert falta in res.json()["detail"]
     assert "Motivo" not in res.json()["detail"]
     # ...pero lo tecleado queda guardado en la reserva

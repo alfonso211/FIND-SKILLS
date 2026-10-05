@@ -109,19 +109,24 @@ def _ocupacion(db, scope, wb, desde, hasta, asset_id):
             scope.can_asset("finanzas.ver", a.id) for a in turisticos) else {}
         filas = []
         for a in turisticos:
-            propias = [r for r, aid in res if aid == a.id]
-            for mes, ini, fin in _meses(desde, hasta):
-                disp = n_unid[a.id] * ((fin - ini).days + 1)
-                ocup = sum(_noches(r.fecha_entrada, r.fecha_salida, ini, fin) for r in propias)
-                ingresos = (round(fact.get((a.id, f"{ini:%Y-%m}"), {}).get("alojamiento", 0), 2)
-                            if scope.can_asset("finanzas.ver", a.id) else None)
-                llegadas = sum(1 for r in propias if ini <= r.fecha_entrada <= fin)
-                filas.append([a.nombre, mes, n_unid[a.id], disp, ocup, ocup / disp if disp else 0, llegadas, ingresos,
-                              None if ingresos is None else round(ingresos / ocup, 2) if ocup else 0,
-                              None if ingresos is None else round(ingresos / disp, 2) if disp else 0])
-        _hoja(wb, "Turísticos", ["Activo", "Mes", "Unidades", "Noches disponibles", "Noches ocupadas", "% ocupación",
-                                 "Llegadas", "Alojamiento facturado (base)", "ADR (precio medio noche)", "RevPAR"], filas,
-              {3: ENTERO, 4: ENTERO, 5: PCT, 7: EUR, 8: EUR, 9: EUR}, totales=[3, 4, 6, 7],
+            unidades = dict(db.execute(select(Unit.id, Unit.uso).where(Unit.asset_id == a.id,
+                                                                       Unit.estado != "fuera_servicio")).all())
+            for uso in sorted(set(unidades.values()), key=lambda x: (x == "garaje", x)):  # apartamentos y garajes
+                ids_uso = {i for i, x in unidades.items() if x == uso}
+                propias = [r for r, aid in res if aid == a.id and r.unit_id in ids_uso]
+                clave = "garaje" if uso == "garaje" else "alojamiento"
+                for mes, ini, fin in _meses(desde, hasta):
+                    disp = len(ids_uso) * ((fin - ini).days + 1)
+                    ocup = sum(_noches(r.fecha_entrada, r.fecha_salida, ini, fin) for r in propias)
+                    ingresos = (round(fact.get((a.id, f"{ini:%Y-%m}"), {}).get(clave, 0), 2)
+                                if scope.can_asset("finanzas.ver", a.id) else None)
+                    llegadas = sum(1 for r in propias if ini <= r.fecha_entrada <= fin)
+                    filas.append([a.nombre, uso, mes, len(ids_uso), disp, ocup, ocup / disp if disp else 0, llegadas,
+                                  ingresos, None if ingresos is None else round(ingresos / ocup, 2) if ocup else 0,
+                                  None if ingresos is None else round(ingresos / disp, 2) if disp else 0])
+        _hoja(wb, "Turísticos", ["Activo", "Uso", "Mes", "Unidades", "Noches disponibles", "Noches ocupadas",
+                                 "% ocupación", "Llegadas", "Facturado (base)", "ADR (precio medio noche)", "RevPAR"],
+              filas, {4: ENTERO, 5: ENTERO, 6: PCT, 8: EUR, 9: EUR, 10: EUR}, totales=[4, 5, 7, 8],
               nota="Noches: reservas confirmadas, alojadas o salidas (sin canceladas ni no presentadas); unidades fuera de "
                    "servicio excluidas. Importes: alojamiento facturado en el mes según fecha de factura, sin IVA "
                    "(solo con permiso de finanzas).")
@@ -170,10 +175,12 @@ def _produccion(db, scope, wb, desde, hasta, asset_id):
         for mes, ini, _ in _meses(desde, hasta):
             v = fact.get((a.id, f"{ini:%Y-%m}"), {})
             filas.append([a.nombre, mes] + [round(v.get(k, 0), 2) for k in
-                                            ("alojamiento", "renta", "servicio", "base", "iva", "total")] + [int(v.get("n", 0))])
-    _hoja(wb, "Producción", ["Activo", "Mes", "Alojamiento (base)", "Rentas (base)", "Servicios (base)",
-                             "Producción (base imponible)", "IVA", "Total facturado", "Nº facturas"],
-          filas, {2: EUR, 3: EUR, 4: EUR, 5: EUR, 6: EUR, 7: EUR, 8: ENTERO}, totales=[2, 3, 4, 5, 6, 7, 8],
+                                            ("alojamiento", "garaje", "renta", "servicio", "base", "iva", "total")]
+                         + [int(v.get("n", 0))])
+    _hoja(wb, "Producción", ["Activo", "Mes", "Alojamiento (base)", "Plazas de garaje (base)", "Rentas (base)",
+                             "Servicios (base)", "Producción (base imponible)", "IVA", "Total facturado", "Nº facturas"],
+          filas, {2: EUR, 3: EUR, 4: EUR, 5: EUR, 6: EUR, 7: EUR, 8: EUR, 9: ENTERO},
+          totales=[2, 3, 4, 5, 6, 7, 8, 9],
           nota="Producción = lo facturado en cada mes según la fecha de la factura, sin IVA. Incluye las "
                "rectificativas (en negativo).")
 

@@ -222,3 +222,16 @@ dialog.ancho { width: min(940px, 96vw); }
 .servicios .srv-fila { display: grid; grid-template-columns: minmax(0, 2.2fr) 70px 120px 90px auto; gap: 6px; margin-bottom: 6px; align-items: center; }
 .servicios .srv-fila [data-c]:not([hidden]) { grid-column: 1 / -1; grid-row: 2; }
 @media (max-width: 860px) { .servicios .srv-fila { grid-template-columns: 1fr 1fr; } }
+/* Suite Florida: portales, garajes */
+.plano .portal { background: #fff; font-size: 2em; font-weight: 900; color: #111; border: 1px solid #b9c2cd; }
+.plano .negro { background: #111; border: 1px solid #8a4b10; }
+.plano .plaza { background: #fff7c9 radial-gradient(circle at 50% 50%, #9cc46a 0 18%, transparent 19%); border: 1px solid #efe08d; }
+.plano .tarima { background: #f0a24a repeating-linear-gradient(90deg, transparent 0 9px, rgba(120, 60, 0, .35) 9px 10px); }
+.plano .rampa { background: repeating-linear-gradient(90deg, #fff 0 3px, #555 3px 4px); }
+.plano .sentido { color: #333; font-weight: 800; font-size: .9em; }
+.plano.denso:not(.mini) { min-width: 960px; }
+.plano.denso .pc { font-size: clamp(8px, .62vw, 11px); }
+.plano.denso .portal { font-size: 1.6em; }
+.plano.mini .portal, .plano.mini .negro { background: #222 !important; }
+.mini-planta { align-content: start; }
+.plano .pc { min-height: 0; }

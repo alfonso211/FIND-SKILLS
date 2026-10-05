@@ -34,10 +34,20 @@ def panel(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
         ver_fin = scope.can_asset("finanzas.ver", a.id)
 
         if a.modalidad == "apartamentos_turisticos" and scope.can_asset("reservas.ver", a.id):
-            base = select(func.count()).select_from(Reservation).join(Unit).where(Unit.asset_id == a.id)
-            ocupadas = db.scalar(base.where(Reservation.estado.in_(("confirmada", "checkin")),
-                                            Reservation.fecha_entrada <= hoy, Reservation.fecha_salida > hoy))
-            k["ocupacion_hoy"] = round(100 * ocupadas / operativas, 1) if operativas else 0
+            # la ocupación es de los alojamientos; las plazas de garaje se cuentan aparte
+            base = select(func.count()).select_from(Reservation).join(Unit).where(Unit.asset_id == a.id,
+                                                                                  Unit.uso != "garaje")
+            hoy_activas = (Reservation.estado.in_(("confirmada", "checkin")), Reservation.fecha_entrada <= hoy,
+                           Reservation.fecha_salida > hoy)
+            ocupadas = db.scalar(base.where(*hoy_activas))
+            alojamientos = db.scalar(select(func.count()).select_from(Unit).where(
+                Unit.asset_id == a.id, Unit.uso != "garaje", Unit.estado != "fuera_servicio"))
+            k["ocupacion_hoy"] = round(100 * ocupadas / alojamientos, 1) if alojamientos else 0
+            garajes = db.scalar(select(func.count()).select_from(Unit).where(Unit.asset_id == a.id, Unit.uso == "garaje"))
+            if garajes:
+                k["garajes_ocupados"] = db.scalar(select(func.count()).select_from(Reservation).join(Unit).where(
+                    Unit.asset_id == a.id, Unit.uso == "garaje", *hoy_activas))
+                k["garajes"] = garajes
             k["llegadas_hoy"] = db.scalar(base.where(Reservation.fecha_entrada == hoy,
                                                      Reservation.estado.in_(("confirmada", "checkin"))))
             k["salidas_hoy"] = db.scalar(base.where(Reservation.fecha_salida == hoy,

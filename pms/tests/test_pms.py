@@ -19,7 +19,7 @@ def test_auth_required(client):
 def test_seed(client, admin, ids):
     a = ids["assets"]
     assert set(a) == {"BAB35", "SFL", "SAE"}
-    assert a["SFL"]["num_unidades"] == 325
+    assert a["SFL"]["num_unidades"] == 672  # 325 apartamentos + 347 plazas de garaje (sótanos -1 y -2)
     assert a["SAE"]["num_unidades"] == 300
     assert a["BAB35"]["num_unidades"] == 53
     assert (a["SFL"]["num_registro_turistico"], a["SFL"]["direccion"]) == ("AM 265", "Calle Campezo 2")
@@ -31,7 +31,7 @@ def test_seed(client, admin, ids):
     assert round(sum(u["cuota_comunidad"] for u in viv), 2) == 1950.20  # cuadra con el listado de comunidad
     assert round(sum(u["cuota_comunidad"] for u in gar), 2) == 629.64
     assert client.get(f"/api/unidades/bloques?asset_id={a['SFL']['id']}", headers=admin).json() == \
-        ["Portal 1", "Portal 2", "Portal 3", "Portal 4"]
+        ["Portal 1", "Portal 2", "Portal 3", "Portal 4", "Sótano -1", "Sótano -2"]
     assert client.get(f"/api/unidades/bloques?asset_id={a['SAE']['id']}", headers=admin).json() == ["Bloque A", "Bloque B"]
     sae = client.get(f"/api/unidades?asset_id={a['SAE']['id']}&q=A-148", headers=admin).json()[0]
     assert sae["tipologia"] == "Apartamento 2 dormitorios" and sae["dormitorios"] == 2
@@ -68,7 +68,7 @@ def test_recepcion_scoped_to_one_asset(client, admin, ids):
     visibles = [a["codigo"] for a in client.get("/api/activos", headers=rec).json()]
     assert visibles == ["SFL"]
     units = client.get("/api/unidades", headers=rec).json()
-    assert len(units) == 325 and all(u["asset_id"] == sfl for u in units)
+    assert len(units) == 672 and all(u["asset_id"] == sfl for u in units)
     # no puede tocar otro activo, ni administrar, ni ver alquiler residencial
     sae_unit = client.get(f"/api/unidades?asset_id={sae}", headers=admin).json()[0]
     r = client.post("/api/turistico/reservas", headers=rec, json={
