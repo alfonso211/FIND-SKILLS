@@ -10,7 +10,7 @@ from .config import BASE_DIR
 from .database import SessionLocal
 from .migraciones import migrar
 from .routers import (admin, alquiler, auth, documentos, estructura, facturas, informes, mantenimiento, panel,
-                      turistico)
+                      plano, turistico)
 from .seed import seed
 
 STATIC = BASE_DIR / "static"
@@ -31,7 +31,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="PMS Grupo INVERSIETE", version="0.1.0", lifespan=lifespan)
-for r in (auth, estructura, alquiler, turistico, facturas, mantenimiento, informes, admin, panel, documentos):
+for r in (auth, estructura, alquiler, turistico, plano, facturas, mantenimiento, informes, admin, panel, documentos):
     app.include_router(r.router)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 

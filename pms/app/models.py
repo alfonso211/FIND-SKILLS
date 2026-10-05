@@ -183,6 +183,20 @@ class Reservation(Base):
     guest: Mapped[Contact] = relationship()
 
 
+class UnitBlock(Base):
+    """Bloqueo de un apartamento (lo saca de venta) con su motivo. Al desbloquear se cierra el registro."""
+    __tablename__ = "bloqueos_unidad"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    unit_id: Mapped[int] = mapped_column(ForeignKey("unidades.id"), index=True)
+    motivo: Mapped[str] = mapped_column(Text)
+    hasta: Mapped[date | None] = mapped_column(Date)  # fin previsto (orientativo)
+    desde: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    levantado: Mapped[datetime | None] = mapped_column(DateTime)
+    levantado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    nota_levantado: Mapped[str | None] = mapped_column(String(300))
+
+
 class ContactDocument(Base):
     """Copia escaneada de un documento de identidad. El fichero se guarda cifrado fuera de la base de datos."""
     __tablename__ = "documentos_terceros"
@@ -258,6 +272,8 @@ class WorkOrder(Base):
     asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
     unit_id: Mapped[int | None] = mapped_column(ForeignKey("unidades.id"))
     plan_id: Mapped[int | None] = mapped_column(ForeignKey("planes_preventivos.id"))
+    # zona común del plano (p.ej. P4-A-PISCINA) cuando la incidencia no es de un apartamento
+    zona: Mapped[str | None] = mapped_column(String(40), index=True)
     tipo: Mapped[str] = mapped_column(String(20), default="correctivo")  # correctivo | preventivo | mejora | normativo
     categoria: Mapped[str] = mapped_column(String(40), default="general")
     prioridad: Mapped[str] = mapped_column(String(20), default="media")  # baja | media | alta | urgente

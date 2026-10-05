@@ -10,7 +10,7 @@ Hay una sola plataforma, pero cada usuario solo ve y gestiona lo que su rol y su
 |---|---|---|---|---|---|
 | BAB35 | C/ Babilonia 35, Madrid | Alquiler residencial (LAU) | COMERCIAL DEL CAMPO S.A. | COMERCIAL DEL CAMPO S.A. | 20 viviendas (trasteros como anejos) + 33 plazas de garaje (ST-1, ST-2, ST-3) |
 | SFL | Suite Florida (C/ Campezo 2, reg. AM 265) | Apartamentos turísticos | INVERSIETE SA | COMERCIAL DEL CAMPO S.A. | 325 en 4 portales (P1: 90, P2: 75, P3: 75, P4: 85). Código `P{portal}-{planta}{letra}`, p.ej. P1-1A |
-| SAE | Suite Aeropuerto (C/ Campezo 8, reg. AM 259) | Apartamentos turísticos | INVERSIETE SA | COMERCIAL DEL CAMPO S.A. | 300 en 2 bloques (A: 147, B: 153): 268 de 1 dormitorio, 27 de 2 dormitorios y 5 estudios |
+| SAE | Suite Aeropuerto (C/ Campezo 8, reg. AM 259) | Apartamentos turísticos | INVERSIETE SA | COMERCIAL DEL CAMPO S.A. | 300 en 2 bloques (A: 147, B: 153) y 5 plantas: 267 de 1 dormitorio (8 con terraza, 5 con terraza grande y 10 grandes), 28 de 2 dormitorios y 5 estudios |
 
 Las unidades se cargan desde `pms/app/data/unidades_iniciales.json`, que se generó a partir de estos documentos:
 - **Babilonia 35:** listado de cuotas de comunidad de octubre de 2026. Se cargan solo las viviendas y los garajes,
@@ -31,6 +31,23 @@ Para añadir activos nuevos: *Activos → Nuevo activo* (se eligen la gestora, l
 
 - **Panel de control**: ocupación del día, llegadas y salidas, contratos vigentes, renta mensual,
   deuda vencida, producción del mes y OT abiertas o urgentes por activo.
+- **Plano de apartamentos** (Suite Aeropuerto; Suite Florida, pendiente de sus croquis):
+  - Croquis de cada planta igual que el del PMS anterior y con sus mismos colores: alquilado (cian), reserva
+    pendiente de llegada (salmón), disponible (verde) y bloqueado (oliva).
+  - En el panel de control salen las cinco plantas en miniatura con sus contadores. Al pulsar una se abre en grande,
+    con fecha seleccionable y opción de imprimir.
+  - Marcas: «M» si hay mantenimiento pendiente (roja si es urgente) y «L» si está pendiente de limpieza.
+  - Al pulsar un apartamento se abre su ficha, con un buscador sobre todo lo registrado: reservas, clientes,
+    incidencias, bloqueos y facturas.
+  - La ficha tiene tres casillas de acción:
+    - **Reserva:** reserva directa sobre ese apartamento.
+    - **Bloqueado:** pide el motivo, avisa de las reservas afectadas y queda en el historial; al volver a pulsarla
+      se desbloquea.
+    - **Incidencia:** abre una OT, con fotos.
+  - Limpieza y mantenimiento solo pueden abrir incidencias.
+  - Las casillas amarillas (ZC), en las esquinas de los pasillos de cada planta, son las zonas comunes de cada lado
+    del edificio: muestran sus incidencias y permiten abrir otras nuevas.
+  - Los croquis se definen en `pms/app/planos.py`.
 - **Apartamentos turísticos**: reservas con control de solapes y de capacidad, búsqueda de disponibilidad,
   check-in (exige los datos del parte de viajeros, RD 933/2021), check-out y paso de la unidad a
   *pendiente de limpieza*. Incluye planning por unidad y día, y ficha de huéspedes.
