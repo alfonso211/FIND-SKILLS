@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, aliased
 
 from ..config import settings
 from ..database import get_db
-from .. import (avisos, contratos, documentos, encuesta_ine, firma_contrato, importacion, importacion_ocupacion,
+from .. import (avisos, contratos, documentos, encuesta_ine, firma_contrato, importacion, importacion_ocupacion, nif,
                planos, recibos,
                registro_viajeros)
 from ..facturacion import (IVA_ALOJAMIENTO, IVA_GENERAL, datos_cliente, dinero, emitir, linea, lineas_servicios,
@@ -49,6 +49,26 @@ def _conflict(db: Session, unit_id: int, ent: date, sal: date, exclude_id: int |
         stmt = stmt.where(Reservation.id != exclude_id)
     # una plaza de garaje alquilada por meses a un cliente externo tampoco se puede reservar
     return db.scalar(stmt) is not None or recibos.solapa_contrato(db, unit_id, ent, sal - timedelta(days=1))
+
+
+def mismo_cliente(db: Session, company_id: int, g) -> Contact | None:
+    """Cliente que vuelve sin documento: mismo nombre y mismo teléfono o correo. Así no se duplica su ficha cuando
+    reserva otro apartamento. Con documento distinto son personas distintas."""
+    tel, email = nif.telefono_clave(g.telefono), (g.email or "").strip().lower() or None
+    if not (tel or email):
+        return None
+    clave = nif.nombre_clave(g.nombre, g.apellidos)
+    doc = nif.normalizar(g.documento_num)
+    for c in db.scalars(select(Contact).where(Contact.company_id == company_id, Contact.tipo == "huesped",
+                                              or_(Contact.telefono.is_not(None), Contact.email.is_not(None)))
+                        .order_by(Contact.id)):
+        if nif.nombre_clave(c.nombre, c.apellidos) != clave:
+            continue
+        if doc and c.documento_num and nif.normalizar(c.documento_num) != doc:
+            continue
+        if (tel and nif.telefono_clave(c.telefono) == tel) or (email and (c.email or "").lower() == email):
+            return c
+    return None
 
 
 def _tourist_unit(db: Session, unit_id: int) -> Unit:
@@ -99,6 +119,8 @@ def create_reservation(data: ReservationIn, scope: Scope = Depends(get_scope), d
         doc = (data.guest.documento_num or "").strip().upper() or None
         guest = db.scalar(select(Contact).where(Contact.company_id == company_id, Contact.tipo == "huesped",
                                                 Contact.documento_num == doc)) if doc else None
+        if guest is None:
+            guest = mismo_cliente(db, company_id, data.guest)
         if guest is None:
             guest = Contact(company_id=company_id, tipo="huesped", **data.guest.model_dump())
             db.add(guest)

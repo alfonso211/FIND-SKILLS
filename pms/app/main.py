@@ -10,7 +10,7 @@ from .config import BASE_DIR
 from .database import SessionLocal
 from .migraciones import migrar
 from .routers import (admin, alquiler, auth, documentos, estructura, facturas, garajes, informes, mantenimiento,
-                      panel, personal, plano, turistico)
+                      panel, personal, plano, proveedores, turistico)
 from .seed import seed
 
 STATIC = BASE_DIR / "static"
@@ -31,8 +31,8 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="INVERPMS", version="0.1.0", lifespan=lifespan)
-for r in (auth, estructura, alquiler, garajes, turistico, plano, facturas, mantenimiento, personal, informes, admin,
-          panel, documentos):
+for r in (auth, estructura, alquiler, garajes, turistico, plano, facturas, mantenimiento, personal, proveedores,
+          informes, admin, panel, documentos):
     app.include_router(r.router)
 app.include_router(facturas.router_servicios)
 app.include_router(turistico.publico)
