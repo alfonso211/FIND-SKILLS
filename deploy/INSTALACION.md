@@ -183,6 +183,43 @@ El instalador la genera automáticamente y la deja en `/root/pms-credenciales.tx
 
 Las copias de seguridad diarias incluyen la carpeta de documentos (`/var/backups/pms/documentos_*.tar.gz`).
 
+## 8 ter. Avisos por correo
+
+El PMS envía avisos de **OT urgentes** al momento y un **resumen diario** (recibos impagados, contratos que vencen y
+revisiones normativas próximas). Para ello necesita un buzón de correo desde el que enviar, por ejemplo
+`avisos@inversiete.es` (créelo en el proveedor de correo de la empresa).
+
+1. Edite el fichero de configuración:
+   ```bash
+   nano /opt/pms/deploy/.env
+   ```
+2. Rellene las líneas `PMS_SMTP_...` con los datos del buzón:
+
+   | Proveedor del correo | PMS_SMTP_HOST | PMS_SMTP_PORT | PMS_SMTP_SEGURIDAD |
+   |---|---|---|---|
+   | IONOS | `smtp.ionos.es` | 587 | starttls |
+   | Microsoft 365 / Outlook | `smtp.office365.com` | 587 | starttls |
+   | Arsys | `smtp.servidor-correo.net` | 587 | starttls |
+
+   ```
+   PMS_SMTP_HOST=smtp.ionos.es
+   PMS_SMTP_PORT=587
+   PMS_SMTP_USER=avisos@inversiete.es
+   PMS_SMTP_PASSWORD=la-contraseña-del-buzón
+   PMS_SMTP_FROM=avisos@inversiete.es
+   PMS_SMTP_SEGURIDAD=starttls
+   PMS_AVISOS_HORA=07:30
+   ```
+   Guarde con `Ctrl + O`, `Intro` y salga con `Ctrl + X`.
+3. Aplique el cambio: `cd /opt/pms/deploy && docker compose up -d`
+4. En el PMS, *Administración → Avisos por correo → Enviarme un correo de prueba*. Si falla, el mensaje indica el
+   motivo (usuario o contraseña incorrectos, servidor...).
+
+En Microsoft 365 el buzón debe tener activado «SMTP autenticado» (centro de administración de Microsoft 365 →
+usuario → Correo → Administrar aplicaciones de correo).
+
+Cada usuario elige qué avisos recibe en *Mi perfil*.
+
 ## 9. Actualizaciones del PMS
 
 ```bash

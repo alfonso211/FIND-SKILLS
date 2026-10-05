@@ -28,6 +28,16 @@ class Settings:
     # Copias de documentos de identidad (cifradas). Sin PMS_DOCS_KEY se deriva de PMS_SECRET_KEY.
     docs_dir: Path = Path(os.environ.get("PMS_DOCS_DIR", str(BASE_DIR / "documentos")))
     docs_key: str | None = os.environ.get("PMS_DOCS_KEY") or None
+    # Avisos por correo. Sin PMS_SMTP_HOST no se envía nada ("memoria" = solo pruebas automáticas).
+    smtp_host: str | None = os.environ.get("PMS_SMTP_HOST") or None
+    smtp_port: int = int(os.environ.get("PMS_SMTP_PORT") or "587")
+    smtp_user: str | None = os.environ.get("PMS_SMTP_USER") or None
+    smtp_password: str | None = os.environ.get("PMS_SMTP_PASSWORD") or None
+    smtp_from: str | None = os.environ.get("PMS_SMTP_FROM") or None
+    smtp_seguridad: str = (os.environ.get("PMS_SMTP_SEGURIDAD") or "starttls").lower()  # starttls | ssl | ninguna
+    avisos_hora: str = os.environ.get("PMS_AVISOS_HORA") or "07:30"  # hora del resumen diario
+    avisos_auto: bool = (os.environ.get("PMS_AVISOS_AUTO") or "1") != "0"
+    url: str = (os.environ.get("PMS_URL") or "").rstrip("/")  # enlace en los correos (https://pms.inversiete.es)
 
 
 settings = Settings()

@@ -89,6 +89,22 @@ if ! grep -q '^PMS_DOCS_KEY=.' .env; then
   aviso "Generada la clave de cifrado de documentos. Está en $CRED: guárdela fuera del servidor y borre el fichero."
 fi
 
+# Avisos por correo: deja preparadas las líneas en .env (vacías = sin correos) para rellenarlas después
+if ! grep -q '^PMS_SMTP_HOST=' .env; then
+  {
+    echo
+    echo "# Avisos por correo (ver INSTALACION.md, apartado 8 ter). Vacío = no se envían correos."
+    echo "PMS_SMTP_HOST="
+    echo "PMS_SMTP_PORT=587"
+    echo "PMS_SMTP_USER="
+    echo "PMS_SMTP_PASSWORD="
+    echo "PMS_SMTP_FROM="
+    echo "PMS_SMTP_SEGURIDAD=starttls"
+    echo "PMS_AVISOS_HORA=07:30"
+  } >> .env
+  aviso "Para recibir avisos por correo, rellene los datos del buzón en $DEPLOY/.env (INSTALACION.md, apartado 8 ter)."
+fi
+
 verde "6/7 Arrancando el PMS (la primera vez tarda 3-5 minutos)"
 docker compose up -d --build
 echo -n "Esperando a que responda https://$DOMINIO "

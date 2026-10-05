@@ -1,10 +1,13 @@
 """Usuarios, roles, auditoría (solo administradores a nivel de grupo)."""
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import avisos
+from ..config import settings
 from ..database import get_db
-from ..models import Asset, Assignment, AuditLog, Company, Role, User
+from ..models import Asset, Assignment, AuditLog, Company, EmailLog, Role, User
 from ..schemas import AssignmentIn, RoleIn, UserIn, UserUpdate
 from ..security import PERMISOS, Scope, audit, get_scope, hash_password
 from ..utils import bad_request, get_or_404
@@ -140,3 +143,47 @@ def audit_log(entidad: str | None = None, user_id: int | None = None, limit: int
         stmt = stmt.where(AuditLog.user_id == user_id)
     rows = db.execute(stmt.order_by(AuditLog.id.desc()).limit(min(limit, 2000))).all()
     return [{**log.to_dict(), "usuario": nombre} for log, nombre in rows]
+
+
+# --------------------------------------------------------------------------- avisos por correo
+@router.get("/avisos")
+def alerts_status(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    scope.require_group("usuarios.gestionar")
+    filas = db.execute(select(EmailLog, User.nombre).outerjoin(User, User.id == EmailLog.user_id)
+                       .where(EmailLog.tipo != "sistema").order_by(EmailLog.id.desc()).limit(200)).all()
+    return {"configurado": avisos.configurado(), "servidor": settings.smtp_host, "remitente": avisos.remitente(),
+            "hora_resumen": settings.avisos_hora,
+            "registro": [{**e.to_dict(), "usuario": n} for e, n in filas]}
+
+
+class TestMail(BaseModel):
+    email: str | None = None
+
+
+@router.post("/avisos/probar")
+def alerts_test(data: TestMail, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Envía un correo de prueba (por defecto, al propio administrador)."""
+    scope.require_group("usuarios.gestionar")
+    destino = data.email or scope.user.email
+    try:
+        avisos.enviar(destino, "PMS · Correo de prueba",
+                      "Si recibe este correo, los avisos del PMS están bien configurados.",
+                      avisos._html("Correo de prueba", "<p>Si recibe este correo, los avisos del PMS están bien "
+                                                       "configurados.</p>"))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"No se pudo enviar: {e}")
+    audit(db, scope.user, "probar_correo", "avisos", None, {"destino": destino})
+    db.commit()
+    return {"ok": True, "destino": destino}
+
+
+@router.post("/avisos/resumen")
+def alerts_digest_now(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Envía ahora el resumen diario a todos los suscritos (aunque ya lo hubieran recibido hoy)."""
+    scope.require_group("usuarios.gestionar")
+    if not avisos.configurado():
+        raise HTTPException(400, "Correo no configurado (falta PMS_SMTP_HOST en el servidor)")
+    r = avisos.resumen_diario(db, forzar=True)
+    audit(db, scope.user, "enviar_resumen", "avisos", None, r)
+    db.commit()
+    return r

@@ -16,3 +16,7 @@ pycountry>=23
 cryptography>=42
 # facturas en PDF
 reportlab>=4.2
+# informes e importación en Excel
+openpyxl>=3.1
+# zona horaria de Madrid para los avisos
+tzdata>=2024.1

@@ -283,6 +283,23 @@ class WorkOrder(Base):
     cerrada_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
 
 
+class WorkOrderAttachment(Base):
+    """Foto o documento de una orden de trabajo (avería, trabajo terminado, certificado OCA, factura...).
+    El fichero se guarda cifrado fuera de la base de datos, como las copias de documentos de identidad."""
+    __tablename__ = "adjuntos_ot"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    work_order_id: Mapped[int] = mapped_column(ForeignKey("ordenes_trabajo.id"), index=True)
+    tipo: Mapped[str] = mapped_column(String(20))  # averia | trabajo | oca | factura | presupuesto | otro
+    nombre: Mapped[str] = mapped_column(String(160))
+    descripcion: Mapped[str | None] = mapped_column(String(300))
+    fichero: Mapped[str] = mapped_column(String(64))
+    mime: Mapped[str] = mapped_column(String(60))
+    tamano: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    subido: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+
+
 class PreventivePlan(Base):
     __tablename__ = "planes_preventivos"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -307,6 +324,8 @@ class User(Base):
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
     # contraseña provisional: hasta cambiarla solo puede consultar su perfil y cambiar la contraseña
     debe_cambiar_password: Mapped[bool] = mapped_column(Boolean, default=False)
+    # avisos por correo que quiere recibir (None = todos los que le permiten sus permisos)
+    avisos: Mapped[list | None] = mapped_column(JSON)
     assignments: Mapped[list["Assignment"]] = relationship(cascade="all, delete-orphan", lazy="selectin")
 
 
@@ -342,3 +361,17 @@ class AuditLog(Base):
     entidad: Mapped[str] = mapped_column(String(40))
     entidad_id: Mapped[int | None] = mapped_column(Integer)
     detalle: Mapped[dict | None] = mapped_column(JSON)
+
+
+class EmailLog(Base):
+    """Registro de avisos enviados por correo (también evita repetir el resumen diario)."""
+    __tablename__ = "avisos_enviados"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    fecha: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+    clave: Mapped[str] = mapped_column(String(80), index=True)  # p.ej. resumen:2026-10-05, ot_urgente:12
+    tipo: Mapped[str] = mapped_column(String(30))
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    destinatario: Mapped[str | None] = mapped_column(String(160))
+    asunto: Mapped[str] = mapped_column(String(200))
+    ok: Mapped[bool] = mapped_column(Boolean, default=True)
+    error: Mapped[str | None] = mapped_column(String(300))

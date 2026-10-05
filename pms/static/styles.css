@@ -120,3 +120,9 @@ a.danger { color: var(--bad); }
 .camzone video { width: 100%; max-height: 360px; background: #000; border-radius: 8px; margin-top: 8px; }
 .camzone .toolbar { margin-top: 8px; }
 .b-rectificativa, .b-rectificada { background: #fbe6e4; color: var(--bad); }
+.adjuntos { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+.adjuntos figure { margin: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fff; font-size: 12px; }
+.adjuntos .thumb { height: 120px; background: #eef2f7 center / cover no-repeat; cursor: pointer; display: grid; place-items: center; }
+.adjuntos .pdf { font-weight: 700; color: var(--bad); border: 2px solid var(--bad); border-radius: 4px; padding: 6px 8px; }
+.adjuntos figcaption { padding: 6px 8px; }
+label.btn { display: inline-block; color: var(--ink); font-size: 14px; }
