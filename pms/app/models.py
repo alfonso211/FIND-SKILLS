@@ -100,11 +100,13 @@ class Unit(Base):
 
 # --------------------------------------------------------------------------- terceros
 class Contact(Base):
-    """Inquilino, huésped o proveedor. Datos compatibles con parte de viajeros (RD 933/2021)."""
+    """Inquilino, huésped o cliente de garaje. Datos compatibles con parte de viajeros (RD 933/2021)."""
     __tablename__ = "terceros"
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("sociedades.id"), index=True)
-    tipo: Mapped[str] = mapped_column(String(20))  # inquilino | huesped | proveedor
+    # activo al que pertenece la ficha: cada recepción ve solo los clientes de su activo (ver app/clientes.py)
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("activos.id"), index=True)
+    tipo: Mapped[str] = mapped_column(String(20))  # inquilino | huesped | cliente_garaje
     nombre: Mapped[str] = mapped_column(String(120))
     apellidos: Mapped[str | None] = mapped_column(String(160))
     documento_tipo: Mapped[str | None] = mapped_column(String(10))  # DNI | NIE | PAS | CIF

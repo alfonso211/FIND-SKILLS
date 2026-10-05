@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, aliased
 
 from ..config import settings
 from ..database import get_db
-from .. import (avisos, contratos, documentos, encuesta_ine, firma_contrato, importacion, importacion_ocupacion, nif,
+from .. import (avisos, clientes, contratos, documentos, encuesta_ine, firma_contrato, importacion, importacion_ocupacion, nif,
                planos, recibos,
                registro_viajeros)
 from ..facturacion import (IVA_ALOJAMIENTO, IVA_GENERAL, datos_cliente, dinero, emitir, linea, lineas_servicios,
@@ -51,7 +51,7 @@ def _conflict(db: Session, unit_id: int, ent: date, sal: date, exclude_id: int |
     return db.scalar(stmt) is not None or recibos.solapa_contrato(db, unit_id, ent, sal - timedelta(days=1))
 
 
-def mismo_cliente(db: Session, company_id: int, g) -> Contact | None:
+def mismo_cliente(db: Session, asset_id: int, g) -> Contact | None:
     """Cliente que vuelve sin documento: mismo nombre y mismo teléfono o correo. Así no se duplica su ficha cuando
     reserva otro apartamento. Con documento distinto son personas distintas."""
     tel, email = nif.telefono_clave(g.telefono), (g.email or "").strip().lower() or None
@@ -59,7 +59,7 @@ def mismo_cliente(db: Session, company_id: int, g) -> Contact | None:
         return None
     clave = nif.nombre_clave(g.nombre, g.apellidos)
     doc = nif.normalizar(g.documento_num)
-    for c in db.scalars(select(Contact).where(Contact.company_id == company_id, Contact.tipo == "huesped",
+    for c in db.scalars(select(Contact).where(Contact.asset_id == asset_id, Contact.tipo == "huesped",
                                               or_(Contact.telefono.is_not(None), Contact.email.is_not(None)))
                         .order_by(Contact.id)):
         if nif.nombre_clave(c.nombre, c.apellidos) != clave:
@@ -110,19 +110,15 @@ def create_reservation(data: ReservationIn, scope: Scope = Depends(get_scope), d
         bad_request(f"Se supera la capacidad de la unidad ({unit.capacidad} plazas)")
     if _conflict(db, unit.id, data.fecha_entrada, data.fecha_salida):
         bad_request(f"La unidad {unit.codigo} ya está reservada en esas fechas")
-    company_id = unit.asset.company_id
+    asset = unit.asset
     if data.guest_id:
-        guest = get_or_404(db, Contact, data.guest_id)
-        if guest.company_id != company_id or guest.tipo != "huesped":
-            bad_request("El huésped no pertenece a la sociedad del activo")
+        guest = clientes.del_activo(db, scope, data.guest_id, asset, "huesped")
     elif data.guest:
-        doc = (data.guest.documento_num or "").strip().upper() or None
-        guest = db.scalar(select(Contact).where(Contact.company_id == company_id, Contact.tipo == "huesped",
-                                                Contact.documento_num == doc)) if doc else None
+        guest = clientes.por_documento(db, asset, "huesped", nif.normalizar(data.guest.documento_num))
         if guest is None:
-            guest = mismo_cliente(db, company_id, data.guest)
+            guest = mismo_cliente(db, asset.id, data.guest)
         if guest is None:
-            guest = Contact(company_id=company_id, tipo="huesped", **data.guest.model_dump())
+            guest = clientes.nueva(asset, "huesped", **data.guest.model_dump())
             db.add(guest)
         else:  # cliente que vuelve: se reutiliza su ficha y se actualiza con lo nuevo
             for k, v in data.guest.model_dump(exclude_unset=True).items():
@@ -432,19 +428,15 @@ def add_occupant(rid: int, data: OccupantIn, scope: Scope = Depends(get_scope), 
     """Añade un ocupante: escaneado (copias en `documentos`) o registrado a mano (menores sin documento)."""
     r = _reserva_editable(db, scope, rid)
     _asegurar_titular(r)
-    company_id = r.unit.asset.company_id
+    asset = r.unit.asset
     if r.unit.capacidad and len(r.ocupantes) >= r.unit.capacidad:
         bad_request(f"El apartamento {r.unit.codigo} admite como máximo {r.unit.capacidad} personas")
     if data.contact_id:
-        c = get_or_404(db, Contact, data.contact_id)
-        if c.company_id != company_id or c.tipo != "huesped":
-            bad_request("El huésped no pertenece a la sociedad del activo")
+        c = clientes.del_activo(db, scope, data.contact_id, asset, "huesped")
     elif data.contact:
-        doc = (data.contact.documento_num or "").strip().upper() or None
-        c = db.scalar(select(Contact).where(Contact.company_id == company_id, Contact.tipo == "huesped",
-                                            Contact.documento_num == doc)) if doc else None
+        c = clientes.por_documento(db, asset, "huesped", nif.normalizar(data.contact.documento_num))
         if c is None:  # ficha nueva
-            c = Contact(company_id=company_id, tipo="huesped", **data.contact.model_dump())
+            c = clientes.nueva(asset, "huesped", **data.contact.model_dump())
             db.add(c)
         else:  # el huésped ya estuvo alojado: se actualizan sus datos con los nuevos
             for k, v in data.contact.model_dump(exclude_unset=True).items():
@@ -681,10 +673,9 @@ def import_reservations(fichero: UploadFile = File(...), asset_id: int = Form(..
                      adultos=adultos, ninos=ninos)
             if confirmar:
                 doc = str(f.get("documento_num") or "").strip().upper() or None
-                g = db.scalar(select(Contact).where(Contact.company_id == asset.company_id, Contact.tipo == "huesped",
-                                                    Contact.documento_num == doc)) if doc else None
+                g = clientes.por_documento(db, asset, "huesped", nif.normalizar(doc))
                 if g is None:
-                    g = Contact(company_id=asset.company_id, tipo="huesped", nombre=nombre[:120],
+                    g = clientes.nueva(asset, "huesped", nombre=nombre[:120],
                                 apellidos=(str(f.get("apellidos") or "").strip() or None),
                                 documento_num=doc, nacionalidad=(str(f.get("nacionalidad") or "").strip() or None),
                                 email=(str(f.get("email") or "").strip() or None),
@@ -733,7 +724,7 @@ def import_occupancy(fichero: UploadFile = File(...), asset_id: int = Form(...),
     unidades = {u.codigo.upper(): u for u in db.scalars(select(Unit).where(Unit.asset_id == asset_id))}
     previas = {r.localizador: r for r in db.scalars(select(Reservation).join(Unit).where(
         Unit.asset_id == asset_id, Reservation.localizador.is_not(None)))}
-    clientes: dict[str, Contact] = {}
+    vistos: dict[str, Contact] = {}
     resultado = []
     cuenta = dict.fromkeys(("nuevas", "actualizadas", "errores", "vencidas", "garajes"), 0)
     for f in importacion_ocupacion.leer(datos):
@@ -760,18 +751,18 @@ def import_occupancy(fichero: UploadFile = File(...), asset_id: int = Form(...),
                     out["aviso"] = f"la plaza {f['garaje']} no existe: no se reserva"
             out["accion"] = "actualizar" if previa else "crear"
             if confirmar:
-                cliente = previa.guest if previa else clientes.get(f["ocupante"].upper())
+                cliente = previa.guest if previa else vistos.get(f["ocupante"].upper())
                 if cliente is None:
                     nombre, apellidos = importacion_ocupacion.nombre_y_apellidos(f["ocupante"])
                     cliente = db.scalar(select(Contact).where(
-                        Contact.company_id == asset.company_id, Contact.tipo == "huesped", Contact.nombre == nombre,
+                        Contact.asset_id == asset.id, Contact.tipo == "huesped", Contact.nombre == nombre,
                         Contact.apellidos.is_(None) if apellidos is None else Contact.apellidos == apellidos))
                     if cliente is None:
-                        cliente = Contact(company_id=asset.company_id, tipo="huesped", nombre=nombre[:120],
+                        cliente = clientes.nueva(asset, "huesped", nombre=nombre[:120],
                                           apellidos=apellidos, notas="Alta desde la ocupación del PMS anterior")
                         db.add(cliente)
                         db.flush()
-                    clientes[f["ocupante"].upper()] = cliente
+                    vistos[f["ocupante"].upper()] = cliente
                 if f["telefono"] and not cliente.telefono:
                     cliente.telefono = f["telefono"]
                 estado = "checkin" if alojado else "confirmada"

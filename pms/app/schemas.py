@@ -119,7 +119,8 @@ class UnitBulk(BaseModel):
 # --------------------------------------------------------------------------- terceros
 class ContactIn(BaseModel):
     company_id: int
-    tipo: str  # inquilino | huesped | proveedor
+    asset_id: int | None = None  # activo de la ficha (obligatorio para quien gestiona solo algunos activos)
+    tipo: str  # inquilino | huesped | cliente_garaje
     nombre: str
     apellidos: str | None = None
     documento_tipo: str | None = None

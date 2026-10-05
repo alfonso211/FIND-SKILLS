@@ -102,7 +102,8 @@ def test_no_se_unen_personas_distintas(client, admin, ids):
     # alta manual con un documento que ya tiene ficha
     guest = client.get(f"/api/terceros/{a['guest_id']}", headers=admin).json()
     dup = client.post("/api/terceros", headers=admin, json={"company_id": guest["company_id"], "tipo": "huesped",
-                                                            "nombre": "Otro", "documento_num": "12345678z"})
+                                                            "asset_id": guest["asset_id"], "nombre": "Otro",
+                                                            "documento_num": "12345678z"})
     assert dup.status_code == 400 and "Ya existe" in dup.json()["detail"]
 
 

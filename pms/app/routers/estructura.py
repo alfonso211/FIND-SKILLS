@@ -251,24 +251,17 @@ def _contact_perm(tipo: str, accion: str) -> str:
 
 def _contact_filter(scope: Scope, tipo: str, accion: str):
     """Condición SQL de terceros visibles. Con ámbito de sociedad (o grupo) se ven todos los de la sociedad;
-    con ámbito de activo, solo los vinculados a reservas/contratos de esos activos (p.ej. la recepción de
-    Suite Florida no ve huéspedes de Suite Aeropuerto aunque ambos los gestione la misma sociedad)."""
+    con ámbito de activo, solo las fichas de esos activos: las recepciones no comparten clientes (la de Suite
+    Florida no ve los de Suite Aeropuerto aunque las gestione la misma sociedad)."""
     perm = _contact_perm(tipo, accion)
     comp = scope.company_level_ids(perm)
     if comp is None:
         return None
-    assets = scope.asset_ids(perm) or set()
-    if tipo == "huesped":
-        linked = select(Reservation.guest_id).join(Unit).where(Unit.asset_id.in_(assets or {-1}))
-    elif tipo in ("inquilino", "cliente_garaje"):
-        linked = select(Lease.tenant_id).join(Unit).where(Unit.asset_id.in_(assets or {-1}))
-    else:
-        linked = select(Lease.tenant_id).where(False)
-    return or_(Contact.company_id.in_(comp or {-1}), Contact.id.in_(linked))
+    return or_(Contact.company_id.in_(comp or {-1}), Contact.asset_id.in_(scope.asset_ids(perm) or {-1}))
 
 
 @router.get("/terceros")
-def list_contacts(tipo: str, company_id: int | None = None, q: str | None = None,
+def list_contacts(tipo: str, company_id: int | None = None, asset_id: int | None = None, q: str | None = None,
                   scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     stmt = select(Contact).where(Contact.tipo == tipo)
     cond = _contact_filter(scope, tipo, "ver")
@@ -276,6 +269,8 @@ def list_contacts(tipo: str, company_id: int | None = None, q: str | None = None
         stmt = stmt.where(cond)
     if company_id:
         stmt = stmt.where(Contact.company_id == company_id)
+    if asset_id:
+        stmt = stmt.where(Contact.asset_id == asset_id)
     if q:
         like = f"%{q}%"
         stmt = stmt.where(or_(Contact.nombre.ilike(like), Contact.apellidos.ilike(like),
@@ -283,9 +278,11 @@ def list_contacts(tipo: str, company_id: int | None = None, q: str | None = None
                               Contact.telefono.ilike(like)))
     filas = list(db.scalars(stmt.order_by(Contact.nombre, Contact.apellidos).limit(500)))
     uds = unidades_de(db, [c.id for c in filas])
+    nombres = dict(db.execute(select(Asset.id, Asset.nombre)).all())
     out = []
     for c in filas:
         d = c.to_dict()
+        d["activo"] = nombres.get(c.asset_id)
         u = uds.get(c.id, [])
         d["unidades"] = [x["codigo"] for x in u]
         d["n_apartamentos"] = sum(1 for x in u if x["uso"] != "garaje")
@@ -327,15 +324,16 @@ def _visible(db: Session, scope: Scope, c: Contact, accion: str) -> None:
 
 @router.get("/terceros/duplicados")
 def duplicate_contacts(tipo: str, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    """Fichas con el mismo nombre en la misma sociedad (sin tildes ni mayúsculas). No se unen solas: dos clientes
-    distintos pueden llamarse igual; se revisan y se unen con «fusionar»."""
+    """Fichas con el mismo nombre en el mismo activo (sin tildes ni mayúsculas). No se unen solas: dos clientes
+    distintos pueden llamarse igual; se revisan y se unen con «fusionar». Las de activos distintos no son
+    repetidas: cada recepción tiene su propia ficha del cliente."""
     stmt = select(Contact).where(Contact.tipo == tipo)
     cond = _contact_filter(scope, tipo, "editar")
     if cond is not None:
         stmt = stmt.where(cond)
     grupos: dict[tuple, list[Contact]] = {}
     for c in db.scalars(stmt.order_by(Contact.id)):
-        grupos.setdefault((c.company_id, nif.nombre_clave(c.nombre, c.apellidos)), []).append(c)
+        grupos.setdefault((c.company_id, c.asset_id, nif.nombre_clave(c.nombre, c.apellidos)), []).append(c)
     repetidos = [g for g in grupos.values() if len(g) > 1]
     uds = unidades_de(db, [c.id for g in repetidos for c in g])
     n_res = dict(db.execute(select(Reservation.guest_id, func.count()).where(
@@ -347,6 +345,7 @@ def duplicate_contacts(tipo: str, scope: Scope = Depends(get_scope), db: Session
         docs = {nif.normalizar(c.documento_num) for c in g if c.documento_num}
         principal = max(fichas, key=lambda f: (f["datos"], f["reservas"], -f["id"]))
         out.append({"nombre": f"{g[0].nombre} {g[0].apellidos or ''}".strip(), "fichas": fichas,
+                    "activo": db.get(Asset, g[0].asset_id).nombre if g[0].asset_id else None,
                     "principal": principal["id"], "documentos_distintos": len(docs) > 1})
     return out
 
@@ -372,8 +371,9 @@ def merge_contacts(cid: int, data: MergeIn, scope: Scope = Depends(get_scope), d
             continue
         o = get_or_404(db, Contact, oid)
         _visible(db, scope, o, "editar")
-        if (o.company_id, o.tipo) != (c.company_id, c.tipo):
-            bad_request("Solo se pueden unir fichas de la misma sociedad y del mismo tipo")
+        if (o.company_id, o.tipo) != (c.company_id, c.tipo) or None not in (c.asset_id, o.asset_id) \
+                and c.asset_id != o.asset_id:
+            bad_request("Solo se pueden unir fichas del mismo activo y del mismo tipo: cada recepción tiene las suyas")
         da, db_ = nif.normalizar(c.documento_num), nif.normalizar(o.documento_num)
         if da and db_ and da != db_:
             bad_request(f"{o.nombre} {o.apellidos or ''} tiene otro documento ({o.documento_num}): son personas "
@@ -383,6 +383,7 @@ def merge_contacts(cid: int, data: MergeIn, scope: Scope = Depends(get_scope), d
         bad_request("Indique las fichas que se unen a esta")
     ids = [o.id for o in otros]
     for o in otros:  # datos que faltan en la ficha que se conserva
+        c.asset_id = c.asset_id or o.asset_id
         for k in CAMPOS_FUSION:
             if not getattr(c, k) and getattr(o, k):
                 setattr(c, k, getattr(o, k))
@@ -417,24 +418,30 @@ def contact_detail(cid: int, scope: Scope = Depends(get_scope), db: Session = De
     c = get_or_404(db, Contact, cid)
     _visible(db, scope, c, "ver")
     d = c.to_dict()
+    d["activo"] = db.get(Asset, c.asset_id).nombre if c.asset_id else None
     d["unidades"] = unidades_de(db, [cid]).get(cid, [])
     d["n_apartamentos"] = sum(1 for x in d["unidades"] if x["uso"] != "garaje")
     d["n_estancias"] = db.scalar(select(func.count()).select_from(Reservation).where(Reservation.guest_id == cid))
     return d
 
 
-def _require_contact(scope: Scope, tipo: str, accion: str, company_id: int):
-    ids = scope.company_ids(_contact_perm(tipo, accion))
-    if ids is not None and company_id not in ids:
-        raise HTTPException(403, "Sin permiso sobre terceros de esta sociedad")
-
-
 @router.post("/terceros", status_code=201)
 def create_contact(data: ContactIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    _require_contact(scope, data.tipo, "editar", data.company_id)
+    perm = _contact_perm(data.tipo, "editar")
+    if data.asset_id:
+        a = get_or_404(db, Asset, data.asset_id)
+        if a.company_id != data.company_id:
+            bad_request("El activo no pertenece a la sociedad indicada")
+        scope.require_asset(perm, a.id)
+    else:  # ficha sin activo: solo quien gestiona toda la sociedad
+        comp = scope.company_level_ids(perm)
+        if comp is not None and data.company_id not in comp:
+            bad_request("Indique el activo del cliente")
     doc = nif.normalizar(data.documento_num)
     if doc:
         dup = db.scalar(select(Contact).where(Contact.company_id == data.company_id, Contact.tipo == data.tipo,
+                                              Contact.asset_id.is_(None) if data.asset_id is None
+                                              else Contact.asset_id == data.asset_id,
                                               func.upper(Contact.documento_num) == doc))
         if dup:
             bad_request(f"Ya existe la ficha de {dup.nombre} {dup.apellidos or ''} con el documento {doc}: "
@@ -459,6 +466,8 @@ def update_contact(cid: int, data: ContactIn, scope: Scope = Depends(get_scope),
         raise HTTPException(403, "Sin permiso sobre este tercero")
     if data.company_id != c.company_id or data.tipo != c.tipo:
         bad_request("No se puede cambiar la sociedad ni el tipo de un tercero")
+    if "asset_id" in data.model_fields_set and data.asset_id != c.asset_id:
+        bad_request("No se puede cambiar el activo de la ficha: cada recepción tiene sus clientes")
     ch = apply(c, data)
     registro_viajeros.completar_municipio(c)
     audit(db, scope.user, "editar", "tercero", cid, ch)
