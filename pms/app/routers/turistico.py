@@ -11,10 +11,11 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..database import get_db
-from .. import avisos, contratos, documentos, encuesta_ine, firma_contrato, importacion, planos, registro_viajeros
+from .. import (avisos, contratos, documentos, encuesta_ine, firma_contrato, importacion, planos, recibos,
+               registro_viajeros)
 from ..facturacion import (IVA_ALOJAMIENTO, IVA_GENERAL, datos_cliente, dinero, emitir, linea, lineas_servicios,
                            serie_activo)
-from ..models import (MODALIDADES_RESERVA, AccommodationContract, Asset, Contact, Invoice, Reservation,
+from ..models import (MODALIDADES_RESERVA, AccommodationContract, Asset, Contact, Invoice, Lease, Reservation,
                       ReservationGuest, Unit, User)
 from ..schemas import (AccommodationContractIn, OccupantIn, Payment, ReservationIn, ReservationUpdate,
                        SendContractIn, SignatureIn)
@@ -45,7 +46,8 @@ def _conflict(db: Session, unit_id: int, ent: date, sal: date, exclude_id: int |
         Reservation.fecha_entrada < sal, Reservation.fecha_salida > ent)
     if exclude_id:
         stmt = stmt.where(Reservation.id != exclude_id)
-    return db.scalar(stmt) is not None
+    # una plaza de garaje alquilada por meses a un cliente externo tampoco se puede reservar
+    return db.scalar(stmt) is not None or recibos.solapa_contrato(db, unit_id, ent, sal - timedelta(days=1))
 
 
 def _tourist_unit(db: Session, unit_id: int) -> Unit:
@@ -262,8 +264,11 @@ def availability(asset_id: int, desde: date, hasta: date, capacidad: int = 1, us
         bad_request("Rango de fechas no válido")
     busy = select(Reservation.unit_id).where(Reservation.estado.in_(ACTIVAS),
                                              Reservation.fecha_entrada < hasta, Reservation.fecha_salida > desde)
+    alquiladas = select(Lease.unit_id).where(Lease.estado.in_(("borrador", "vigente")), Lease.fecha_inicio < hasta,
+                                             or_(Lease.fecha_fin.is_(None), Lease.fecha_fin >= desde))
     stmt = select(Unit).where(Unit.asset_id == asset_id, Unit.estado.not_in(NO_ASIGNABLE),
-                              Unit.id.not_in(busy), or_(Unit.capacidad.is_(None), Unit.capacidad >= capacidad),
+                              Unit.id.not_in(busy), Unit.id.not_in(alquiladas),
+                              or_(Unit.capacidad.is_(None), Unit.capacidad >= capacidad),
                               Unit.uso == uso if uso else Unit.uso != "garaje")
     units = [u.to_dict() for u in db.scalars(stmt.order_by(Unit.bloque, Unit.codigo))]
     return {"libres": len(units), "unidades": units}

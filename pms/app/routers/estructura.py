@@ -14,7 +14,8 @@ from ..utils import apply, bad_request, get_or_404, scoped
 router = APIRouter(prefix="/api", tags=["estructura"])
 
 # Qué permiso gobierna cada tipo de tercero
-PERMISO_TERCERO = {"inquilino": "alquiler", "huesped": "reservas", "proveedor": "mantenimiento"}
+PERMISO_TERCERO = {"inquilino": "alquiler", "huesped": "reservas", "proveedor": "mantenimiento",
+                   "cliente_garaje": "reservas"}  # cliente externo de una plaza de garaje (no es huésped)
 
 
 @router.get("/catalogos")
@@ -256,7 +257,7 @@ def _contact_filter(scope: Scope, tipo: str, accion: str):
     assets = scope.asset_ids(perm) or set()
     if tipo == "huesped":
         linked = select(Reservation.guest_id).join(Unit).where(Unit.asset_id.in_(assets or {-1}))
-    elif tipo == "inquilino":
+    elif tipo in ("inquilino", "cliente_garaje"):
         linked = select(Lease.tenant_id).join(Unit).where(Unit.asset_id.in_(assets or {-1}))
     else:  # proveedores: catálogo de la sociedad
         linked = select(Contact.id).where(Contact.company_id.in_(

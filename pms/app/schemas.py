@@ -192,6 +192,41 @@ class LeaseUpdate(BaseModel):
     notas: str | None = None
 
 
+class GarageLeaseIn(BaseModel):
+    """Alquiler mensual de una plaza de garaje a un cliente externo (no es huésped ni ocupante del edificio)."""
+    unit_id: int
+    cliente_id: int | None = None
+    cliente: ContactInline | None = None
+    documentos: list[int] = []
+    referencia: str | None = None
+    fecha_inicio: date
+    fecha_fin: date | None = None  # vacío: indefinido, mes a mes
+    renta_mensual: float = Field(gt=0)  # sin IVA (se factura al 21 %)
+    dia_pago: int = Field(default=5, ge=1, le=28)
+    fianza: float | None = Field(default=None, ge=0)
+    matricula: str | None = Field(default=None, max_length=20)
+    vehiculo: str | None = Field(default=None, max_length=80)
+    mandos: str | None = Field(default=None, max_length=80)
+    notas: str | None = None
+
+
+class GarageLeaseUpdate(BaseModel):
+    referencia: str | None = None
+    fecha_fin: date | None = None
+    renta_mensual: float | None = Field(default=None, gt=0)
+    dia_pago: int | None = Field(default=None, ge=1, le=28)
+    fianza: float | None = Field(default=None, ge=0)
+    matricula: str | None = Field(default=None, max_length=20)
+    vehiculo: str | None = Field(default=None, max_length=80)
+    mandos: str | None = Field(default=None, max_length=80)
+    notas: str | None = None
+
+
+class GarageLeaseEnd(BaseModel):
+    fecha_fin: date
+    motivo: str | None = None
+
+
 class RentUpdate(BaseModel):
     porcentaje: float = Field(ge=-50, le=50)
     motivo: str | None = None

@@ -143,6 +143,10 @@ class Lease(Base):
     # % de IVA. Vacío = según el uso de la unidad (vivienda exenta, resto 21 %)
     tipo_iva: Mapped[float | None] = mapped_column(Numeric(5, 2))
     notas: Mapped[str | None] = mapped_column(Text)
+    # Alquiler de plazas de garaje: vehículo autorizado y mandos o tarjetas de acceso entregados
+    matricula: Mapped[str | None] = mapped_column(String(20))
+    vehiculo: Mapped[str | None] = mapped_column(String(80))
+    mandos: Mapped[str | None] = mapped_column(String(80))
     unit: Mapped[Unit] = relationship()
     tenant: Mapped[Contact] = relationship()
 

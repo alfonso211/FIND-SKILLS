@@ -73,7 +73,7 @@ def test_plano_y_estados(client, admin, ids):
     f = client.get(f"/api/plano/unidades/{reservado['id']}/ficha", headers=admin).json()
     assert f["estado"] == "bloqueado" and f["bloqueos"][0]["motivo"] == "Cambio de suelo del baño"
     assert f["bloqueos"][0]["levantado"] is None and f["reservas"][0]["localizador"] == "PLANO-2"
-    assert f["puede"] == {"reservar": True, "bloquear": True, "incidencia": True}
+    assert f["puede"] == {"reservar": True, "alquilar": False, "bloquear": True, "incidencia": True}
     assert client.post(f"/api/plano/unidades/{reservado['id']}/desbloquear", headers=admin,
                        json={"nota": "Obra terminada"}).json()["estado"] == "disponible"
     f = client.get(f"/api/plano/unidades/{reservado['id']}/ficha", headers=admin).json()

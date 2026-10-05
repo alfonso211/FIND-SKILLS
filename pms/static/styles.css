@@ -354,3 +354,9 @@ body.sin-scroll { overflow: hidden; }
 .plano .puerta { background: #fff; border: 2px dashed #8a8f96; }
 .plano .arbol { background: #d7dbe0 radial-gradient(circle, #fff 0 34%, #555 35% 42%, transparent 43%); }
 .plano.mini .muro { background: #b9bec5 !important; }
+
+/* ---------- alquiler de garajes ---------- */
+.kpis-garaje { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 14px; }
+.kpi.mal { background: #fff1f0; border-color: #f3c4bf; }
+.kpi.mal b { color: var(--bad); }
+@media (max-width: 700px) { .kpis-garaje { grid-template-columns: 1fr 1fr; } }

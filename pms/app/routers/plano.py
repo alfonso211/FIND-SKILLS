@@ -7,13 +7,13 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from .. import planos
 from ..database import get_db
-from ..models import (AccommodationContract, Asset, Contact, Invoice, Reservation, Unit, UnitBlock, User,
-                      WorkOrder)
+from ..models import (MODALIDADES_RESERVA, AccommodationContract, Asset, Charge, Contact, Invoice, Lease,
+                      Reservation, Unit, UnitBlock, User, WorkOrder)
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request, get_or_404
 from .mantenimiento import ABIERTAS
@@ -49,13 +49,18 @@ def estados(db: Session, units: list[Unit], dia: date) -> dict[int, dict]:
         Reservation.unit_id.in_(ids or [-1]), Reservation.estado.in_(("confirmada", "checkin")),
         Reservation.fecha_entrada <= dia, Reservation.fecha_salida > dia)).all()
     por_unidad = {r.unit_id: (r, g) for r, g in res}
+    # plazas de garaje alquiladas por meses a clientes externos
+    alq = {x.unit_id: (x, t) for x, t in db.execute(
+        select(Lease, Contact).join(Contact, Contact.id == Lease.tenant_id).where(
+            Lease.unit_id.in_(ids or [-1]), Lease.estado == "vigente", Lease.fecha_inicio <= dia,
+            or_(Lease.fecha_fin.is_(None), Lease.fecha_fin >= dia))).all()}
     hoy = date.today()
     out = {}
     for u in units:
         r, g = por_unidad.get(u.id, (None, None))
         if u.estado in ESTADOS_BLOQUEO:
             e = "bloqueado"
-        elif r is not None and r.estado == "checkin":
+        elif (r is not None and r.estado == "checkin") or u.id in alq:
             e = "alquilado"
         elif r is not None:
             e = "reserva"
@@ -66,7 +71,11 @@ def estados(db: Session, units: list[Unit], dia: date) -> dict[int, dict]:
         out[u.id] = {"estado": e, "estado_unidad": u.estado, "limpieza": u.estado == "pendiente_limpieza",
                      "reserva": {"id": r.id, "localizador": r.localizador, "huesped": _nombre(g),
                                  "entrada": r.fecha_entrada.isoformat(), "salida": r.fecha_salida.isoformat(),
-                                 "estado": r.estado} if r else None}
+                                 "estado": r.estado} if r else None,
+                     "alquiler": {"id": alq[u.id][0].id, "cliente": _nombre(alq[u.id][1]),
+                                  "desde": alq[u.id][0].fecha_inicio.isoformat(),
+                                  "hasta": alq[u.id][0].fecha_fin.isoformat() if alq[u.id][0].fecha_fin else None,
+                                  "matricula": alq[u.id][0].matricula} if u.id in alq else None}
     return out
 
 
@@ -169,6 +178,8 @@ def unit_sheet(uid: int, scope: Scope = Depends(get_scope), db: Session = Depend
     e = estados(db, [u], hoy)[u.id]
     out = {"unidad": {**u.to_dict(), "tipo": _tipo_corto(u)}, "estado": e["estado"], "limpieza": e["limpieza"],
            "puede": {"reservar": scope.can_asset("reservas.editar", u.asset_id),
+                     "alquilar": u.uso == "garaje" and u.asset.modalidad in MODALIDADES_RESERVA
+                     and scope.can_asset("reservas.editar", u.asset_id),
                      "bloquear": _puede_bloquear(scope, u.asset_id),
                      "incidencia": scope.can_asset("mantenimiento.abrir", u.asset_id)
                      or scope.can_asset("mantenimiento.editar", u.asset_id)}}
@@ -186,6 +197,14 @@ def unit_sheet(uid: int, scope: Scope = Depends(get_scope), db: Session = Depend
                             "telefono": g.telefono, "email": g.email, "nacionalidad": g.nacionalidad,
                             "contrato": r.id in contratos, "notas": r.notas,
                             "proxima": r.fecha_entrada > hoy and r.estado == "confirmada"} for r, g in filas]
+    if u.uso == "garaje" and scope.can_asset("reservas.ver", u.asset_id):
+        out["alquiler"] = e["alquiler"]
+        out["alquileres"] = [
+            {"id": x.id, "cliente": _nombre(t), "telefono": t.telefono, "desde": x.fecha_inicio.isoformat(),
+             "hasta": x.fecha_fin.isoformat() if x.fecha_fin else None, "estado": x.estado,
+             "renta_mensual": float(x.renta_mensual), "matricula": x.matricula}
+            for x, t in db.execute(select(Lease, Contact).join(Contact, Contact.id == Lease.tenant_id)
+                                   .where(Lease.unit_id == uid).order_by(Lease.fecha_inicio.desc()))]
     if scope.can_asset("mantenimiento.ver", u.asset_id):
         out["incidencias"] = _ots(db, WorkOrder.unit_id == uid)
     out["bloqueos"] = [{"id": b.id, "motivo": b.motivo, "desde": b.desde.isoformat(),
@@ -197,8 +216,10 @@ def unit_sheet(uid: int, scope: Scope = Depends(get_scope), db: Session = Depend
     if scope.can_asset("facturas.ver", u.asset_id):
         out["facturas"] = [{"id": f.id, "codigo": f.codigo, "fecha": f.fecha_expedicion.isoformat(),
                             "cliente": f.cliente.get("nombre"), "total": float(f.total), "tipo": f.tipo}
-                           for f in db.scalars(select(Invoice).join(Reservation, Reservation.id == Invoice.reservation_id)
-                                               .where(Reservation.unit_id == uid).order_by(Invoice.id.desc()))]
+                           for f in db.scalars(select(Invoice).where(or_(
+                               Invoice.reservation_id.in_(select(Reservation.id).where(Reservation.unit_id == uid)),
+                               Invoice.charge_id.in_(select(Charge.id).join(Lease).where(Lease.unit_id == uid))))
+                               .order_by(Invoice.id.desc()))]
     return out
 
 
