@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import adjuntos, avisos, documentos, parte_pdf, planos
+from . import personal
 from ..database import get_db
 from ..models import Asset, PreventivePlan, Unit, User, WorkOrder, WorkOrderAttachment
 from ..schemas import PlanIn, PlanUpdate, WorkOrderIn, WorkOrderUpdate
@@ -225,19 +226,66 @@ def work_order_sheet(wid: int, scope: Scope = Depends(get_scope), db: Session = 
     """Parte de incidencia en PDF para entregar a la subcontrata (con las fotos de la avería)."""
     w = get_or_404(db, WorkOrder, wid)
     scope.require_asset("mantenimiento.ver", w.asset_id)
+    pdf = parte(db, w)
+    audit(db, scope.user, "imprimir_parte", "orden_trabajo", wid)
+    db.commit()
+    return Response(pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="Parte_OT-{w.id:05d}.pdf"'})
+
+
+def parte(db: Session, w: WorkOrder) -> bytes:
     asset = db.get(Asset, w.asset_id)
     fotos = [documentos.leer(a.fichero) for a in db.scalars(
-        select(WorkOrderAttachment).where(WorkOrderAttachment.work_order_id == wid, WorkOrderAttachment.tipo == "averia",
+        select(WorkOrderAttachment).where(WorkOrderAttachment.work_order_id == w.id, WorkOrderAttachment.tipo == "averia",
                                           WorkOrderAttachment.mime == "image/jpeg")
         .order_by(WorkOrderAttachment.id).limit(4))]
     abierta = db.get(User, w.abierta_por).nombre if w.abierta_por else None
     pdf = parte_pdf.generar(w, asset, asset.company, db.get(Unit, w.unit_id) if w.unit_id else None, abierta, fotos,
                             w.categoria.replace("_", " ").capitalize(),
                             planos.zonas(asset.codigo).get(w.zona) if w.zona else None)
-    audit(db, scope.user, "imprimir_parte", "orden_trabajo", wid)
+    return pdf
+
+
+@router.post("/ordenes/{wid}/enviar")
+def send_order(wid: int, data: personal.SendIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Envía la OT a las personas de mantenimiento elegidas: por correo, con el parte en PDF (fotos de la avería y
+    hoja para anotar el trabajo); por WhatsApp, el resumen. Si la OT estaba abierta pasa a «asignada»."""
+    w = _open_order(db, wid)
+    if not (scope.can_asset("mantenimiento.editar", w.asset_id) or scope.can_asset("mantenimiento.cerrar", w.asset_id)):
+        raise HTTPException(403, "Sin permiso para enviar órdenes de trabajo en este activo")
+    personas = personal.destinatarios(db, data.personal_ids, w.asset_id, data.canal)
+    asunto, texto, html = mensaje_ot(db, w, data.nota)
+    adj = [(f"Parte_OT-{w.id:05d}.pdf", parte(db, w), "application/pdf")] if data.canal == "email" else None
+    res = personal.despachar(db, personas, data.canal, f"ot_enviada:{w.id}", asunto, texto, html, adj)
+    personal.registrar_envio_ot(w, res, scope.user.nombre)
+    if any(r["ok"] for r in res):
+        if not w.asignado_a:
+            w.asignado_a = ", ".join(p.nombre for p in personas)[:120]
+        if w.estado == "abierta":
+            w.estado = "asignada"
+    audit(db, scope.user, "enviar", "orden_trabajo", wid, {"canal": data.canal, "personal": [p.nombre for p in personas]})
     db.commit()
-    return Response(pdf, media_type="application/pdf",
-                    headers={"Content-Disposition": f'attachment; filename="Parte_OT-{w.id:05d}.pdf"'})
+    return {"enviados": res, "orden": _wo_out(w, db)}
+
+
+def mensaje_ot(db: Session, w: WorkOrder, nota: str | None = None) -> tuple[str, str, str]:
+    a = db.get(Asset, w.asset_id)
+    lugar = personal._lugar(db, w.asset_id, w.unit_id, w.zona)
+    filas = [("Orden", f"OT-{w.id:05d}"), ("Activo", a.nombre), ("Ubicación", lugar), ("Avería / trabajo", w.titulo),
+             ("Prioridad", w.prioridad.upper() if w.prioridad == "urgente" else w.prioridad),
+             ("Instalación", w.categoria), ("Descripción", w.descripcion or "—")]
+    if w.fecha_prevista:
+        filas.append(("Fecha prevista", f"{w.fecha_prevista:%d/%m/%Y}"))
+    if w.bloquea_unidad:
+        filas.append(("Unidad", "Bloqueada hasta terminar el trabajo"))
+    if nota:
+        filas.append(("Nota", nota))
+    asunto = f"{'URGENTE · ' if w.prioridad == 'urgente' else ''}OT-{w.id:05d} · {a.nombre} · {lugar}: {w.titulo}"[:200]
+    texto = "\n".join(f"{k}: {v}" for k, v in filas) + "\n\nAl terminar, avise a recepción indicando el trabajo realizado."
+    html = avisos._html(f"Orden de trabajo OT-{w.id:05d}", avisos._tabla([], [[k, v] for k, v in filas])
+                        + "<p>Se adjunta el parte en PDF. Al terminar, avise a recepción indicando el trabajo "
+                          "realizado.</p>")
+    return asunto, texto, html
 
 
 class ConfirmWork(BaseModel):

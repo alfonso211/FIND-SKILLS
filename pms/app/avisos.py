@@ -17,12 +17,12 @@ from email.utils import formataddr, make_msgid
 from html import escape
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from .config import settings
 from .database import SessionLocal
 from .models import (MODALIDADES_RESERVA, Asset, Charge, Contact, EmailLog, Lease, PreventivePlan, Reservation,
-                     Unit, User, WorkOrder)
+                     StaffMember, Unit, User, WorkOrder)
 from .planos import zonas
 from .security import Scope
 
@@ -175,8 +175,39 @@ def ot_urgente(wid: int, autor_id: int | None) -> int:
             if db.scalar(select(EmailLog.id).where(EmailLog.clave == clave, EmailLog.user_id == user.id, EmailLog.ok)):
                 continue  # ya avisado de esta OT
             enviados += _enviar_registrado(db, user, user.email, clave, "ot_urgente", asunto, texto, html)
+        enviados += _ot_urgente_personal(db, w)
         db.commit()
         return enviados
+
+
+def _ot_urgente_personal(db, w: WorkOrder) -> int:
+    """Personal de mantenimiento con «avisar de las urgentes»: recibe la OT con el parte en PDF, sin esperar a que
+    alguien se la envíe."""
+    from .routers.mantenimiento import mensaje_ot, parte  # import local: el router importa este módulo
+    from .routers.personal import registrar_envio_ot
+    personas = [p for p in db.scalars(select(StaffMember).where(
+        StaffMember.activo, StaffMember.avisar_urgentes, StaffMember.area == "mantenimiento",
+        StaffMember.email.is_not(None), or_(StaffMember.asset_id.is_(None), StaffMember.asset_id == w.asset_id)))
+        if not db.scalar(select(EmailLog.id).where(EmailLog.clave == f"ot_urgente:{w.id}:p{p.id}", EmailLog.ok))]
+    if not personas:
+        return 0
+    asunto, texto, html = mensaje_ot(db, w)
+    adj = [(f"Parte_OT-{w.id:05d}.pdf", parte(db, w), "application/pdf")]
+    res = []
+    for p in personas:
+        try:
+            enviar(p.email, asunto, texto, html, adj)
+            ok, error = True, None
+        except Exception as e:  # noqa: BLE001
+            ok, error = False, str(e)[:300]
+            log.warning("OT urgente %s a %s no enviada: %s", w.id, p.email, error)
+        db.add(EmailLog(clave=f"ot_urgente:{w.id}:p{p.id}", tipo="ot_urgente", destinatario=p.email,
+                        asunto=asunto[:200], ok=ok, error=error))
+        res.append({"canal": "email", "destino": p.email, "nombre": p.nombre, "ok": ok})
+    registrar_envio_ot(w, res, "Aviso automático (urgente)")
+    if any(r["ok"] for r in res) and w.estado == "abierta":
+        w.estado = "asignada"
+    return sum(r["ok"] for r in res)
 
 
 # --------------------------------------------------------------------------- resumen diario
