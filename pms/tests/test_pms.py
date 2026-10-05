@@ -102,9 +102,27 @@ def test_reservation_flow(client, admin, ids):
     # check-in exige datos del parte de viajeros
     assert client.post(f"/api/turistico/reservas/{res['id']}/checkin", headers=admin).status_code == 400
     guest = client.get("/api/terceros?tipo=huesped&q=Ana", headers=admin).json()[0]
-    upd = {**{k: guest[k] for k in ("company_id", "tipo", "nombre", "apellidos")},
-           "documento_tipo": "DNI", "documento_num": "12345678Z", "nacionalidad": "ESP", "fecha_nacimiento": "1990-01-01"}
-    assert client.put(f"/api/terceros/{guest['id']}", headers=admin, json=upd).status_code == 200
+    upd = {**{k: guest[k] for k in ("company_id", "tipo", "nombre")}, "apellidos": "López Ruiz",
+           "documento_tipo": "DNI", "documento_num": "12345678Z", "num_soporte": "BAA123456", "nacionalidad": "ESP",
+           "fecha_nacimiento": "1990-01-01", "sexo": "F", "telefono": "600111222", "direccion": "C/ Alcalá 10, 3º B",
+           "cp": "28009", "municipio": "Madrid", "pais": "España"}
+    assert client.put(f"/api/terceros/{guest['id']}", headers=admin, json=upd).json()["municipio_ine"] == "28079"
+    # reserva para 2: falta registrar al segundo ocupante
+    falta = client.post(f"/api/turistico/reservas/{res['id']}/checkin", headers=admin)
+    assert falta.status_code == 400 and "1 ocupante(s) por registrar" in falta.json()["detail"]
+    hijo = {"contact": {"nombre": "Pablo", "apellidos": "López Ruiz", "fecha_nacimiento": d(-365 * 6),
+                        "sexo": "M", "nacionalidad": "España", "direccion": "C/ Alcalá 10, 3º B", "cp": "28009",
+                        "municipio": "Madrid", "pais": "España"}}
+    sin_parentesco = client.post(f"/api/turistico/reservas/{res['id']}/ocupantes", headers=admin, json=hijo)
+    assert sin_parentesco.status_code == 400  # menor sin parentesco
+    o = client.post(f"/api/turistico/reservas/{res['id']}/ocupantes", headers=admin, json={**hijo, "parentesco": "HJ"})
+    assert o.status_code == 201, o.text
+    assert o.json()["menor"] and o.json()["faltan"] == []  # menor sin documento: registro manual válido
+    lista = client.get(f"/api/turistico/reservas/{res['id']}/ocupantes", headers=admin).json()
+    assert [x["titular"] for x in lista["ocupantes"]] == [True, False] and lista["pendiente"] == []
+    contrato = client.get(f"/api/turistico/reservas/{res['id']}/contrato", headers=admin).json()["datos"]
+    assert contrato["ocupantes"].splitlines() == [
+        "Ana López Ruiz (DNI 12345678Z)", "Pablo López Ruiz (menor, 5 años, sin documento, hijo/a de un adulto de la reserva)"]
     assert client.post(f"/api/turistico/reservas/{res['id']}/checkin", headers=admin).json()["estado"] == "checkin"
     panel = {a["codigo"]: a for a in client.get("/api/panel", headers=admin).json()["activos"]}
     assert panel["SFL"]["ocupacion_hoy"] > 0 and panel["SFL"]["llegadas_hoy"] >= 1

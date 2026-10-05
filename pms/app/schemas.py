@@ -40,6 +40,7 @@ class AssetIn(BaseModel):
     contrato_representante: str | None = None
     contrato_representante_dni: str | None = None
     contrato_email: str | None = None
+    ses_codigo_establecimiento: str | None = None
     notas: str | None = None
 
 
@@ -58,6 +59,7 @@ class AssetUpdate(BaseModel):
     contrato_representante: str | None = None
     contrato_representante_dni: str | None = None
     contrato_email: str | None = None
+    ses_codigo_establecimiento: str | None = None
     notas: str | None = None
 
 
@@ -132,6 +134,7 @@ class ContactIn(BaseModel):
     direccion: str | None = None
     cp: str | None = None
     municipio: str | None = None
+    municipio_ine: str | None = None  # se calcula del municipio y el C.P. si no se indica
     pais: str | None = None
     iban: str | None = None
     notas: str | None = None
@@ -154,6 +157,7 @@ class ContactInline(BaseModel):
     direccion: str | None = None
     cp: str | None = None
     municipio: str | None = None
+    municipio_ine: str | None = None  # se calcula del municipio y el C.P. si no se indica
     pais: str | None = None
 
 
@@ -297,6 +301,28 @@ class ReservationUpdate(BaseModel):
     importe_total: float | None = Field(default=None, ge=0)  # lo cobrado solo cambia con "Cobro" (factura)
     estado: str | None = None
     notas: str | None = None
+
+
+class OccupantIn(BaseModel):
+    """Ocupante de una reserva: ficha nueva (`contact`) o un huésped ya existente (`contact_id`)."""
+    contact_id: int | None = None
+    contact: ContactInline | None = None
+    parentesco: Literal["PM", "TU", "HR", "AB", "TI", "SB", "BA", "CY", "HJ", "NI", "BN", "CD", "SG", "YN", "OT"] | None = None
+    documentos: list[int] = []  # copias escaneadas antes de crear la ficha
+
+
+class SignatureIn(BaseModel):
+    """Firma del cliente en la tablet (imagen PNG en data URL) y aceptación expresa."""
+    firma: str = Field(min_length=200, max_length=2_000_000)
+    acepta: bool
+    acepta_privacidad: bool
+    email: str | None = None
+    movil: str | None = None
+
+
+class SendContractIn(BaseModel):
+    canal: Literal["email", "whatsapp"]
+    destino: str = Field(min_length=5, max_length=160)
 
 
 class AccommodationContractIn(BaseModel):

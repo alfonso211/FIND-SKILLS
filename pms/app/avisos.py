@@ -54,12 +54,14 @@ def remitente() -> str | None:
     return settings.smtp_from or settings.smtp_user
 
 
-def enviar(destino: str, asunto: str, texto: str, html: str) -> None:
-    """Envía un correo. Lanza excepción si falla."""
+def enviar(destino: str, asunto: str, texto: str, html: str,
+           adjuntos: list[tuple[str, bytes, str]] | None = None) -> None:
+    """Envía un correo. `adjuntos`: [(nombre, contenido, tipo MIME)]. Lanza excepción si falla."""
     if not configurado():
         raise RuntimeError("Correo no configurado (falta PMS_SMTP_HOST en el servidor)")
     if settings.smtp_host == "memoria":
-        BANDEJA.append({"para": destino, "asunto": asunto, "texto": texto, "html": html})
+        BANDEJA.append({"para": destino, "asunto": asunto, "texto": texto, "html": html,
+                        "adjuntos": [(n, len(c), m) for n, c, m in adjuntos or []]})
         return
     msg = EmailMessage()
     msg["From"] = formataddr(("INVERPMS · Grupo INVERSIETE", remitente()))
@@ -68,6 +70,9 @@ def enviar(destino: str, asunto: str, texto: str, html: str) -> None:
     msg["Message-ID"] = make_msgid(domain=(remitente() or "pms").split("@")[-1])
     msg.set_content(texto)
     msg.add_alternative(html, subtype="html")
+    for nombre, contenido, mime in adjuntos or []:
+        tipo, _, sub = mime.partition("/")
+        msg.add_attachment(contenido, maintype=tipo, subtype=sub, filename=nombre)
     ctx = ssl.create_default_context()
     if settings.smtp_seguridad == "ssl":
         smtp = smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=30, context=ctx)

@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from .. import marca
+from .. import marca, registro_viajeros
 from ..database import get_db
 from ..facturacion import FORMAS_PAGO
 from ..models import ESTADOS_UNIDAD, MODALIDADES, USOS_UNIDAD, Asset, Company, Contact, Lease, Reservation, Unit
@@ -32,7 +32,15 @@ def catalogos(scope: Scope = Depends(get_scope)):
                        "pendiente_cierre", "cerrada", "cancelada"],
         "prioridades": ["baja", "media", "alta", "urgente"],
         "formas_pago": FORMAS_PAGO,
+        "parentescos": registro_viajeros.PARENTESCOS,
+        "paises": registro_viajeros.lista_paises(),
     }
+
+
+@router.get("/municipios")
+def municipios(q: str, cp: str | None = None, scope: Scope = Depends(get_scope)):
+    """Búsqueda en el nomenclátor de municipios del INE (para el domicilio de los residentes en España)."""
+    return registro_viajeros.buscar_municipios(q, cp)
 
 
 # --------------------------------------------------------------------------- sociedades
@@ -282,6 +290,7 @@ def _require_contact(scope: Scope, tipo: str, accion: str, company_id: int):
 def create_contact(data: ContactIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     _require_contact(scope, data.tipo, "editar", data.company_id)
     c = Contact(**data.model_dump(exclude={"documentos"}))
+    registro_viajeros.completar_municipio(c)
     db.add(c)
     db.flush()
     if data.documentos:
@@ -301,6 +310,7 @@ def update_contact(cid: int, data: ContactIn, scope: Scope = Depends(get_scope),
     if data.company_id != c.company_id or data.tipo != c.tipo:
         bad_request("No se puede cambiar la sociedad ni el tipo de un tercero")
     ch = apply(c, data)
+    registro_viajeros.completar_municipio(c)
     audit(db, scope.user, "editar", "tercero", cid, ch)
     db.commit()
     return c.to_dict()

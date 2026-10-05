@@ -29,8 +29,10 @@ def test_plano_y_estados(client, admin, ids):
     r = client.post("/api/turistico/reservas", headers=admin, json={
         "unit_id": alojado["id"], "localizador": "PLANO-1", "fecha_entrada": HOY.isoformat(),
         "fecha_salida": (HOY + timedelta(days=2)).isoformat(),
-        "guest": {"nombre": "Rosa", "apellidos": "Plano", "documento_num": "22222222J", "nacionalidad": "ESP",
-                  "fecha_nacimiento": "1980-01-01", "telefono": "611222333"}}).json()
+        "guest": {"nombre": "Rosa", "apellidos": "Plano Gil", "documento_tipo": "DNI", "documento_num": "22222222J",
+                  "num_soporte": "BAA000000", "nacionalidad": "ESP", "fecha_nacimiento": "1980-01-01", "sexo": "F",
+                  "telefono": "611222333", "direccion": "C/ Mayor 1", "cp": "28013", "municipio": "Madrid",
+                  "pais": "España"}}).json()
     assert client.post(f"/api/turistico/reservas/{r['id']}/checkin", headers=admin).status_code == 200
     reservado = _unidad(client, admin, sae, "B-306")
     client.post("/api/turistico/reservas", headers=admin, json={
@@ -42,7 +44,7 @@ def test_plano_y_estados(client, admin, ids):
     assert [x["resumen"]["total"] for x in p["plantas"]] == [48, 60, 64, 64, 64]
     assert not any(c["t"] == "falta" for x in p["plantas"] for c in x["celdas"])
     c305, c306 = _celda(p, "B-305"), _celda(p, "B-306")
-    assert c305["estado"] == "alquilado" and c305["reserva"]["huesped"] == "Rosa Plano"
+    assert c305["estado"] == "alquilado" and c305["reserva"]["huesped"] == "Rosa Plano Gil"
     assert c306["estado"] == "reserva" and c306["reserva"]["localizador"] == "PLANO-2"
     assert _celda(p, "A-127")["tipo"] == "2d" and _celda(p, "B-111")["tipo"] == "Est"
     assert _celda(p, "B-213")["tipo"] == "1d TG" and _celda(p, "A-464")["tipo"] == "1d G"
@@ -74,7 +76,7 @@ def test_plano_y_estados(client, admin, ids):
     f = client.get(f"/api/plano/unidades/{reservado['id']}/ficha", headers=admin).json()
     assert f["bloqueos"][0]["nota_levantado"] == "Obra terminada" and f["estado"] == "reserva"
     f = client.get(f"/api/plano/unidades/{alojado['id']}/ficha", headers=admin).json()
-    assert f["actual"]["huesped"] == "Rosa Plano" and f["reservas"][0]["telefono"] == "611222333"
+    assert f["actual"]["huesped"] == "Rosa Plano Gil" and f["reservas"][0]["telefono"] == "611222333"
     client.post(f"/api/turistico/reservas/{r['id']}/checkout", headers=admin)
 
 
