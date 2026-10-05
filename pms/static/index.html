@@ -3,24 +3,34 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PMS Grupo INVERSIETE</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22 fill=%22%2313294b%22/%3E%3Cpath d=%22M4 12V5l4-2 4 2v7%22 stroke=%22%23c8a24a%22 stroke-width=%221.6%22 fill=%22none%22/%3E%3C/svg%3E">
+  <title>INVERPMS · Grupo INVERSIETE</title>
+  <link rel="icon" type="image/png" href="/static/marca/favicon.png">
+  <link rel="apple-touch-icon" href="/static/marca/favicon.png">
+  <meta name="theme-color" content="#0e0e10">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
   <div id="login" class="login hidden">
+    <div class="login-wrap">
+    <img class="login-logo" src="/static/marca/inversiete-oscuro.png" alt="INVERSIETE">
+    <div class="wordmark">INVER<b>PMS</b></div>
     <form id="loginForm" class="login-card">
-      <h1>PMS <span>Grupo INVERSIETE</span></h1>
+      <h1>Acceso a la plataforma de gestión</h1>
       <label>Email<input name="email" type="email" required autocomplete="username"></label>
       <label>Contraseña<input name="password" type="password" required autocomplete="current-password"></label>
       <button class="btn primary" type="submit">Entrar</button>
       <p id="loginError" class="error"></p>
     </form>
+    <div class="login-pie">
+      <img src="/static/marca/comercial_del_campo-oscuro.png" alt="Comercial del Campo">
+      <img src="/static/marca/edificios_cameranos-oscuro.png" alt="Edificios Cameranos">
+    </div>
+    </div>
   </div>
 
   <div id="app" class="layout hidden">
     <aside class="sidebar">
-      <div class="brand">PMS <small>Grupo INVERSIETE</small></div>
+      <div class="brand"><img src="/static/marca/inversiete-marca-oscuro.png" alt=""><div><div class="wordmark">INVER<b>PMS</b></div><small>Grupo INVERSIETE</small></div></div>
       <nav id="nav"></nav>
     </aside>
     <main>
@@ -29,7 +39,7 @@
         <h2 id="viewTitle"></h2>
         <div class="topbar-right">
           <select id="assetFilter" title="Filtrar por activo"></select>
-          <span id="userName" class="user"></span>
+          <div class="usuario"><span id="userAvatar" class="avatar"></span><span id="userName" class="user"></span></div>
           <button id="logoutBtn" class="btn ghost">Salir</button>
         </div>
       </header>

@@ -1,4 +1,4 @@
-"""Modelo de datos del PMS Grupo INVERSIETE.
+"""Modelo de datos de INVERPMS (Grupo INVERSIETE).
 
 Jerarquía:  Sociedad -> Activo -> Unidad
 Cada activo tiene una *modalidad* de explotación (alquiler residencial,

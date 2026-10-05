@@ -91,7 +91,7 @@ def test_adjuntos_y_parte(client, admin, ids):
                      "INVERSIETE S.A.", "A rellenar por la subcontrata", "FOTOS DE LA AVERÍA"):
         assert esperado in texto, esperado
     imagenes = [o for o in pdfium.PdfDocument(r.content)[0].get_objects() if o.type == pdfium.raw.FPDF_PAGEOBJ_IMAGE]
-    assert len(imagenes) == 1  # la foto de la avería que queda (la otra se borró)
+    assert len(imagenes) == 3  # logotipos de INVERSIETE y del activo + la foto que queda (la otra se borró)
     # sin permiso sobre el activo
     rec_sfl = _usuario(client, admin, ids, "recepcion.adjuntos.sfl@inversiete.com", "Recepción", "SFL")
     assert client.get(base, headers=rec_sfl).status_code == 403

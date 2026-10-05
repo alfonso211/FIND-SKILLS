@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from .. import marca
 from ..database import get_db
 from ..facturacion import FORMAS_PAGO
 from ..models import ESTADOS_UNIDAD, MODALIDADES, USOS_UNIDAD, Asset, Company, Contact, Lease, Reservation, Unit
@@ -35,11 +36,15 @@ def catalogos(scope: Scope = Depends(get_scope)):
 
 
 # --------------------------------------------------------------------------- sociedades
+def _company_out(c: Company) -> dict:
+    return {**c.to_dict(), "logo": marca.url(marca.clave_sociedad(c.cif))}
+
+
 @router.get("/sociedades")
 def list_companies(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     ids = None if scope.is_group_level("usuarios.gestionar") else scope.company_ids("activos.ver")
     rows = db.scalars(scoped(select(Company).order_by(Company.id), Company.id, ids))
-    return [c.to_dict() for c in rows]
+    return [_company_out(c) for c in rows]
 
 
 @router.post("/sociedades", status_code=201)
@@ -50,7 +55,7 @@ def create_company(data: CompanyIn, scope: Scope = Depends(get_scope), db: Sessi
     db.flush()
     audit(db, scope.user, "crear", "sociedad", c.id, data.model_dump())
     db.commit()
-    return c.to_dict()
+    return _company_out(c)
 
 
 @router.put("/sociedades/{cid}")
@@ -60,12 +65,14 @@ def update_company(cid: int, data: CompanyIn, scope: Scope = Depends(get_scope),
     ch = apply(c, data)
     audit(db, scope.user, "editar", "sociedad", cid, ch)
     db.commit()
-    return c.to_dict()
+    return _company_out(c)
 
 
 # --------------------------------------------------------------------------- activos
 def _asset_out(a: Asset, n_units: int) -> dict:
     d = a.to_dict()
+    d["logo"] = marca.url(marca.clave_activo(a.codigo))
+    d["logo_sociedad"] = marca.url(marca.clave_sociedad(a.company.cif))
     d["sociedad"] = a.company.nombre  # gestora
     d["propietaria"] = a.propietaria.nombre if a.propietaria else a.company.nombre
     d["modalidad_nombre"] = MODALIDADES.get(a.modalidad, a.modalidad)

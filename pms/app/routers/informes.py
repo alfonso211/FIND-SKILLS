@@ -286,7 +286,7 @@ def report(informe: str, desde: date | None = None, hasta: date | None = None, a
     wb.remove(wb.active)
     GENERADORES[informe](db, scope, wb, desde, hasta, asset_id)
     wb.properties.title = f"{INFORMES[informe]} {desde:%d/%m/%Y}-{hasta:%d/%m/%Y}"
-    wb.properties.creator = "PMS Grupo INVERSIETE"
+    wb.properties.creator = "INVERPMS"
     out = BytesIO()
     wb.save(out)
     audit(db, scope.user, "informe", informe, None, {"desde": str(desde), "hasta": str(hasta), "asset_id": asset_id})
