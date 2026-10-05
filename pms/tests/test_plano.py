@@ -211,3 +211,21 @@ def test_garajes_suite_aeropuerto(client, admin, ids):
     dis = client.get(f"/api/turistico/disponibilidad?asset_id={sae}&desde={HOY + timedelta(days=300)}"
                      f"&hasta={HOY + timedelta(days=301)}&uso=garaje", headers=admin).json()
     assert dis["libres"] == 242
+
+
+def test_reserva_futura_cambia_el_color_al_momento(client, admin, ids):
+    """Una reserva que empieza otro día pinta el apartamento como «reserva» desde que se hace (próxima llegada)."""
+    sfl = ids["assets"]["SFL"]["id"]
+    u = _unidad(client, admin, sfl, "P2-1O")
+    llegada = HOY + timedelta(days=12)
+    r = client.post("/api/turistico/reservas", headers=admin, json={
+        "unit_id": u["id"], "fecha_entrada": llegada.isoformat(), "fecha_salida": (llegada + timedelta(days=3)).isoformat(),
+        "guest": {"nombre": "Llega Más Tarde"}}).json()
+    p = client.get(f"/api/plano/{sfl}", headers=admin).json()
+    c = _celda(p, "P2-1O")
+    assert c["estado"] == "reserva" and c["reserva"]["proxima"] and c["reserva"]["entrada"] == llegada.isoformat()
+    ficha = client.get(f"/api/plano/unidades/{u['id']}/ficha", headers=admin).json()
+    assert ficha["estado"] == "reserva" and ficha["actual"]["huesped"] == "Llega Más Tarde"
+    # al cancelarla vuelve a disponible
+    client.post(f"/api/turistico/reservas/{r['id']}/cancelar", headers=admin)
+    assert _celda(client.get(f"/api/plano/{sfl}", headers=admin).json(), "P2-1O")["estado"] == "disponible"
