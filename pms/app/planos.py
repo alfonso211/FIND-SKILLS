@@ -9,14 +9,15 @@ Para añadir el plano de otro activo (Suite Florida) basta con escribir su funci
 """
 
 # Suite Aeropuerto (C/ Campezo 8): 17 columnas x 11 filas, igual en todas las plantas salvo la 1ª y la 2ª.
-# Mitad superior = bloque A (escalera roja), mitad inferior = bloque B (escalera verde).
+# La entrada del edificio son las flechas (a la derecha del croquis). Entrando, el bloque A queda a la derecha
+# (mitad superior, escalera roja) y el bloque B a la izquierda (mitad inferior, escalera verde).
 COLUMNAS_SAE, FILAS_SAE = 17, 11
 
 ZONAS_SAE = [  # (fila, columna, código, nombre): esquinas de los pasillos, a cada lado del edificio
-    (2, 1, "A-PISCINA", "Bloque A · lado piscina"),
-    (2, 17, "A-JARDIN", "Bloque A · lado jardín"),
-    (10, 1, "B-PISCINA", "Bloque B · lado piscina"),
-    (10, 17, "B-JARDIN", "Bloque B · lado jardín"),
+    (2, 1, "A-PISCINA", "Bloque A (derecha) · lado piscina"),
+    (2, 17, "A-ENTRADA", "Bloque A (derecha) · lado entrada"),
+    (10, 1, "B-PISCINA", "Bloque B (izquierda) · lado piscina"),
+    (10, 17, "B-ENTRADA", "Bloque B (izquierda) · lado entrada"),
 ]
 
 
@@ -45,7 +46,7 @@ def _sae_decoracion(p: str) -> dict[tuple[int, int], dict]:
         pon(5, c, "jar"), pon(7, c, "jar")
     pon(5, 17, "pat"), pon(7, 17, "pat")
     for c in (13, 14, 15, 16, 17):
-        pon(6, c, "acc")
+        pon(6, c, "acc", "←")
     return d
 
 

@@ -220,7 +220,8 @@ function gridPlano(pl, planta, mini = false) {
     if (c.t === "zc") return `<div class="pc zc pc-zc" style="${pos}" data-z="${esc(c.zona)}" title="${esc(c.nombre)}${c.ot ? ` · ${c.ot} incidencia(s) abierta(s)` : ""}">${mini ? "" : `<b>ZC</b>${c.ot ? `<span class="m${c.urgente ? " urg" : ""}">${c.ot}</span>` : ""}`}</div>`;
     if (c.t === "falta") return `<div class="pc falta" style="${pos}" title="El ${esc(c.num)} no existe en las unidades del PMS">${mini ? "" : esc(c.num) + "?"}</div>`;
     if (c.t === "lbl") return `<div class="pc lbl lbl-${esc(c.texto)}" style="${pos}">${mini ? "" : esc(c.texto)}</div>`;
-    return `<div class="pc ${c.t}" style="${pos}">${mini ? "" : esc(c.texto || DECOR[c.t] || "")}</div>`;
+    const TIT = { acc: "Entrada del edificio", pis: "Piscina", jar: "Jardín", asc: "Ascensor", esc: "Escalera", escA: "Escalera bloque A", escB: "Escalera bloque B", ter: "Terraza" };
+    return `<div class="pc ${c.t}" style="${pos}"${TIT[c.t] ? ` title="${TIT[c.t]}"` : ""}>${mini ? "" : esc(c.texto || DECOR[c.t] || "")}</div>`;
   }).join("");
   return `<div class="plano${mini ? " mini" : ""}" style="grid-template-columns:repeat(${pl.columnas},minmax(0,1fr));grid-template-rows:repeat(${pl.filas},auto)">${celdas}</div>`;
 }
@@ -248,6 +249,7 @@ V.plano = async (el) => {
       <div class="marcadores">${ESTADOS_PLANO.map(([k, t]) => `<div><i class="pc-${k}"></i><span>${t}</span><b>${r[k]}</b></div>`).join("")}
       <div class="total"><span>Total en planta</span><b>${r.total}</b></div></div>
       <div class="marcadores ayuda"><div><i class="pc-zc"></i><span>Zona común: incidencias de ese lado del edificio</span></div>
+      <div><span class="m-ej" style="background:#fff;color:#111;border-color:#111">←</span><span>Entrada del edificio. Entrando: bloque A a la derecha, bloque B a la izquierda</span></div>
       <div><span class="m-ej">M</span><span>Mantenimiento pendiente (rojo: urgente)</span></div><div><span class="m-ej lim">L</span><span>Pendiente de limpieza</span></div></div>
       <p class="muted">Pulse un apartamento para ver su ficha completa, reservar, bloquear o abrir una incidencia.</p>`;
     $("#grid", el).querySelectorAll("[data-u]").forEach((c) => (c.onclick = () => fichaApartamento(Number(c.dataset.u), recarga)));

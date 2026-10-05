@@ -48,7 +48,7 @@ def test_plano_y_estados(client, admin, ids):
     assert _celda(p, "B-213")["tipo"] == "1d TG" and _celda(p, "A-464")["tipo"] == "1d G"
     assert (_celda(p, "B-401")["f"], _celda(p, "B-401")["c"]) == (11, 13)  # misma posición que el croquis
     zonas = [c for c in p["plantas"][3]["celdas"] if c["t"] == "zc"]
-    assert [z["zona"] for z in zonas] == ["P4-A-PISCINA", "P4-A-JARDIN", "P4-B-PISCINA", "P4-B-JARDIN"]
+    assert [z["zona"] for z in zonas] == ["P4-A-PISCINA", "P4-A-ENTRADA", "P4-B-PISCINA", "P4-B-ENTRADA"]
     # el día siguiente la reserva de PLANO-2 ya ha salido
     manana = client.get(f"/api/plano/{sae}?fecha={(HOY + timedelta(days=1)).isoformat()}", headers=admin).json()
     assert _celda(manana, "B-306")["estado"] == "disponible"
@@ -81,18 +81,18 @@ def test_plano_y_estados(client, admin, ids):
 def test_zonas_comunes_y_permisos(client, admin, ids):
     sae = ids["assets"]["SAE"]["id"]
     w = client.post("/api/mantenimiento/ordenes", headers=admin, json={
-        "asset_id": sae, "zona": "P4-B-JARDIN", "titulo": "Fluorescente fundido en pasillo", "categoria": "electricidad"})
+        "asset_id": sae, "zona": "P4-B-ENTRADA", "titulo": "Fluorescente fundido en pasillo", "categoria": "electricidad"})
     assert w.status_code == 201, w.text
-    assert w.json()["zona_nombre"] == "Planta 4ª · Bloque B · lado jardín"
+    assert w.json()["zona_nombre"] == "Planta 4ª · Bloque B (izquierda) · lado entrada"
     assert client.post("/api/mantenimiento/ordenes", headers=admin, json={
         "asset_id": sae, "zona": "P9-X", "titulo": "x"}).status_code == 400
     u = _unidad(client, admin, sae, "B-401")
     assert client.post("/api/mantenimiento/ordenes", headers=admin, json={
-        "asset_id": sae, "zona": "P4-B-JARDIN", "unit_id": u["id"], "titulo": "x"}).status_code == 400
-    z = client.get(f"/api/plano/{sae}/zonas/P4-B-JARDIN", headers=admin).json()
-    assert z["nombre"] == "Planta 4ª · Bloque B · lado jardín" and z["incidencias"][0]["titulo"].startswith("Fluorescente")
+        "asset_id": sae, "zona": "P4-B-ENTRADA", "unit_id": u["id"], "titulo": "x"}).status_code == 400
+    z = client.get(f"/api/plano/{sae}/zonas/P4-B-ENTRADA", headers=admin).json()
+    assert z["nombre"] == "Planta 4ª · Bloque B (izquierda) · lado entrada" and z["incidencias"][0]["titulo"].startswith("Fluorescente")
     p = client.get(f"/api/plano/{sae}", headers=admin).json()
-    zc = [c for c in p["plantas"][3]["celdas"] if c.get("zona") == "P4-B-JARDIN"][0]
+    zc = [c for c in p["plantas"][3]["celdas"] if c.get("zona") == "P4-B-ENTRADA"][0]
     assert zc["ot"] == 1
     parte = client.get(f"/api/mantenimiento/ordenes/{w.json()['id']}/parte", headers=admin)
     assert parte.status_code == 200
