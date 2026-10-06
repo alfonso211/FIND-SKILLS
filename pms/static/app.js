@@ -2042,6 +2042,10 @@ V.informes = async (el) => {
     <span class="muted">Activo: ${esc(S.asset ? assetName(Number(S.asset)) : "todos los de su ámbito")} (filtro de arriba)</span></div>
     <div class="cards">${INF.map(([k, t, d]) => `<div class="card"><h3>${esc(t)}</h3><p class="sub">${esc(d)}</p><button class="btn primary" data-inf="${k}">Descargar Excel</button></div>`).join("")}</div>`;
   el.querySelectorAll("[data-inf]").forEach((b) => (b.onclick = () => run(() => download("GET", `/api/informes/${b.dataset.inf}?` + new URLSearchParams(clean({ desde: $("#d", el).value, hasta: $("#h", el).value, asset_id: S.asset }))))));
+  if (can("facturas.ver") || can("documentos.ver")) {
+    $(".cards", el).insertAdjacentHTML("beforeend", '<div class="card"><h3>Exportar a INVERGESTION</h3><p class="sub">Facturas emitidas y recibidas en CSV con sus PDF, según la especificación de INVERGESTION. Envío semanal; histórico desde el 1 de enero de 2026.</p><button class="btn primary" id="invg">Preparar exportación</button></div>');
+    $("#invg", el).onclick = exportarInvergestion;
+  }
   if (can("finanzas.ver")) {
     $(".cards", el).insertAdjacentHTML("beforeend", `<div class="card"><h3>Programa anterior (SYADE)</h3><p class="sub">Facturación de 2026 importada de SYADE (alojamiento, servicios, abonos y fianzas) para ver la producción antes de que el PMS facture.</p>
       <div class="toolbar"><button class="btn" id="histVer">Ver resumen</button>${can("facturas.rectificar") ? '<button class="btn primary" id="histImp">Importar listados</button>' : ""}</div></div>`);
@@ -2112,6 +2116,49 @@ async function resumenHistorico() {
     const r = await run(() => api("DELETE", `/api/historico?asset_id=${b.dataset.borra}`));
     toast(`${r.borrados} registros borrados`); $("#modal").close();
   }));
+}
+
+// ---- exportación a INVERGESTION: facturas emitidas y recibidas (CSV + PDF), envío semanal
+function semanaPasada() {
+  const d = new Date(today() + "T00:00:00"), dia = (d.getDay() + 6) % 7;  // lunes = 0
+  const lunes = new Date(d); lunes.setDate(d.getDate() - dia - 7);
+  const domingo = new Date(lunes); domingo.setDate(lunes.getDate() + 6);
+  return [isoLocal(lunes), isoLocal(domingo)];
+}
+function exportarInvergestion() {
+  const [d0, d1] = semanaPasada();
+  const f = cerrarSolo(form("Exportar a INVERGESTION", [
+    { html: `<p>Genera los ficheros de la especificación de INVERGESTION: <b>EMITIDAS</b> y <b>RECIBIDAS</b> en CSV y, junto a cada uno, un .zip con los PDF de las facturas.</p>
+      <ul class="muted"><li>Emitidas: las <b>emitidas</b> en el periodo (aunque su fecha de factura sea el último día del mes) y las <b>cobradas</b> en el periodo, para informar el cobro.</li>
+      <li>Recibidas: las de la cuenta de gastos con fecha de factura, registro o pago en el periodo.</li>
+      <li>INVERGESTION actualiza las facturas que ya tiene: se pueden repetir periodos sin duplicar nada.</li></ul>` },
+    { k: "desde", t: "Desde", type: "date", req: true, def: d0 }, { k: "hasta", t: "Hasta", type: "date", req: true, def: d1 },
+    { k: "activo", t: "Activo", type: "select", req: true, def: "TODOS", options: [["TODOS", "Todos"], ["SFLORIDA", "Suite Florida"], ["SAEROPUERTO", "Suite Aeropuerto"], ["BABILONIA35", "C/ Babilonia 35"]] },
+    { k: "emitidas", t: "Facturas emitidas", type: "checkbox", def: true }, { k: "recibidas", t: "Facturas recibidas", type: "checkbox", def: true },
+    { k: "pdf", t: "Incluir los PDF de las facturas (.zip)", type: "checkbox", def: true, wide: true },
+    { html: `<div class="toolbar"><button type="button" class="btn sm" data-p="semana">Semana pasada</button><button type="button" class="btn sm" data-p="mes">Este mes</button>
+      <button type="button" class="btn sm" data-p="hist">Histórico 2026</button><span class="spacer"></span>
+      <button type="button" class="btn" data-comprobar>Comprobar</button><button type="button" class="btn primary" data-bajar>Descargar ficheros</button></div><div data-res></div>` },
+  ], {}, async () => {}));
+  $("#modal").classList.add("ancho");
+  const v = () => ({ desde: f.elements.desde.value, hasta: f.elements.hasta.value, activo: f.elements.activo.value,
+    tipos: [f.elements.emitidas.checked && "emitidas", f.elements.recibidas.checked && "recibidas"].filter(Boolean).join(","), pdf: f.elements.pdf.checked });
+  f.querySelectorAll("[data-p]").forEach((b) => (b.onclick = () => {
+    const [a, z] = b.dataset.p === "semana" ? semanaPasada() : b.dataset.p === "mes" ? [today().slice(0, 8) + "01", today()] : ["2026-01-01", today()];
+    f.elements.desde.value = a; f.elements.hasta.value = z;
+  }));
+  $("[data-comprobar]", f).onclick = async () => {
+    const q = v(); if (!q.tipos) return toast("Elija emitidas, recibidas o ambas", true);
+    const r = await run(() => get("/api/exportacion/invergestion/comprobar", { desde: q.desde, hasta: q.hasta, activo: q.activo, tipos: q.tipos }));
+    $("[data-res]", f).innerHTML = Object.entries(r).map(([t, x]) => `<fieldset><legend>${t === "emitidas" ? "Facturas emitidas" : "Facturas recibidas"} · ${esc(x.csv)}</legend>
+      <p><b>${x.facturas}</b> factura(s) · ${x.filas} fila(s) · ${x.ficheros} PDF · total ${eur(x.total)}</p>
+      ${x.n_avisos ? `<p class="error">${x.n_avisos} aviso(s): INVERGESTION rechazaría esas filas hasta corregirlas.</p><ul class="muted">${x.avisos.map((a) => `<li>${esc(a)}</li>`).join("")}</ul>` : '<p class="ok">✔ Sin avisos: cumple la especificación.</p>'}</fieldset>`).join("");
+  };
+  $("[data-bajar]", f).onclick = () => {
+    const q = v(); if (!q.tipos) return toast("Elija emitidas, recibidas o ambas", true);
+    toast("Preparando los ficheros…");
+    run(() => download("GET", "/api/exportacion/invergestion?" + new URLSearchParams(q)));
+  };
 }
 
 // Factura solo de servicios: a un cliente externo (p.ej. plaza de aparcamiento) o al huésped de una reserva
