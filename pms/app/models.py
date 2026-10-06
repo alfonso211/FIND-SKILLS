@@ -503,6 +503,8 @@ class User(Base):
     debe_cambiar_password: Mapped[bool] = mapped_column(Boolean, default=False)
     # avisos por correo que quiere recibir (None = todos los que le permiten sus permisos)
     avisos: Mapped[list | None] = mapped_column(JSON)
+    # presidencia: los demás no pueden asignarle tareas, recordatorios ni convocarle (él sí a ellos)
+    no_asignable: Mapped[bool] = mapped_column(Boolean, default=False)
     assignments: Mapped[list["Assignment"]] = relationship(cascade="all, delete-orphan", lazy="selectin")
 
 
@@ -552,3 +554,47 @@ class EmailLog(Base):
     asunto: Mapped[str] = mapped_column(String(200))
     ok: Mapped[bool] = mapped_column(Boolean, default=True)
     error: Mapped[str | None] = mapped_column(String(300))
+
+
+# --------------------------------------------------------------------------- agenda
+TIPOS_AGENDA = {"reunion": "Reunión", "tarea": "Tarea", "recordatorio": "Recordatorio", "evento": "Evento"}
+VISIBILIDADES = {"privada": "Privada (solo yo)", "compartida": "Solo las personas indicadas",
+                 "publica": "Pública (todos los usuarios)"}
+REPETICIONES = {"": "No se repite", "diaria": "Cada día", "semanal": "Cada semana", "mensual": "Cada mes",
+                "anual": "Cada año"}
+
+
+class AgendaEvent(Base):
+    """Reunión, tarea, recordatorio o evento del calendario. Privada (solo el autor), compartida (autor y
+    participantes) o pública (todos los usuarios)."""
+    __tablename__ = "agenda"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tipo: Mapped[str] = mapped_column(String(20), default="evento")
+    titulo: Mapped[str] = mapped_column(String(200))
+    descripcion: Mapped[str | None] = mapped_column(Text)
+    lugar: Mapped[str | None] = mapped_column(String(200))
+    inicio: Mapped[datetime] = mapped_column(DateTime, index=True)
+    fin: Mapped[datetime | None] = mapped_column(DateTime)
+    todo_el_dia: Mapped[bool] = mapped_column(Boolean, default=False)
+    visibilidad: Mapped[str] = mapped_column(String(20), default="privada")
+    prioridad: Mapped[str] = mapped_column(String(10), default="normal")  # normal | alta
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("activos.id"))  # activo relacionado (opcional)
+    repeticion: Mapped[str | None] = mapped_column(String(10))  # diaria | semanal | mensual | anual
+    repetir_hasta: Mapped[date | None] = mapped_column(Date)
+    aviso_min: Mapped[int | None] = mapped_column(Integer)  # aviso por correo X minutos antes
+    hecha: Mapped[bool] = mapped_column(Boolean, default=False)  # tarea terminada (también por participantes)
+    hecha_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    hecha_en: Mapped[datetime | None] = mapped_column(DateTime)
+    creador_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), index=True)
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    participantes: Mapped[list["AgendaParticipant"]] = relationship(cascade="all, delete-orphan", lazy="selectin")
+
+
+class AgendaParticipant(Base):
+    __tablename__ = "agenda_participantes"
+    __table_args__ = (UniqueConstraint("event_id", "user_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("agenda.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), index=True)
+    respuesta: Mapped[str] = mapped_column(String(12), default="pendiente")  # pendiente | acepta | rechaza
+    visto: Mapped[bool] = mapped_column(Boolean, default=False)

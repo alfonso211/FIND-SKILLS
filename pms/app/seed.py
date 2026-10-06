@@ -52,6 +52,7 @@ ACTIVOS = [
 # Puestos aún sin titular (recepción 3, limpieza y mantenimiento de cada Suite) se darán de alta desde
 # Administración > Usuarios cuando se asignen.
 PASSWORD_INICIAL = "00000000"
+PRESIDENCIA = {"jr@inversiete.es"}  # no se le pueden asignar tareas ni convocar (ver agenda)
 USUARIOS_INICIALES = [  # (email, nombre, rol, código de activo o None = todo el grupo)
     ("jr@inversiete.es", "Presidente", "Dirección Grupo", None),
     ("barbara@inversiete.es", "Director General", "Dirección Grupo", None),
@@ -69,6 +70,7 @@ def _usuarios_iniciales(db: Session, assets: dict[str, Asset]) -> None:
     for email, nombre, rol, codigo in USUARIOS_INICIALES:
         a = assets[codigo] if codigo else None
         db.add(User(email=email, nombre=nombre, password_hash=pw, debe_cambiar_password=True,
+                    no_asignable=email in PRESIDENCIA,
                     assignments=[Assignment(role_id=roles[rol].id, asset_id=a.id if a else None,
                                             company_id=a.company_id if a else None)]))
 
