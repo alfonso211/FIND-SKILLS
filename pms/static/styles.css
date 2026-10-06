@@ -440,3 +440,6 @@ ul.checklist .ck-acc { display: flex; gap: 6px; align-items: center; }
 ul.checklist .ck-acc select { width: auto; }
 table.inv input, table.inv select { width: 100%; min-width: 0; padding: 4px 6px; }
 @media (max-width: 640px) { ul.checklist li { grid-template-columns: 28px 1fr; } ul.checklist .ck-acc { grid-column: 2; } }
+.aviso-cobro { border-left-color: #c0392b; background: #fff5f3; border-color: #f1c9c2; }
+.aviso-cobro h4 { color: #8e2a1f; }
+.aviso-cobro .btn { margin-top: 8px; }

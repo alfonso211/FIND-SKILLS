@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 
 from .. import hitos
 from ..database import get_db
-from ..facturacion import bases_por_tipo
-from ..models import MODALIDADES, Asset, Charge, Invoice, Lease, Reservation, Unit, WorkOrder
+from ..facturacion import bases_por_tipo, pendientes_cobro
+from ..models import MODALIDADES, MODALIDADES_RESERVA, Asset, Charge, Invoice, Lease, Reservation, Unit, WorkOrder
 from ..security import Scope, get_scope
 from . import historico
 from .mantenimiento import ABIERTAS
@@ -100,6 +100,12 @@ def panel(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
             k["produccion_mes"] = round(base - garaje + externo, 2)
             k["produccion_mes_externa"] = round(externo, 2)  # parte importada del programa anterior (SYADE)
             k["garajes_facturado_mes"] = round(garaje, 2)
+
+        if scope.can_asset("facturas.ver", a.id) and a.modalidad in MODALIDADES_RESERVA:
+            pend = pendientes_cobro(db, {a.id})
+            k["facturas_pendientes"] = len(pend)
+            k["facturas_pendientes_importe"] = round(sum(f["total"] for f in pend), 2)
+            k["facturas_pendientes_dias"] = max((f["dias"] for f in pend), default=0)
 
         if scope.can_asset("mantenimiento.ver", a.id):
             wo = select(func.count()).select_from(WorkOrder).where(

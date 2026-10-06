@@ -43,12 +43,14 @@ TIPOS = {
                           "(resumen diario)", "reservas.ver"),
     "garajes_vencen": ("Plazas de garaje alquiladas a clientes externos: bajas en los próximos 30 días "
                        "(resumen diario)", "reservas.ver"),
+    "facturas_pendientes": ("Facturas emitidas pendientes de cobro (renovaciones y reservas que pagan por "
+                            "transferencia): revisar si ha llegado el pago (resumen diario)", "facturas.ver"),
     "hitos_normativos": ("Hitos normativos (Verifactu, factura electrónica…) con antelación para adaptar el PMS "
                          "(resumen diario)", "finanzas.ver"),
     "agenda": ("Agenda: tareas, reuniones y recordatorios que le envían, aviso antes de cada cita y su agenda del "
                "día en el resumen", None),
 }
-RESUMEN = ("hitos_normativos", "estancias_vencidas", "recibos_impagados", "contratos_vencen", "garajes_impagados",
+RESUMEN = ("hitos_normativos", "facturas_pendientes", "estancias_vencidas", "recibos_impagados", "contratos_vencen", "garajes_impagados",
            "garajes_vencen", "revisiones_normativas")
 DIAS_ESTANCIAS = 3
 DIAS_GARAJES = 30
@@ -274,7 +276,11 @@ def _datos_resumen(db, dia: date) -> dict[str, list[tuple[int, list]]]:
                                        f"VENCIDA hace {-dias} días" if dias < 0 else "sale hoy" if dias == 0
                                        else f"en {dias} días"]))
     normativos = [(None, [h.titulo, h.fecha.strftime("%d/%m/%Y"), h.detalle]) for h in hitos.para_correo(dia)]
-    return {"hitos_normativos": normativos, "estancias_vencidas": estancias, "recibos_impagados": recibos, "contratos_vencen": contratos,
+    from .facturacion import pendientes_cobro
+    facturas = [(f["asset_id"], [f["activo"], f["codigo"], f"{date.fromisoformat(f['fecha']):%d/%m/%Y}", f["cliente"],
+                                 f["unidad"] or "", f"{f['total']:,.2f} €".replace(",", "X").replace(".", ",")
+                                 .replace("X", "."), f"{f['dias']} días"]) for f in pendientes_cobro(db, None, dia)]
+    return {"hitos_normativos": normativos, "facturas_pendientes": facturas, "estancias_vencidas": estancias, "recibos_impagados": recibos, "contratos_vencen": contratos,
             "garajes_impagados": garajes,
             "garajes_vencen": garajes_fin, "revisiones_normativas": revisiones}
 
@@ -283,6 +289,9 @@ SECCIONES = {
     "agenda": ("Su agenda de hoy y tareas pendientes", ["Hora", "Tipo", "Asunto", "De", "Situación"], "cita(s) en agenda"),
     "hitos_normativos": ("Hitos normativos: preparar el PMS con tiempo", ["Hito", "Fecha límite", "Qué hacer"],
                          "hito(s) normativo(s)"),
+    "facturas_pendientes": ("Facturas pendientes de cobro: compruebe si ha llegado la transferencia y márquela "
+                            "cobrada", ["Activo", "Factura", "Fecha", "Cliente", "Apartamento", "Total", "Pendiente"],
+                            "factura(s) pendiente(s) de cobro"),
     "recibos_impagados": ("Recibos vencidos sin cobrar", ["Activo", "Unidad", "Inquilino", "Periodo", "Vencimiento",
                                                           "Retraso", "Pendiente"], "recibo(s) impagado(s)"),
     "contratos_vencen": ("Contratos que vencen", ["Activo", "Unidad", "Inquilino", "Fin de contrato", "Quedan"],
