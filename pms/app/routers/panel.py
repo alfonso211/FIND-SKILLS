@@ -10,6 +10,7 @@ from ..database import get_db
 from ..facturacion import bases_por_tipo
 from ..models import MODALIDADES, Asset, Charge, Invoice, Lease, Reservation, Unit, WorkOrder
 from ..security import Scope, get_scope
+from . import historico
 from .mantenimiento import ABIERTAS
 from ..utils import scoped
 
@@ -94,7 +95,10 @@ def panel(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
                     Invoice.fecha_expedicion < fin_mes)))):
                 base += float(f.base_imponible)
                 garaje += bases.get("garaje", 0)
-            k["produccion_mes"] = round(base - garaje, 2)
+            externo = historico.mensual(db, [a.id], ini_mes, fin_mes - timedelta(days=1)).get(
+                (a.id, f"{ini_mes:%Y-%m}"), {}).get("base", 0)
+            k["produccion_mes"] = round(base - garaje + externo, 2)
+            k["produccion_mes_externa"] = round(externo, 2)  # parte importada del programa anterior (SYADE)
             k["garajes_facturado_mes"] = round(garaje, 2)
 
         if scope.can_asset("mantenimiento.ver", a.id):
