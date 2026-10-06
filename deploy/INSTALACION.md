@@ -155,9 +155,28 @@ crontab -e
 15 3 * * * /opt/pms/deploy/backup.sh >> /var/log/pms-backup.log 2>&1
 ```
 
-**Copia fuera del servidor (obligatoria):** active el servicio de backup de Arsys o copie a diario
-`/var/backups/pms` a otro almacenamiento (p.ej. almacenamiento de objetos de Arsys o el NAS de la oficina).
-Una copia que solo está en el mismo servidor no protege ante la pérdida del servidor.
+**Copia fuera del servidor (obligatoria):** una copia que solo está en el mismo servidor no protege ante la pérdida
+del servidor. `backup.sh` sube cada copia, **cifrada**, a Google Drive (carpeta `CopiasPMS`, 90 días) si existe el
+remoto de rclone `pmscopia`. Configuración, una sola vez:
+
+```bash
+apt install -y rclone
+# desde el ordenador, entrar con un túnel para la autorización de Google:  ssh -L 53682:localhost:53682 root@<IP>
+rclone config create pmsdrive drive scope drive.file
+#   → abrir en el navegador del ordenador el enlace http://127.0.0.1:53682/auth?... y autorizar con la cuenta de Google
+read -s -p "Contraseña de cifrado de las copias: " P && rclone config create pmscopia crypt remote pmsdrive:CopiasPMS \
+  filename_encryption off directory_name_encryption false password "$P" --obscure > /dev/null && unset P
+/opt/pms/deploy/backup.sh     # debe terminar con «subida a Google Drive OK»
+```
+
+En Drive los ficheros se ven con su fecha (`pms_AAAAMMDD_HHMM.dump.bin`) pero su contenido está cifrado: sin la
+**contraseña de cifrado de las copias** no se pueden abrir. Guárdela en papel junto a `PMS_DOCS_KEY`.
+
+**Recuperar desde Google Drive** (servidor nuevo: instalar rclone y repetir la configuración con la misma contraseña):
+
+```bash
+rclone copy pmscopia: /var/backups/pms --include "*AAAAMMDD_HHMM*"
+```
 
 **Restaurar una copia:**
 
@@ -168,6 +187,8 @@ docker compose exec -T db dropdb -U pms pms
 docker compose exec -T db createdb -U pms pms
 docker compose exec -T db pg_restore -U pms -d pms --no-owner < /var/backups/pms/pms_AAAAMMDD_HHMM.dump
 docker compose start app
+# documentos escaneados (cifrados con PMS_DOCS_KEY), con la aplicación ya arrancada:
+docker compose exec -T app tar xzf - -C /data < /var/backups/pms/documentos_AAAAMMDD_HHMM.tar.gz
 ```
 
 Haga una restauración de prueba al menos una vez al trimestre.
