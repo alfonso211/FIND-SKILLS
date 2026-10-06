@@ -178,6 +178,14 @@ def es_menor(nacimiento: date | None, en: date) -> bool:
     return e is not None and e < 18
 
 
+EDAD_SIN_PLAZA = 16  # los menores de 16 años no ocupan plaza (cuentan como «niños» en la reserva)
+
+
+def ocupa_plaza(nacimiento: date | None, en: date) -> bool:
+    e = edad(nacimiento, en)
+    return e is None or e >= EDAD_SIN_PLAZA
+
+
 def faltan_persona(c, titular: bool, parentesco: str | None, en: date) -> list[str]:
     """Datos que faltan para el parte de viajeros. `c` es la ficha (Contact) del ocupante."""
     f = []

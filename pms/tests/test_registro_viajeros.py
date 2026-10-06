@@ -172,3 +172,26 @@ def test_firma_en_tablet_y_envio(client, admin, ids):
 
     hist = client.get(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin).json()["historial"]
     assert hist[0]["firmado"] and {e["canal"] for e in hist[0]["envios"]} == {"email", "whatsapp"}
+
+
+def test_menores_de_16_no_ocupan_plaza(client, admin, ids):
+    sae = ids["assets"]["SAE"]["id"]
+    entrada = date(HOY.year + 3, 5, 10)
+    with pytest.raises(AssertionError, match="capacidad"):  # 1 dormitorio: 2 plazas
+        _reserva(client, admin, sae, "A-133", entrada, 2, adultos=3, ninos=0)
+    r = _reserva(client, admin, sae, "A-133", entrada, 2, adultos=2, ninos=2)  # los menores de 16 no cuentan
+    url = f"/api/turistico/reservas/{r['id']}"
+    assert client.put(url, headers=admin, json={"adultos": 3}).status_code == 400
+    assert client.put(url, headers=admin, json={"notas": "cuna"}).status_code == 200
+
+    ocup = f"{url}/ocupantes"
+    assert client.get(ocup, headers=admin).status_code == 200  # el titular ocupa la primera plaza
+    _ocupantes(client, admin, r["id"])  # adulto (2.ª plaza) y una niña de 4 años (sin plaza)
+    nino = {"contact": {"nombre": "Pablo", "apellidos": "Smith", "sexo": "M", "nacionalidad": "España",
+                        "fecha_nacimiento": (entrada - timedelta(days=365 * 15 + 30)).isoformat()}, "parentesco": "HJ"}
+    assert client.post(ocup, headers=admin, json=nino).status_code == 201  # 15 años: sin plaza
+    joven = {"contact": {"nombre": "Ana", "apellidos": "Smith", "sexo": "F", "nacionalidad": "España",
+                         "fecha_nacimiento": (entrada - timedelta(days=365 * 16 + 30)).isoformat()}, "parentesco": "HJ"}
+    res = client.post(ocup, headers=admin, json=joven)  # 16 años: ocupa plaza y ya no quedan
+    assert res.status_code == 400 and "menores de 16" in res.json()["detail"]
+    assert rv.ocupa_plaza(None, entrada) and not rv.ocupa_plaza(date(entrada.year - 15, 1, 1), entrada)
