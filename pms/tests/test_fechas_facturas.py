@@ -18,7 +18,7 @@ def test_vencimiento_de_facturas_recibidas(client, admin, ids):
     bab = ids["assets"]["BAB35"]["id"]
     base = {"asset_id": bab, "fecha": "2025-03-10", "categoria": next(iter(client.get(
         "/api/gastos/catalogos", headers=admin).json()["categorias"])), "concepto": "Factura de prueba",
-        "total": 121, "tipo_iva": 21, "numero_factura": "PRV-2030-77"}
+        "total": 121, "tipo_iva": 21, "numero_factura": "PRV-2030-77", "forma_pago": "transferencia"}
     assert client.post("/api/gastos", headers=admin, json={**base, "vencimiento": "2025-03-01"}).status_code == 400
     g = client.post("/api/gastos", headers=admin, json={**base, "vencimiento": "2025-04-09"})
     assert g.status_code == 201, g.text

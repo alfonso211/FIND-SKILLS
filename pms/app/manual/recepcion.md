@@ -51,4 +51,5 @@
 ## Documentos recibidos
 - Las facturas y cartas que lleguen: **Documentos recibidos → Subir documento** (foto o PDF), con la **fecha de la factura** y su **vencimiento**.
 - **Muy importante**: la fecha es la **impresa en la factura**, no la de hoy. De ella depende el trimestre del IVA. El programa ya no la rellena sola.
-- Si se equivocó: **Cuenta de gastos → Editar** y corrija la **Fecha de la factura**.
+- Indique siempre **cómo se paga**: **Transferencia** (la pagamos nosotros) o **Cargo en cuenta (domiciliación)** (el proveedor la carga en el banco). Es obligatorio.
+- Si se equivocó: **Cuenta de gastos → Editar** y corrija la **Fecha de la factura** o la forma de pago.

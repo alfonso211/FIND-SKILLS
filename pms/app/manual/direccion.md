@@ -26,7 +26,7 @@
 
 ## Gastos
 - **Documentos recibidos**: carpeta de facturas y cartas de cada activo.
-- **Cuenta de gastos**: con **fecha de factura y vencimiento**; las pendientes vencidas se marcan en rojo. Exportable a Excel.
+- **Cuenta de gastos**: con **fecha de factura, vencimiento y forma de pago** (transferencia o cargo en cuenta); las pendientes vencidas se marcan en rojo y las que no tienen forma de pago muestran «falta forma de pago». Exportable a Excel.
 
 ## Administración
 - **Usuarios** y **Roles y permisos**: alta de personas y qué puede hacer cada una en cada activo.

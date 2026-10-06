@@ -2583,7 +2583,7 @@ function camposGasto(C, unidades) {
     { k: "total", t: "Importe total € (IVA incluido)", type: "number" },
     { k: "tipo_iva", t: "IVA %", type: "select", options: C.ivas.map((x) => [x, `${x} %`]), def: 21 },
     { k: "base", t: "Base € (solo si hay varios tipos de IVA)", type: "number" },
-    { k: "forma_pago", t: "Forma de pago", type: "select", options: kv(C.formas_pago) },
+    { k: "forma_pago", t: "Se paga por (transferencia o cargo en cuenta)", type: "select", options: kv(C.formas_pago) },
     { k: "pagado", t: "Pagado", type: "checkbox" }, { k: "fecha_pago", t: "Fecha de pago", type: "date" },
   ];
 }
@@ -2597,6 +2597,7 @@ function datosGasto(d, extra = {}) {
   if (!d.categoria) throw new Error("Elija la categoría del gasto");
   if (d.total == null) throw new Error("Indique el importe total del gasto");
   if (d.ambito === "apartamento" && !d.unit_id) throw new Error("Elija el apartamento del gasto");
+  if (!d.forma_pago) throw new Error("Indique cómo se paga: transferencia o cargo en cuenta (domiciliación)");
   return clean({ categoria: d.categoria, ambito: d.ambito, unit_id: d.unit_id ? Number(d.unit_id) : null, ambito_detalle: d.ambito_detalle,
     concepto: d.concepto, total: d.total, tipo_iva: Number(d.tipo_iva ?? 21), base: d.base, forma_pago: d.forma_pago, pagado: !!d.pagado, fecha_pago: d.fecha_pago, ...extra });
 }
@@ -2703,17 +2704,20 @@ V.gastos = async (el) => {
       [eur(t.pendiente_pago), "Pendiente de pago", t.pendiente_pago > 0 ? "mal" : ""], [t.sin_documento, "Apuntes sin documento", t.sin_documento ? "mal" : ""],
       ...Object.entries(t.por_categoria).slice(0, 4).map(([c, v]) => [eur(v), c])]
       .map(([v, l, cls]) => `<div class="kpi ${cls || ""}"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("");
+    const FORMAS_GASTO = (await catGastos()).formas_pago;
     table($("#t", el), [
       { k: "fecha", t: "Fecha", f: fdate }, { k: "activo", t: "Activo" }, { k: "lugar", t: "Imputado a" }, { k: "categoria_nombre", t: "Categoría" },
       { k: "concepto", t: "Concepto" }, { k: "proveedor", t: "Proveedor", f: (v, g) => `${esc(v || "")}${g.numero_factura ? `<div class="muted peq">${esc(g.numero_factura)}</div>` : ""}` },
       { k: "base", t: "Base", num: true, f: eur }, { k: "cuota", t: "IVA", num: true, f: (v, g) => `${eur(v)}<div class="muted peq">${g.tipo_iva} %</div>` },
       { k: "total", t: "Total", num: true, f: eur },
       { k: "pagado", t: "Pago", f: (v, g) => (v ? `<span class="badge b-vigente">pagado</span><div class="muted peq">${fdate(g.fecha_pago)}</div>`
-        : `<span class="badge ${g.vencimiento && g.vencimiento < today() ? "b-cancelada" : "b-pendiente"}">${g.vencimiento && g.vencimiento < today() ? "vencida" : "pendiente"}</span>${g.vencimiento ? `<div class="muted peq">vence ${fdate(g.vencimiento)}</div>` : ""}`) },
+        : `<span class="badge ${g.vencimiento && g.vencimiento < today() ? "b-cancelada" : "b-pendiente"}">${g.vencimiento && g.vencimiento < today() ? "vencida" : "pendiente"}</span>${g.vencimiento ? `<div class="muted peq">vence ${fdate(g.vencimiento)}</div>` : ""}`)
+        + (g.forma_pago ? `<div class="muted peq">${esc(FORMAS_GASTO[g.forma_pago] || g.forma_pago)}</div>` : '<div><span class="badge b-cancelada">falta forma de pago</span></div>') },
       { k: "documento_tipo", t: "Documento", f: (v) => (v ? esc(v) : '<span class="badge b-cancelada">sin documento</span>') },
     ], r.gastos, (g) => [
       g.documento_id && ["Ver", () => abrirFichero(`/api/documentos-recibidos/${g.documento_id}/fichero`)],
-      editar && !g.pagado && ["Pagado", () => run(() => put(`/api/gastos/${g.id}`, { ...g, pagado: true, fecha_pago: today(), base: null }), "Marcado como pagado").then(load)],
+      editar && !g.pagado && ["Pagado", () => g.forma_pago ? run(() => put(`/api/gastos/${g.id}`, { ...g, pagado: true, fecha_pago: today(), base: null }), "Marcado como pagado").then(load)
+        : (toast("Indique antes cómo se paga: transferencia o cargo en cuenta", true), editarGasto(g, load))],
       editar && ["Editar", () => editarGasto(g, load)],
       editar && ["Borrar", async () => { if (confirm(`¿Borrar el gasto «${g.concepto}»?`)) { await run(() => api("DELETE", `/api/gastos/${g.id}`), "Gasto borrado"); load(); } }, "danger"],
     ]);

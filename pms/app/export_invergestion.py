@@ -235,6 +235,8 @@ def recibidas(db: Session, asset_ids: set[int], desde: date, hasta: date) -> tup
         forma = FORMAS_RECIBIDAS.get(g.forma_pago or "")
         if not forma:
             forma = "TRANSFERENCIA"
+            avisos.append(f"{_limpio(g.proveedor, 40)} nº {numero}: sin forma de pago (transferencia o cargo en "
+                          "cuenta); se envía TRANSFERENCIA. Indíquela en Cuenta de gastos → Editar")
         isp = "S" if Decimal(str(g.tipo_iva)) == 0 and pais and pais != "ES" else "N"
         filas.append({
             "activo": codigo_activo(a), "nif_receptor": a.company.cif, "proveedor_nombre": _limpio(g.proveedor),
