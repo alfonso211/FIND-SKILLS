@@ -6,8 +6,13 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from .config import settings
 
-_connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-engine = create_engine(settings.database_url, connect_args=_connect_args)
+if settings.database_url.startswith("sqlite"):
+    engine = create_engine(settings.database_url, connect_args={"check_same_thread": False})
+else:
+    # Postgres: margen para los picos (el panel pide varias cosas a la vez por usuario), conexiones comprobadas
+    # antes de usarlas y renovadas cada 30 min
+    engine = create_engine(settings.database_url, pool_size=20, max_overflow=30, pool_timeout=60,
+                           pool_pre_ping=True, pool_recycle=1800)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
