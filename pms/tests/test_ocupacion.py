@@ -102,8 +102,8 @@ def test_fichero_no_valido(client, admin, ids):
 def test_formato_suite_florida(client, admin, ids):
     """Listado de Suite Florida: portal y «planta letra»; las columnas cambian de sitio según la página."""
     sfl = ids["assets"]["SFL"]["id"]
-    vigente = (HOY - timedelta(days=3), HOY + timedelta(days=27))
-    fechas = f"{f(vigente[0])}{f(vigente[1])}     30"
+    futura = (HOY + timedelta(days=700), HOY + timedelta(days=730))  # lejos: no choca con otras pruebas
+    fechas = f"{f(futura[0])}{f(futura[1])}     30"
     wb = Workbook()
     ws = wb.active
     ws.title = "Table 1"
