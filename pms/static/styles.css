@@ -443,3 +443,13 @@ table.inv input, table.inv select { width: 100%; min-width: 0; padding: 4px 6px;
 .aviso-cobro { border-left-color: #c0392b; background: #fff5f3; border-color: #f1c9c2; }
 .aviso-cobro h4 { color: #8e2a1f; }
 .aviso-cobro .btn { margin-top: 8px; }
+
+/* manual de uso */
+.manual { max-width: 860px; line-height: 1.55; }
+.manual h2 { margin: 0 0 10px; color: var(--brand-2); }
+.manual h3 { margin: 18px 0 6px; font-size: 16px; }
+.manual h4 { margin: 12px 0 4px; font-size: 14px; }
+.manual ul, .manual ol { margin: 4px 0 8px; padding-left: 22px; }
+.manual li.sub { margin-left: 18px; list-style: disc; font-size: 13px; color: var(--muted, #555); }
+.manual blockquote { margin: 8px 0; padding: 6px 12px; border-left: 3px solid var(--brand-2); background: var(--bg, #f7f5f0); }
+.manual code { background: #f1f1f1; padding: 0 4px; border-radius: 4px; }
