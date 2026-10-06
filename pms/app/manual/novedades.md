@@ -1,5 +1,10 @@
 # Novedades
 
+## 2026-10-06 · Versión 1.2 · Forma de pago de las facturas recibidas
+- **Recepción y dirección**: al registrar una factura recibida es **obligatorio** indicar si se paga por **Transferencia** o si está **Cargada en cuenta (domiciliación)**.
+- **Recepción y dirección**: en **Cuenta de gastos** se ve la forma de pago de cada factura; las antiguas sin ella muestran **«falta forma de pago»** (complétela con **Editar**).
+- **Dirección**: la exportación a INVERGESTION envía TRANSFERENCIA o DOMICILIACION, y **Comprobar** avisa de las facturas sin forma de pago.
+
 ## 2026-10-06 · Versión 1.1 · Exportación a INVERGESTION
 - **Recepción y dirección**: al subir una factura recibida, la **fecha de la factura** ya no se rellena con la de hoy: hay que poner la **impresa en la factura** (es la que cuenta para el trimestre del IVA). No admite fechas futuras.
 - **Dirección**: en la exportación a INVERGESTION, las facturas subidas como **foto** salen ahora en **PDF**, con el nombre exacto de la columna archivo_pdf.

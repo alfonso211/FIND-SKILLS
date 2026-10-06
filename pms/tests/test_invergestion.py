@@ -10,7 +10,9 @@ from decimal import Decimal
 from PIL import Image
 
 from app import export_invergestion as ex
+from app.database import SessionLocal
 from app.facturacion import fin_de_mes
+from app.models import Expense
 
 HOY = date.today()
 
@@ -36,7 +38,7 @@ def test_paquete_emitidas_y_recibidas(client, admin, ids):
     r = client.post("/api/documentos-recibidos", headers=admin, data={
         "asset_id": str(bab), "tipo": "factura", "fecha": HOY.isoformat(), "vencimiento": (HOY + timedelta(days=30)).isoformat(),
         "emisor": "Lavandería Prueba Export SL", "referencia": "LAV-77",
-        "gasto": '{"categoria": "limpieza", "concepto": "Lavandería", "total": 121, "tipo_iva": 21, '
+        "gasto": '{"categoria": "limpieza", "concepto": "Lavandería", "total": 121, "tipo_iva": 21, "forma_pago": "domiciliacion", '
                  '"proveedor": "Lavandería Prueba Export SL", "numero_factura": "LAV-77", '
                  f'"fecha": "{HOY.isoformat()}", "vencimiento": "{(HOY + timedelta(days=30)).isoformat()}"}}'},
         files={"ficheros": ("f.pdf", b"%PDF-1.4\n%%EOF", "application/pdf")})
@@ -47,7 +49,8 @@ def test_paquete_emitidas_y_recibidas(client, admin, ids):
     foto = io.BytesIO()
     Image.new("RGB", (60, 80), "white").save(foto, "JPEG")
     gasto = {"categoria": "mantenimiento", "concepto": "Reparación", "total": 3275.48, "tipo_iva": 21,
-             "proveedor": "Lavandería Prueba Export SL", "numero_factura": "F26/5594", "fecha": agosto.isoformat()}
+             "proveedor": "Lavandería Prueba Export SL", "numero_factura": "F26/5594", "fecha": agosto.isoformat(),
+             "forma_pago": "transferencia"}
     r = client.post("/api/documentos-recibidos", headers=admin, data={
         "asset_id": str(bab), "tipo": "factura", "fecha": agosto.isoformat(), "emisor": "Lavandería Prueba Export SL",
         "referencia": "F26/5594", "gasto": json.dumps(gasto)},
@@ -59,8 +62,15 @@ def test_paquete_emitidas_y_recibidas(client, admin, ids):
         files={"ficheros": ("f.pdf", b"%PDF-1.4\n%%EOF", "application/pdf")})
     assert r.status_code == 400 and "posterior a hoy" in r.json()["detail"]
 
+    # gasto antiguo, registrado sin forma de pago: se avisa antes de enviar
+    with SessionLocal() as db:
+        db.add(Expense(asset_id=bab, fecha=HOY, categoria="limpieza", concepto="Antiguo", proveedor="Antiguo SL",
+                       numero_factura="ANT-1", base=10, tipo_iva=0, cuota=0, total=10))
+        db.commit()
+
     q = {"desde": (HOY - timedelta(days=1)).isoformat(), "hasta": HOY.isoformat()}
     c = client.get("/api/exportacion/invergestion/comprobar", headers=admin, params=q).json()
+    assert any("ANT-1" in a and "sin forma de pago" in a for a in c["recibidas"]["avisos"])
     assert any("LAV-77" in a and "día en que se registró" in a for a in c["recibidas"]["avisos"])
     assert not any("F26/5594" in a and "día en que se registró" in a for a in c["recibidas"]["avisos"])
     assert c["emitidas"]["facturas"] >= 1 and c["recibidas"]["facturas"] >= 1
@@ -94,6 +104,8 @@ def test_paquete_emitidas_y_recibidas(client, admin, ids):
     recibidas = _csv(z, re_ + ".csv")
     assert list(recibidas[0]) == ex.COLUMNAS_RECIBIDAS
     lav = next(f for f in recibidas if f["numero"] == "LAV-77")
+    assert lav["forma_pago"] == "DOMICILIACION"
+    assert next(f for f in recibidas if f["numero"] == "F26/5594")["forma_pago"] == "TRANSFERENCIA"
     assert (lav["proveedor_nif"], lav["categoria"], lav["inversion_sujeto_pasivo"], lav["base"], lav["cuota_iva"],
             lav["total"], lav["fecha_vencimiento"], lav["importe_pagado"], lav["estado"]) == (
         "00000023T", "LIMPIEZA", "N", "100.00", "21.00", "121.00", (HOY + timedelta(days=30)).isoformat(), "0.00",

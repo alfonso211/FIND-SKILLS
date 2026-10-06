@@ -27,6 +27,9 @@ from ..utils import bad_request, get_or_404, scoped
 router = APIRouter(prefix="/api", tags=["documentos y gastos"])
 
 IVAS = (0, 4, 5, 10, 21)
+# Cómo se paga la factura del proveedor (obligatorio): por transferencia nuestra o cargada en cuenta por él
+FORMAS_PAGO_GASTO = {"transferencia": "Transferencia", "domiciliacion": "Cargo en cuenta (domiciliación)",
+                     **{k: v for k, v in FORMAS_PAGO.items() if k not in ("transferencia", "domiciliacion")}}
 
 
 class ExpenseIn(BaseModel):
@@ -76,7 +79,9 @@ def _valores_gasto(db: Session, asset_id: int, data: ExpenseIn) -> dict:
         bad_request("La fecha de la factura no puede ser posterior a hoy: ponga la que figura en la factura")
     if data.vencimiento and data.vencimiento < data.fecha:
         bad_request("El vencimiento no puede ser anterior a la fecha de la factura")
-    if data.forma_pago and data.forma_pago not in FORMAS_PAGO:
+    if not data.forma_pago:
+        bad_request("Indique cómo se paga la factura: transferencia o cargo en cuenta (domiciliación)")
+    if data.forma_pago not in FORMAS_PAGO_GASTO:
         bad_request("Forma de pago no válida")
     _unidad(db, asset_id, data.unit_id)
     total = dinero(data.total)
@@ -381,7 +386,7 @@ def expenses_excel(asset_id: int | None = None, desde: date | None = None, hasta
             date.fromisoformat(g["vencimiento"]) if g["vencimiento"] else None, g["base"], g["tipo_iva"], g["cuota"],
             g["total"],
             "Sí" if g["pagado"] else "No", date.fromisoformat(g["fecha_pago"]) if g["fecha_pago"] else None,
-            FORMAS_PAGO.get(g["forma_pago"], ""), g["documento_tipo"] or "SIN DOCUMENTO", g["usuario"] or ""]
+            FORMAS_PAGO_GASTO.get(g["forma_pago"], ""), g["documento_tipo"] or "SIN DOCUMENTO", g["usuario"] or ""]
            for g in sorted(filas, key=lambda x: (x["fecha"], x["id"]))],
           {7: FECHA, 8: EUR, 9: ENTERO, 10: EUR, 11: EUR, 13: FECHA}, totales=[8, 10, 11],
           nota=f"Cuenta de gastos · {periodo}. Fecha y vencimiento tal como figuran en la factura recibida.")
@@ -413,4 +418,4 @@ def expenses_excel(asset_id: int | None = None, desde: date | None = None, hasta
 @router.get("/gastos/catalogos")
 def catalogs(scope: Scope = Depends(get_scope)):
     return {"tipos_documento": TIPOS_DOCUMENTO, "categorias": CATEGORIAS_GASTO, "ambitos": AMBITOS_GASTO,
-            "formas_pago": FORMAS_PAGO, "ivas": IVAS}
+            "formas_pago": FORMAS_PAGO_GASTO, "ivas": IVAS}

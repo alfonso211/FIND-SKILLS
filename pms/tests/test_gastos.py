@@ -37,7 +37,7 @@ def test_documentos_y_gastos(client, admin, ids):
     r = _subir(client, rec_sae, sae, [("p1.jpg", _jpeg()), ("p2.jpg", _jpeg((200, 30, 30)))],
                gasto={"fecha": HOY.isoformat(), "categoria": "mantenimiento", "concepto": "Cambio de grifo",
                       "ambito": "apartamento", "unit_id": apto["id"], "total": 121, "tipo_iva": 21,
-                      "proveedor": "Fontanería Gasto SL", "numero_factura": "F-2026-15"},
+                      "proveedor": "Fontanería Gasto SL", "numero_factura": "F-2026-15", "forma_pago": "transferencia"},
                emisor="Fontanería Gasto SL", referencia="F-2026-15", unit_id=str(apto["id"]))
     assert r.status_code == 201, r.text
     doc = r.json()
@@ -59,6 +59,12 @@ def test_documentos_y_gastos(client, admin, ids):
     assert client.post("/api/gastos", headers=rec_sae, json={
         "asset_id": sae, "fecha": HOY.isoformat(), "categoria": "inventada", "concepto": "X x", "total": 1}
     ).status_code == 400
+    # obligatorio: si la factura se paga por transferencia o está cargada en cuenta
+    sin_forma = client.post("/api/gastos", headers=rec_sae, json={
+        "asset_id": sae, "fecha": HOY.isoformat(), "categoria": "suministros", "concepto": "Agua", "total": 50})
+    assert sin_forma.status_code == 400 and "cargo en cuenta" in sin_forma.json()["detail"]
+    formas = client.get("/api/gastos/catalogos", headers=rec_sae).json()["formas_pago"]
+    assert list(formas)[:2] == ["transferencia", "domiciliacion"] and formas["domiciliacion"].startswith("Cargo en cuenta")
 
     lista = client.get(f"/api/gastos?asset_id={sae}", headers=rec_sae).json()
     mios = [x for x in lista["gastos"] if x["concepto"] in ("Cambio de grifo", "Luz zonas comunes")]
@@ -101,7 +107,7 @@ def test_proveedor_nuevo_desde_un_gasto(client, admin, ids):
     rec = _usuario(client, admin, ids, "recepcion.proveedor@inversiete.com", "Recepción", "SAE")
     g = client.post("/api/gastos", headers=rec, json={
         "asset_id": sae, "fecha": HOY.isoformat(), "categoria": "material", "concepto": "Sábanas",
-        "proveedor": "Textiles  Nuevo Proveedor SL", "total": 60.5}).json()
+        "proveedor": "Textiles  Nuevo Proveedor SL", "total": 60.5, "forma_pago": "tarjeta"}).json()
     assert g["supplier_id"] is None
     assert client.get("/api/proveedores?q=Textiles", headers=rec).json() == []
     p = client.post("/api/proveedores", headers=rec, json={
