@@ -700,17 +700,29 @@ async function editGuest(id, tipo = "huesped", onSaved) {
 // ---- escaneo de documentos de identidad
 // Al seleccionar el fichero (o capturar con la cámara) el documento se lee solo. Con cliente existente la copia
 // se guarda en su ficha; en un alta (cid = null) queda pendiente y se adjunta al crear la reserva o el cliente.
-const scanHtml = (titulo = "Escanear documento de identidad (DNI, NIE/TIE, pasaporte)") => `<fieldset class="scan"><legend>${esc(titulo)}</legend>
-  <p class="muted">Seleccione el documento escaneado (una o las dos caras, imagen o PDF) o use la cámara: se lee automáticamente y se guarda una copia cifrada en la ficha del cliente.</p>
-  <div class="scan-row">
-    <label>Documento escaneado<input type="file" data-scanfile accept="image/*,application/pdf" multiple></label>
-    <button type="button" class="btn" data-cam>📷 Usar cámara</button>
-  </div>
+// El operario elige el tipo de documento; en DNI y NIE/TIE hay una casilla por cara (el reverso, con las líneas «<<<»,
+// es el que se lee; el anverso se guarda como copia). El marco de la cámara tiene la forma del documento y la
+// captura se recorta a ese marco: el documento ocupa toda la imagen y se lee mucho mejor.
+const TIPOS_DOC = {
+  DNI: { t: "DNI", ratio: 1.586, caras: [["reverso", "Reverso · cara con las líneas «<<<» (se lee)"], ["anverso", "Anverso · cara de la foto (copia)"]],
+    guia: "Escanee primero el <b>reverso</b> (la cara con las líneas «<<<»): de ahí se leen los datos y el domicilio. El anverso se guarda como copia." },
+  NIE: { t: "NIE / TIE", ratio: 1.586, caras: [["reverso", "Reverso · cara con las líneas «<<<» (se lee)"], ["anverso", "Anverso · cara de la foto (copia)"]],
+    guia: "Tarjeta de extranjero (TIE): escanee primero el <b>reverso</b>, la cara con las líneas «<<<». El anverso se guarda como copia." },
+  PAS: { t: "Pasaporte", ratio: 1.42, caras: [["anverso", "Página de la foto (con las líneas «<<<» abajo)"]],
+    guia: "Abra el pasaporte por la <b>página de la foto</b> y encuadre la página entera, con las dos líneas «<<<» de abajo bien visibles." },
+  OTRO: { t: "Otro documento", ratio: 1.586, caras: [["reverso", "Cara con las líneas «<<<» (se lee)"], ["anverso", "Otra cara (copia, opcional)"]],
+    guia: "Documentos de identidad de otros países, permisos de residencia…: escanee la cara con las líneas «<<<». Si no las tiene, guarde la copia y complete los datos a mano." },
+};
+const scanHtml = (titulo = "Escanear documento de identidad") => `<fieldset class="scan"><legend>${esc(titulo)}</legend>
+  <div class="scan-tipos" role="group" aria-label="Tipo de documento">${Object.entries(TIPOS_DOC).map(([k, d]) => `<button type="button" class="btn sm" data-tipodoc="${k}">${esc(d.t)}</button>`).join("")}</div>
+  <p class="muted" data-guia></p>
+  <div class="scan-caras" data-caras></div>
   <div data-camzone class="camzone hidden">
-    <video data-video autoplay playsinline muted></video>
-    <div class="toolbar"><button type="button" class="btn primary" data-capturar>Capturar</button>
+    <div class="cam-marco"><video data-video autoplay playsinline muted></video><div class="cam-guia" data-guiacam><span data-guiatxt></span></div></div>
+    <div class="toolbar"><button type="button" class="btn primary" data-capturar>📸 Capturar</button>
       <button type="button" class="btn" data-camoff>Cerrar cámara</button>
       <label class="check"><input type="checkbox" data-camauto> Abrir la cámara automáticamente</label></div>
+    <p class="muted peq">Documento <b>dentro del marco</b>, recto, sin reflejos (incline un poco si brilla) y con buena luz.</p>
   </div>
   <div data-scanmsg></div><div data-docs class="muted"></div></fieldset>`;
 function pararCamara() {
@@ -722,7 +734,12 @@ async function hayCamara() {
 function bindScan(f, cid, aplicar) {
   const $s = (sel) => f.querySelector(sel);
   const msg = $s("[data-scanmsg]"), lista = $s("[data-docs]"), zona = $s("[data-camzone]"), video = $s("[data-video]");
+  const guiaCam = $s("[data-guiacam]");
   f._docs = [];  // alta: copias pendientes de adjuntar ({id, tipo, cara, subido})
+  let tipo = "DNI", caraCam = null;
+  const estado = {};  // cara -> texto del resultado
+  try { tipo = localStorage.getItem("pms_tipo_doc") || "DNI"; } catch {}
+  if (!TIPOS_DOC[tipo]) tipo = "DNI";
   const pinta = (docs) => {
     lista.innerHTML = docs.length ? "Copias guardadas: " + docs.map((d) => `${esc(d.tipo || "Documento")} · ${esc(d.cara)} (${fdt(d.subido)})
       <a href="#" data-ver="${d.id}">Ver</a> <a href="#" data-borrar="${d.id}" class="danger">Borrar</a>`).join(" &nbsp;|&nbsp; ") : "";
@@ -736,11 +753,44 @@ function bindScan(f, cid, aplicar) {
     }));
   };
   const cargar = async () => pinta(cid ? await get(`/api/terceros/${cid}/documentos`).catch(() => []) : f._docs);
-  // envía las caras (File[]) y aplica lo leído; devuelve true si se han leído los datos
-  const subir = async (ficheros) => {
+  const ajustaGuia = () => {  // marco con la forma del documento, centrado sobre la imagen de la cámara
+    const vw = video.videoWidth || 16, vh = video.videoHeight || 9, r = TIPOS_DOC[tipo].ratio;
+    let w = 0.86, h = (w * vw) / r / vh;
+    if (h > 0.86) { h = 0.86; w = (h * vh * r) / vw; }
+    Object.assign(guiaCam.style, { width: `${w * 100}%`, height: `${h * 100}%`, left: `${(1 - w) * 50}%`, top: `${(1 - h) * 50}%` });
+    guiaCam._marco = { w, h };
+  };
+  const pintaTipo = () => {
+    const d = TIPOS_DOC[tipo];
+    f.querySelectorAll("[data-tipodoc]").forEach((b) => b.classList.toggle("primary", b.dataset.tipodoc === tipo));
+    $s("[data-guia]").innerHTML = d.guia;
+    $s("[data-caras]").innerHTML = d.caras.map(([cara, txt], n) => `<div class="scan-cara${n ? "" : " principal"}" data-cara="${cara}">
+      <b>${n + 1}. ${esc(txt)}</b>
+      <div class="toolbar"><button type="button" class="btn sm${n ? "" : " primary"}" data-camcara="${cara}">📷 Cámara</button>
+        <label class="btn sm">📁 Fichero<input type="file" data-filecara="${cara}" accept="image/*,application/pdf" hidden></label></div>
+      <div class="peq" data-estado="${cara}">${estado[cara] || ""}</div></div>`).join("");
+    f.querySelectorAll("[data-camcara]").forEach((b) => (b.onclick = () => encender(b.dataset.camcara)));
+    f.querySelectorAll("[data-filecara]").forEach((inp) => (inp.onchange = async (e) => {
+      const fi = e.target.files[0];
+      if (fi) await subir(inp.dataset.filecara, fi);
+      e.target.value = "";
+    }));
+    $s("[data-guiatxt]").textContent = d.caras.find(([c]) => c === caraCam)?.[1] || d.caras[0][1];
+    ajustaGuia();
+  };
+  f.querySelectorAll("[data-tipodoc]").forEach((b) => (b.onclick = () => {
+    tipo = b.dataset.tipodoc;
+    try { localStorage.setItem("pms_tipo_doc", tipo); } catch {}
+    pintaTipo();
+  }));
+  // envía una cara y aplica lo leído; devuelve true si se han leído los datos
+  const subir = async (cara, fichero) => {
     const fd = new FormData();
-    ficheros.slice(0, 2).forEach((fi, n) => fd.append(n ? "reverso" : "anverso", fi));
-    msg.innerHTML = '<p class="muted">Leyendo el documento… (unos segundos)</p>';
+    fd.append(cara, fichero); fd.append("tipo", tipo);
+    const caja = () => f.querySelector(`[data-estado="${cara}"]`);
+    estado[cara] = '<span class="muted">Leyendo… (unos segundos)</span>';
+    if (caja()) caja().innerHTML = estado[cara];
+    msg.innerHTML = "";
     try {
       const res = await fetch(cid ? `/api/terceros/${cid}/documentos` : "/api/documentos/leer",
         { method: "POST", headers: { Authorization: `Bearer ${S.token}` }, body: fd });
@@ -749,44 +799,59 @@ function bindScan(f, cid, aplicar) {
       const lec = j.lectura;
       if (!cid) f._docs.push(...j.documentos);
       if (lec.leido) aplicar(lec, j.tercero);
-      const ok = lec.leido ? (lec.mrz_valido ? "✔ Documento leído y validado" : "⚠ Documento leído con dudas")
-        : "✖ En esta cara no están las líneas «<<<». Escanee o capture la otra cara";
-      msg.innerHTML = `<p><b>${esc(ok)}.</b> Copia guardada${cid ? " en la ficha" : " (se adjuntará al cliente)"}. ${lec.leido ? "Revise los campos resaltados." : ""}</p>` +
-        (lec.leido ? (lec.avisos || []) : []).map((a) => `<p class="${a.includes("CADUCADO") ? "error" : "muted"}">• ${esc(a)}</p>`).join("");
+      estado[cara] = lec.leido ? (lec.mrz_valido ? '<span class="ok">✔ Leído y validado</span>' : '<span class="aviso">⚠ Leído con dudas: revise</span>')
+        : lec.solo_copia ? '<span class="ok">✔ Copia guardada</span>' : '<span class="error">✖ No se ha podido leer</span>';
+      if (caja()) caja().innerHTML = estado[cara];
+      msg.innerHTML = (lec.leido ? `<p><b>Datos rellenados desde el documento.</b> Revise los campos resaltados.</p>` : "") +
+        (lec.avisos || []).map((a) => `<p class="${a.includes("CADUCADO") || a.includes("No se han podido") ? "error" : "muted"}">• ${esc(a)}</p>`).join("");
       cargar();
-      return lec.leido;
-    } catch (e) { msg.innerHTML = `<p class="error">${esc(e.message)}</p>`; return false; }
-  };
-  $s("[data-scanfile]").onchange = async (e) => {  // lectura automática al elegir el fichero
-    const fs = [...e.target.files];
-    if (fs.length) await subir(fs);
-    e.target.value = "";
+      return lec.leido || lec.solo_copia;
+    } catch (e) {
+      estado[cara] = `<span class="error">✖ ${esc(e.message)}</span>`;
+      if (caja()) caja().innerHTML = estado[cara];
+      return false;
+    }
   };
   // cámara (webcam de recepción, tablet o móvil)
-  const encender = async () => {
+  const encender = async (cara) => {
+    caraCam = cara || TIPOS_DOC[tipo].caras[0][0];
+    $s("[data-guiatxt]").textContent = TIPOS_DOC[tipo].caras.find(([c]) => c === caraCam)?.[1] || "";
+    if (S.cam && !zona.classList.contains("hidden")) return;
     if (!navigator.mediaDevices?.getUserMedia) { msg.innerHTML = '<p class="error">Este navegador no permite usar la cámara.</p>'; return; }
     try {
       pararCamara();
-      S.cam = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+      S.cam = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 2560 }, height: { ideal: 1440 } } });
       video.srcObject = S.cam; zona.classList.remove("hidden");
-      msg.innerHTML = '<p class="muted">Encuadre el documento (mejor la cara con las líneas «<<<») y pulse Capturar.</p>';
+      video.onloadedmetadata = ajustaGuia;
     } catch { msg.innerHTML = '<p class="error">No se ha podido abrir la cámara (permiso denegado o sin cámara).</p>'; }
   };
   const apagar = () => { pararCamara(); zona.classList.add("hidden"); };
-  $s("[data-cam]").onclick = encender;
   $s("[data-camoff]").onclick = apagar;
   $s("[data-capturar]").onclick = async () => {
-    if (!S.cam) return;
+    if (!S.cam || !video.videoWidth) return;
+    // recorte al marco guía (con un pequeño margen para no cortar los bordes del documento)
+    const { w, h } = guiaCam._marco || { w: 1, h: 1 }, m = 0.04;
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const cw = Math.min(1, w + 2 * m) * vw, ch = Math.min(1, h + 2 * m) * vh;
     const c = document.createElement("canvas");
-    c.width = video.videoWidth; c.height = video.videoHeight;
-    c.getContext("2d").drawImage(video, 0, 0);
-    const blob = await new Promise((ok) => c.toBlob(ok, "image/jpeg", 0.92));
-    if (await subir([new File([blob], "captura.jpg", { type: "image/jpeg" })])) apagar();
+    c.width = Math.round(cw); c.height = Math.round(ch);
+    c.getContext("2d").drawImage(video, (vw - cw) / 2, (vh - ch) / 2, cw, ch, 0, 0, cw, ch);
+    const blob = await new Promise((ok) => c.toBlob(ok, "image/jpeg", 0.95));
+    const cara = caraCam || TIPOS_DOC[tipo].caras[0][0];
+    if (await subir(cara, new File([blob], `${cara}.jpg`, { type: "image/jpeg" }))) {
+      const siguiente = TIPOS_DOC[tipo].caras.find(([cc]) => cc !== cara && !estado[cc]);
+      if (siguiente) {  // pasa a la otra cara sin cerrar la cámara
+        caraCam = siguiente[0];
+        $s("[data-guiatxt]").textContent = siguiente[1];
+        msg.innerHTML += `<p class="muted">Ahora, si quiere, dé la vuelta al documento y capture: <b>${esc(siguiente[1])}</b>. Si no, cierre la cámara.</p>`;
+      } else apagar();
+    }
   };
   const auto = $s("[data-camauto]");
   let pref = null;
   try { pref = localStorage.getItem("pms_cam_auto"); } catch {}
   auto.onchange = () => { try { localStorage.setItem("pms_cam_auto", auto.checked ? "1" : "0"); } catch {} };
+  pintaTipo();
   (async () => {
     const docs = cid ? await get(`/api/terceros/${cid}/documentos`).catch(() => []) : [];
     pinta(docs.length ? docs : f._docs);

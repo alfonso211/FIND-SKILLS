@@ -43,3 +43,19 @@ def test_digito_erroneo_se_detecta():
 
 def test_texto_sin_mrz():
     assert interpretar(["REINO DE ESPAÑA", "DOCUMENTO NACIONAL DE IDENTIDAD"]) is None
+
+
+def test_cifra_dudosa_se_corrige_con_el_digito_global():
+    l1, l2 = mrz_pasaporte()  # nacimiento 850315, su dígito de control en la posición 19
+    mala = l2[:19] + str((int(l2[19]) + 6) % 10) + l2[20:]  # el OCR lee el dígito de control mal (0 → 6)
+    r = interpretar([l1, mala])
+    assert r["mrz_valido"] and r["corregido"] and r["fecha_nacimiento"].isoformat() == "1985-03-15"
+    a, b, c = mrz_dni()
+    r = interpretar([a, b[:2] + "6" + b[3:], c])  # 800101 leído 806101: fecha imposible de cuadrar sin corregir
+    assert r["mrz_valido"] and r["fecha_nacimiento"].isoformat() == "1980-01-01"
+
+
+def test_primera_letra_del_codigo():
+    a, b, c = mrz_dni(tipo="IR", soporte="E01234567", dni="X1234567L")
+    r = interpretar(["T" + a[1:], b, c])  # «I» leída como «T»
+    assert (r["documento_tipo"], r["documento_num"]) == ("NIE", "X1234567L")
