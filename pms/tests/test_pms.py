@@ -28,6 +28,12 @@ def test_seed(client, admin, ids):
     viv = [u for u in bab if u["uso"] == "vivienda"]
     gar = [u for u in bab if u["uso"] == "garaje"]
     assert len(viv) == 20 and len(gar) == 33
+    # plazas por tipología: estudio 2, 1 dormitorio 2, 2 dormitorios 3; los garajes no tienen plazas
+    for cod in ("SAE", "SFL"):
+        uds = client.get(f"/api/unidades?asset_id={a[cod]['id']}", headers=admin).json()
+        aptos = [u for u in uds if u["uso"] == "apartamento"]
+        assert {(u["dormitorios"], u["capacidad"]) for u in aptos} <= {(0, 2), (1, 2), (2, 3)}
+        assert all(u["capacidad"] is None for u in uds if u["uso"] == "garaje")
     assert round(sum(u["cuota_comunidad"] for u in viv), 2) == 1950.20  # cuadra con el listado de comunidad
     assert round(sum(u["cuota_comunidad"] for u in gar), 2) == 629.64
     assert client.get(f"/api/unidades/bloques?asset_id={a['SFL']['id']}", headers=admin).json() == \

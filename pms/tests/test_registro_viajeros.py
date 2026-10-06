@@ -53,7 +53,7 @@ def test_utilidades():
 def test_ocupantes_ses_e_ine(client, admin, ids):
     sae = ids["assets"]["SAE"]["id"]
     entrada = date(HOY.year + 3, 3, 30)  # mes futuro sin otras reservas: la encuesta se puede comprobar exacta
-    r = _reserva(client, admin, sae, "A-131", entrada, 4)
+    r = _reserva(client, admin, sae, "A-127", entrada, 4)  # 2 dormitorios: 3 plazas
     lista = client.get(f"/api/turistico/reservas/{r['id']}/ocupantes", headers=admin).json()
     assert lista["requeridos"] == 3 and lista["ocupantes"][0]["contact"]["municipio_ine"] == "28127"
     assert "faltan 2 ocupante(s) por registrar (1 de 3)" in lista["pendiente"]
@@ -75,7 +75,7 @@ def test_ocupantes_ses_e_ine(client, admin, ids):
     assert sol.findtext("codigoEstablecimiento") == "0000012345"
     com = sol.find("comunicacion")
     ct = com.find("contrato")
-    assert ct.findtext("referencia") == "RV-A-131" and ct.findtext("numPersonas") == "3"
+    assert ct.findtext("referencia") == "RV-A-127" and ct.findtext("numPersonas") == "3"
     assert ct.findtext("fechaEntrada") == f"{entrada.isoformat()}T15:00:00" and ct.findtext("internet") == "true"
     assert ct.find("pago").findtext("tipoPago") == "PLATF"
     personas = com.findall("persona")
