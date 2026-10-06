@@ -10,9 +10,13 @@ if settings.database_url.startswith("sqlite"):
     engine = create_engine(settings.database_url, connect_args={"check_same_thread": False})
 else:
     # Postgres: margen para los picos (el panel pide varias cosas a la vez por usuario), conexiones comprobadas
-    # antes de usarlas y renovadas cada 30 min
-    engine = create_engine(settings.database_url, pool_size=20, max_overflow=30, pool_timeout=60,
-                           pool_pre_ping=True, pool_recycle=1800)
+    # antes de usarlas y renovadas cada 30 min. Ninguna espera es infinita: una consulta se cancela a los 90 s,
+    # esperar un bloqueo de fila (p. ej. la numeración de facturas) a los 20 s, y una transacción abierta y
+    # olvidada se cierra a los 10 min. Así una petición atascada no arrastra a las demás.
+    engine = create_engine(settings.database_url, pool_size=20, max_overflow=30, pool_timeout=30,
+                           pool_pre_ping=True, pool_recycle=1800,
+                           connect_args={"options": "-c statement_timeout=90000 -c lock_timeout=20000 "
+                                                    "-c idle_in_transaction_session_timeout=600000"})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
