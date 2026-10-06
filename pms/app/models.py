@@ -42,6 +42,9 @@ class Company(Base):
     provincia: Mapped[str | None] = mapped_column(String(100))
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("sociedades.id"))
     activa: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Datos para los contratos de arrendamiento: Registro Mercantil (tomo, folio, hoja), representante y poder,
+    # IBAN para la renta, correos de notificaciones y de protección de datos, teléfono de averías
+    contratos: Mapped[dict | None] = mapped_column(JSON)
 
 
 class Asset(Base):
@@ -95,6 +98,10 @@ class Unit(Base):
     cuota_comunidad: Mapped[float | None] = mapped_column(Numeric(10, 2))  # cuota ordinaria mensual
     anejos: Mapped[str | None] = mapped_column(String(120))  # trasteros / plazas vinculadas
     notas: Mapped[str | None] = mapped_column(Text)
+    # Vivienda en alquiler (LAU): puerta, C.P., superficie útil, distribución, Registro de la Propiedad, certificado
+    # energético, IBI y tasa de residuos, contadores (CUPS) y llaves; inventario del mobiliario que se entrega
+    ficha: Mapped[dict | None] = mapped_column(JSON)
+    inventario: Mapped[list | None] = mapped_column(JSON)
     asset: Mapped[Asset] = relationship()
 
 
@@ -173,6 +180,9 @@ class Lease(Base):
     matricula: Mapped[str | None] = mapped_column(String(20))
     vehiculo: Mapped[str | None] = mapped_column(String(80))
     mandos: Mapped[str | None] = mapped_column(String(80))
+    # Expediente del contrato de vivienda: datos del contrato, checklist, inventario entregado, entregas de dinero
+    # y citas de la agenda generadas
+    expediente: Mapped[dict | None] = mapped_column(JSON)
     unit: Mapped[Unit] = relationship()
     tenant: Mapped[Contact] = relationship()
 
@@ -598,3 +608,19 @@ class AgendaParticipant(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), index=True)
     respuesta: Mapped[str] = mapped_column(String(12), default="pendiente")  # pendiente | acepta | rechaza
     visto: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class LeaseDocument(Base):
+    """Carpeta documental del contrato de alquiler (copias cifradas): DNI, solvencia, aval, póliza, CEE,
+    justificante del depósito de la fianza, contrato firmado, fotos del inventario…"""
+    __tablename__ = "contrato_documentos"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lease_id: Mapped[int] = mapped_column(ForeignKey("contratos.id", ondelete="CASCADE"), index=True)
+    clave: Mapped[str] = mapped_column(String(30))  # punto del checklist al que corresponde, u «otro»
+    nombre: Mapped[str] = mapped_column(String(200))
+    fichero: Mapped[str] = mapped_column(String(80))
+    mime: Mapped[str] = mapped_column(String(80))
+    tamano: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    subido: Mapped[datetime] = mapped_column(DateTime, default=_now)

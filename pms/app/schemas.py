@@ -21,6 +21,7 @@ class CompanyIn(BaseModel):
     provincia: str | None = None
     parent_id: int | None = None
     activa: bool = True
+    contratos: dict | None = None  # datos para los contratos de arrendamiento
 
 
 class AssetIn(BaseModel):
