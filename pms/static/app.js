@@ -222,6 +222,10 @@ V.panel = async (el) => {
       return pf.length ? `<div class="aviso-hito aviso-cobro"><h4>💶 Facturas pendientes de cobro: ${pf.reduce((s, a) => s + a.facturas_pendientes, 0)} · ${eur(pf.reduce((s, a) => s + a.facturas_pendientes_importe, 0))}</h4>
         <p>${pf.map((a) => `${esc(a.nombre)}: ${a.facturas_pendientes} (${eur(a.facturas_pendientes_importe)}), la más antigua de ${a.facturas_pendientes_dias} días`).join(" · ")}. Compruebe en el banco si han llegado las transferencias y márquelas cobradas.</p>
         <button class="btn sm primary" id="verCobros">Revisar facturas pendientes</button></div>` : ""; })()}
+    ${(() => { const pr = p.activos.filter((a) => a.pagos_retenidos && (!S.asset || String(a.id) === String(S.asset)));
+      return pr.length ? `<div class="aviso-hito aviso-cobro"><h4>⛔ Facturas con el pago retenido: ${pr.reduce((s, a) => s + a.pagos_retenidos, 0)} · ${eur(pr.reduce((s, a) => s + a.pagos_retenidos_importe, 0))}</h4>
+        <p>${pr.map((a) => `${esc(a.nombre)}: ${a.pagos_retenidos}${a.pagos_retenidos_revisar ? ` (<b>${a.pagos_retenidos_revisar} para revisar ya</b>)` : ""}`).join(" · ")}. No pagarlas hasta revisarlas; al revisarlas, libere el pago o cambie la fecha de revisión.</p>
+        <button class="btn sm primary" id="verRetenidas">Ver cuenta de gastos</button></div>` : ""; })()}
     ${(p.hitos || []).map((h) => `<div class="aviso-hito"><h4>📅 ${esc(h.titulo)} · ${fdate(h.fecha)} (${h.dias > 0 ? `faltan ${h.dias} días` : h.dias === 0 ? "hoy" : `hace ${-h.dias} días`})</h4><p>${esc(h.detalle)}</p></div>`).join("")}
     <p class="muted">Situación a ${fdate(p.fecha)}</p><div class="cards">${p.activos.filter((a) => !S.asset || String(a.id) === String(S.asset)).map((a) => {
     const k = [];
@@ -255,6 +259,7 @@ V.panel = async (el) => {
     c.onclick = abrir; c.onkeydown = (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), abrir());
   });
   if ($("#verCobros", el)) $("#verCobros", el).onclick = () => { S.filtroCobro = "pendiente"; go("facturas"); };
+  if ($("#verRetenidas", el)) $("#verRetenidas", el).onclick = () => go("gastos");
   pintarMinis(el).catch((e) => el.querySelectorAll(".minis").forEach((m) => (m.innerHTML = `<p class="error">${esc(e.message)}</p>`)));
   bindBuscador($("#busq", el), $("#busqRes", el));
   agendaWidget($("#agp", el));
@@ -2573,21 +2578,36 @@ V.personal = async (el) => {
 // ---- documentos recibidos (carpeta de cada activo) y cuenta de gastos
 async function catGastos() { S.catGastos = S.catGastos || await get("/api/gastos/catalogos"); return S.catGastos; }
 // Campos del gasto (en el alta de un documento y en el gasto sin documento)
-function camposGasto(C, unidades) {
+function camposGasto(C, unidades, alta = true) {
   return [
     { k: "categoria", t: "Categoría del gasto", type: "select", options: kv(C.categorias) },
     { k: "ambito", t: "Imputado a", type: "select", options: kv(C.ambitos), def: "general" },
     { k: "unit_id", t: "Apartamento", type: "select", options: unidades.map((u) => [u.id, `${u.codigo}${u.bloque ? " · " + u.bloque : ""}`]) },
     { k: "ambito_detalle", t: "Detalle (zona, varios apartamentos…)" },
     { k: "concepto", t: "Concepto del gasto", wide: true },
-    { k: "total", t: "Importe total € (IVA incluido)", type: "number" },
+    { k: "total", t: "Total de la factura € (el que figura: IVA incluido y retención descontada)", type: "number" },
     { k: "tipo_iva", t: "IVA %", type: "select", options: C.ivas.map((x) => [x, `${x} %`]), def: 21 },
     { k: "base", t: "Base € (solo si hay varios tipos de IVA)", type: "number" },
+    { k: "retencion_tipo", t: "Retención (IRPF u otra)", type: "select", options: Object.entries(C.retenciones).map(([k, v]) => [k, v.pct ? `${v.nombre} · ${v.pct} %` : v.nombre]) },
+    { k: "retencion_pct", t: "Retención %", type: "number" },
     { k: "forma_pago", t: "Se paga por (transferencia o cargo en cuenta)", type: "select", options: kv(C.formas_pago) },
     { k: "pagado", t: "Pagado", type: "checkbox" }, { k: "fecha_pago", t: "Fecha de pago", type: "date" },
+    ...(alta ? [{ k: "retener_pago", t: "Retener el pago: no pagar de momento (se avisa a dirección y administración)", type: "checkbox", wide: true },
+      { k: "retener_motivo", t: "Motivo de la retención del pago", wide: true }, { k: "retener_revision", t: "Fecha de revisión", type: "date" }] : []),
   ];
 }
-const CAMPOS_GASTO = ["categoria", "ambito", "unit_id", "ambito_detalle", "concepto", "total", "tipo_iva", "base", "forma_pago", "pagado", "fecha_pago"];
+// Retención IRPF: % habitual al elegir el tipo. Pago retenido: motivo y fecha de revisión.
+function bindRetencion(f) {
+  const C = S.catGastos, e = f.elements;
+  const pinta = () => {
+    verCampos(f, ["retencion_pct"], !!e.retencion_tipo.value);
+    if (e.retener_pago) { verCampos(f, ["retener_motivo", "retener_revision"], e.retener_pago.checked); verCampos(f, ["pagado", "fecha_pago"], !e.retener_pago.checked); }
+  };
+  e.retencion_tipo.onchange = () => { const p = C.retenciones[e.retencion_tipo.value]?.pct; if (p) e.retencion_pct.value = p; pinta(); };
+  if (e.retener_pago) e.retener_pago.onchange = pinta;
+  pinta();
+}
+const CAMPOS_GASTO = ["categoria", "ambito", "unit_id", "ambito_detalle", "concepto", "total", "tipo_iva", "base", "retencion_tipo", "retencion_pct", "forma_pago", "pagado", "fecha_pago", "retener_pago", "retener_motivo", "retener_revision"];
 function verCampos(f, nombres, ver) { nombres.forEach((n) => { const el = f.elements[n]; if (el) (el.closest("label") || el).style.display = ver ? "" : "none"; }); }
 function bindAmbito(f) {
   const pinta = () => { const a = f.elements.ambito.value; verCampos(f, ["unit_id"], a === "apartamento"); verCampos(f, ["ambito_detalle"], a === "otro"); };
@@ -2598,8 +2618,12 @@ function datosGasto(d, extra = {}) {
   if (d.total == null) throw new Error("Indique el importe total del gasto");
   if (d.ambito === "apartamento" && !d.unit_id) throw new Error("Elija el apartamento del gasto");
   if (!d.forma_pago) throw new Error("Indique cómo se paga: transferencia o cargo en cuenta (domiciliación)");
+  if (d.retencion_tipo && !(Number(d.retencion_pct) > 0)) throw new Error("Indique el % de la retención");
+  if (d.retener_pago && (!d.retener_motivo || !d.retener_revision)) throw new Error("Para retener el pago indique el motivo y la fecha de revisión");
   return clean({ categoria: d.categoria, ambito: d.ambito, unit_id: d.unit_id ? Number(d.unit_id) : null, ambito_detalle: d.ambito_detalle,
-    concepto: d.concepto, total: d.total, tipo_iva: Number(d.tipo_iva ?? 21), base: d.base, forma_pago: d.forma_pago, pagado: !!d.pagado, fecha_pago: d.fecha_pago, ...extra });
+    concepto: d.concepto, total: d.total, tipo_iva: Number(d.tipo_iva ?? 21), base: d.base, forma_pago: d.forma_pago, pagado: !!d.pagado && !d.retener_pago, fecha_pago: d.fecha_pago,
+    retencion_tipo: d.retencion_tipo || null, retencion_pct: d.retencion_tipo ? Number(d.retencion_pct) : 0,
+    retener_pago: !!d.retener_pago, retener_motivo: d.retener_pago ? d.retener_motivo : null, retener_revision: d.retener_pago ? d.retener_revision : null, ...extra });
 }
 async function unidadesActivo(aid) { return (await get("/api/unidades", { asset_id: aid })).filter((u) => u.uso !== "garaje"); }
 
@@ -2631,7 +2655,7 @@ async function subirDocumento(reload) {
     await altaProveedorSiNuevo(d.emisor, d.es_gasto ? C.categorias[d.categoria] : null);
   }, "Guardar documento");
   bindFotos(f); bindAmbito(f); sugerirProveedores(f, "emisor");
-  const gasto = () => { verCampos(f, CAMPOS_GASTO, f.elements.es_gasto.checked); if (f.elements.es_gasto.checked) bindAmbito(f); };
+  const gasto = () => { verCampos(f, CAMPOS_GASTO, f.elements.es_gasto.checked); if (f.elements.es_gasto.checked) { bindAmbito(f); bindRetencion(f); } };
   f.elements.es_gasto.onchange = gasto;
   f.elements.tipo.onchange = () => { f.elements.es_gasto.checked = ["factura", "ticket", "albaran"].includes(f.elements.tipo.value); gasto(); };
   gasto();
@@ -2643,15 +2667,15 @@ async function editarGasto(g, reload, aidNuevo) {
   const f = form(g ? `Gasto · ${g.concepto}` : `Nuevo gasto sin documento · ${assetName(aid)}`, [
     { k: "fecha", t: "Fecha de la factura (la impresa en ella)", type: "date", req: true }, { k: "vencimiento", t: "Vencimiento", type: "date" },
     { k: "proveedor", t: "Proveedor" }, { k: "numero_factura", t: "Nº de factura" },
-    ...camposGasto(C, unidades), { k: "notas", t: "Notas", type: "textarea", wide: true },
-  ], g ? { ...g, base: null } : {}, async (d) => {
+    ...camposGasto(C, unidades, !g), { k: "notas", t: "Notas", type: "textarea", wide: true },
+  ], g ? { ...g, total: g.liquido, base: null } : {}, async (d) => {
     const body = datosGasto(d, { fecha: d.fecha, vencimiento: d.vencimiento, concepto: d.concepto, proveedor: d.proveedor, numero_factura: d.numero_factura, notas: d.notas });
     if (!body.concepto) throw new Error("Indique el concepto del gasto");
     await (g ? put(`/api/gastos/${g.id}`, body) : post("/api/gastos", { ...body, asset_id: aid }));
     toast(g ? "Gasto actualizado" : "Gasto anotado"); reload && reload();
     await altaProveedorSiNuevo(d.proveedor, C.categorias[d.categoria]);
   });
-  bindAmbito(f); sugerirProveedores(f, "proveedor");
+  bindAmbito(f); bindRetencion(f); sugerirProveedores(f, "proveedor");
 }
 
 V.docrecibidos = async (el) => {
@@ -2676,7 +2700,7 @@ V.docrecibidos = async (el) => {
         const f = form(`Gasto del documento · ${x.tipo_nombre} ${x.emisor || ""}`, [{ k: "fecha", t: "Fecha de la factura", type: "date", req: true }, { k: "vencimiento", t: "Vencimiento", type: "date" }, ...camposGasto(C2, unidades)],
           { fecha: x.fecha, vencimiento: x.vencimiento, concepto: x.descripcion || `${x.tipo_nombre} ${x.emisor || ""}`.trim(), unit_id: x.unit_id, ambito: x.unit_id ? "apartamento" : "general" },
           async (d) => { await post("/api/gastos", datosGasto(d, { fecha: d.fecha, vencimiento: d.vencimiento, concepto: d.concepto, documento_id: x.id, proveedor: x.emisor, numero_factura: x.referencia })); toast("Gasto anotado"); load(); });
-        bindAmbito(f);
+        bindAmbito(f); bindRetencion(f);
       }],
       x.gasto && editar && ["Gasto", () => editarGasto(x.gasto, load)],
       editar && ["Borrar", async () => { if (confirm(`¿Borrar el documento «${x.nombre}»? El apunte del gasto, si lo tiene, se conserva.`)) { await run(() => api("DELETE", `/api/documentos-recibidos/${x.id}`), "Documento borrado"); load(); } }, "danger"],
@@ -2702,6 +2726,8 @@ V.gastos = async (el) => {
     const t = r.totales;
     $("#k", el).innerHTML = [[eur(t.base), "Gasto (base sin IVA)"], [eur(t.cuota), "IVA soportado"], [eur(t.total), "Total con IVA"],
       [eur(t.pendiente_pago), "Pendiente de pago", t.pendiente_pago > 0 ? "mal" : ""], [t.sin_documento, "Apuntes sin documento", t.sin_documento ? "mal" : ""],
+      ...(t.retencion ? [[eur(t.retencion), "Retenciones IRPF practicadas"]] : []),
+      ...(t.retenidas ? [[`${t.retenidas} · ${eur(t.retenidas_importe)}`, "Pagos retenidos (no pagar)", "mal"]] : []),
       ...Object.entries(t.por_categoria).slice(0, 4).map(([c, v]) => [eur(v), c])]
       .map(([v, l, cls]) => `<div class="kpi ${cls || ""}"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("");
     const FORMAS_GASTO = (await catGastos()).formas_pago;
@@ -2709,15 +2735,22 @@ V.gastos = async (el) => {
       { k: "fecha", t: "Fecha", f: fdate }, { k: "activo", t: "Activo" }, { k: "lugar", t: "Imputado a" }, { k: "categoria_nombre", t: "Categoría" },
       { k: "concepto", t: "Concepto" }, { k: "proveedor", t: "Proveedor", f: (v, g) => `${esc(v || "")}${g.numero_factura ? `<div class="muted peq">${esc(g.numero_factura)}</div>` : ""}` },
       { k: "base", t: "Base", num: true, f: eur }, { k: "cuota", t: "IVA", num: true, f: (v, g) => `${eur(v)}<div class="muted peq">${g.tipo_iva} %</div>` },
-      { k: "total", t: "Total", num: true, f: eur },
-      { k: "pagado", t: "Pago", f: (v, g) => (v ? `<span class="badge b-vigente">pagado</span><div class="muted peq">${fdate(g.fecha_pago)}</div>`
+      { k: "liquido", t: "A pagar", num: true, f: (v, g) => `${eur(v)}${g.retencion ? `<div class="muted peq">ret. ${g.retencion_pct} %: ${eur(g.retencion)}</div>` : ""}` },
+      { k: "pagado", t: "Pago", f: (v, g) => (g.pago_retenido && !v ? `<span class="badge b-cancelada" title="${esc(g.pago_retenido_motivo || "")}">RETENIDA</span><div class="muted peq">revisar ${fdate(g.pago_retenido_revision)}</div><div class="muted peq">${esc(g.pago_retenido_motivo || "")}</div>` : "") + (v ? `<span class="badge b-vigente">pagado</span><div class="muted peq">${fdate(g.fecha_pago)}</div>`
         : `<span class="badge ${g.vencimiento && g.vencimiento < today() ? "b-cancelada" : "b-pendiente"}">${g.vencimiento && g.vencimiento < today() ? "vencida" : "pendiente"}</span>${g.vencimiento ? `<div class="muted peq">vence ${fdate(g.vencimiento)}</div>` : ""}`)
         + (g.forma_pago ? `<div class="muted peq">${esc(FORMAS_GASTO[g.forma_pago] || g.forma_pago)}</div>` : '<div><span class="badge b-cancelada">falta forma de pago</span></div>') },
       { k: "documento_tipo", t: "Documento", f: (v) => (v ? esc(v) : '<span class="badge b-cancelada">sin documento</span>') },
     ], r.gastos, (g) => [
       g.documento_id && ["Ver", () => abrirFichero(`/api/documentos-recibidos/${g.documento_id}/fichero`)],
-      editar && !g.pagado && ["Pagado", () => g.forma_pago ? run(() => put(`/api/gastos/${g.id}`, { ...g, pagado: true, fecha_pago: today(), base: null }), "Marcado como pagado").then(load)
+      editar && !g.pagado && !g.pago_retenido && ["Pagado", () => g.forma_pago ? run(() => put(`/api/gastos/${g.id}`, { ...g, total: g.liquido, pagado: true, fecha_pago: today() }), "Marcado como pagado").then(load)
         : (toast("Indique antes cómo se paga: transferencia o cargo en cuenta", true), editarGasto(g, load))],
+      editar && !g.pagado && ["Retener pago", () => form(g.pago_retenido ? "Cambiar la retención del pago" : "Retener el pago: no pagar de momento", [
+        { html: '<p class="muted">Se avisa por correo a dirección y administración (quienes pagan). La factura sigue en el resumen diario hasta que se libere.</p>' },
+        { k: "motivo", t: "Motivo", req: true, wide: true }, { k: "revision", t: "Fecha de revisión", type: "date", req: true }],
+        { motivo: g.pago_retenido_motivo, revision: g.pago_retenido_revision },
+        async (d) => { await post(`/api/gastos/${g.id}/retener-pago`, d); toast("Pago retenido: avisado a quien paga"); load(); }, "Retener pago")],
+      g.pago_retenido && !g.pagado && ["Liberar pago", () => form("Liberar el pago (ya se puede pagar)", [{ k: "nota", t: "Nota (opcional)", wide: true }], {},
+        async (d) => { await post(`/api/gastos/${g.id}/liberar-pago`, d); toast("Pago liberado"); load(); }, "Liberar")],
       editar && ["Editar", () => editarGasto(g, load)],
       editar && ["Borrar", async () => { if (confirm(`¿Borrar el gasto «${g.concepto}»?`)) { await run(() => api("DELETE", `/api/gastos/${g.id}`), "Gasto borrado"); load(); } }, "danger"],
     ]);

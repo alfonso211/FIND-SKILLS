@@ -11,12 +11,12 @@ from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from .. import adjuntos, documentos
+from .. import adjuntos, avisos, documentos
 from ..database import get_db
 from ..facturacion import FORMAS_PAGO, dinero
 from ..models import (AMBITOS_GASTO, CATEGORIAS_GASTO, TIPOS_DOCUMENTO, Asset, Expense, ReceivedDocument, Supplier,
@@ -28,6 +28,14 @@ router = APIRouter(prefix="/api", tags=["documentos y gastos"])
 
 IVAS = (0, 4, 5, 10, 21)
 # Cómo se paga la factura del proveedor (obligatorio): por transferencia nuestra o cargada en cuenta por él
+# Retenciones que se practican al proveedor: (nombre, % habitual). «otra»: el % lo indica quien registra
+RETENCIONES = {
+    "irpf_profesional": ("IRPF profesionales", 15),
+    "irpf_inicio": ("IRPF profesionales (inicio de actividad)", 7),
+    "irpf_arrendamiento": ("IRPF arrendamiento de inmuebles", 19),
+    "irpf_modulos": ("IRPF actividades en módulos (obras, transporte…)", 1),
+    "otra": ("Otra retención", None),
+}
 FORMAS_PAGO_GASTO = {"transferencia": "Transferencia", "domiciliacion": "Cargo en cuenta (domiciliación)",
                      **{k: v for k, v in FORMAS_PAGO.items() if k not in ("transferencia", "domiciliacion")}}
 
@@ -44,13 +52,29 @@ class ExpenseIn(BaseModel):
     proveedor: str | None = Field(default=None, max_length=200)
     numero_factura: str | None = Field(default=None, max_length=60)
     vencimiento: date | None = None  # vencimiento de la factura (tal como figura en ella)
-    total: float = Field(gt=-1_000_000, lt=1_000_000)  # IVA incluido (negativo: abono)
+    # total de la factura tal como figura en ella: IVA incluido y, si la hay, retención ya descontada (negativo: abono)
+    total: float = Field(gt=-1_000_000, lt=1_000_000)
     tipo_iva: float = 21
-    base: float | None = None  # si se indica (varios tipos de IVA), la cuota es total - base
+    base: float | None = None  # si se indica (varios tipos de IVA), la cuota es total + retención − base
+    retencion_tipo: str | None = None  # RETENCIONES
+    retencion_pct: float = Field(default=0, ge=0, le=50)
     forma_pago: str | None = None
     pagado: bool = False
     fecha_pago: date | None = None
     notas: str | None = None
+    # al registrarla: no pagar de momento (se avisa a quien paga) hasta revisarla en esa fecha
+    retener_pago: bool = False
+    retener_motivo: str | None = Field(default=None, max_length=300)
+    retener_revision: date | None = None
+
+
+class RetenerIn(BaseModel):
+    motivo: str = Field(min_length=3, max_length=300)
+    revision: date
+
+
+class LiberarIn(BaseModel):
+    nota: str | None = Field(default=None, max_length=300)
 
 
 def _ver(scope: Scope, asset_id: int) -> None:
@@ -84,13 +108,21 @@ def _valores_gasto(db: Session, asset_id: int, data: ExpenseIn) -> dict:
     if data.forma_pago not in FORMAS_PAGO_GASTO:
         bad_request("Forma de pago no válida")
     _unidad(db, asset_id, data.unit_id)
-    total = dinero(data.total)
+    if data.retencion_tipo and data.retencion_tipo not in RETENCIONES:
+        bad_request(f"Retención no válida. Opciones: {', '.join(RETENCIONES)}")
+    pct = Decimal(str(data.retencion_pct)) if data.retencion_tipo else Decimal(0)
+    if data.retencion_tipo and pct <= 0:
+        bad_request("Indique el % de la retención")
+    liquido = dinero(data.total)  # lo que figura como total de la factura (retención ya descontada)
     if data.base is not None:
         base = dinero(data.base)
-        if abs(base) > abs(total):
+        retencion = dinero(base * pct / 100)
+        if abs(base) > abs(liquido + retencion):
             bad_request("La base no puede ser mayor que el total")
     else:
-        base = dinero(total / (1 + Decimal(str(data.tipo_iva)) / 100))
+        base = dinero(liquido / (1 + (Decimal(str(data.tipo_iva)) - pct) / 100))
+        retencion = dinero(base * pct / 100)
+    total = liquido + retencion  # base + IVA
     prov = " ".join((data.proveedor or "").split()) or None
     supplier = db.scalar(select(Supplier).where(Supplier.nombre == prov)) if prov else None
     return {"fecha": data.fecha, "categoria": data.categoria, "concepto": data.concepto.strip(),
@@ -100,7 +132,22 @@ def _valores_gasto(db: Session, asset_id: int, data: ExpenseIn) -> dict:
             "vencimiento": data.vencimiento,
             "total": total, "base": base, "cuota": total - base, "tipo_iva": data.tipo_iva,
             "forma_pago": data.forma_pago, "pagado": data.pagado,
-            "fecha_pago": (data.fecha_pago or date.today()) if data.pagado else None, "notas": data.notas}
+            "fecha_pago": (data.fecha_pago or date.today()) if data.pagado else None, "notas": data.notas,
+            "retencion_tipo": data.retencion_tipo or None, "retencion_pct": pct, "retencion": retencion}
+
+
+def _retener(g: Expense, user_id: int, motivo: str | None, revision: date | None) -> None:
+    motivo = " ".join((motivo or "").split())
+    if len(motivo) < 3:
+        bad_request("Indique por qué se retiene el pago")
+    if not revision:
+        bad_request("Indique la fecha en que se revisará el pago retenido")
+    if revision < date.today():
+        bad_request("La fecha de revisión no puede ser anterior a hoy")
+    if g.pagado:
+        bad_request("La factura ya está pagada")
+    g.pago_retenido, g.pago_retenido_motivo, g.pago_retenido_revision = True, motivo, revision
+    g.pago_retenido_user_id, g.pago_retenido_fecha = user_id, datetime.now()
 
 
 def _nombres(db: Session, ids_unidades: set[int], ids_usuarios: set[int]) -> tuple[dict, dict]:
@@ -117,6 +164,9 @@ def _gasto_out(g: Expense, unidades: dict, usuarios: dict, activos: dict) -> dic
     d["lugar"] = (f"Apartamento {d['unidad']}" if g.ambito == "apartamento"
                   else g.ambito_detalle or "Otro" if g.ambito == "otro" else "General")
     d["usuario"] = usuarios.get(g.user_id)
+    d["liquido"] = round(float(g.total) - float(g.retencion or 0), 2)  # lo que se paga al proveedor
+    d["retencion_nombre"] = RETENCIONES.get(g.retencion_tipo, ("",))[0] if g.retencion_tipo else None
+    d["pago_retenido_por"] = usuarios.get(g.pago_retenido_user_id) if g.pago_retenido else None
     return d
 
 
@@ -164,12 +214,12 @@ def list_documents(asset_id: int | None = None, tipo: str | None = None, desde: 
 
 
 @router.post("/documentos-recibidos", status_code=201)
-def upload_document(ficheros: list[UploadFile] = File(...), asset_id: int = Form(...), tipo: str = Form(...),
-                    fecha: date = Form(...), vencimiento: date | None = Form(None),
+def upload_document(tareas: BackgroundTasks, ficheros: list[UploadFile] = File(...), asset_id: int = Form(...),
+                    tipo: str = Form(...), fecha: date = Form(...), vencimiento: date | None = Form(None),
                     emisor: str | None = Form(None), referencia: str | None = Form(None),
                     descripcion: str | None = Form(None), unit_id: int | None = Form(None),
-                    gasto: str | None = Form(None), scope: Scope = Depends(get_scope),
-                    db: Session = Depends(get_db)):
+                    gasto: str | None = Form(None),
+                    scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     """Sube un documento escaneado (foto o PDF) a la carpeta del activo. Con `gasto` (JSON con los datos del
     gasto) se anota además en la cuenta de gastos."""
     scope.require_asset("documentos.editar", asset_id)
@@ -196,11 +246,15 @@ def upload_document(ficheros: list[UploadFile] = File(...), asset_id: int = Form
     if gasto_in:
         g = Expense(asset_id=asset_id, documento_id=x.id, user_id=scope.user.id,
                     **_valores_gasto(db, asset_id, gasto_in))
+        if gasto_in.retener_pago:
+            _retener(g, scope.user.id, gasto_in.retener_motivo, gasto_in.retener_revision)
         db.add(g)
         db.flush()
     audit(db, scope.user, "subir", "documento_recibido", x.id, {"tipo": tipo, "emisor": x.emisor,
                                                                  "gasto": g.id if g else None})
     db.commit()
+    if g is not None and g.pago_retenido:
+        tareas.add_task(avisos.pago_retenido, g.id, scope.user.id)
     unidades, usuarios = _nombres(db, {i for i in (x.unit_id, g.unit_id if g else None) if i}, {scope.user.id})
     return _doc_out(x, g, unidades, usuarios, _activos(db))
 
@@ -286,7 +340,8 @@ def _gastos_q(scope: Scope, asset_id, desde, hasta, categoria, unit_id, pagado):
 def _gastos(db, scope, asset_id, desde, hasta, categoria, unit_id, pagado) -> list[dict]:
     scope.require_any("documentos.ver")
     filas = list(db.scalars(_gastos_q(scope, asset_id, desde, hasta, categoria, unit_id, pagado).limit(10000)))
-    unidades, usuarios = _nombres(db, {g.unit_id for g in filas if g.unit_id}, {g.user_id for g in filas if g.user_id})
+    unidades, usuarios = _nombres(db, {g.unit_id for g in filas if g.unit_id},
+                                  {i for g in filas for i in (g.user_id, g.pago_retenido_user_id) if i})
     activos = _activos(db)
     docs = dict(db.execute(select(ReceivedDocument.id, ReceivedDocument.tipo).where(
         ReceivedDocument.id.in_([g.documento_id for g in filas if g.documento_id] or [-1]))).all())
@@ -309,13 +364,17 @@ def list_expenses(asset_id: int | None = None, desde: date | None = None, hasta:
     return {"gastos": filas, "totales": {
         "base": round(sum(g["base"] for g in filas), 2), "cuota": round(sum(g["cuota"] for g in filas), 2),
         "total": round(sum(g["total"] for g in filas), 2),
-        "pendiente_pago": round(sum(g["total"] for g in filas if not g["pagado"]), 2),
+        "retencion": round(sum(g["retencion"] for g in filas), 2),
+        "pendiente_pago": round(sum(g["liquido"] for g in filas if not g["pagado"]), 2),
+        "retenidas": sum(1 for g in filas if g["pago_retenido"] and not g["pagado"]),
+        "retenidas_importe": round(sum(g["liquido"] for g in filas if g["pago_retenido"] and not g["pagado"]), 2),
         "sin_documento": sum(1 for g in filas if not g["documento_id"]),
         "por_categoria": {k: round(v, 2) for k, v in sorted(por_cat.items(), key=lambda x: -x[1])}}}
 
 
 @router.post("/gastos", status_code=201)
-def create_expense(data: ExpenseIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+def create_expense(data: ExpenseIn, tareas: BackgroundTasks, scope: Scope = Depends(get_scope),
+                   db: Session = Depends(get_db)):
     """Gasto sin documento escaneado (p. ej. un recibo domiciliado) o enlazado a un documento ya subido."""
     if data.documento_id:
         doc = get_or_404(db, ReceivedDocument, data.documento_id)
@@ -330,16 +389,22 @@ def create_expense(data: ExpenseIn, scope: Scope = Depends(get_scope), db: Sessi
     scope.require_asset("documentos.editar", asset_id)
     g = Expense(asset_id=asset_id, documento_id=data.documento_id, user_id=scope.user.id,
                 **_valores_gasto(db, asset_id, data))
+    if data.retener_pago:
+        _retener(g, scope.user.id, data.retener_motivo, data.retener_revision)
     db.add(g)
     db.flush()
-    audit(db, scope.user, "crear", "gasto", g.id, {"concepto": g.concepto, "total": float(g.total)})
+    audit(db, scope.user, "crear", "gasto", g.id, {"concepto": g.concepto, "total": float(g.total),
+                                                    "pago_retenido": g.pago_retenido})
     db.commit()
+    if g.pago_retenido:
+        tareas.add_task(avisos.pago_retenido, g.id, scope.user.id)
     return _uno(db, scope, g.id)
 
 
 def _uno(db: Session, scope: Scope, gid: int) -> dict:
     g = db.get(Expense, gid)
-    unidades, usuarios = _nombres(db, {g.unit_id} if g.unit_id else set(), {g.user_id} if g.user_id else set())
+    unidades, usuarios = _nombres(db, {g.unit_id} if g.unit_id else set(),
+                                  {i for i in (g.user_id, g.pago_retenido_user_id) if i})
     return _gasto_out(g, unidades, usuarios, _activos(db))
 
 
@@ -348,10 +413,43 @@ def update_expense(gid: int, data: ExpenseIn, scope: Scope = Depends(get_scope),
     g = get_or_404(db, Expense, gid)
     scope.require_asset("documentos.editar", g.asset_id)
     antes = {k: str(v) for k, v in g.to_dict().items()}
+    if data.pagado and not g.pagado and g.pago_retenido:
+        bad_request("El pago de esta factura está retenido: debe liberarlo quien se encarga de los pagos")
     for k, v in _valores_gasto(db, g.asset_id, data).items():
         setattr(g, k, v)
     audit(db, scope.user, "editar", "gasto", gid,
           {k: [antes.get(k), str(v)] for k, v in g.to_dict().items() if antes.get(k) != str(v)})
+    db.commit()
+    return _uno(db, scope, gid)
+
+
+@router.post("/gastos/{gid}/retener-pago")
+def hold_payment(gid: int, data: RetenerIn, tareas: BackgroundTasks, scope: Scope = Depends(get_scope),
+                 db: Session = Depends(get_db)):
+    """No pagar de momento: queda retenida y se avisa a quien paga (dirección, administración) hasta la revisión.
+    Sirve también para cambiar el motivo o la fecha de revisión."""
+    g = get_or_404(db, Expense, gid)
+    scope.require_asset("documentos.editar", g.asset_id)
+    _retener(g, scope.user.id, data.motivo, data.revision)
+    audit(db, scope.user, "retener_pago", "gasto", gid, {"motivo": g.pago_retenido_motivo,
+                                                         "revision": str(g.pago_retenido_revision)})
+    db.commit()
+    tareas.add_task(avisos.pago_retenido, g.id, scope.user.id)
+    return _uno(db, scope, gid)
+
+
+@router.post("/gastos/{gid}/liberar-pago")
+def release_payment(gid: int, data: LiberarIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Se puede pagar: lo decide quien paga (finanzas) o quien la retuvo."""
+    g = get_or_404(db, Expense, gid)
+    if not g.pago_retenido:
+        bad_request("El pago de esta factura no está retenido")
+    if not (scope.can_asset("finanzas.ver", g.asset_id) and scope.can_asset("documentos.editar", g.asset_id)) \
+            and g.pago_retenido_user_id != scope.user.id:
+        raise HTTPException(403, "Solo quien se encarga de los pagos (o quien la retuvo) puede liberarla")
+    audit(db, scope.user, "liberar_pago", "gasto", gid, {"motivo_retencion": g.pago_retenido_motivo,
+                                                         "nota": data.nota})
+    g.pago_retenido, g.pago_retenido_revision = False, None
     db.commit()
     return _uno(db, scope, gid)
 
@@ -379,16 +477,21 @@ def expenses_excel(asset_id: int | None = None, desde: date | None = None, hasta
     wb.remove(wb.active)
     periodo = f"{desde:%d/%m/%Y} – {hasta:%d/%m/%Y}" if desde and hasta else "todo el periodo"
     _hoja(wb, "Gastos", ["Fecha factura", "Activo", "Ámbito", "Categoría", "Concepto", "Proveedor", "Nº factura",
-                         "Vencimiento", "Base", "IVA %", "Cuota IVA", "Total", "Pagado", "Fecha pago", "Forma de pago",
+                         "Vencimiento", "Base", "IVA %", "Cuota IVA", "Total con IVA", "Tipo de retención",
+                         "Retención %", "Importe retención", "A pagar", "Pagado", "Fecha pago", "Forma de pago", "Pago retenido", "Revisión",
                          "Documento", "Registrado por"],
           [[date.fromisoformat(g["fecha"]), g["activo"], g["lugar"], g["categoria_nombre"], g["concepto"],
             g["proveedor"] or "", g["numero_factura"] or "",
             date.fromisoformat(g["vencimiento"]) if g["vencimiento"] else None, g["base"], g["tipo_iva"], g["cuota"],
-            g["total"],
+            g["total"], g["retencion_nombre"] or "", g["retencion_pct"] or None, g["retencion"] or None, g["liquido"],
             "Sí" if g["pagado"] else "No", date.fromisoformat(g["fecha_pago"]) if g["fecha_pago"] else None,
-            FORMAS_PAGO_GASTO.get(g["forma_pago"], ""), g["documento_tipo"] or "SIN DOCUMENTO", g["usuario"] or ""]
+            FORMAS_PAGO_GASTO.get(g["forma_pago"], ""),
+            f"Sí: {g['pago_retenido_motivo']}" if g["pago_retenido"] else "",
+            date.fromisoformat(g["pago_retenido_revision"]) if g["pago_retenido_revision"] else None,
+            g["documento_tipo"] or "SIN DOCUMENTO", g["usuario"] or ""]
            for g in sorted(filas, key=lambda x: (x["fecha"], x["id"]))],
-          {7: FECHA, 8: EUR, 9: ENTERO, 10: EUR, 11: EUR, 13: FECHA}, totales=[8, 10, 11],
+          {7: FECHA, 8: EUR, 9: ENTERO, 10: EUR, 11: EUR, 13: ENTERO, 14: EUR, 15: EUR, 17: FECHA, 20: FECHA},
+          totales=[8, 10, 11, 14, 15],
           nota=f"Cuenta de gastos · {periodo}. Fecha y vencimiento tal como figuran en la factura recibida.")
     res = defaultdict(lambda: defaultdict(float))
     for g in filas:
@@ -418,4 +521,5 @@ def expenses_excel(asset_id: int | None = None, desde: date | None = None, hasta
 @router.get("/gastos/catalogos")
 def catalogs(scope: Scope = Depends(get_scope)):
     return {"tipos_documento": TIPOS_DOCUMENTO, "categorias": CATEGORIAS_GASTO, "ambitos": AMBITOS_GASTO,
-            "formas_pago": FORMAS_PAGO_GASTO, "ivas": IVAS}
+            "formas_pago": FORMAS_PAGO_GASTO, "ivas": IVAS,
+            "retenciones": {k: {"nombre": n, "pct": p} for k, (n, p) in RETENCIONES.items()}}

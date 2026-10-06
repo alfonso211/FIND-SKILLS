@@ -237,6 +237,7 @@ def recibidas(db: Session, asset_ids: set[int], desde: date, hasta: date) -> tup
             forma = "TRANSFERENCIA"
             avisos.append(f"{_limpio(g.proveedor, 40)} nº {numero}: sin forma de pago (transferencia o cargo en "
                           "cuenta); se envía TRANSFERENCIA. Indíquela en Cuenta de gastos → Editar")
+        liquido = dinero(g.total) - dinero(g.retencion or 0)  # total de la factura: base + IVA − retención
         isp = "S" if Decimal(str(g.tipo_iva)) == 0 and pais and pais != "ES" else "N"
         filas.append({
             "activo": codigo_activo(a), "nif_receptor": a.company.cif, "proveedor_nombre": _limpio(g.proveedor),
@@ -245,9 +246,10 @@ def recibidas(db: Session, asset_ids: set[int], desde: date, hasta: date) -> tup
             "numero_rectificada": "", "fecha_factura": fecha(g.fecha), "fecha_recepcion": fecha(d.subido if d else g.creado),
             "concepto": _limpio(g.concepto), "categoria": CATEGORIAS.get(g.categoria, "OTROS"),
             "unidad": unidades.get(g.unit_id, ""), "base": importe(g.base), "tipo_iva": porcentaje(g.tipo_iva),
-            "cuota_iva": importe(g.cuota), "inversion_sujeto_pasivo": isp, "retencion": "", "total": importe(g.total),
+            "cuota_iva": importe(g.cuota), "inversion_sujeto_pasivo": isp,
+            "retencion": importe(g.retencion) if g.retencion else "", "total": importe(liquido),
             "forma_pago": forma, "dias_pago": "", "fecha_vencimiento": fecha(g.vencimiento),
-            "importe_pagado": importe(g.total if g.pagado else 0), "fecha_pago": fecha(g.fecha_pago) if g.pagado else "",
+            "importe_pagado": importe(liquido if g.pagado else 0), "fecha_pago": fecha(g.fecha_pago) if g.pagado else "",
             "estado": "REGISTRADA", "archivo_pdf": archivo})
     avisos += validar(filas, OBLIGATORIAS_RECIBIDAS, "numero", "proveedor_nif", "proveedor_pais")
     return filas, ficheros, avisos

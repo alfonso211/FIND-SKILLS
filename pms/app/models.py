@@ -479,6 +479,17 @@ class Expense(Base):
     notas: Mapped[str | None] = mapped_column(Text)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    # retención practicada al proveedor (IRPF de profesionales, arrendamientos…): se descuenta del pago.
+    # total = base + cuota (IVA incluido); lo que se paga es total − retencion
+    retencion_tipo: Mapped[str | None] = mapped_column(String(30))
+    retencion_pct: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
+    retencion: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    # pago retenido: la factura no se paga de momento (aviso a quien paga hasta la fecha de revisión)
+    pago_retenido: Mapped[bool] = mapped_column(Boolean, default=False)
+    pago_retenido_motivo: Mapped[str | None] = mapped_column(String(300))
+    pago_retenido_revision: Mapped[date | None] = mapped_column(Date)
+    pago_retenido_user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    pago_retenido_fecha: Mapped[datetime | None] = mapped_column(DateTime)
 
 
 class WorkOrderAttachment(Base):
