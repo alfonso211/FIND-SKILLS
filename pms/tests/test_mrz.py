@@ -1,3 +1,4 @@
+from app import mrz
 from app.mrz import digito, interpretar
 from docs_sinteticos import mrz_dni, mrz_pasaporte
 
@@ -59,3 +60,22 @@ def test_primera_letra_del_codigo():
     a, b, c = mrz_dni(tipo="IR", soporte="E01234567", dni="X1234567L")
     r = interpretar(["T" + a[1:], b, c])  # «I» leída como «T»
     assert (r["documento_tipo"], r["documento_num"]) == ("NIE", "X1234567L")
+
+
+def test_ruido_al_principio_de_las_lineas():
+    """El modelo MRZ a veces añade un carácter del borde de la tarjeta al principio: se quita si así cuadra."""
+    r = mrz.interpretar(["IRESPE123456782X1234567L<<<<<<", "<8001014F3106028ESP<<<<<<<<<<<6",
+                         "CMARTIN<SANZ<<LUCIA<<<<<<<<<<<<"])
+    assert r["mrz_valido"] and r["documento_num"] == "X1234567L" and r["apellidos"] == "Martin Sanz"
+
+
+def test_g_y_s_entre_cifras_son_6_y_8():
+    """G (16) y 6, S (28) y 8 valen lo mismo para el dígito de control: entre cifras son cifras."""
+    assert mrz.digitos_dudosos("XDB12345G") == "XDB123456"
+    assert mrz.digitos_dudosos("AB12S456") == "AB128456"
+    assert mrz.digitos_dudosos("GSA123456") == "GSA123456"  # letras del principio: se respetan
+
+
+def test_modelo_mrz_disponible():
+    from app import ocr_documentos
+    assert ocr_documentos.modelos_mrz()[0] == "mrz" and (ocr_documentos.TESSDATA / "mrz.traineddata").exists()

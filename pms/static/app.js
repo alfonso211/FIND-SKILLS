@@ -933,6 +933,21 @@ function pararCamara() {
 async function hayCamara() {
   try { return (await navigator.mediaDevices.enumerateDevices()).some((d) => d.kind === "videoinput"); } catch { return false; }
 }
+// Foto de móvil (12 MP, varios MB): se reduce en el navegador a 2.600 px antes de enviarla. Sube mucho antes y se
+// lee igual de bien (la copia guardada sigue siendo perfectamente legible). PDF y fotos pequeñas, tal cual.
+async function reducirFoto(fichero, lado = 2600) {
+  if (!fichero.type.startsWith("image/") || !window.createImageBitmap) return fichero;
+  try {
+    const bmp = await createImageBitmap(fichero, { imageOrientation: "from-image" });
+    const k = lado / Math.max(bmp.width, bmp.height);
+    if (k >= 1) { bmp.close?.(); return fichero; }
+    const c = Object.assign(document.createElement("canvas"), { width: Math.round(bmp.width * k), height: Math.round(bmp.height * k) });
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    bmp.close?.();
+    const blob = await new Promise((ok) => c.toBlob(ok, "image/jpeg", 0.92));
+    return blob ? new File([blob], (fichero.name || "foto").replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" }) : fichero;
+  } catch { return fichero; }  // formato que el navegador no sabe abrir: se envía el original
+}
 function bindScan(f, cid, aplicar) {
   const $s = (sel) => f.querySelector(sel);
   const msg = $s("[data-scanmsg]"), lista = $s("[data-docs]"), zona = $s("[data-camzone]"), video = $s("[data-video]");
@@ -987,15 +1002,21 @@ function bindScan(f, cid, aplicar) {
   }));
   // envía una cara y aplica lo leído; devuelve true si se han leído los datos
   const subir = async (cara, fichero) => {
+    fichero = await reducirFoto(fichero);
     const fd = new FormData();
     fd.append(cara, fichero); fd.append("tipo", tipo);
     const caja = () => f.querySelector(`[data-estado="${cara}"]`);
-    estado[cara] = '<span class="muted">Leyendo… (unos segundos)</span>';
+    // nunca se queda «pensando»: contador visible y, como mucho, 60 s de espera
+    const t0 = Date.now(), ctl = new AbortController();
+    const reloj = setInterval(() => { estado[cara] = `<span class="muted">Leyendo… ${Math.round((Date.now() - t0) / 1000)} s</span>`; if (caja()) caja().innerHTML = estado[cara]; }, 1000);
+    const corte = setTimeout(() => ctl.abort(), 60000);
+    estado[cara] = '<span class="muted">Leyendo… 0 s</span>';
     if (caja()) caja().innerHTML = estado[cara];
     msg.innerHTML = "";
     try {
       const res = await fetch(cid ? `/api/terceros/${cid}/documentos` : "/api/documentos/leer",
-        { method: "POST", headers: { Authorization: `Bearer ${S.token}` }, body: fd });
+        { method: "POST", headers: { Authorization: `Bearer ${S.token}` }, body: fd, signal: ctl.signal })
+        .finally(() => { clearInterval(reloj); clearTimeout(corte); });
       const j = await res.json().catch(() => null);
       if (!res.ok) throw new Error(errMsg(j, res));
       const lec = j.lectura;
@@ -1009,7 +1030,8 @@ function bindScan(f, cid, aplicar) {
       cargar();
       return lec.leido || lec.solo_copia;
     } catch (e) {
-      estado[cara] = `<span class="error">✖ ${esc(e.message)}</span>`;
+      const txt = e.name === "AbortError" ? "El servidor no ha respondido a tiempo: vuelva a intentarlo o complete los datos a mano" : e.message;
+      estado[cara] = `<span class="error">✖ ${esc(txt)}</span>`;
       if (caja()) caja().innerHTML = estado[cara];
       return false;
     }
