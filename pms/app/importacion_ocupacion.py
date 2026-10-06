@@ -1,8 +1,12 @@
 """Importación de la ocupación actual exportada del PMS anterior (listado por plantas).
 
-Cada hoja es una planta con filas: estado (A = alojado, R = reserva), localizador, bloque, planta, número y
-tipología, dormitorios, camas, sótano (0 = garaje exterior, 1 = sótano -1) y plaza de garaje, fechas de entrada y
-salida con las noches (en una sola celda), ocupante y teléfonos.
+Cada fila: estado (A = alojado, R = reserva), localizador, bloque o portal, situación del apartamento, dormitorios,
+camas, sótano (0 = garaje exterior, 1/2 = sótano -1/-2) y plaza de garaje, fechas de entrada y salida con las
+noches (en una sola celda), ocupante y teléfonos. Las columnas cambian de sitio según la página del listado: se
+localizan por la celda de las fechas (sótano y plaza justo antes; ocupante y teléfono después).
+
+- Suite Aeropuerto: bloque (A/B), planta y número → «A-127»; garaje «EXT-66» o «S1-177».
+- Suite Florida: portal (1-4) y «planta letra» → «P1-1J»; garaje «S1-139» o «S2-14».
 """
 import io
 import re
@@ -11,6 +15,7 @@ from datetime import date, datetime
 from openpyxl import load_workbook
 
 FECHAS = re.compile(r"(\d{2}/\d{2}/\d{4})\s*(\d{2}/\d{2}/\d{4})\s*(\d+)?")
+PLANTA_LETRA = re.compile(r"^(\d+)\s*º?\s+([A-Z])\b")  # Suite Florida: «1º     J»
 SOCIEDADES = re.compile(r"\b(S\.?L\.?U?|S\.?A\.?U?|UK|LTD|LLC|GMBH|SAS|SL|SA|S\.L\.)\b\.?$", re.I)
 
 
@@ -55,29 +60,40 @@ def telefono(v) -> str | None:
     return t[:-2] if t.endswith(".0") else t
 
 
+def _unidad(f: list) -> str:
+    bloque, sitio = f[2], str(f[3] or "").strip()
+    m = PLANTA_LETRA.match(sitio)
+    if isinstance(bloque, (int, float)) and m:  # Suite Florida: portal + planta + letra
+        return f"P{int(bloque)}-{m.group(1)}{m.group(2)}"
+    return f"{str(bloque or '').strip()}-{int(str(f[4]).split()[0])}"  # Suite Aeropuerto: bloque + número
+
+
 def leer(datos: bytes) -> list[dict]:
     wb = load_workbook(io.BytesIO(datos), read_only=True, data_only=True)
     filas = []
     for ws in wb.worksheets:
         for n, f in enumerate(ws.iter_rows(values_only=True), 1):
-            f = list(f) + [None] * 12
+            f = list(f) + [None] * 14
             if f[0] not in ("A", "R") or not isinstance(f[1], (int, float)):
                 continue
             r = {"hoja": ws.title, "fila": n, "situacion": "alojado" if f[0] == "A" else "reserva",
-                 "localizador": str(int(f[1])), "bloque": str(f[2] or "").strip(),
-                 "planta": str(f[3] or "").replace("º", "").strip(), "ocupante": str(f[10] or "").strip(),
-                 "telefono": telefono(f[11])}
+                 "localizador": str(int(f[1])), "ocupante": "", "telefono": None, "unidad": "?"}
             try:
-                r["numero"] = str(int(str(f[4]).split()[0]))
-                m = FECHAS.search(str(f[9] or ""))
-                if not m:
-                    raise ValueError(f"fechas no reconocidas: «{f[9]}»")
+                i = next((j for j, c in enumerate(f) if isinstance(c, str) and FECHAS.search(c)), None)
+                if i is None:
+                    raise ValueError("fechas no reconocidas")
+                resto = [c for c in f[i + 1:] if c not in (None, "")]
+                r["ocupante"] = str(resto[0]).strip() if resto else ""
+                r["telefono"] = telefono(resto[1]) if len(resto) > 1 else None
+                r["unidad"] = _unidad(f)
+                m = FECHAS.search(f[i])
                 r["entrada"], r["salida"] = _fecha(m.group(1)), _fecha(m.group(2))
                 if r["salida"] <= r["entrada"]:
                     raise ValueError("la salida es anterior a la entrada")
-                if f[8] not in (None, ""):
-                    r["garaje"] = f"{'EXT' if int(f[7] or 0) == 0 else 'S1'}-{int(f[8])}"
-            except (ValueError, TypeError) as e:
+                sotano, plaza = f[i - 2], f[i - 1]
+                if isinstance(plaza, (int, float)):
+                    r["garaje"] = f"{'EXT' if int(sotano or 0) == 0 else f'S{int(sotano)}'}-{int(plaza)}"
+            except (ValueError, TypeError, IndexError) as e:
                 r["error"] = str(e)
             filas.append(r)
     return filas
