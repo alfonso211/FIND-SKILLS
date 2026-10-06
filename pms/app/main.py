@@ -1,12 +1,13 @@
-import asyncio
 import hashlib
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.exc import OperationalError
 
-from . import avisos
+from . import avisos, vigilante
 from .config import BASE_DIR
 from .database import SessionLocal
 from .migraciones import migrar
@@ -15,6 +16,7 @@ from .routers import (admin, agenda, alquiler, auth, buscar, documentos, estruct
 from .seed import seed
 
 STATIC = BASE_DIR / "static"
+log = logging.getLogger("pms")
 
 # Versión de la interfaz: huella de sus ficheros. Cambia con cada actualización del programa; el navegador
 # descarga entonces los ficheros nuevos (van con ?v=) y las pestañas abiertas se recargan solas.
@@ -40,27 +42,21 @@ app.include_router(turistico.publico)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
-class LimitePeticiones:
-    """Como mucho MAX_EN_CURSO peticiones a la API se atienden a la vez; las demás esperan su turno sin ocupar
-    hilos ni conexiones. Sin este límite, en un pico (p.ej. todas las pestañas recargándose tras una actualización)
-    unas peticiones tienen conexión a la base de datos pero no hilo y otras hilo pero no conexión: el PMS se
-    bloquea («QueuePool limit … reached»). El límite queda por debajo del pool de conexiones y de los hilos."""
-    MAX_EN_CURSO = 16
-
-    def __init__(self, app):
-        self.app = app
-        self.turno = None
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http" or not scope["path"].startswith("/api/"):
-            return await self.app(scope, receive, send)
-        if self.turno is None:  # se crea dentro del bucle de eventos que atiende las peticiones
-            self.turno = asyncio.Semaphore(self.MAX_EN_CURSO)
-        async with self.turno:
-            await self.app(scope, receive, send)
+@app.exception_handler(vigilante.Ocupado)
+async def ocupado(_: Request, exc: vigilante.Ocupado):
+    return JSONResponse({"detail": str(exc)}, status_code=503)
 
 
-app.add_middleware(LimitePeticiones)
+@app.exception_handler(OperationalError)
+async def base_ocupada(request: Request, exc: OperationalError):
+    # Consulta cancelada por tiempo (statement_timeout / lock_timeout) o conexión perdida: se responde en vez de
+    # dejar la petición colgada, y se anota para saber qué la provocó
+    log.warning("Base de datos: %s %s -> %s", request.method, request.url.path, (str(exc.orig or exc).splitlines() or [""])[0])
+    return JSONResponse({"detail": "La base de datos está ocupada en este momento. Reintente en unos segundos."},
+                        status_code=503)
+
+
+app.add_middleware(vigilante.Vigilante)
 
 
 @app.middleware("http")

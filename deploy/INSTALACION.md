@@ -270,3 +270,12 @@ cd deploy && /opt/pms/deploy/backup.sh && docker compose up -d --build
 - [ ] `backup.sh` se ha ejecutado a mano una vez y ha generado un fichero en `/var/backups/pms`.
 - [ ] La copia fuera del servidor está configurada.
 - [ ] Todos los usuarios iniciales han cambiado su contraseña.
+
+## Si el PMS se cuelga
+
+El PMS se vigila solo. Si deja de responder, guarda un diagnóstico y se reinicia en menos de 3 minutos, sin perder datos.
+
+- Comprobar que responde: `docker ps`. La aplicación debe salir como `(healthy)`.
+- Ver los avisos del vigilante: `cd /opt/pms/deploy && docker compose logs app | grep -E "COLGADO|lenta|Sin turno|Base de datos"`.
+- Leer los diagnósticos guardados: `docker compose exec app ls /data/documentos/_diagnostico`. Para ver uno: `docker compose exec app cat /data/documentos/_diagnostico/<fichero>`.
+- Reinicio manual si hiciera falta: `docker compose restart app`.

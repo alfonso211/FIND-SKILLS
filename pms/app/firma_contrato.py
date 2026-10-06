@@ -23,6 +23,7 @@ from docx.shared import Cm
 
 from . import marca
 from .contratos import _parrafos
+from .vigilante import trabajo_pesado
 
 MADRID = ZoneInfo("Europe/Madrid")
 VALIDEZ_ENLACE_DIAS = 7
@@ -37,7 +38,7 @@ def a_pdf(docx_bytes: bytes) -> bytes:
     exe = shutil.which("soffice") or shutil.which("libreoffice")
     if not exe:
         raise RuntimeError("El servidor no tiene instalado el conversor a PDF (LibreOffice)")
-    with tempfile.TemporaryDirectory(prefix="pms_pdf_") as tmp:
+    with trabajo_pesado("conversión a PDF"), tempfile.TemporaryDirectory(prefix="pms_pdf_") as tmp:
         d = Path(tmp)
         (d / "contrato.docx").write_bytes(docx_bytes)
         r = subprocess.run([exe, f"-env:UserInstallation=file://{d}/perfil", "--headless", "--norestore",

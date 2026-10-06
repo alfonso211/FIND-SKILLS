@@ -15,6 +15,7 @@ os.environ["PMS_DOCS_DIR"] = f"{_tmp}/documentos"
 os.environ["PMS_SMTP_HOST"] = "memoria"  # los avisos se guardan en avisos.BANDEJA, no se envían
 os.environ["PMS_SMTP_FROM"] = "avisos@inversiete.es"
 os.environ["PMS_AVISOS_AUTO"] = "0"
+os.environ["PMS_VIGILANTE"] = "0"  # el reinicio automático solo en el servidor
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient  # noqa: E402

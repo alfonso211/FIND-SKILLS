@@ -24,12 +24,14 @@ const canOpenOT = () => can("mantenimiento.abrir") || can("mantenimiento.editar"
 const assetsOf = (mod) => S.assets.filter((a) => !mod || a.modalidad === mod);
 
 // ------------------------------------------------------------------ API
-async function api(method, path, body) {
+async function api(method, path, body, reintento = true) {
   const res = await fetch(path, {
     method, headers: { "Content-Type": "application/json", ...(S.token ? { Authorization: `Bearer ${S.token}` } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (res.status === 401 && S.token) { logout(); throw new Error("Sesión caducada"); }
+  // Servidor ocupado (503): las consultas se reintentan solas una vez a los 3 s
+  if (res.status === 503 && method === "GET" && reintento) { await new Promise((r) => setTimeout(r, 3000)); return api(method, path, body, false); }
   nuevaVersion(res.headers.get("X-PMS-Version"));
   const data = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) throw new Error(errMsg(data, res));

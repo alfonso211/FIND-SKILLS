@@ -17,6 +17,7 @@ import numpy as np
 from PIL import Image, ImageFilter, ImageOps
 
 from . import mrz
+from .vigilante import trabajo_pesado
 
 FORMATOS = {"image/jpeg", "image/png", "image/webp", "image/tiff", "image/bmp", "application/pdf"}
 TAM_MAX = 15 * 1024 * 1024
@@ -35,7 +36,10 @@ def a_imagenes(datos: bytes) -> tuple[str, list[Image.Image]]:
     if datos[:5] == b"%PDF-":
         import pypdfium2 as pdfium
         pdf = pdfium.PdfDocument(datos)
-        paginas = [pdf[i].render(scale=300 / 72).to_pil() for i in range(min(len(pdf), 2))]
+        paginas = []
+        for i in range(min(len(pdf), 2)):  # 300 ppp, como mucho 4.000 px de lado (una página enorme no agota la memoria)
+            ancho, alto = pdf[i].get_size()
+            paginas.append(pdf[i].render(scale=min(300 / 72, 4000 / max(ancho, alto, 1))).to_pil())
         return "application/pdf", paginas
     try:
         img = Image.open(io.BytesIO(datos))
@@ -48,9 +52,15 @@ def a_imagenes(datos: bytes) -> tuple[str, list[Image.Image]]:
     return mime, [ImageOps.exif_transpose(img)]
 
 
+OCR_TIEMPO = 20  # s por lectura: una imagen rara no puede dejar a Tesseract trabajando indefinidamente
+
+
 def _ocr(img: Image.Image, **kw) -> str:
     import pytesseract
-    return pytesseract.image_to_string(img, **kw)
+    try:
+        return pytesseract.image_to_string(img, timeout=OCR_TIEMPO, **kw)
+    except RuntimeError:  # tiempo agotado: se trata como lectura vacía
+        return ""
 
 
 def _a_ancho(img: Image.Image, ancho: int) -> Image.Image:
@@ -83,7 +93,11 @@ def _angulo(g: Image.Image) -> float:
 def _cajas_mrz(img: Image.Image) -> tuple[int, int, int, int] | None:
     """Zona de las líneas MRZ: palabras con «<<» o cadenas largas en mayúsculas y números."""
     import pytesseract
-    d = pytesseract.image_to_data(img, lang="eng", config="--psm 11", output_type=pytesseract.Output.DICT)
+    try:
+        d = pytesseract.image_to_data(img, lang="eng", config="--psm 11", output_type=pytesseract.Output.DICT,
+                                      timeout=OCR_TIEMPO)
+    except RuntimeError:
+        return None
     cajas = []
     for i, t in enumerate(d["text"]):
         t = t.strip()
@@ -184,6 +198,11 @@ def _como_caras(caras) -> list[tuple[str, bytes]]:
 
 
 def leer(caras, tipo: str | None = None) -> dict:
+    with trabajo_pesado("lectura de documentos"):
+        return _leer(caras, tipo)
+
+
+def _leer(caras, tipo: str | None = None) -> dict:
     """Lee las caras del documento ([bytes] o [(cara, bytes)]) y devuelve los datos encontrados y los avisos.
     `tipo` (DNI, NIE, PAS, OTRO) es lo que indica el operario: con DNI/NIE el anverso no se lee (no lleva MRZ)."""
     if not disponible():
