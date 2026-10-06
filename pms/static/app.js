@@ -233,7 +233,7 @@ V.panel = async (el) => {
         k.push([`${al[u] || 0} / ${n}`, `${t[0].toUpperCase()}${t.slice(1)} alquilad${["vivienda", "oficina"].includes(u) ? "as" : "os"}`]);
       });
     }
-    if (a.produccion_mes != null) k.push([eur(a.produccion_mes), "Producción mes (facturado sin IVA ni garajes)"]);
+    if (a.produccion_mes != null) k.push([eur(a.produccion_mes), "Producción mes (facturado sin IVA ni garajes)" + (a.produccion_mes_externa ? ` · ${eur(a.produccion_mes_externa)} de SYADE` : "")]);
     if (a.garajes) k.push([`${a.garajes_ocupados} / ${a.garajes}`, "Plazas de garaje alquiladas hoy (no computa)"]);
     else if (a.usos?.garaje && a.alquiladas_por_uso) k.push([`${a.alquiladas_por_uso.garaje || 0} / ${a.usos.garaje}`, "Plazas de garaje alquiladas (no computa)"]);
     if (a.garajes_facturado_mes) k.push([eur(a.garajes_facturado_mes), "Garajes facturados mes (aparte)"]);
@@ -1987,11 +1987,77 @@ V.informes = async (el) => {
     <span class="muted">Activo: ${esc(S.asset ? assetName(Number(S.asset)) : "todos los de su ámbito")} (filtro de arriba)</span></div>
     <div class="cards">${INF.map(([k, t, d]) => `<div class="card"><h3>${esc(t)}</h3><p class="sub">${esc(d)}</p><button class="btn primary" data-inf="${k}">Descargar Excel</button></div>`).join("")}</div>`;
   el.querySelectorAll("[data-inf]").forEach((b) => (b.onclick = () => run(() => download("GET", `/api/informes/${b.dataset.inf}?` + new URLSearchParams(clean({ desde: $("#d", el).value, hasta: $("#h", el).value, asset_id: S.asset }))))));
+  if (can("finanzas.ver")) {
+    $(".cards", el).insertAdjacentHTML("beforeend", `<div class="card"><h3>Programa anterior (SYADE)</h3><p class="sub">Facturación de 2026 importada de SYADE (alojamiento, servicios, abonos y fianzas) para ver la producción antes de que el PMS facture.</p>
+      <div class="toolbar"><button class="btn" id="histVer">Ver resumen</button>${can("facturas.rectificar") ? '<button class="btn primary" id="histImp">Importar listados</button>' : ""}</div></div>`);
+    $("#histVer", el).onclick = resumenHistorico;
+    if ($("#histImp", el)) $("#histImp", el).onclick = () => importarHistorico(resumenHistorico);
+  }
   if (can("reservas.ver") && assetsOf("apartamentos_turisticos").length) {
     $(".cards", el).insertAdjacentHTML("beforeend", '<div class="card"><h3>Encuesta del INE</h3><p class="sub">Cuestionario mensual de ocupación en apartamentos turísticos: viajeros y pernoctaciones por día y residencia, ocupación y precios.</p><button class="btn primary" id="ine">Preparar encuesta</button></div>');
     $("#ine", el).onclick = encuestaIne;
   }
 };
+
+// ---- facturación del programa anterior (SYADE): importación de sus listados y resumen mensual
+const HIST_CMP = { registros: "Registros", base: "Base", cuota: "IVA", total: "Total", fianza: "Fianzas cobradas", devuelto: "Fianzas devueltas", retenido: "Retenido" };
+async function importarHistorico(recargar) {
+  const aid = await pickAsset();
+  form(`Importar facturación del programa anterior · ${assetName(aid)}`, [
+    { html: `<p>Listados de SYADE pasados a Excel. Puede elegir varios a la vez: <b>facturas de alojamiento</b>, <b>facturas de servicios</b>, <b>abonos</b> y <b>fianzas devueltas</b> (se reconocen solos).</p>
+      <ul class="muted"><li>Cada listado se comprueba con su fila de <b>Totales</b>: debe cuadrar al céntimo.</li>
+      <li>Cuenta en la producción del panel y del informe; no afecta a la numeración de las facturas del PMS.</li>
+      <li>Si vuelve a importar un listado, se actualiza: no se duplica nada.</li></ul>` },
+    { html: '<label>Ficheros *<input type="file" accept=".xlsx" multiple data-fich required></label>' },
+  ], {}, async (_, fr) => {
+    const fichs = [...$("[data-fich]", fr).files];
+    const enviar = (fich, confirmar) => { const fd = new FormData(); fd.append("fichero", fich); fd.append("asset_id", aid); fd.append("confirmar", confirmar); return upload("/api/historico/importar", fd); };
+    const prev = [];
+    for (const fich of fichs) prev.push(await enviar(fich, false).catch((e) => ({ error: e.message, nombre: fich.name })));
+    setTimeout(() => {
+      const bloques = prev.map((p, i) => p.error ? `<div class="aviso-faltan"><b>${esc(fichs[i].name)}</b>: ${esc(p.error)}</div>` : `
+        <fieldset><legend>${esc(p.tipo_nombre)} · ${esc(fichs[i].name)}</legend>
+        <p>${p.cuadra ? '<span class="badge b-vigente">✔ cuadra con los totales del listado</span>' : '<span class="badge b-cancelada">no cuadra</span>'}
+          ${p.registros} registros (${p.nuevas} nuevos, ${p.actualizadas} a actualizar) · ${fdate(p.desde)} → ${fdate(p.hasta)}${p.con_reserva ? ` · ${p.con_reserva} enlazados con su reserva` : ""}</p>
+        <div class="table-wrap"><table><thead><tr><th></th>${Object.keys(p.leido).map((k) => `<th class="num">${HIST_CMP[k] || k}</th>`).join("")}</tr></thead><tbody>
+          <tr><td>Leído</td>${Object.entries(p.leido).map(([k, v]) => `<td class="num">${k === "registros" ? v : eur(v)}</td>`).join("")}</tr>
+          ${p.esperado ? `<tr><td>Totales del listado</td>${Object.keys(p.leido).map((k) => `<td class="num">${p.esperado[k] == null ? "—" : k === "registros" ? p.esperado[k] : eur(p.esperado[k])}</td>`).join("")}</tr>` : ""}
+        </tbody></table></div>${p.avisos.length ? `<ul class="muted">${p.avisos.map((a) => `<li>${esc(a)}</li>`).join("")}</ul>` : ""}</fieldset>`).join("");
+      const validos = prev.map((p, i) => [p, fichs[i]]).filter(([p]) => !p.error);
+      form(`Comprobación · ${validos.length} listado(s) válido(s)`, [{ html: bloques }], {}, async () => {
+        if (!validos.length) throw new Error("Ningún listado válido");
+        if (validos.some(([p]) => !p.cuadra) && !confirm("Algún listado no cuadra con sus totales. ¿Importarlo igualmente?")) throw new Error("Importación cancelada");
+        let n = 0;
+        for (const [, fich] of validos) n += (await enviar(fich, true)).registros;
+        toast(`Importados ${n} registros del programa anterior`); recargar && recargar();
+      }, "Importar");
+      $("#modal").classList.add("ancho");
+    }, 0);
+  }, "Comprobar ficheros");
+}
+async function resumenHistorico() {
+  const datos = await run(() => get("/api/historico", { asset_id: S.asset }));
+  if (!datos.length) return toast("Todavía no se ha importado facturación del programa anterior", true);
+  const col = [["alojamiento", "Alojamiento (base)"], ["abonos", "De ello, abonos"], ["servicio", "Servicios (base)"], ["produccion", "Producción (base)"],
+    ["total", "Total con IVA"], ["fianzas_cobradas", "Fianzas cobradas"], ["fianzas_devueltas", "Fianzas devueltas"]];
+  const html = datos.map((a) => {
+    const tot = {}; a.meses.forEach((m) => col.forEach(([k]) => (tot[k] = (tot[k] || 0) + (m[k] || 0))));
+    const celda = (k, v) => `<td class="num">${k === "n" ? (v || 0) : v ? eur(v) : "—"}</td>`;
+    const mes = (m) => { const [y, mm] = m.split("-"); return `${MESES[Number(mm) - 1]} ${y}`; };
+    return `<h4>${esc(a.activo)}</h4><p class="muted">${fdate(a.desde)} → ${fdate(a.hasta)} · importado ${fdt(a.importado)} · ${Object.entries(a.registros).map(([t, n]) => `${n} ${label(t)}`).join(" · ")}</p>
+      <div class="table-wrap"><table><thead><tr><th>Mes</th>${col.map(([, t]) => `<th class="num">${t}</th>`).join("")}</tr></thead><tbody>
+      ${a.meses.map((m) => `<tr><td>${mes(m.mes)}</td>${col.map(([k]) => celda(k, m[k])).join("")}</tr>`).join("")}
+      <tr class="total"><td><b>Total</b></td>${col.map(([k]) => `<td class="num"><b>${k === "n" ? tot[k] : eur(tot[k])}</b></td>`).join("")}</tr></tbody></table></div>
+      ${can("facturas.rectificar") ? `<div class="toolbar"><span class="spacer"></span><button type="button" class="btn sm danger" data-borra="${a.asset_id}">Borrar lo importado de ${esc(a.activo)}</button></div>` : ""}`;
+  }).join("");
+  const f = cerrarSolo(form("Facturación del programa anterior (SYADE)", [{ html: `<p class="muted">Producción = base imponible de facturas de alojamiento y servicios menos abonos, por fecha de factura. Las fianzas no son producción.</p>${html}` }], {}, async () => {}));
+  $("#modal").classList.add("ancho");
+  f.querySelectorAll("[data-borra]").forEach((b) => (b.onclick = async () => {
+    if (!confirm("¿Borrar toda la facturación importada de este activo? Podrá volver a importarla.")) return;
+    const r = await run(() => api("DELETE", `/api/historico?asset_id=${b.dataset.borra}`));
+    toast(`${r.borrados} registros borrados`); $("#modal").close();
+  }));
+}
 
 // Factura solo de servicios: a un cliente externo (p.ej. plaza de aparcamiento) o al huésped de una reserva
 async function facturaServicios(reload, reserva) {

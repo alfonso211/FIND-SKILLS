@@ -624,3 +624,29 @@ class LeaseDocument(Base):
     sha256: Mapped[str] = mapped_column(String(64))
     user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     subido: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class ExternalInvoice(Base):
+    """Facturación del programa anterior (SYADE) importada para ver la producción antes de que el PMS facture.
+    No forma parte de la numeración ni de la cadena de huellas de las facturas del PMS."""
+    __tablename__ = "facturas_externas"
+    __table_args__ = (UniqueConstraint("asset_id", "tipo", "serie", "numero"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
+    origen: Mapped[str] = mapped_column(String(20), default="SYADE")
+    tipo: Mapped[str] = mapped_column(String(20))  # alojamiento | servicio | abono | fianza_devuelta
+    serie: Mapped[str] = mapped_column(String(12))
+    numero: Mapped[str] = mapped_column(String(30))
+    fecha: Mapped[date] = mapped_column(Date, index=True)
+    localizador: Mapped[str | None] = mapped_column(String(60), index=True)
+    nif: Mapped[str | None] = mapped_column(String(30))
+    cliente: Mapped[str | None] = mapped_column(String(200))
+    base: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    tipo_iva: Mapped[float | None] = mapped_column(Numeric(5, 2))
+    cuota: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    total: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    fianza: Mapped[float] = mapped_column(Numeric(12, 2), default=0)  # fianza cobrada con la factura / devuelta
+    detalle: Mapped[dict | None] = mapped_column(JSON)  # abono: factura rectificada; fianza: recibida, retenida…
+    reservation_id: Mapped[int | None] = mapped_column(ForeignKey("reservas.id", ondelete="SET NULL"))
+    importado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))

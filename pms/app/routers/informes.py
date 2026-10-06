@@ -18,6 +18,7 @@ from ..models import (MODALIDADES_CONTRATO, MODALIDADES_RESERVA, Asset, Charge, 
                       Reservation, Unit, WorkOrder)
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request
+from . import historico
 
 router = APIRouter(prefix="/api/informes", tags=["informes"])
 
@@ -186,6 +187,12 @@ def _facturado(db, ids: list[int], desde: date, hasta: date) -> dict[tuple[int, 
         acc["iva"] += float(f.cuota_iva)
         acc["total"] += float(f.total)
         acc["n"] += 1
+    # facturación del programa anterior (SYADE), importada: suma en la producción y se indica aparte
+    for clave, ext in historico.mensual(db, ids, desde, hasta).items():
+        acc = out[clave]
+        for t in ("alojamiento", "servicio", "base", "iva", "total", "n"):
+            acc[t] += ext.get(t, 0)
+        acc["externo"] += ext.get("base", 0)
     return out
 
 
@@ -202,15 +209,16 @@ def _produccion(db, scope, wb, desde, hasta, asset_id):
             r = lambda k: round(v.get(k, 0), 2)  # noqa: E731
             filas.append([a.nombre, mes, r("alojamiento"), r("renta"), r("servicio"),
                           round(v.get("base", 0) - v.get("garaje", 0), 2), r("garaje"), r("iva"), r("total"),
-                          int(v.get("n", 0))])
+                          int(v.get("n", 0)), r("externo")])
     _hoja(wb, "Producción", ["Activo", "Mes", "Alojamiento (base)", "Rentas (base)", "Servicios (base)",
                              "Producción del edificio (base, sin garajes)", "Plazas de garaje (base, aparte)", "IVA",
-                             "Total facturado", "Nº facturas"],
-          filas, {2: EUR, 3: EUR, 4: EUR, 5: EUR, 6: EUR, 7: EUR, 8: EUR, 9: ENTERO},
-          totales=[2, 3, 4, 5, 6, 7, 8, 9],
+                             "Total facturado", "Nº facturas", "De ello, del programa anterior (base)"],
+          filas, {2: EUR, 3: EUR, 4: EUR, 5: EUR, 6: EUR, 7: EUR, 8: EUR, 9: ENTERO, 10: EUR},
+          totales=[2, 3, 4, 5, 6, 7, 8, 9, 10],
           nota="Producción = lo facturado en cada mes según la fecha de la factura, sin IVA. Incluye las "
                "rectificativas (en negativo). Las plazas de garaje no computan en la producción del edificio: se "
-               "muestran aparte (el total facturado sí las incluye).")
+               "muestran aparte (el total facturado sí las incluye). Incluye la facturación importada del programa "
+               "anterior (SYADE), indicada en la última columna.")
 
 
 def _tramo(dias: int) -> str:
