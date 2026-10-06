@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .. import hitos
 from ..database import get_db
 from ..facturacion import bases_por_tipo, pendientes_cobro
-from ..models import MODALIDADES, MODALIDADES_RESERVA, Asset, Charge, Invoice, Lease, Reservation, Unit, WorkOrder
+from ..models import MODALIDADES, MODALIDADES_RESERVA, Asset, Charge, Expense, Invoice, Lease, Reservation, Unit, WorkOrder
 from ..security import Scope, get_scope
 from . import historico
 from .mantenimiento import ABIERTAS
@@ -106,6 +106,14 @@ def panel(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
             k["facturas_pendientes"] = len(pend)
             k["facturas_pendientes_importe"] = round(sum(f["total"] for f in pend), 2)
             k["facturas_pendientes_dias"] = max((f["dias"] for f in pend), default=0)
+
+        if scope.can_asset("finanzas.ver", a.id) and scope.can_asset("documentos.ver", a.id):
+            ret = list(db.scalars(select(Expense).where(Expense.asset_id == a.id, Expense.pago_retenido,
+                                                        ~Expense.pagado)))
+            k["pagos_retenidos"] = len(ret)
+            k["pagos_retenidos_importe"] = round(sum(float(g.total) - float(g.retencion or 0) for g in ret), 2)
+            k["pagos_retenidos_revisar"] = sum(1 for g in ret if g.pago_retenido_revision
+                                               and g.pago_retenido_revision <= hoy)
 
         if scope.can_asset("mantenimiento.ver", a.id):
             wo = select(func.count()).select_from(WorkOrder).where(

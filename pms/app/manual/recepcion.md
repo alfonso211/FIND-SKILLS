@@ -52,4 +52,6 @@
 - Las facturas y cartas que lleguen: **Documentos recibidos → Subir documento** (foto o PDF), con la **fecha de la factura** y su **vencimiento**.
 - **Muy importante**: la fecha es la **impresa en la factura**, no la de hoy. De ella depende el trimestre del IVA. El programa ya no la rellena sola.
 - Indique siempre **cómo se paga**: **Transferencia** (la pagamos nosotros) o **Cargo en cuenta (domiciliación)** (el proveedor la carga en el banco). Es obligatorio.
+- **Retención de IRPF** (facturas de profesionales, alquileres…): elija el tipo en **Retención** y compruebe el **%** (15 % profesionales, 7 % inicio de actividad, 19 % arrendamientos, 1 % módulos, u «Otra» con su %). Ponga como total el **que figura en la factura** (ya con la retención descontada).
+- **Retener el pago** (una factura que no se debe pagar todavía): marque **«Retener el pago»**, escriba el **motivo** y la **fecha de revisión**. Dirección y administración reciben un aviso al momento y cada día en el resumen. También desde **Cuenta de gastos → Retener pago**.
 - Si se equivocó: **Cuenta de gastos → Editar** y corrija la **Fecha de la factura** o la forma de pago.

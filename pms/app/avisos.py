@@ -22,8 +22,8 @@ from sqlalchemy import or_, select
 from . import hitos
 from .config import settings
 from .database import SessionLocal
-from .models import (MODALIDADES_RESERVA, Asset, Charge, Contact, EmailLog, Lease, PreventivePlan, Reservation,
-                     StaffMember, Unit, User, WorkOrder)
+from .models import (MODALIDADES_RESERVA, Asset, Charge, Contact, EmailLog, Expense, Lease, PreventivePlan,
+                     Reservation, StaffMember, Unit, User, WorkOrder)
 from .planos import zonas
 from .security import Scope
 
@@ -45,12 +45,14 @@ TIPOS = {
                        "(resumen diario)", "reservas.ver"),
     "facturas_pendientes": ("Facturas emitidas pendientes de cobro (renovaciones y reservas que pagan por "
                             "transferencia): revisar si ha llegado el pago (resumen diario)", "facturas.ver"),
+    "pagos_retenidos": ("Facturas recibidas con el pago retenido: aviso al momento de retenerlas y, en el resumen "
+                        "diario, las retenidas con su fecha de revisión", "finanzas.ver"),
     "hitos_normativos": ("Hitos normativos (Verifactu, factura electrónica…) con antelación para adaptar el PMS "
                          "(resumen diario)", "finanzas.ver"),
     "agenda": ("Agenda: tareas, reuniones y recordatorios que le envían, aviso antes de cada cita y su agenda del "
                "día en el resumen", None),
 }
-RESUMEN = ("hitos_normativos", "facturas_pendientes", "estancias_vencidas", "recibos_impagados", "contratos_vencen", "garajes_impagados",
+RESUMEN = ("hitos_normativos", "pagos_retenidos", "facturas_pendientes", "estancias_vencidas", "recibos_impagados", "contratos_vencen", "garajes_impagados",
            "garajes_vencen", "revisiones_normativas")
 DIAS_ESTANCIAS = 3
 DIAS_GARAJES = 30
@@ -221,6 +223,50 @@ def _ot_urgente_personal(db, w: WorkOrder) -> int:
     return sum(r["ok"] for r in res)
 
 
+# --------------------------------------------------------------------------- pago retenido (al momento)
+def _euros(x) -> str:
+    return f"{float(x):,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _fila_retenido(db, g: Expense, activo: str, dia: date) -> list:
+    autor = db.get(User, g.pago_retenido_user_id) if g.pago_retenido_user_id else None
+    dias = (g.pago_retenido_revision - dia).days if g.pago_retenido_revision else 0
+    return [activo, g.proveedor or "", g.numero_factura or "", g.fecha.strftime("%d/%m/%Y"),
+            _euros(float(g.total) - float(g.retencion or 0)), g.pago_retenido_motivo or "",
+            autor.nombre if autor else "",
+            g.pago_retenido_revision.strftime("%d/%m/%Y") if g.pago_retenido_revision else "",
+            f"REVISAR: pasada hace {-dias} días" if dias < 0 else "REVISAR HOY" if dias == 0 else f"en {dias} días"]
+
+
+def pago_retenido(gid: int, autor_id: int | None) -> int:
+    """Aviso a quien paga (dirección, administración) de que una factura no debe pagarse de momento."""
+    if not configurado():
+        return 0
+    with SessionLocal() as db:
+        g = db.get(Expense, gid)
+        if g is None or not g.pago_retenido:
+            return 0
+        a = db.get(Asset, g.asset_id)
+        cab = ["Activo", "Proveedor", "Nº factura", "Fecha", "A pagar", "Motivo", "Retenida por", "Revisión",
+               "Situación"]
+        fila = _fila_retenido(db, g, a.nombre, hoy())
+        asunto = f"PAGO RETENIDO · {a.nombre} · {g.proveedor or 'proveedor'} {g.numero_factura or ''}".strip()[:200]
+        texto = ("No pagar esta factura hasta su revisión:\n\n" + "\n".join(f"{k}: {v}" for k, v in zip(cab, fila))
+                 + (f"\n\n{settings.url}/#gastos" if settings.url else ""))
+        html = _html("Factura con el pago retenido", "<p>No pagar esta factura hasta su revisión.</p>"
+                     + _tabla([], [[k, v] for k, v in zip(cab, fila)]))
+        clave = f"pago_retenido:{gid}:{g.pago_retenido_revision}"
+        enviados = 0
+        for user, ids in suscritos(db, "pagos_retenidos"):
+            if user.id == autor_id or (ids is not None and g.asset_id not in ids):
+                continue
+            if db.scalar(select(EmailLog.id).where(EmailLog.clave == clave, EmailLog.user_id == user.id, EmailLog.ok)):
+                continue
+            enviados += _enviar_registrado(db, user, user.email, clave, "pagos_retenidos", asunto, texto, html)
+        db.commit()
+        return enviados
+
+
 # --------------------------------------------------------------------------- resumen diario
 def _renovada():
     from .routers.turistico import _renovada as cond  # import local: el router importa este módulo
@@ -280,7 +326,11 @@ def _datos_resumen(db, dia: date) -> dict[str, list[tuple[int, list]]]:
     facturas = [(f["asset_id"], [f["activo"], f["codigo"], f"{date.fromisoformat(f['fecha']):%d/%m/%Y}", f["cliente"],
                                  f["unidad"] or "", f"{f['total']:,.2f} €".replace(",", "X").replace(".", ",")
                                  .replace("X", "."), f"{f['dias']} días"]) for f in pendientes_cobro(db, None, dia)]
-    return {"hitos_normativos": normativos, "facturas_pendientes": facturas, "estancias_vencidas": estancias, "recibos_impagados": recibos, "contratos_vencen": contratos,
+    retenidos = []
+    for g in db.scalars(select(Expense).where(Expense.pago_retenido, ~Expense.pagado)
+                        .order_by(Expense.pago_retenido_revision, Expense.id)):
+        retenidos.append((g.asset_id, _fila_retenido(db, g, nombres[g.asset_id], dia)))
+    return {"hitos_normativos": normativos, "pagos_retenidos": retenidos, "facturas_pendientes": facturas, "estancias_vencidas": estancias, "recibos_impagados": recibos, "contratos_vencen": contratos,
             "garajes_impagados": garajes,
             "garajes_vencen": garajes_fin, "revisiones_normativas": revisiones}
 
@@ -289,6 +339,9 @@ SECCIONES = {
     "agenda": ("Su agenda de hoy y tareas pendientes", ["Hora", "Tipo", "Asunto", "De", "Situación"], "cita(s) en agenda"),
     "hitos_normativos": ("Hitos normativos: preparar el PMS con tiempo", ["Hito", "Fecha límite", "Qué hacer"],
                          "hito(s) normativo(s)"),
+    "pagos_retenidos": ("Facturas recibidas con el pago retenido: no pagar hasta revisarlas",
+                        ["Activo", "Proveedor", "Nº factura", "Fecha", "A pagar", "Motivo", "Retenida por",
+                         "Revisión", "Situación"], "pago(s) retenido(s)"),
     "facturas_pendientes": ("Facturas pendientes de cobro: compruebe si ha llegado la transferencia y márquela "
                             "cobrada", ["Activo", "Factura", "Fecha", "Cliente", "Apartamento", "Total", "Pendiente"],
                             "factura(s) pendiente(s) de cobro"),

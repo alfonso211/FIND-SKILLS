@@ -1,5 +1,10 @@
 # Novedades
 
+## 2026-10-06 · Versión 1.3 · Retenciones y pagos retenidos
+- **Recepción y dirección**: las facturas recibidas admiten **retención de IRPF** (profesionales 15 %, inicio de actividad 7 %, arrendamientos 19 %, módulos 1 %) u **otra retención** con su %. Se descuenta de lo que hay que pagar y se envía a INVERGESTION.
+- **Recepción y dirección**: nueva opción **«Retener el pago»** (no pagar de momento) con **motivo** y **fecha de revisión**.
+- **Dirección y administración**: aviso por **correo al momento**, en el **resumen diario** y en el **Panel** de las facturas con el pago retenido. Se liberan con **Liberar pago**.
+
 ## 2026-10-06 · Versión 1.2 · Forma de pago de las facturas recibidas
 - **Recepción y dirección**: al registrar una factura recibida es **obligatorio** indicar si se paga por **Transferencia** o si está **Cargada en cuenta (domiciliación)**.
 - **Recepción y dirección**: en **Cuenta de gastos** se ve la forma de pago de cada factura; las antiguas sin ella muestran **«falta forma de pago»** (complétela con **Editar**).
