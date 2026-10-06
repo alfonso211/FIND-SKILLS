@@ -11,6 +11,7 @@ LOGO_SOCIEDAD = {  # por CIF
     "A78072915": "inversiete",
     "A28362309": "comercial_del_campo",
     "A28309433": "edificios_cameranos",
+    "A28116853": "ethosa",
 }
 LOGO_ACTIVO = {  # por código de activo
     "SFL": "suite_florida",
