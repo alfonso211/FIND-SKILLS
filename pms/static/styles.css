@@ -428,3 +428,15 @@ body.sin-scroll { overflow: hidden; }
 .ag-nueva { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 4px 0; border-top: 1px dashed #f0d9a8; flex-wrap: wrap; }
 .ag-nueva:first-of-type { border-top: 0; }
 .ag-nueva span:last-child { display: flex; gap: 4px; }
+/* Expediente del contrato de vivienda */
+.expediente { margin-top: 10px; }
+.expediente .ok { color: #2f855a; font-weight: 600; }
+.aviso-faltan { background: #fff8e6; border: 1px solid #ecd9a8; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; font-size: 13px; }
+ul.checklist { list-style: none; padding: 0; margin: 0; }
+ul.checklist li { display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: start; padding: 9px 4px; border-bottom: 1px solid #eee5d3; font-size: 13.5px; }
+ul.checklist li.ck-no_aplica { opacity: .6; }
+ul.checklist li.vencido { background: #fff1f0; }
+ul.checklist .ck-acc { display: flex; gap: 6px; align-items: center; }
+ul.checklist .ck-acc select { width: auto; }
+table.inv input, table.inv select { width: 100%; min-width: 0; padding: 4px 6px; }
+@media (max-width: 640px) { ul.checklist li { grid-template-columns: 28px 1fr; } ul.checklist .ck-acc { grid-column: 2; } }

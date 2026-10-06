@@ -674,6 +674,7 @@ V.unidades = async (el) => {
       u.estado === "pendiente_limpieza" && (can("limpieza.editar") || can("activos.editar")) &&
         ["Limpia ✓", () => run(() => post(`/api/unidades/${u.id}/limpia`), "Unidad disponible").then(load)],
       can("activos.editar") && ["Editar", () => form(`Unidad ${u.codigo}`, fields, u, async (d) => { await put(`/api/unidades/${u.id}`, d); toast("Guardado"); load(); })],
+      can("activos.editar") && ["vivienda", "apartamento"].includes(u.uso) && ["Ficha alquiler", () => fichaAlquiler(u)],
       canOpenOT() && ["Avería", () => newWorkOrder(u.asset_id, u.id).then(load)],
     ]);
   };
@@ -1599,6 +1600,7 @@ V.contratos = async (el) => {
     { k: "renta_mensual", t: "Renta (sin IVA)", num: true, f: eur }, { k: "fianza", t: "Fianza", num: true, f: eur },
     { k: "indice_actualizacion", t: "Índice" }, { k: "estado", t: "Estado", f: badge },
   ], await get("/api/alquiler/contratos", { asset_id: S.asset, estado: $("#e", el).value }), (l) => can("alquiler.editar") ? [
+    ["Expediente", () => expediente(l), "primary"],
     ["Inquilino", () => editGuest(l.tenant_id, "inquilino")],
     ["Editar", () => form(`Contrato ${l.unidad}`, [
       { k: "referencia", t: "Referencia" }, { k: "fecha_fin", t: "Fecha fin", type: "date" }, { k: "fianza", t: "Fianza €", type: "number" },
@@ -1610,7 +1612,7 @@ V.contratos = async (el) => {
     l.estado === "vigente" && ["Actualizar renta", () => form(`Actualizar renta (${eur(l.renta_mensual)}) · índice ${l.indice_actualizacion}`, [
       { k: "porcentaje", t: "Variación %", type: "number", req: true }, { k: "motivo", t: "Motivo / referencia índice", wide: true }], {},
       async (d) => { const r = await post(`/api/alquiler/contratos/${l.id}/actualizar-renta`, d); toast(`Nueva renta ${eur(r.renta_mensual)}`); load(); })],
-  ] : []);
+  ] : [["Expediente", () => expediente(l)]]);
   $("#e", el).onchange = load;
   if ($("#new", el)) $("#new", el).onclick = async () => {
     const aid = await pickAsset("alquiler_residencial");
@@ -1630,6 +1632,294 @@ V.contratos = async (el) => {
   };
   load();
 };
+
+// ---- expediente del contrato de vivienda (LAU): checklist, datos, inventario, cobros, carpeta y agenda
+// Campos sueltos dentro de una ventana ya abierta (mismo formato que form()).
+function camposHtml(fields, init = {}) {
+  return `<div class="grid">${fields.map((fd) => {
+    if (fd.html) return `<div class="wide">${fd.html}</div>`;
+    const v = init[fd.k] ?? fd.def ?? "";
+    let inp;
+    if (fd.type === "select") inp = `<select name="${fd.k}">${fd.req ? "" : '<option value=""></option>'}${fd.options.map(([o, l]) => `<option value="${esc(o)}" ${String(o) === String(v) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+    else if (fd.type === "textarea") inp = `<textarea name="${fd.k}">${esc(v)}</textarea>`;
+    else if (fd.type === "checkbox") return `<label class="check ${fd.wide ? "wide" : ""}"><input type="checkbox" name="${fd.k}" ${v ? "checked" : ""}> ${esc(fd.t)}</label>`;
+    else inp = `<input name="${fd.k}" type="${fd.type || "text"}" value="${esc(v)}" ${fd.type === "number" ? 'step="any"' : ""}>`;
+    return `<label class="${fd.wide ? "wide" : ""}">${esc(fd.t)}${fd.req ? " *" : ""}${inp}</label>`;
+  }).join("")}</div>`;
+}
+function leeCampos(cont, fields) {
+  const d = {};
+  fields.filter((fd) => fd.k && !fd.html).forEach((fd) => {
+    const x = cont.querySelector(`[name="${fd.k}"]`);
+    if (!x) return;
+    d[fd.k] = fd.type === "checkbox" ? x.checked : x.value === "" ? null : fd.type === "number" ? Number(x.value) : x.value;
+  });
+  return d;
+}
+// Tabla editable de inventario. botones: [[texto, fn]] extra; guardar(filas) persiste.
+function editorInventario(cont, inicial, { editar = true, nota = "", botones = [], guardar }) {
+  let filas = inicial.map((i) => ({ ...i }));
+  const leer = () => (filas = [...cont.querySelectorAll("tr[data-n]")].map((tr) => {
+    const o = {}; tr.querySelectorAll("[data-c]").forEach((c) => (o[c.dataset.c] = c.type === "checkbox" ? c.checked : c.dataset.c === "uds" ? Number(c.value || 0) : c.value)); return o;
+  }));
+  const dibuja = () => {
+    cont.innerHTML = `${nota}<div class="table-wrap"><table class="inv"><thead><tr><th>Se entrega</th><th>Estancia</th><th>Elemento / marca / modelo</th><th>Uds.</th><th>Estado</th><th>Observaciones</th><th></th></tr></thead><tbody>
+      ${filas.map((i, n) => `<tr data-n="${n}"><td><input type="checkbox" data-c="entrega" ${i.entrega !== false ? "checked" : ""}></td>
+        <td><input data-c="estancia" value="${esc(i.estancia)}"></td><td><input data-c="elemento" value="${esc(i.elemento)}"></td>
+        <td><input data-c="uds" type="number" min="0" value="${esc(i.uds ?? 1)}" style="width:4.5em"></td>
+        <td><select data-c="estado">${[["N", "Nuevo"], ["B", "Bueno"], ["U", "Con uso"]].map(([v, t]) => `<option value="${v}" ${i.estado === v ? "selected" : ""}>${t}</option>`).join("")}</select></td>
+        <td><input data-c="obs" value="${esc(i.obs)}"></td><td>${editar ? '<button type="button" class="btn sm" data-quita>✕</button>' : ""}</td></tr>`).join("")}</tbody></table></div>
+      ${editar ? `<div class="toolbar"><button type="button" class="btn" data-mas>+ Añadir elemento</button>${botones.map(([t], i) => `<button type="button" class="btn" data-extra="${i}">${esc(t)}</button>`).join("")}
+        <span class="spacer"></span><button type="button" class="btn primary" data-guardar>Guardar inventario</button></div>` : ""}`;
+    if (!editar) return;
+    cont.querySelectorAll("[data-quita]").forEach((b) => (b.onclick = () => { leer(); filas.splice(Number(b.closest("tr").dataset.n), 1); dibuja(); }));
+    cont.querySelectorAll("[data-extra]").forEach((b) => (b.onclick = botones[b.dataset.extra][1]));
+    $("[data-mas]", cont).onclick = () => { leer(); filas.push({ estancia: "", elemento: "", uds: 1, estado: "B", obs: "", entrega: true }); dibuja(); };
+    $("[data-guardar]", cont).onclick = () => {
+      leer();
+      if (filas.some((i) => !i.elemento.trim())) return toast("Hay filas sin elemento", true);
+      guardar(filas);
+    };
+  };
+  dibuja();
+}
+const EXP_ESTADO = { hecho: ["✔", "b-vigente", "Hecho"], no_aplica: ["–", "b-baja", "No aplica"], pendiente: ["○", "b-pendiente", "Pendiente"] };
+const CONTADORES = ["Electricidad", "Gas", "Agua fría", "Agua caliente (si existe)", "Calefacción (repartidores)"];
+
+async function expediente(l, pestana = "checklist") {
+  const url = `/api/alquiler/contratos/${l.id}/expediente`;
+  let x = await run(() => get(url));
+  const asset = S.assets.find((a) => a.id === x.contrato.asset_id) || {};
+  const personas = await get("/api/terceros", { tipo: "inquilino", asset_id: x.contrato.asset_id }).catch(() => []);
+  const editar = can("alquiler.editar");
+  const f = cerrarSolo(form(`Expediente ${x.referencia} · ${x.contrato.inquilino}`, [{ html: `
+    <p class="muted">${esc(x.vivienda)} · renta ${eur(x.contrato.renta_mensual)}/mes · ${fdate(x.contrato.fecha_inicio)} → ${fdate(x.contrato.fecha_fin)} · ${badge(x.contrato.estado)}</p>
+    <div class="chips" data-tabs>${[["checklist", "✅ Checklist"], ["datos", "📝 Datos del contrato"], ["inventario", "🛋️ Inventario"], ["cobros", "💶 Cobros y recibos"], ["carpeta", "📁 Carpeta"], ["agenda", "📅 Agenda"]]
+      .map(([k, t]) => `<button type="button" class="chip" data-tab="${k}">${t}</button>`).join("")}</div>
+    <div data-aviso></div><div data-cuerpo class="expediente"></div>` }], {}, async () => {}));
+  $("#modal").classList.add("ancho");
+  const cuerpo = $("[data-cuerpo]", f);
+  const guarda = async (fn, msg) => { x = await run(fn, msg); pinta(); };
+  const subir = (clave, nombre) => {
+    const inp = Object.assign(document.createElement("input"), { type: "file", accept: ".pdf,.jpg,.jpeg,.png,.docx,image/*" });
+    inp.onchange = () => { if (!inp.files[0]) return; const fd = new FormData(); fd.append("fichero", inp.files[0]); fd.append("clave", clave); if (nombre) fd.append("nombre", nombre);
+      guarda(() => upload(`${url}/documentos`, fd), "Documento guardado en la carpeta"); };
+    inp.click();
+  };
+  const descargarContrato = () => {
+    if (x.faltan.length && !confirm(`Faltan datos (${x.faltan.length}). El contrato saldrá con esos huecos resaltados en amarillo para completarlos a mano.\n\n¿Descargarlo igualmente?`)) return;
+    toast("Preparando el contrato (cuenta las páginas)…");
+    run(() => download("GET", `${url}/contrato.docx`));
+  };
+
+  const vistas = {
+    checklist() {
+      const fase = (k, t) => `<h4>${t}</h4><ul class="checklist">${x.checklist.filter((c) => c.fase === k).map((c) => {
+        const [ic, cls, txt] = EXP_ESTADO[c.estado];
+        return `<li class="ck-${c.estado}${c.vencido ? " vencido" : ""}"><span class="badge ${cls}" title="${txt}">${ic}</span>
+          <div><b>${esc(c.texto)}</b>${c.auto && c.estado === "hecho" ? ' <span class="muted">(comprobado por el PMS)</span>' : ""}
+          ${c.motivo ? `<br><span class="error">${esc(c.motivo)}</span>` : ""}
+          ${c.limite ? `<br><span class="${c.vencido ? "error" : "muted"}">Fecha límite: ${fdate(c.limite)}${c.vencido ? " · VENCIDO" : ""}</span>` : ""}
+          ${c.marcado_por ? `<br><span class="muted">Marcado por ${esc(c.marcado_por)} · ${fdt(c.marcado_en)}${c.nota ? " · " + esc(c.nota) : ""}</span>` : ""}
+          ${c.documentos ? `<br><span class="muted">📎 ${c.documentos} documento(s) en la carpeta</span>` : ""}</div>
+          ${editar ? `<div class="ck-acc"><select data-ck="${c.clave}">${[["", "Automático"], ["hecho", "Hecho"], ["no_aplica", "No aplica"], ["pendiente", "Pendiente"]].map(([v, t]) => `<option value="${v}" ${(c.marcado_por ? c.estado : "") === v ? "selected" : ""}>${t}</option>`).join("")}</select>
+          ${c.documento ? `<button type="button" class="btn sm" data-sube="${c.clave}">📎 Subir</button>` : ""}</div>` : ""}</li>`;
+      }).join("")}</ul>`;
+      const hechos = x.checklist.filter((c) => c.estado !== "pendiente").length;
+      cuerpo.innerHTML = `<p><b>${hechos} de ${x.checklist.length}</b> puntos resueltos. Los que el PMS puede comprobar (certificado energético, IBI, cobros, alta y avisos) se marcan solos.</p>
+        ${fase("antes", "Antes de firmar y entregar llaves")}${fase("despues", "Después de la firma")}`;
+      cuerpo.querySelectorAll("[data-ck]").forEach((s) => (s.onchange = () => {
+        const estado = s.value || null;
+        const nota = estado === "no_aplica" ? prompt("¿Por qué no aplica? (opcional)") : null;
+        guarda(() => put(`${url}/checklist/${s.dataset.ck}`, { estado, nota }), "Checklist actualizado");
+      }));
+      cuerpo.querySelectorAll("[data-sube]").forEach((b) => (b.onclick = () => subir(b.dataset.sube)));
+    },
+    datos() {
+      const d = { ...x.datos };
+      const lect = d.acta?.lecturas || {};
+      CONTADORES.forEach((n, i) => (d[`lectura_${i}`] = lect[n]));
+      d.animales = !!d.animales;
+      if (!d.periodo_desde) d.periodo_desde = x.contrato.fecha_inicio;
+      if (!d.importe_inicial) d.importe_inicial = x.contrato.renta_mensual;
+      const per = [["", "—"], ...personas.filter((p) => p.id !== x.contrato.tenant_id).map((p) => [p.id, `${p.nombre} ${p.apellidos || ""} · ${p.documento_num || "sin documento"}`])];
+      const campos = [
+        { html: "<h4>Firma y entrega de llaves</h4>" },
+        { k: "fecha_firma", t: "Fecha de firma", type: "date", req: true }, { k: "hora_firma", t: "Hora de firma", type: "time" },
+        { k: "fecha_entrega", t: "Entrega de llaves (si es otro día)", type: "date" }, { k: "hora_entrega", t: "Hora de entrega", type: "time" },
+        { k: "presentes", t: "Presentes en la entrega", wide: true },
+        { html: "<h4>Partes</h4><p class='muted'>El arrendatario principal es el del contrato. Si hay un segundo arrendatario o un fiador, elija su ficha (o créela con «Nueva persona»).</p>" },
+        { k: "arrendatario2_id", t: "Segundo arrendatario", type: "select", options: per }, { k: "fiador_id", t: "Fiador (solo si la garantía es «fiador»)", type: "select", options: per },
+        { k: "domicilio_anterior", t: "Domicilio anterior del arrendatario (si no es el de su ficha)", wide: true },
+        { html: "<h4>Renta y garantías</h4>" },
+        { k: "forma_pago", t: "Pago de la renta", type: "select", options: [["transferencia", "Transferencia del inquilino"], ["sepa", "Domiciliación SEPA"]], def: "transferencia" },
+        { k: "iban_arrendatario", t: "IBAN del inquilino (si se domicilia)" },
+        { k: "importe_inicial", t: "Importe que paga a la firma (1er periodo) €", type: "number" },
+        { k: "periodo_desde", t: "Primer periodo: desde", type: "date" }, { k: "periodo_hasta", t: "Primer periodo: hasta", type: "date" },
+        { k: "garantia_modalidad", t: "Garantía adicional", type: "select", options: kv(x.opciones.garantia), def: "deposito" },
+        { k: "aval_vencimiento", t: "Vencimiento del aval (si hay aval)", type: "date" },
+        { html: "<h4>Ocupación y condiciones</h4>" },
+        { k: "convivientes", t: "Personas que convivirán (nombre y DNI)", wide: true }, { k: "max_ocupantes", t: "Nº máximo de ocupantes", type: "number" },
+        { k: "anejos", t: "Anejos (trastero, plaza)" }, { k: "seguro_capital", t: "Capital RC del seguro de hogar €", type: "number", def: 150000 },
+        { k: "animales", t: "Se permiten animales", type: "checkbox" }, { k: "animales_detalle", t: "Animales permitidos (tipo y nº)" },
+        { html: "<h4>Acta de entrega (Anexo II)</h4><p class='muted'>Las lecturas se pueden dejar en blanco y escribirlas a mano el día de la entrega.</p>" },
+        ...CONTADORES.map((n, i) => ({ k: `lectura_${i}`, t: `Lectura ${n}` })),
+        { k: "fotos", t: "Nº de fotografías del reportaje", type: "number" }, { k: "otros_docs", t: "Otros documentos aportados (Anexo III)", wide: true },
+      ];
+      cuerpo.innerHTML = `${x.faltan.length ? `<div class="aviso-faltan"><b>Faltan ${x.faltan.length} dato(s) para imprimir el contrato completo:</b> ${x.faltan.map(esc).join(" · ")}
+          <br><span class="muted">Los de la sociedad se completan en Sociedades → Editar → «Datos para contratos»; los de la vivienda en Unidades → «Ficha alquiler».</span></div>`
+          : '<p class="ok">✔ Están todos los datos para imprimir el contrato.</p>'}
+        ${camposHtml(campos, d)}
+        <div class="toolbar">${editar ? '<button type="button" class="btn" data-nueva>+ Nueva persona</button><button type="button" class="btn primary" data-guardar>Guardar datos</button>' : ""}
+        <button type="button" class="btn" data-word>⬇ Contrato (Word)</button></div>`;
+      $("[data-word]", cuerpo).onclick = descargarContrato;
+      if (!editar) return;
+      $("[data-guardar]", cuerpo).onclick = () => {
+        const v = leeCampos(cuerpo, campos);
+        const lecturas = {};
+        CONTADORES.forEach((n, i) => { if (v[`lectura_${i}`]) lecturas[n] = v[`lectura_${i}`]; delete v[`lectura_${i}`]; });
+        if (Object.keys(lecturas).length) v.acta = { lecturas };
+        ["arrendatario2_id", "fiador_id"].forEach((k) => (v[k] = v[k] ? Number(v[k]) : null));
+        if (!v.animales) v.animales = null;
+        guarda(() => put(`${url}/datos`, clean(v)), "Datos guardados");
+      };
+      $("[data-nueva]", cuerpo).onclick = () => conEscaner(form("Nueva persona (segundo arrendatario o fiador)", [{ html: scanHtml() }, ...guestFields], {}, async (d, fr) => {
+        await post("/api/terceros", { ...clean(d), tipo: "inquilino", company_id: asset.company_id, asset_id: x.contrato.asset_id, documentos: fr._docs.map((y) => y.id) });
+        toast("Ficha creada: elíjala en «Segundo arrendatario» o «Fiador»");
+        expediente(l, "datos");
+      }));
+    },
+    inventario() {
+      editorInventario(cuerpo, x.inventario, {
+        editar, nota: `<p>Solo se imprime en el Anexo I lo marcado <b>«Se entrega»</b>. ${x.inventario_propio ? "Este contrato tiene su propio inventario." : "Se parte del inventario de la ficha de la vivienda."}</p>`,
+        botones: x.inventario_propio ? [["Volver al de la vivienda", () => guarda(() => put(`${url}/inventario`, null), "Inventario de la vivienda")]] : [],
+        guardar: (filas) => guarda(() => put(`${url}/inventario`, filas), "Inventario guardado"),
+      });
+    },
+    cobros() {
+      const lim = x.opciones.limite_efectivo;
+      cuerpo.innerHTML = `${x.pendiente_cobro.length ? `<p class="error"><b>Pendiente de cobrar:</b> ${x.pendiente_cobro.map(esc).join(", ")}. No entregar las llaves hasta cobrarlo.</p>` : '<p class="ok">✔ Todo cobrado.</p>'}
+        <div data-tabla></div>
+        ${editar ? `<h4>Registrar una entrega de dinero (o un aval)</h4>${camposHtml(campos())}
+          <p class="muted">Efectivo: nunca para la renta (cláusula 4.2) ni para ${eur(lim)} o más en total (Ley 7/2012). Cheque: el recibo queda «salvo buen fin».</p>
+          <div class="toolbar"><span class="spacer"></span><button type="button" class="btn primary" data-alta>Registrar y ver recibo</button></div>` : ""}`;
+      table($("[data-tabla]", cuerpo), [{ k: "numero", t: "Recibo" }, { k: "fecha", t: "Fecha", f: fdate },
+        { k: "concepto", t: "Concepto", f: (v, e) => esc(e.concepto_texto || x.opciones.conceptos[v]) }, { k: "importe", t: "Importe", num: true, f: eur },
+        { k: "forma", t: "Forma", f: (v, e) => esc(x.opciones.formas[v]) + (e.referencia ? ` · ${esc(e.referencia)}` : "") },
+        { k: "anulada", t: "", f: (v, e) => (v ? `<span class="badge b-baja" title="${esc(e.motivo_anulacion)}">anulada</span>` : "") }],
+      x.entregas, (e) => [["Recibo PDF", () => abrirFichero(`${url}/entregas/${e.n}/recibo`)],
+        editar && !e.anulada && ["Anular", () => { const m = prompt("Motivo de la anulación:"); if (m) guarda(() => post(`${url}/entregas/${e.n}/anular`, { motivo: m }), "Entrega anulada"); }, "danger"],
+        editar && ["📎 Firmado", () => subir("recibo", `Recibo ${e.numero} firmado`)]]);
+      if (!editar) return;
+      const forma = $("[name=forma]", cuerpo), concepto = $("[name=concepto]", cuerpo);
+      const ajusta = () => {
+        const efe = forma.querySelector("option[value=efectivo]");
+        efe.disabled = concepto.value === "renta_inicial";
+        if (efe.disabled && forma.value === "efectivo") forma.value = "transferencia";
+        forma.querySelector("option[value=aval]").disabled = concepto.value !== "garantia";
+        const imp = { renta_inicial: x.datos.importe_inicial, fianza: x.contrato.fianza, garantia: x.contrato.garantia_adicional }[concepto.value];
+        const ya = x.entregas.filter((e) => !e.anulada && e.concepto === concepto.value).reduce((s, e) => s + Number(e.importe), 0);
+        if (imp != null) $("[name=importe]", cuerpo).value = Math.max(0, Number(imp) - ya) || "";
+      };
+      concepto.onchange = ajusta; ajusta();
+      $("[data-alta]", cuerpo).onclick = async () => {
+        const v = leeCampos(cuerpo, campos());
+        if (!v.importe || !v.fecha) return toast("Indique importe y fecha", true);
+        if (v.forma === "efectivo" && v.importe >= lim) return toast(`En efectivo no se admiten ${eur(lim)} o más`, true);
+        const antes = x.entregas.length;
+        x = await run(() => post(`${url}/entregas`, clean(v)), "Entrega registrada");
+        pinta();
+        if (x.entregas.length > antes) abrirFichero(`${url}/entregas/${x.entregas.length}/recibo`);
+      };
+    },
+    carpeta() {
+      const cl = x.opciones.claves_doc;
+      cuerpo.innerHTML = `<p>Toda la documentación del contrato, cifrada en el servidor. Suba aquí el contrato firmado escaneado, los recibos firmados, el justificante de la fianza, el seguro…</p>
+        ${editar ? `<div class="toolbar"><select data-clave>${Object.entries(cl).map(([k, t]) => `<option value="${k}">${esc(t.length > 70 ? t.slice(0, 70) + "…" : t)}</option>`).join("")}</select>
+          <button type="button" class="btn primary" data-sube>📎 Subir documento</button></div>` : ""}<div data-tabla></div>`;
+      table($("[data-tabla]", cuerpo), [{ k: "clave", t: "Tipo", f: (v) => esc((cl[v] || v).split(":")[0].slice(0, 60)) }, { k: "nombre", t: "Documento" },
+        { k: "subido", t: "Subido", f: fdt }, { k: "usuario", t: "Por" }, { k: "tamano", t: "Tamaño", num: true, f: (v) => `${Math.ceil(v / 1024)} KB` }],
+      x.documentos, (d) => [["Ver", () => (d.mime.includes("word") ? run(() => download("GET", `${url}/documentos/${d.id}`)) : abrirFichero(`${url}/documentos/${d.id}`))],
+        editar && ["Borrar", () => confirm(`¿Borrar «${d.nombre}»?`) && guarda(() => api("DELETE", `${url}/documentos/${d.id}`), "Documento borrado"), "danger"]]);
+      if (editar) $("[data-sube]", cuerpo).onclick = () => subir($("[data-clave]", cuerpo).value);
+    },
+    agenda() {
+      cuerpo.innerHTML = `<p>Se crean en <b>su agenda</b> (privadas) la firma, la entrega de llaves, los cobros, el depósito de la fianza (30 días), el seguro y los suministros (15 días), la actualización anual de la renta, la revisión de caldera/gas, el preaviso de vencimiento (4 meses) y el vencimiento del aval. Si cambian las fechas, vuelva a pulsar el botón y se actualizan. Al marcar un punto del checklist como hecho, su tarea queda hecha.</p>
+        ${editar ? '<div class="toolbar"><button type="button" class="btn primary" data-gen>📅 Crear / actualizar en mi agenda</button></div>' : ""}
+        <ul class="envios">${x.agenda.map((e) => `<li>${e.hecha ? "✔ " : ""}<b>${e.todo_el_dia ? fdate(e.inicio.slice(0, 10)) : fdt(e.inicio).slice(0, -3)}</b> · ${esc(e.titulo)}${e.repeticion ? ` · ${esc(e.repeticion)}` : ""}</li>`).join("") || '<li class="muted">Todavía no hay citas generadas.</li>'}</ul>`;
+      if (editar) $("[data-gen]", cuerpo).onclick = () => guarda(() => post(`${url}/agenda`), "Agenda actualizada");
+    },
+  };
+  function campos() {
+    return [
+      { k: "concepto", t: "Concepto", type: "select", req: true, options: kv(x.opciones.conceptos), def: x.pendiente_cobro.includes("primer periodo") ? "renta_inicial" : x.pendiente_cobro.includes("fianza") ? "fianza" : "garantia" },
+      { k: "concepto_texto", t: "Descripción (si es «otro»)" },
+      { k: "importe", t: "Importe €", type: "number", req: true },
+      { k: "forma", t: "Forma de entrega", type: "select", req: true, options: kv(x.opciones.formas), def: "transferencia" },
+      { k: "referencia", t: "Ref. transferencia / nº cheque / nº aval" }, { k: "entidad", t: "Banco (cheque o aval)" },
+      { k: "fecha", t: "Fecha", type: "date", req: true, def: today() }, { k: "vencimiento", t: "Vencimiento del aval", type: "date" },
+      { k: "periodo", t: "Periodo (1ª mensualidad)", def: x.datos.periodo_desde ? `${fdate(x.datos.periodo_desde)} – ${fdate(x.datos.periodo_hasta)}` : "" },
+      { k: "pagador", t: "Paga otra persona (nombre)" }, { k: "pagador_doc", t: "Su DNI/NIE" },
+      { k: "observaciones", t: "Observaciones", wide: true },
+    ];
+  }
+  let actual = pestana;
+  function pinta() {
+    f.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === actual));
+    const venc = x.checklist.filter((c) => c.vencido);
+    $("[data-aviso]", f).innerHTML = venc.length ? `<p class="error">⚠ Plazo vencido: ${venc.map((c) => esc(c.texto.split(":")[0].split("(")[0])).join(" · ")}</p>` : "";
+    vistas[actual]();
+  }
+  f.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { actual = b.dataset.tab; pinta(); }));
+  pinta();
+}
+
+// Ficha de la vivienda para los contratos: registro, certificado energético, tributos, llaves, contadores e inventario
+async function fichaAlquiler(u) {
+  const d = await run(() => get(`/api/unidades/${u.id}/ficha-alquiler`));
+  const fi = d.ficha;
+  const init = { ...fi };
+  d.llaves.forEach((x, i) => { init[`ll_uds_${i}`] = x.uds; init[`ll_obs_${i}`] = x.obs; });
+  d.contadores.forEach((x, i) => { init[`ct_cups_${i}`] = x.cups; init[`ct_tit_${i}`] = x.titular; });
+  const campos = [
+    { html: "<h4>Vivienda</h4>" }, { k: "puerta", t: "Puerta (letra)" }, { k: "cp", t: "Código postal" },
+    { k: "superficie_util", t: "Superficie útil m²", type: "number" }, { k: "distribucion", t: "Distribución (p. ej. 2 dormitorios, salón, cocina y baño)", wide: true },
+    { k: "registro_propiedad", t: "Registro de la Propiedad de Madrid nº (solo el número)" }, { k: "finca", t: "Finca registral nº" },
+    { html: "<h4>Certificado de eficiencia energética</h4>" },
+    { k: "cee_letra", t: "Calificación", type: "select", options: list(["A", "B", "C", "D", "E", "F", "G"]) }, { k: "cee_registro", t: "Nº de registro" },
+    { k: "cee_vigencia", t: "Vigente hasta", type: "date" },
+    { html: "<h4>Tributos que se repercuten (último recibo)</h4>" },
+    { k: "ibi_anual", t: "IBI anual €", type: "number" }, { k: "tasa_residuos_anual", t: "Tasa de residuos anual €", type: "number" },
+    { k: "sin_contador", t: "Suministros sin contador individual (cuál)" }, { k: "sin_contador_importe", t: "Importe mensual de esos suministros €", type: "number" },
+    { html: "<h4>Llaves (Anexo II)</h4>" }, { k: "bombin", t: "Bombín de la puerta (marca / modelo)", wide: true },
+    ...d.llaves.flatMap((x, i) => [{ k: `ll_uds_${i}`, t: `${x.elemento}: uds.`, type: "number" }, { k: `ll_obs_${i}`, t: "Observaciones" }]),
+    { html: "<h4>Contadores (Anexo II)</h4>" },
+    ...d.contadores.flatMap((x, i) => [{ k: `ct_cups_${i}`, t: `${x.suministro}: nº contador / CUPS` }, { k: `ct_tit_${i}`, t: "Titular actual" }]),
+    { html: `<h4>Inventario</h4><p class="muted">${d.inventario_propio ? d.inventario.length + " elementos." : "Todavía no tiene inventario propio: se usa el inventario tipo."} Se ajusta en el expediente de cada contrato o aquí con «Inventario».</p>` },
+  ];
+  const f = form(`Ficha para contratos · ${u.codigo}`, campos, init, async (v) => {
+    const ficha = {};
+    Object.entries(v).forEach(([k, val]) => { if (!/^(ll|ct)_/.test(k)) ficha[k] = val; });
+    ficha.llaves = d.llaves.map((x, i) => ({ elemento: x.elemento, uds: v[`ll_uds_${i}`], obs: v[`ll_obs_${i}`] || "" })).filter((x) => x.uds != null || x.obs);
+    ficha.contadores = d.contadores.map((x, i) => ({ suministro: x.suministro, cups: v[`ct_cups_${i}`] || "", titular: v[`ct_tit_${i}`] || "" })).filter((x) => x.cups || x.titular);
+    await put(`/api/unidades/${u.id}/ficha-alquiler`, { ficha: clean(ficha) });
+    toast("Ficha guardada");
+  });
+  const b = Object.assign(document.createElement("button"), { type: "button", className: "btn", textContent: "Inventario" });
+  b.onclick = () => inventarioVivienda(u, d.inventario);
+  $(".actions", f).prepend(b);
+}
+function inventarioVivienda(u, inv) {
+  const f = cerrarSolo(form(`Inventario · ${u.codigo}`, [{ html: "<div data-inv></div>" }], {}, async () => {}));
+  $("#modal").classList.add("ancho");
+  editorInventario($("[data-inv]", f), inv, {
+    nota: '<p class="muted">Inventario de esta vivienda: cada contrato nuevo parte de él. Marque «Se entrega» solo lo que se entrega con la vivienda.</p>',
+    guardar: async (filas) => {
+      const d = await run(() => get(`/api/unidades/${u.id}/ficha-alquiler`));
+      await run(() => put(`/api/unidades/${u.id}/ficha-alquiler`, { ficha: d.ficha, inventario: filas }), "Inventario guardado");
+    },
+  });
+}
 
 V.recibos = async (el) => {
   const mes = today().slice(0, 7);
@@ -2318,14 +2608,22 @@ V.roles = async (el) => {
   table($("#t", el), [{ k: "nombre", t: "Rol" }, { k: "descripcion", t: "Descripción" }, { k: "permisos", t: "Permisos", f: (v) => `${v.length} / ${Object.keys(S.cat.permisos).length}` }], roles, (r) => [["Editar", () => edit(r)]]);
 };
 
+const CONTRATO_SOC = [["rm_tomo", "Registro Mercantil: tomo"], ["rm_folio", "Folio"], ["rm_hoja", "Hoja"],
+  ["representante", "Representante (nombre y apellidos)"], ["representante_dni", "DNI del representante"], ["representante_cargo", "Cargo (administrador, apoderado…)"],
+  ["representante_poder", "Escritura de poder (fecha, notario y nº de protocolo)", true], ["iban", "IBAN para el cobro de la renta", true],
+  ["email_notificaciones", "Correo de notificaciones y averías"], ["email_rgpd", "Correo de protección de datos"], ["telefono_averias", "Teléfono de averías"]];
 V.sociedades = async (el) => {
   el.innerHTML = `<div class="toolbar"><span class="spacer"></span><button class="btn primary" id="new">Nueva sociedad</button></div><div id="t"></div>`;
   const fields = [{ k: "nombre", t: "Razón social", req: true }, { k: "cif", t: "CIF" },
     { k: "parent_id", t: "Sociedad matriz", type: "select", options: opts(S.companies) }, { k: "activa", t: "Activa", type: "checkbox", def: true },
     { html: "<h4>Domicilio fiscal</h4><p class='muted'>Obligatorio para emitir facturas. Se imprime en todas las facturas de la sociedad.</p>" },
-    { k: "direccion", t: "Dirección", wide: true }, { k: "cp", t: "C.P." }, { k: "municipio", t: "Municipio" }, { k: "provincia", t: "Provincia" }];
-  const save = (c) => form(c ? c.nombre : "Nueva sociedad", fields, c || {}, async (d) => {
+    { k: "direccion", t: "Dirección", wide: true }, { k: "cp", t: "C.P." }, { k: "municipio", t: "Municipio" }, { k: "provincia", t: "Provincia" },
+    { html: "<h4>Datos para contratos de alquiler de vivienda</h4><p class='muted'>Se imprimen en el contrato (comparecencia, cláusulas 4, 21 y 23 y anexo de averías).</p>" },
+    ...CONTRATO_SOC.map(([k, t, wide]) => ({ k: `ct_${k}`, t, wide }))];
+  const save = (c) => form(c ? c.nombre : "Nueva sociedad", fields, c ? { ...c, ...Object.fromEntries(Object.entries(c.contratos || {}).map(([k, v]) => [`ct_${k}`, v])) } : {}, async (d) => {
     d.parent_id = d.parent_id ? Number(d.parent_id) : null;
+    d.contratos = {};
+    CONTRATO_SOC.forEach(([k]) => { if (d[`ct_${k}`]) d.contratos[k] = d[`ct_${k}`]; delete d[`ct_${k}`]; });
     if (c) await put(`/api/sociedades/${c.id}`, d); else await post("/api/sociedades", d);
     toast("Sociedad guardada"); await loadCompanies(); go("sociedades");
   });
