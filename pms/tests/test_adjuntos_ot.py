@@ -109,7 +109,7 @@ def test_aviso_ot_urgente(client, admin, ids):
     rec = _usuario(client, admin, ids, "recepcion.avisos@inversiete.com", "Recepción", "SAE")
     callado = _usuario(client, admin, ids, "recepcion.sinavisos@inversiete.com", "Recepción", "SAE")
     prefs = client.get("/api/auth/avisos", headers=rec).json()
-    assert prefs["correo_configurado"] and [t["tipo"] for t in prefs["tipos"]] == ["ot_urgente", "estancias_vencidas", "garajes_impagados", "garajes_vencen"]  # recepción
+    assert prefs["correo_configurado"] and [t["tipo"] for t in prefs["tipos"]] == ["ot_urgente", "estancias_vencidas", "garajes_impagados", "garajes_vencen", "agenda"]  # recepción
     assert all(t["activo"] for t in prefs["tipos"])
     assert client.put("/api/auth/avisos", headers=callado, json={"avisos": []}).json()["tipos"][0]["activo"] is False
     assert client.put("/api/auth/avisos", headers=callado, json={"avisos": ["inventado"]}).status_code == 400

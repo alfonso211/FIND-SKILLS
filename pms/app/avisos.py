@@ -45,6 +45,8 @@ TIPOS = {
                        "(resumen diario)", "reservas.ver"),
     "hitos_normativos": ("Hitos normativos (Verifactu, factura electrónica…) con antelación para adaptar el PMS "
                          "(resumen diario)", "finanzas.ver"),
+    "agenda": ("Agenda: tareas, reuniones y recordatorios que le envían, aviso antes de cada cita y su agenda del "
+               "día en el resumen", None),
 }
 RESUMEN = ("hitos_normativos", "estancias_vencidas", "recibos_impagados", "contratos_vencen", "garajes_impagados",
            "garajes_vencen", "revisiones_normativas")
@@ -149,7 +151,11 @@ def suscritos(db, tipo: str) -> list[tuple[User, set[int] | None]]:
 
 
 def tipos_permitidos(scope: Scope) -> list[str]:
-    return [t for t, (_, perm) in TIPOS.items() if scope.has_any(perm)]
+    return [t for t, (_, perm) in TIPOS.items() if perm is None or scope.has_any(perm)]
+
+
+def quiere(u: User, tipo: str) -> bool:
+    return u.activo and (u.avisos is None or tipo in u.avisos)
 
 
 # --------------------------------------------------------------------------- OT urgente (al momento)
@@ -274,6 +280,7 @@ def _datos_resumen(db, dia: date) -> dict[str, list[tuple[int, list]]]:
 
 
 SECCIONES = {
+    "agenda": ("Su agenda de hoy y tareas pendientes", ["Hora", "Tipo", "Asunto", "De", "Situación"], "cita(s) en agenda"),
     "hitos_normativos": ("Hitos normativos: preparar el PMS con tiempo", ["Hito", "Fecha límite", "Qué hacer"],
                          "hito(s) normativo(s)"),
     "recibos_impagados": ("Recibos vencidos sin cobrar", ["Activo", "Unidad", "Inquilino", "Periodo", "Vencimiento",
@@ -307,6 +314,11 @@ def resumen_diario(db, dia: date | None = None, forzar: bool = False) -> dict:
                 filas = [f for aid, f in datos[tipo] if ids is None or aid in ids]
             if filas:
                 destinatarios.setdefault(user.id, (user, {}))[1][tipo] = filas
+    for user in db.scalars(select(User).where(User.activo)):  # agenda del día de cada uno
+        filas = _agenda_del_dia(db, user, dia) if quiere(user, "agenda") else []
+        if filas:
+            secciones = destinatarios.setdefault(user.id, (user, {}))[1]
+            destinatarios[user.id] = (user, {"agenda": filas, **secciones})
     clave = f"resumen:{dia.isoformat()}"
     enviados = errores = 0
     for user, secciones in destinatarios.values():
@@ -329,6 +341,77 @@ def resumen_diario(db, dia: date | None = None, forzar: bool = False) -> dict:
     return {"enviados": enviados, "errores": errores, "fecha": dia.isoformat()}
 
 
+# --------------------------------------------------------------------------- agenda
+def _agenda_del_dia(db, user: User, dia: date) -> list[list]:
+    """Citas del día en las que participa (suyas o enviadas a él) y tareas suyas vencidas sin terminar."""
+    from . import agenda
+    from .models import AgendaEvent, AgendaParticipant
+    mias = select(AgendaParticipant.event_id).where(AgendaParticipant.user_id == user.id)
+    nombres = dict(db.execute(select(User.id, User.nombre)).all())
+    filas = []
+    for e in db.scalars(select(AgendaEvent).where((AgendaEvent.creador_id == user.id) | AgendaEvent.id.in_(mias),
+                                                  AgendaEvent.inicio < datetime.combine(dia + timedelta(days=1),
+                                                                                        datetime.min.time()))):
+        if any(p.user_id == user.id and p.respuesta == "rechaza" for p in e.participantes):
+            continue
+        tipo = {"reunion": "Reunión", "tarea": "Tarea", "recordatorio": "Recordatorio"}.get(e.tipo, "Evento")
+        de = "" if e.creador_id == user.id else nombres.get(e.creador_id, "")
+        for x in agenda.ocurrencias(e, dia, dia):
+            filas.append((x, ["Todo el día" if e.todo_el_dia else f"{x:%H:%M}", tipo, e.titulo, de,
+                              "hecha" if e.hecha else ("PRIORIDAD ALTA" if e.prioridad == "alta" else "")]))
+        if e.tipo == "tarea" and not e.hecha and e.inicio.date() < dia:
+            filas.append((e.inicio, [f"{e.inicio:%d/%m}", tipo, e.titulo, de,
+                                     f"VENCIDA hace {(dia - e.inicio.date()).days} días"]))
+    return [f for _, f in sorted(filas, key=lambda x: x[0])]
+
+
+def agenda_enviada(eid: int, user_ids: list[int]) -> int:
+    """Correo a quien recibe una tarea, recordatorio o convocatoria."""
+    if not configurado():
+        return 0
+    from .models import AgendaEvent
+    with SessionLocal() as db:
+        e = db.get(AgendaEvent, eid)
+        if not e:
+            return 0
+        autor = db.get(User, e.creador_id)
+        tipo = {"reunion": "Convocatoria de reunión", "tarea": "Nueva tarea", "recordatorio": "Recordatorio"}.get(
+            e.tipo, "Nueva cita")
+        cuando = f"{e.inicio:%d/%m/%Y}" + ("" if e.todo_el_dia else f" a las {e.inicio:%H:%M}")
+        asunto = f"PMS · {tipo} de {autor.nombre}: {e.titulo}"[:200]
+        filas = [["Cuándo", cuando], ["De", autor.nombre]] + ([["Lugar", e.lugar]] if e.lugar else []) + \
+            ([["Prioridad", "ALTA"]] if e.prioridad == "alta" else []) + ([["Detalle", e.descripcion]] if e.descripcion else [])
+        texto = f"{tipo}: {e.titulo}\n" + "\n".join(f"{a}: {b}" for a, b in filas) + (f"\n\n{settings.url}" if settings.url else "")
+        enviados = 0
+        for u in db.scalars(select(User).where(User.id.in_(user_ids))):
+            if quiere(u, "agenda"):
+                enviados += _enviar_registrado(db, u, u.email, f"agenda:{e.id}:alta", "agenda", asunto, texto,
+                                               _html(f"{tipo}: {e.titulo}", _tabla(["", ""], filas)))
+        db.commit()
+        return enviados
+
+
+def recordatorios_agenda(db, ahora: datetime | None = None) -> int:
+    """Aviso por correo antes de cada cita con «avisar antes» (una vez por cita, fecha y persona)."""
+    from . import agenda
+    ahora = ahora or datetime.now(ZONA).replace(tzinfo=None)
+    enviados = 0
+    for e, x in agenda.recordatorios_pendientes(db, ahora):
+        for u in agenda.destinatarios(db, e):
+            clave = f"agenda:{e.id}:{x:%Y%m%d%H%M}:{u.id}"
+            if not quiere(u, "agenda") or db.scalar(select(EmailLog.id).where(EmailLog.clave == clave)):
+                continue
+            cuando = f"{x:%d/%m/%Y}" + ("" if e.todo_el_dia else f" a las {x:%H:%M}")
+            asunto = f"PMS · Recordatorio: {e.titulo} ({cuando})"[:200]
+            filas = [["Cuándo", cuando]] + ([["Lugar", e.lugar]] if e.lugar else []) + \
+                ([["Detalle", e.descripcion]] if e.descripcion else [])
+            enviados += _enviar_registrado(db, u, u.email, clave, "agenda", asunto,
+                                           f"Recordatorio: {e.titulo}\nCuándo: {cuando}",
+                                           _html(f"Recordatorio: {e.titulo}", _tabla(["", ""], filas)))
+    db.commit()
+    return enviados
+
+
 # --------------------------------------------------------------------------- programador (un hilo, un worker)
 def _bucle() -> None:
     hh, mm = (int(x) for x in settings.avisos_hora.split(":"))
@@ -342,9 +425,11 @@ def _bucle() -> None:
                         db.add(EmailLog(clave=marca, tipo="sistema", asunto="Resumen diario lanzado"))
                         db.commit()
                         log.info("Resumen diario: %s", resumen_diario(db, ahora.date()))
+            with SessionLocal() as db:
+                recordatorios_agenda(db, ahora.replace(tzinfo=None))
         except Exception:  # noqa: BLE001
             log.exception("Error en el programador de avisos")
-        time.sleep(300)
+        time.sleep(120)  # cada 2 minutos: los recordatorios de la agenda llegan a su hora
 
 
 def arrancar_programador() -> None:

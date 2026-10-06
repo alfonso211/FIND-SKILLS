@@ -202,7 +202,10 @@ const V = {};
 
 V.panel = async (el) => {
   const [p, conPlano] = await Promise.all([get("/api/panel"), get("/api/plano/activos")]);
-  if (!p.activos.length) { el.innerHTML = `<div class="empty">No tiene activos asignados.</div>`; return; }
+  if (!p.activos.length) {  // sin activos asignados: solo su agenda
+    el.innerHTML = `<section class="panel-agenda"><h3>📅 Agenda</h3><div id="agp"></div></section>`;
+    return agendaWidget($("#agp", el));
+  }
   // Quien ve varios activos: tarjetas de situación interactivas (abren el plano del activo, si lo tiene).
   // Quien solo ve su activo (o filtra uno): situación informativa y las plantas en miniatura para trabajar.
   const varios = S.assets.length > 1 && !S.asset;
@@ -211,6 +214,7 @@ V.panel = async (el) => {
   const planos = varios ? [] : conPlano.filter((a) => !S.asset || String(a.id) === String(S.asset));
   el.innerHTML = `<div class="buscador"><input id="busq" type="search" autocomplete="off" placeholder="🔍 Buscar: documento, apartamento, cliente, teléfono, localizador, factura, OT, proveedor…" aria-label="Buscar">
       <div id="busqRes"></div></div>
+    <section class="panel-agenda"><h3>📅 Agenda</h3><div id="agp"></div></section>
     ${planos.map((a) => `<section class="plano-resumen" data-plano="${a.id}"><div class="toolbar"><h3 style="margin:0">${esc(a.nombre)} · plano por plantas</h3><span class="spacer"></span>${leyendaHtml()}</div><div class="minis"><p class="muted">Cargando plano…</p></div></section>`).join("")}
     ${(p.hitos || []).map((h) => `<div class="aviso-hito"><h4>📅 ${esc(h.titulo)} · ${fdate(h.fecha)} (${h.dias > 0 ? `faltan ${h.dias} días` : h.dias === 0 ? "hoy" : `hace ${-h.dias} días`})</h4><p>${esc(h.detalle)}</p></div>`).join("")}
     <p class="muted">Situación a ${fdate(p.fecha)}</p><div class="cards">${p.activos.filter((a) => !S.asset || String(a.id) === String(S.asset)).map((a) => {
@@ -246,7 +250,132 @@ V.panel = async (el) => {
   });
   pintarMinis(el).catch((e) => el.querySelectorAll(".minis").forEach((m) => (m.innerHTML = `<p class="error">${esc(e.message)}</p>`)));
   bindBuscador($("#busq", el), $("#busqRes", el));
+  agendaWidget($("#agp", el));
 };
+
+// ------------------------------------------------------------------ agenda (calendario de todos los usuarios)
+// Reuniones, tareas, recordatorios y eventos: privados (solo yo), para personas concretas o públicos (todos).
+const AG_TIPOS = { reunion: ["Reunión", "#2b6cb0"], tarea: ["Tarea", "#b7791f"], recordatorio: ["Recordatorio", "#2f855a"], evento: ["Evento", "#6b46c1"] };
+const AG_VIS = [["privada", "🔒 Privada (solo yo)"], ["compartida", "👥 Solo las personas indicadas"], ["publica", "🌐 Pública (todos los usuarios)"]];
+const AG_REP = [["", "No se repite"], ["diaria", "Cada día"], ["semanal", "Cada semana"], ["mensual", "Cada mes"], ["anual", "Cada año"]];
+const AG_AVISO = [["", "Sin aviso por correo"], ["0", "A la hora de la cita"], ["15", "15 minutos antes"], ["60", "1 hora antes"], ["1440", "1 día antes"], ["2880", "2 días antes"], ["10080", "1 semana antes"]];
+const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const hora = (x) => x.slice(11, 16);
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+
+async function editarCita(e, fecha, recargar) {  // e: cita existente o null
+  S.agUsuarios = S.agUsuarios || await get("/api/agenda/usuarios");
+  const ini = e ? e.inicio : `${fecha || today()}T09:00`;
+  const v = e ? { ...e, fecha: ini.slice(0, 10), hora_ini: e.todo_el_dia ? "" : hora(ini), hora_fin: e.fin ? hora(e.fin) : "",
+    participantes: e.participantes.map((p) => String(p.user_id)), aviso_min: e.aviso_min == null ? "" : String(e.aviso_min) }
+    : { tipo: "tarea", fecha: ini.slice(0, 10), hora_ini: "09:00", visibilidad: "compartida", prioridad: "normal", aviso_min: "" };
+  const destinos = S.agUsuarios.filter((u) => u.asignable || v.participantes?.includes(String(u.id)));
+  const f = form(e ? `${AG_TIPOS[e.tipo][0]}: ${e.titulo}` : "Nueva cita en la agenda", [
+    { k: "tipo", t: "Tipo", type: "select", req: true, options: Object.entries(AG_TIPOS).map(([k, [t]]) => [k, t]) },
+    { k: "titulo", t: "Asunto", req: true, wide: true },
+    { k: "fecha", t: "Fecha", type: "date", req: true }, { k: "hora_ini", t: "Hora (vacío = todo el día)", type: "time" }, { k: "hora_fin", t: "Hasta las", type: "time" },
+    { k: "visibilidad", t: "Quién la ve", type: "select", req: true, options: AG_VIS },
+    { k: "participantes", t: "Para / convocados (solo lo ven ellos y usted, salvo si es pública)", type: "checks", options: destinos.map((u) => [String(u.id), u.nombre]) },
+    { k: "lugar", t: "Lugar" }, { k: "prioridad", t: "Prioridad", type: "select", req: true, options: [["normal", "Normal"], ["alta", "Alta"]] },
+    { k: "aviso_min", t: "Aviso por correo (en blanco: sin aviso)", type: "select", options: AG_AVISO.slice(1) },
+    { k: "repeticion", t: "Se repite (en blanco: no)", type: "select", options: AG_REP.slice(1) }, { k: "repetir_hasta", t: "Repetir hasta (opcional)", type: "date" },
+    { k: "asset_id", t: "Activo relacionado (opcional)", type: "select", options: S.assets.map((a) => [a.id, a.nombre]) },
+    { k: "descripcion", t: "Detalle", type: "textarea", wide: true },
+  ], v, async (d) => {
+    const body = { tipo: d.tipo, titulo: d.titulo, lugar: d.lugar, descripcion: d.descripcion, visibilidad: d.visibilidad, prioridad: d.prioridad,
+      todo_el_dia: !d.hora_ini, inicio: `${d.fecha}T${d.hora_ini || "00:00"}:00`, fin: d.hora_ini && d.hora_fin ? `${d.fecha}T${d.hora_fin}:00` : null,
+      participantes: (d.participantes || []).map(Number), aviso_min: d.aviso_min === null ? null : Number(d.aviso_min),
+      repeticion: d.repeticion || null, repetir_hasta: d.repetir_hasta, asset_id: d.asset_id ? Number(d.asset_id) : null };
+    if (e) await put(`/api/agenda/${e.id}`, body); else await post("/api/agenda", body);
+    toast(e ? "Cita actualizada" : body.participantes.length ? "Cita creada y enviada" : "Cita creada");
+    recargar && recargar();
+  }, e ? "Guardar" : "Crear");
+  const vis = f.elements.visibilidad, parts = f.querySelector('input[name="participantes"]')?.closest("fieldset");
+  const pinta = () => { if (parts) parts.style.display = vis.value === "privada" ? "none" : ""; };
+  vis.onchange = pinta; pinta();
+  if (e && !e.puede_editar) f.querySelectorAll("input, select, textarea, button[type=submit]").forEach((x) => (x.disabled = true));
+}
+
+function citaHtml(e, conFecha = false) {
+  const [t, color] = AG_TIPOS[e.tipo] || ["", "#666"];
+  const quien = e.mio ? (e.participantes.length ? `para ${e.participantes.map((p) => p.nombre + (p.respuesta === "acepta" ? " ✔" : p.respuesta === "rechaza" ? " ✖" : "")).join(", ")}` : "")
+    : `de ${e.creador}`;
+  return `<div class="cita${e.hecha ? " hecha" : ""}${e.nuevo ? " nueva" : ""}" style="border-left-color:${color}">
+    <div><b>${conFecha ? fdate(e.ocurrencia.slice(0, 10)) + " · " : ""}${e.todo_el_dia ? "Todo el día" : hora(e.ocurrencia)}${e.fin_ocurrencia ? "–" + hora(e.fin_ocurrencia) : ""}</b> · <span style="color:${color}">${esc(t)}</span>
+      ${e.prioridad === "alta" ? '<span class="badge b-urgente">alta</span>' : ""}${e.nuevo ? ' <span class="badge b-pendiente">nueva</span>' : ""}
+      ${e.vencida ?  ' <span class="badge b-urgente">vencida</span>' : ""}${e.hecha ? ` <span class="badge b-cerrada">hecha${e.hecha_por_nombre ? " por " + esc(e.hecha_por_nombre) : ""}</span>` : ""}
+      <span class="muted peq">${{ privada: "🔒", compartida: "👥", publica: "🌐" }[e.visibilidad]}${e.repeticion ? " 🔁" : ""}</span></div>
+    <div class="cita-tit">${esc(e.titulo)}${e.lugar ? ` <span class="muted">· ${esc(e.lugar)}</span>` : ""}</div>
+    ${e.descripcion ? `<div class="muted peq">${esc(e.descripcion)}</div>` : ""}
+    <div class="muted peq">${esc(quien)}</div>
+    <div class="toolbar">${e.tipo === "tarea" && (e.mio || e.para_mi) ? `<button class="btn sm" data-ag="hecha" data-id="${e.id}" data-v="${e.hecha ? 0 : 1}">${e.hecha ? "Reabrir" : "✔ Hecha"}</button>` : ""}
+      ${e.para_mi && e.tipo === "reunion" ? `<button class="btn sm ${e.mi_respuesta === "acepta" ? "primary" : ""}" data-ag="acepta" data-id="${e.id}">Asisto</button><button class="btn sm ${e.mi_respuesta === "rechaza" ? "danger" : ""}" data-ag="rechaza" data-id="${e.id}">No asisto</button>` : ""}
+      <button class="btn sm" data-ag="ver" data-id="${e.id}">${e.puede_editar ? "Editar" : "Ver"}</button>
+      <button class="btn sm" data-ag="ics" data-id="${e.id}" title="Añadir a su calendario del móvil, Outlook o Google">📅 A mi calendario</button>
+      ${e.puede_editar ? `<button class="btn sm danger" data-ag="borrar" data-id="${e.id}">Borrar</button>` : ""}</div></div>`;
+}
+
+// Calendario mensual con los días que tienen citas marcados; al pulsar un día se ven sus citas al lado.
+function agendaWidget(cont, grande = false) {
+  const hoy = new Date();
+  let mes = new Date(hoy.getFullYear(), hoy.getMonth(), 1), sel = isoLocal(hoy), citas = [], pend = { tareas: [], nuevas: [] };
+  const cargar = async () => {
+    const ini = new Date(mes), dow = (ini.getDay() + 6) % 7;
+    const desde = new Date(ini); desde.setDate(1 - dow);
+    const hasta = new Date(desde); hasta.setDate(desde.getDate() + 41);
+    [citas, pend] = await Promise.all([get("/api/agenda", { desde: isoLocal(desde), hasta: isoLocal(hasta) }), get("/api/agenda/pendientes")]);
+    pintar(desde);
+  };
+  const pintar = (desde) => {
+    const porDia = {};
+    citas.forEach((c) => (porDia[c.ocurrencia.slice(0, 10)] ||= []).push(c));
+    const celdas = [...Array(42)].map((_, i) => {
+      const d = new Date(desde); d.setDate(desde.getDate() + i);
+      const k = isoLocal(d), cs = porDia[k] || [], fuera = d.getMonth() !== mes.getMonth();
+      const puntos = [...new Set(cs.map((c) => c.tipo))].map((t) => `<i style="background:${AG_TIPOS[t][1]}"></i>`).join("");
+      return `<button type="button" class="ag-dia${fuera ? " fuera" : ""}${k === isoLocal(hoy) ? " hoy" : ""}${k === sel ? " sel" : ""}${cs.some((c) => c.nuevo) ? " con-nueva" : ""}" data-dia="${k}">
+        <span>${d.getDate()}</span>${cs.length ? `<span class="ag-puntos">${puntos}</span>${grande ? `<span class="ag-n">${cs.length}</span>` : ""}` : ""}</button>`;
+    }).join("");
+    const delDia = porDia[sel] || [];
+    const f = new Date(sel + "T12:00");
+    cont.innerHTML = `<div class="agenda${grande ? " grande" : ""}">
+      <div class="ag-cal"><div class="toolbar"><button class="btn sm" data-mes="-1">‹</button><b class="ag-mes">${MESES[mes.getMonth()]} ${mes.getFullYear()}</b><button class="btn sm" data-mes="1">›</button>
+        <button class="btn sm" data-mes="0">Hoy</button><span class="spacer"></span><button class="btn sm primary" data-nueva>+ Nueva</button></div>
+        <div class="ag-sem">${["L", "M", "X", "J", "V", "S", "D"].map((x) => `<span>${x}</span>`).join("")}</div><div class="ag-grid">${celdas}</div>
+        <p class="ag-leyenda">${Object.values(AG_TIPOS).map(([t, c]) => `<span><i style="background:${c}"></i>${t}</span>`).join("")}</p></div>
+      <div class="ag-lista">
+        ${pend.nuevas.length ? `<div class="ag-nuevas"><h4>🔔 Nuevo para usted (${pend.nuevas.length})</h4>${pend.nuevas.map((n) => `<div class="ag-nueva">
+          <span><b>${esc(AG_TIPOS[n.tipo][0])}</b> de ${esc(n.creador)} · ${fdate(n.ocurrencia.slice(0, 10))}${n.todo_el_dia ? "" : " " + hora(n.ocurrencia)} · ${esc(n.titulo)}</span>
+          <span><button class="btn sm" data-ag="ir" data-id="${n.id}" data-fecha="${n.ocurrencia.slice(0, 10)}">Ver día</button><button class="btn sm" data-ag="visto" data-id="${n.id}">Entendido</button></span></div>`).join("")}</div>` : ""}
+        <h4>${f.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })}</h4>
+        ${delDia.length ? delDia.map(citaHtml).join("") : '<p class="muted">Sin citas este día.</p>'}
+        ${pend.tareas.length ? `<h4>Tareas pendientes (${pend.tareas.length})</h4>${pend.tareas.map((t) => citaHtml(t, true)).join("")}` : ""}
+      </div></div>`;
+    cont.querySelectorAll("[data-dia]").forEach((b) => (b.onclick = () => { sel = b.dataset.dia; pintar(desde); }));
+    cont.querySelectorAll("[data-mes]").forEach((b) => (b.onclick = () => {
+      const n = Number(b.dataset.mes);
+      mes = n ? new Date(mes.getFullYear(), mes.getMonth() + n, 1) : new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+      if (!n) sel = isoLocal(hoy);
+      cargar();
+    }));
+    cont.querySelector("[data-nueva]").onclick = () => editarCita(null, sel, cargar);
+    const todas = [...citas, ...pend.tareas, ...pend.nuevas];
+    cont.querySelectorAll("[data-ag]").forEach((b) => (b.onclick = async () => {
+      const id = Number(b.dataset.id), c = todas.find((x) => x.id === id), a = b.dataset.ag;
+      if (c?.nuevo) post(`/api/agenda/${id}/visto`).catch(() => {});
+      if (a === "ver") return editarCita(c, null, cargar);
+      if (a === "visto") { await post(`/api/agenda/${id}/visto`); return cargar(); }
+      if (a === "ir") { sel = b.dataset.fecha; const f = new Date(sel + "T12:00"); mes = new Date(f.getFullYear(), f.getMonth(), 1); return cargar(); }
+      if (a === "ics") return download("GET", `/api/agenda/${id}/ics`).catch((er) => toast(er.message, true));
+      if (a === "borrar") { if (!confirm(`¿Borrar «${c.titulo}»${c.repeticion ? " (todas las repeticiones)" : ""}?`)) return; await run(() => api("DELETE", `/api/agenda/${id}`), "Cita borrada"); }
+      if (a === "hecha") await run(() => post(`/api/agenda/${id}/hecha`, { hecha: b.dataset.v === "1" }), b.dataset.v === "1" ? "Tarea hecha" : "Tarea reabierta");
+      if (a === "acepta" || a === "rechaza") await run(() => post(`/api/agenda/${id}/respuesta`, { respuesta: a }), a === "acepta" ? "Asistencia confirmada" : "Ha indicado que no asiste");
+      cargar();
+    }));
+  };
+  cargar().catch((e) => (cont.innerHTML = `<p class="error">${esc(e.message)}</p>`));
+}
+V.agenda = (el) => { el.innerHTML = '<div id="agw"></div>'; agendaWidget($("#agw", el), true); };
 
 // ------------------------------------------------------------------ buscador del panel
 // Un dato cualquiera y se ven todas las coincidencias con sus acciones (ficha, cobro, check-in…) sin cambiar de página.
@@ -2149,6 +2278,7 @@ V.usuarios = async (el) => {
       { k: "password", t: u ? "Restablecer contraseña provisional (opcional)" : "Contraseña provisional (mín. 8)", type: "password", req: !u },
       { k: "activo", t: "Usuario activo", type: "checkbox", def: true },
       ...(S.me.is_superadmin ? [{ k: "is_superadmin", t: "Superadministrador (acceso total)", type: "checkbox" }] : []),
+      { k: "no_asignable", t: "Presidencia: los demás no pueden enviarle tareas, recordatorios ni convocatorias", type: "checkbox" },
       { html: `<fieldset><legend>Roles y ámbito de acceso (rol · sociedad · activo)</legend><div id="asg">${(u?.asignaciones || []).map(assignRow).join("")}</div>
         <button type="button" class="btn sm" id="addA">+ Añadir rol</button></fieldset>` },
     ], u || {}, async (d) => {
@@ -2243,7 +2373,7 @@ V.perfil = async (el) => {
 
 // ------------------------------------------------------------------ navegación
 const MENU = [
-  ["General", [["panel", "Panel de control", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
+  ["General", [["panel", "Panel de control", null], ["agenda", "Agenda", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
   ["Apartamentos turísticos", [["plano", "Plano de apartamentos", "activos.ver"], ["hoy", "Llegadas / salidas", "reservas.ver"], ["reservas", "Reservas", "reservas.ver"], ["planning", "Planning", "reservas.ver"], ["huespedes", "Huéspedes", "reservas.ver"], ["ses", "Parte de viajeros (SES)", "reservas.ver"], ["garajes", "Alquiler de garajes", "reservas.ver"]]],
   ["Alquiler residencial", [["contratos", "Contratos", "alquiler.ver"], ["recibos", "Recibos y cobros", "alquiler.ver"], ["inquilinos", "Inquilinos", "alquiler.ver"]]],
   ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["servicios", "Servicios", "activos.ver"], ["informes", "Informes Excel", "informes"]]],

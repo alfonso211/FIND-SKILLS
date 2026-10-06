@@ -482,6 +482,7 @@ class UserIn(BaseModel):
     password: str = Field(min_length=8)  # provisional: el usuario debe cambiarla al entrar
     is_superadmin: bool = False
     activo: bool = True
+    no_asignable: bool = False
     asignaciones: list[AssignmentIn] = []
 
 
@@ -491,6 +492,7 @@ class UserUpdate(BaseModel):
     password: str | None = Field(default=None, min_length=8)  # restablece contraseña provisional
     is_superadmin: bool | None = None
     activo: bool | None = None
+    no_asignable: bool | None = None
     asignaciones: list[AssignmentIn] | None = None
 
 

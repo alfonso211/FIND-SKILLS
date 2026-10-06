@@ -51,6 +51,7 @@ def create_user(data: UserIn, scope: Scope = Depends(get_scope), db: Session = D
     _validate_assignments(db, data.asignaciones)
     u = User(email=email, nombre=data.nombre, password_hash=hash_password(data.password),
              is_superadmin=data.is_superadmin, activo=data.activo, debe_cambiar_password=True,
+             no_asignable=data.no_asignable,
              assignments=[Assignment(**a.model_dump()) for a in data.asignaciones])
     db.add(u)
     db.flush()
@@ -81,6 +82,8 @@ def update_user(uid: int, data: UserUpdate, scope: Scope = Depends(get_scope), d
         u.activo = data.activo
     if data.is_superadmin is not None:
         u.is_superadmin = data.is_superadmin
+    if data.no_asignable is not None:
+        u.no_asignable = data.no_asignable
     if data.password:
         u.password_hash = hash_password(data.password)
         u.debe_cambiar_password = True
