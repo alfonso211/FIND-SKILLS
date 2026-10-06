@@ -2,7 +2,7 @@
 Las facturas se emiten solas al registrar un cobro (recibos de alquiler y reservas turísticas)."""
 import csv
 import io
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -11,10 +11,10 @@ from sqlalchemy.orm import Session
 
 from .. import factura_pdf
 from ..database import get_db
-from ..facturacion import (FORMAS_PAGO, datos_cliente, desglose, dinero, emitir, factura_out, lineas_de,
-                           lineas_servicios, serie_activo)
-from ..models import Asset, Charge, Company, Contact, Invoice, Reservation, Service
-from ..schemas import InvoiceRectify, ServiceIn, ServiceInvoiceIn
+from ..facturacion import (FORMAS_PAGO, datos_cliente, desglose, dinero, emitir, factura_out, importe_estancia,
+                           lineas_de, lineas_servicios, pendientes_cobro, serie_activo)
+from ..models import Asset, Charge, Company, Contact, Invoice, Reservation, Service, User
+from ..schemas import InvoicePaid, InvoiceRectify, InvoiceUnpaid, ServiceIn, ServiceInvoiceIn
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
 
@@ -48,15 +48,76 @@ def _rectificadas(db: Session, ids: list[int]) -> dict[int, str]:
 @router.get("")
 def list_invoices(asset_id: int | None = None, anio: int | None = None, serie: str | None = None,
                   q: str | None = None, reservation_id: int | None = None, charge_id: int | None = None,
-                  scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+                  cobro: str | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     stmt = _filtrar(scope, asset_id, anio, serie, q)
+    if cobro:
+        stmt = stmt.where(Invoice.cobro == cobro, Invoice.tipo == "ordinaria")
     if reservation_id:
         stmt = stmt.where(Invoice.reservation_id == reservation_id)
     if charge_id:
         stmt = stmt.where(Invoice.charge_id == charge_id)
     rows = list(db.scalars(stmt.order_by(Invoice.fecha_expedicion.desc(), Invoice.id.desc()).limit(2000)))
     rect = _rectificadas(db, [f.id for f in rows])
-    return [factura_out(f, rect.get(f.id)) for f in rows]
+    usuarios = dict(db.execute(select(User.id, User.nombre).where(
+        User.id.in_({f.cobro_user_id for f in rows if f.cobro_user_id} or {-1}))).all())
+    return [{**factura_out(f, rect.get(f.id)), "cobro_usuario": usuarios.get(f.cobro_user_id)} for f in rows]
+
+
+@router.get("/pendientes-cobro")
+def unpaid(asset_id: int | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Facturas emitidas sin cobrar (renovaciones y reservas que pagan por transferencia), las más antiguas primero."""
+    ids = scope.asset_ids("facturas.ver")
+    if asset_id:
+        ids = {asset_id} if ids is None or asset_id in ids else set()
+    filas = pendientes_cobro(db, ids)
+    return {"facturas": filas, "total": round(sum(f["total"] for f in filas), 2)}
+
+
+def _puede_cobrar(scope: Scope, f: Invoice) -> None:
+    """Marca el cobro recepción (reservas) o administración (facturas) del activo."""
+    if not (scope.can_asset("reservas.editar", f.asset_id) or scope.can_asset("facturas.rectificar", f.asset_id)
+            or scope.can_asset("alquiler.editar", f.asset_id)):
+        raise HTTPException(403, "Sin permiso para registrar cobros en este activo")
+
+
+@router.post("/{fid}/cobro")
+def mark_paid(fid: int, data: InvoicePaid, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """La factura pendiente queda cobrada (control económico): fecha, forma y referencia del pago, y quién lo
+    comprobó. Lo cobrado de la reserva sube en el importe de la estancia."""
+    f = _factura(db, scope, fid)
+    _puede_cobrar(scope, f)
+    if f.cobro != "pendiente":
+        bad_request(f"La factura {f.codigo} no está pendiente de cobro")
+    if data.fecha < f.fecha_expedicion:
+        bad_request("La fecha de cobro no puede ser anterior a la de la factura")
+    f.cobro, f.cobro_fecha, f.cobro_forma, f.cobro_ref = "cobrada", data.fecha, data.forma_pago, data.referencia
+    f.cobro_user_id, f.cobro_marcado = scope.user.id, datetime.now()
+    if f.reservation_id:
+        r = db.get(Reservation, f.reservation_id)
+        r.importe_pagado = dinero(r.importe_pagado) + importe_estancia(f)
+    audit(db, scope.user, "factura_cobrada", "factura", f.id,
+          {"factura": f.codigo, "fecha": str(data.fecha), "forma": data.forma_pago, "referencia": data.referencia})
+    db.commit()
+    return factura_out(f)
+
+
+@router.post("/{fid}/cobro/deshacer")
+def undo_paid(fid: int, data: InvoiceUnpaid, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Corrige un cobro marcado por error: la factura vuelve a quedar pendiente (solo administración)."""
+    f = _factura(db, scope, fid, "facturas.rectificar")
+    if f.cobro != "cobrada" or not f.cobro_marcado:
+        bad_request("Solo se deshace el cobro marcado de una factura emitida sin cobrar")
+    if db.scalar(select(Invoice.id).where(Invoice.rectifica_id == f.id)):
+        bad_request("La factura está rectificada")
+    if f.reservation_id:
+        r = db.get(Reservation, f.reservation_id)
+        r.importe_pagado = max(Decimal(0), dinero(r.importe_pagado) - importe_estancia(f))
+    audit(db, scope.user, "factura_cobro_deshecho", "factura", f.id,
+          {"factura": f.codigo, "fecha": str(f.cobro_fecha), "motivo": data.motivo})
+    f.cobro, f.cobro_fecha, f.cobro_forma, f.cobro_ref, f.cobro_user_id, f.cobro_marcado = (
+        "pendiente", None, None, None, None, None)
+    db.commit()
+    return factura_out(f)
 
 
 @router.get("/libro.csv")
@@ -124,6 +185,8 @@ def rectify_invoice(fid: int, data: InvoiceRectify, scope: Scope = Depends(get_s
         if c.importe_pagado <= 0:
             c.fecha_pago = None
     reserva = cobrado("alojamiento") + cobrado("garaje")
+    if f.cobro == "pendiente":  # no se llegó a cobrar: no hay cobro que deshacer
+        f.cobro, reserva = "anulada", Decimal(0)
     if f.reservation_id and reserva:
         r = db.get(Reservation, f.reservation_id)
         r.importe_pagado = max(Decimal(0), dinero(r.importe_pagado) - reserva)

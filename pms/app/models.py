@@ -343,6 +343,15 @@ class Invoice(Base):
     reservation_id: Mapped[int | None] = mapped_column(ForeignKey("reservas.id"))
     huella: Mapped[str] = mapped_column(String(64))
     huella_anterior: Mapped[str | None] = mapped_column(String(64))
+    # Cobro de la factura. «cobrada»: se emitió al cobrar (lo normal). «pendiente»: emitida sin cobrar (renovación o
+    # reserva que pagará por transferencia); recepción la revisa a diario y la marca cobrada al recibir el dinero.
+    # «anulada»: pendiente que se rectificó sin llegar a cobrarse.
+    cobro: Mapped[str] = mapped_column(String(12), default="cobrada", server_default="cobrada", index=True)
+    cobro_fecha: Mapped[date | None] = mapped_column(Date)
+    cobro_forma: Mapped[str | None] = mapped_column(String(30))
+    cobro_ref: Mapped[str | None] = mapped_column(String(80))
+    cobro_user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    cobro_marcado: Mapped[datetime | None] = mapped_column(DateTime)
     creada: Mapped[datetime] = mapped_column(DateTime, default=_now)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     asset: Mapped[Asset] = relationship()

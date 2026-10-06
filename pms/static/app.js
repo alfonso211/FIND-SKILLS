@@ -218,6 +218,10 @@ V.panel = async (el) => {
       <div id="busqRes"></div></div>
     <section class="panel-agenda"><h3>📅 Agenda</h3><div id="agp"></div></section>
     ${planos.map((a) => `<section class="plano-resumen" data-plano="${a.id}"><div class="toolbar"><h3 style="margin:0">${esc(a.nombre)} · plano por plantas</h3><span class="spacer"></span>${leyendaHtml()}</div><div class="minis"><p class="muted">Cargando plano…</p></div></section>`).join("")}
+    ${(() => { const pf = p.activos.filter((a) => a.facturas_pendientes && (!S.asset || String(a.id) === String(S.asset)));
+      return pf.length ? `<div class="aviso-hito aviso-cobro"><h4>💶 Facturas pendientes de cobro: ${pf.reduce((s, a) => s + a.facturas_pendientes, 0)} · ${eur(pf.reduce((s, a) => s + a.facturas_pendientes_importe, 0))}</h4>
+        <p>${pf.map((a) => `${esc(a.nombre)}: ${a.facturas_pendientes} (${eur(a.facturas_pendientes_importe)}), la más antigua de ${a.facturas_pendientes_dias} días`).join(" · ")}. Compruebe en el banco si han llegado las transferencias y márquelas cobradas.</p>
+        <button class="btn sm primary" id="verCobros">Revisar facturas pendientes</button></div>` : ""; })()}
     ${(p.hitos || []).map((h) => `<div class="aviso-hito"><h4>📅 ${esc(h.titulo)} · ${fdate(h.fecha)} (${h.dias > 0 ? `faltan ${h.dias} días` : h.dias === 0 ? "hoy" : `hace ${-h.dias} días`})</h4><p>${esc(h.detalle)}</p></div>`).join("")}
     <p class="muted">Situación a ${fdate(p.fecha)}</p><div class="cards">${p.activos.filter((a) => !S.asset || String(a.id) === String(S.asset)).map((a) => {
     const k = [];
@@ -250,6 +254,7 @@ V.panel = async (el) => {
     const abrir = () => { S.plano = { asset: Number(c.dataset.abrir) }; go("plano"); };
     c.onclick = abrir; c.onkeydown = (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), abrir());
   });
+  if ($("#verCobros", el)) $("#verCobros", el).onclick = () => { S.filtroCobro = "pendiente"; go("facturas"); };
   pintarMinis(el).catch((e) => el.querySelectorAll(".minis").forEach((m) => (m.innerHTML = `<p class="error">${esc(e.message)}</p>`)));
   bindBuscador($("#busq", el), $("#busqRes", el));
   agendaWidget($("#agp", el));
@@ -751,23 +756,26 @@ function leerServicios(f) {
       cantidad: Number(v("[data-n]") || 1), precio: v("input[data-p]") === "" ? null : Number(v("input[data-p]")), tipo_iva: Number(v("select[data-i]")) });
   }).filter((x) => x.servicio_id || x.concepto);
 }
-function cobroForm(titulo, pendiente, url, reload, assetId) {
+// sinCobro: se factura ya y la factura queda «pendiente de cobro» (renovaciones y reservas que pagan por transferencia)
+function cobroForm(titulo, pendiente, url, reload, assetId, sinCobro = false, despues = null) {
   const f = form(titulo, [
-    { k: "importe", t: pendiente > 0 ? "Importe cobrado € (IVA incluido)" : "Importe cobrado € (nada pendiente)", type: "number", req: true },
-    { k: "fecha_pago", t: "Fecha del cobro", type: "date", def: today() },
-    { k: "forma_pago", t: "Forma de pago", type: "select", options: kv(S.cat.formas_pago) },
+    ...(sinCobro ? [{ html: '<p class="aviso-faltan">La factura se emite <b>sin cobrar</b>: queda <b>pendiente de cobro</b>, recepción la revisa cada día y la marca <b>cobrada</b> cuando llegue la transferencia (Facturas emitidas → Cobrada).</p>' }] : []),
+    { k: "importe", t: sinCobro ? "Importe a facturar € (IVA incluido)" : pendiente > 0 ? "Importe cobrado € (IVA incluido)" : "Importe cobrado € (nada pendiente)", type: "number", req: true },
+    ...(sinCobro ? [] : [{ k: "fecha_pago", t: "Fecha del cobro", type: "date", def: today() }]),
+    { k: "forma_pago", t: sinCobro ? "Forma de pago prevista" : "Forma de pago", type: "select", options: kv(S.cat.formas_pago), def: sinCobro ? "transferencia" : undefined },
     ...(assetId ? [{ html: serviciosHtml("Servicios en la misma factura (limpieza, aparcamiento…)") }] : []),
     { k: "otra", t: "Facturar a una empresa u otra persona (no al cliente)", type: "checkbox", wide: true },
     { k: "fa_nombre", t: "Razón social / nombre" }, { k: "fa_nif", t: "CIF / NIF" }, { k: "fa_domicilio", t: "Domicilio fiscal completo", wide: true },
-    { html: '<p class="muted">Al registrar el cobro se emite la factura con el siguiente número de la serie del activo y se descarga en PDF. Una factura emitida no se puede modificar: si hay un error, Administración emite una rectificativa.</p>' },
+    { html: `<p class="muted">${sinCobro ? "Se emite" : "Al registrar el cobro se emite"} la factura con el siguiente número de la serie del activo y se descarga en PDF. Una factura emitida no se puede modificar: si hay un error, Administración emite una rectificativa.</p>` },
   ], { importe: Math.max(0, pendiente) }, async (d, fr) => {
     const body = { importe: d.importe || 0, fecha_pago: d.fecha_pago, forma_pago: d.forma_pago, servicios: leerServicios(fr) };
     if (d.otra) body.facturar_a = { nombre: d.fa_nombre, nif: d.fa_nif, domicilio: d.fa_domicilio };
-    const r = await post(url, clean(body));
-    toast(`Cobro registrado · Factura ${r.factura.codigo}`);
+    const r = await post(sinCobro ? url.replace(/\/cobro$/, "/facturar") : url, clean(body));
+    toast(sinCobro ? `Factura ${r.factura.codigo} emitida · pendiente de cobro` : `Cobro registrado · Factura ${r.factura.codigo}`);
     reload && reload();
     await descargarFactura(r.factura.id);
-  }, "Registrar cobro y facturar");
+    if (despues) setTimeout(despues, 0);
+  }, sinCobro ? "Emitir factura pendiente de cobro" : "Registrar cobro y facturar");
   const sync = () => f.querySelectorAll('[name^="fa_"]').forEach((i) => {
     i.closest("label").style.display = f.elements.otra.checked ? "" : "none"; i.required = f.elements.otra.checked;
   });
@@ -780,6 +788,8 @@ function resActions(reload) {
     r.uso !== "garaje" && ["Contrato", () => accommodationContract(r)],
     [r.importe_total - r.importe_pagado > 0.004 ? "Cobro" : "Servicios", () => cobroForm(`Cobro reserva ${r.localizador || r.id} · ${r.unidad} · pendiente ${eur(r.importe_total - r.importe_pagado)}`,
       Math.round((r.importe_total - r.importe_pagado) * 100) / 100, `/api/turistico/reservas/${r.id}/cobro`, reload, r.asset_id)],
+    r.importe_total - r.importe_pagado > 0.004 && ["Facturar sin cobrar", () => cobroForm(`Facturar sin cobrar · reserva ${r.localizador || r.id} · ${r.unidad}`,
+      Math.round((r.importe_total - r.importe_pagado) * 100) / 100, `/api/turistico/reservas/${r.id}/cobro`, reload, r.asset_id, true)],
     r.estado === "confirmada" && ["Check-in", () => run(() => post(`/api/turistico/reservas/${r.id}/checkin`), "Check-in realizado").then(reload).catch(() => ocupantesReserva(r, reload))],
     ["confirmada", "checkin"].includes(r.estado) && r.uso !== "garaje" && ["Renovar", () => renovarEstancia(r, reload)],
     r.estado === "checkin" && ["Check-out", () => run(() => post(`/api/turistico/reservas/${r.id}/checkout`), "Check-out realizado").then(reload)],
@@ -1113,6 +1123,7 @@ async function newReservation(reload, fija) {  // fija: {id, codigo, asset_id} p
       { k: "importe_total", t: "Importe total € (IVA incluido)", type: "number", def: 0 },
       { k: "importe_pagado", t: "Cobrado ahora € (se emite factura)", type: "number", def: 0 },
       { k: "forma_pago", t: "Forma de pago", type: "select", options: kv(S.cat.formas_pago) },
+      { k: "facturar_pendiente", t: "Si no se cobra ahora: facturar ya el importe total y dejarlo pendiente de cobro (pagará por transferencia)", type: "checkbox", wide: true },
       { k: "notas", t: "Notas", type: "textarea", wide: true },
     ], {}, async (d, fr) => {
       const g = {}; guestFields.filter((f) => f.k).forEach((f) => { g[f.k] = d[f.k]; delete d[f.k]; });
@@ -1122,7 +1133,7 @@ async function newReservation(reload, fija) {  // fija: {id, codigo, asset_id} p
         cliente = { guest_id: fr._cliente.id };
       }
       const nueva = await post("/api/turistico/reservas", { ...clean(d), ...q, unit_id: Number(d.unit_id), ...cliente, documentos: fr._docs.map((x) => x.id) });
-      toast("Reserva creada" + (nueva.factura ? ` · Factura ${nueva.factura.codigo}` : "") + ". Complete ahora el contrato (puede guardarlo e imprimirlo a la llegada).");
+      toast("Reserva creada" + (nueva.factura ? ` · Factura ${nueva.factura.codigo}${nueva.factura.cobro === "pendiente" ? " (pendiente de cobro)" : ""}` : "") + ". Complete ahora el contrato (puede guardarlo e imprimirlo a la llegada).");
       reload && reload();
       if (nueva.factura) await descargarFactura(nueva.factura.id);
       if (nueva.adultos + nueva.ninos > 1) await ocupantesReserva(nueva, reload, () => accommodationContract(nueva));
@@ -1370,13 +1381,19 @@ async function renovarEstancia(r, reload) {
       El cliente firma un <b>contrato nuevo</b> y la renovación se cobra y factura aparte. Los datos del cliente y sus ocupantes se mantienen.</p>` },
     { k: "fecha_salida", t: "Nueva fecha de salida", type: "date", req: true, def: info.hasta },
     { k: "importe_total", t: "Importe de la renovación € (IVA incluido)", type: "number", def: 0 },
+    { k: "factura", t: "Factura de la renovación", type: "select", req: true, def: "despues", options: [["despues", "Más tarde (al cobrar)"], ["cobro", "Cobrada ahora: registrar el cobro y facturar"], ["pendiente", "Facturar ya sin cobrar (pagará por transferencia)"]] },
     ...(info.garajes.length ? [{ k: "renovar_garaje", t: `Renovar también la plaza de garaje ${info.garajes.join(", ")}`, type: "checkbox", def: true, wide: true }] : []),
     { k: "notas", t: "Notas", type: "textarea", wide: true },
   ], {}, async (d) => {
+    const factura = d.factura; delete d.factura;
     const nueva = await post(`/api/turistico/reservas/${res.id}/renovar`, clean({ ...d, renovar_garaje: d.renovar_garaje !== false }));
     toast(`Renovación ${nueva.localizador} creada. Ahora el cliente firma el contrato.`);
     reload && reload();
-    setTimeout(() => accommodationContract(nueva), 0);
+    const contrato = () => accommodationContract(nueva);
+    if (factura !== "despues" && nueva.importe_total > 0) {  // primero la factura (cobrada o pendiente), luego el contrato
+      setTimeout(() => cobroForm(`${factura === "pendiente" ? "Facturar sin cobrar" : "Cobro"} · renovación ${nueva.localizador} · ${nueva.unidad}`, nueva.importe_total,
+        `/api/turistico/reservas/${nueva.id}/cobro`, reload, nueva.asset_id, factura === "pendiente", contrato), 0);
+    } else setTimeout(contrato, 0);
   }, "Renovar y pasar al contrato");
 }
 // ---- cliente habitual: buscar su ficha (datos y documentos guardados) para no volver a pedirlos
@@ -1947,13 +1964,18 @@ V.facturas = async (el) => {
   const series = [...new Set(S.assets.map((a) => a.serie_factura).filter(Boolean))].sort();
   el.innerHTML = `<div class="toolbar"><label>Año<input type="number" id="y" value="${new Date().getFullYear()}" style="width:90px"></label>
     <label>Serie<select id="s"><option value="">Todas</option>${series.flatMap((x) => [x, x + "R"]).map((x) => `<option>${esc(x)}</option>`).join("")}</select></label>
-    <label>Buscar<input id="q" placeholder="Nº de factura, cliente, concepto"></label><span class="spacer"></span>
+    <label>Buscar<input id="q" placeholder="Nº de factura, cliente, concepto"></label>
+    <label>Cobro<select id="c"><option value="">Todas</option><option value="pendiente" ${S.filtroCobro === "pendiente" ? "selected" : ""}>Pendientes de cobro</option><option value="cobrada">Cobradas</option></select></label><span class="spacer"></span>
     <button class="btn" id="csv">Libro de facturas emitidas (Excel)</button>${can("reservas.editar") || can("alquiler.editar") ? '<button class="btn primary" id="fsrv">Nueva factura de servicios</button>' : ""}</div><div id="t"></div><p id="tot"></p>`;
-  const filtros = () => ({ asset_id: S.asset, anio: $("#y", el).value, serie: $("#s", el).value, q: $("#q", el).value });
+  S.filtroCobro = null;
+  const filtros = () => ({ asset_id: S.asset, anio: $("#c", el).value === "pendiente" ? "" : $("#y", el).value, serie: $("#s", el).value, q: $("#q", el).value, cobro: $("#c", el).value });
   const load = async () => {
     const rows = await get("/api/facturas", filtros());
     table($("#t", el), [
-      { k: "codigo", t: "Factura", f: (v) => `<b>${esc(v)}</b>` }, { k: "fecha_expedicion", t: "Fecha", f: fdate }, { k: "activo", t: "Activo" },
+      { k: "codigo", t: "Factura", f: (v, r) => `<b>${esc(v)}</b>`
+        + (r.tipo === "ordinaria" && r.cobro === "pendiente" ? `<br><span class="badge b-cancelada">pendiente de cobro · ${Math.round((new Date(today()) - new Date(r.fecha_expedicion)) / 864e5)} días</span>` : "")
+        + (r.cobro_marcado ? `<br><span class="badge b-vigente" title="${esc(`${r.cobro_forma || ""} ${r.cobro_ref || ""} · comprobado por ${r.cobro_usuario || ""}`)}">cobrada ${fdate(r.cobro_fecha)}</span>` : "") },
+      { k: "fecha_expedicion", t: "Fecha", f: fdate }, { k: "activo", t: "Activo" },
       { k: "cliente", t: "Cliente", f: (v) => esc(v.nombre) }, { k: "cliente", t: "NIF", f: (v) => esc(v.nif || "") },
       { k: "concepto", t: "Concepto", f: (v, r) => { const p = r.lineas[0].concepto; return `<span title="${esc(v)}">${esc(p.length > 55 ? p.slice(0, 55) + "…" : p)}${r.lineas.length > 1 ? ` <span class="badge">+${r.lineas.length - 1}</span>` : ""}</span>`; } },
       { k: "base_imponible", t: "Base", num: true, f: eur }, { k: "tipo_iva", t: "IVA", num: true, f: (v, r) => r.desglose.map((x) => (x.tipo_iva == 0 ? "Exento" : x.tipo_iva + " %")).join(" + ") },
@@ -1961,15 +1983,24 @@ V.facturas = async (el) => {
       { k: "tipo", t: "", f: (v, r) => (v === "rectificativa" ? badge("rectificativa") : r.rectificada_por ? `<span class="badge b-rectificada">rectificada por ${esc(r.rectificada_por)}</span>` : "") },
     ], rows, (r) => [
       ["PDF", () => descargarFactura(r.id)],
+      r.cobro === "pendiente" && r.tipo === "ordinaria" && (can("reservas.editar") || can("facturas.rectificar") || can("alquiler.editar")) && ["Cobrada", () => form(`Factura ${r.codigo} cobrada (${eur(r.total)})`, [
+        { html: `<p>Cliente: <b>${esc(r.cliente.nombre)}</b>. Compruebe en el banco que ha llegado el pago antes de marcarla.</p>` },
+        { k: "fecha", t: "Fecha del cobro", type: "date", req: true, def: today() },
+        { k: "forma_pago", t: "Forma de pago", type: "select", req: true, options: kv(S.cat.formas_pago), def: "transferencia" },
+        { k: "referencia", t: "Referencia (concepto de la transferencia, nº de operación…)", wide: true },
+      ], {}, async (d) => { await post(`/api/facturas/${r.id}/cobro`, clean(d)); toast(`Factura ${r.codigo} marcada como cobrada`); load(); }, "Marcar cobrada"), "primary"],
+      r.cobro_marcado && can("facturas.rectificar") && !r.rectificada_por && ["Deshacer cobro", () => form(`Deshacer el cobro de ${r.codigo}`, [
+        { html: "<p>La factura vuelve a quedar <b>pendiente de cobro</b> (solo si el cobro se marcó por error).</p>" },
+        { k: "motivo", t: "Motivo", type: "textarea", req: true, wide: true }], {}, async (d) => { await post(`/api/facturas/${r.id}/cobro/deshacer`, d); toast("Cobro deshecho"); load(); }, "Deshacer cobro")],
       can("facturas.rectificar") && r.tipo === "ordinaria" && !r.rectificada_por && ["Rectificar", () => form(`Rectificar la factura ${r.codigo} (${eur(r.total)})`, [
-        { html: `<p>Se emitirá una <b>factura rectificativa</b> por ${eur(-r.total)} en la serie ${esc(r.serie)}R que anula esta factura, y se deshará el cobro (el recibo o la reserva vuelven a quedar pendientes por ese importe).</p>` },
+        { html: `<p>Se emitirá una <b>factura rectificativa</b> por ${eur(-r.total)} en la serie ${esc(r.serie)}R que anula esta factura${r.cobro === "pendiente" ? ". Estaba pendiente de cobro: deja de estarlo" : ", y se deshará el cobro (el recibo o la reserva vuelven a quedar pendientes por ese importe)"}.</p>` },
         { k: "motivo", t: "Motivo de la rectificación", type: "textarea", req: true, wide: true },
       ], {}, async (d) => { const x = await post(`/api/facturas/${r.id}/rectificar`, d); toast(`Rectificativa ${x.codigo} emitida`); load(); await descargarFactura(x.id); }, "Emitir rectificativa"), "danger"],
     ]);
     const sum = (k) => rows.reduce((a, x) => a + Number(x[k]), 0);
     $("#tot", el).innerHTML = rows.length ? `Base imponible <b>${eur(sum("base_imponible"))}</b> · IVA <b>${eur(sum("cuota_iva"))}</b> · Total <b>${eur(sum("total"))}</b>` : "";
   };
-  $("#y", el).onchange = load; $("#s", el).onchange = load; $("#q", el).oninput = debounce(load);
+  $("#y", el).onchange = load; $("#s", el).onchange = load; $("#c", el).onchange = load; $("#q", el).oninput = debounce(load);
   $("#csv", el).onclick = () => run(() => download("GET", "/api/facturas/libro.csv?" + new URLSearchParams(clean({ ...filtros(), q: null }))));
   if ($("#fsrv", el)) $("#fsrv", el).onclick = () => facturaServicios(load);
   load();
@@ -1982,6 +2013,7 @@ V.informes = async (el) => {
     ["produccion", "Producción", "Lo facturado cada mes según la fecha de factura: alojamiento, rentas y servicios (sin IVA), IVA y total, por activo.", can("finanzas.ver")],
     ["morosidad", "Morosidad", "Recibos vencidos sin cobrar y reservas con saldo, con contacto del cliente y antigüedad de la deuda (a la fecha final).", can("alquiler.ver") || can("reservas.ver")],
     ["mantenimiento", "Costes de mantenimiento", "Órdenes de trabajo del periodo con sus costes, y resúmenes por instalación, tipo y proveedor.", can("mantenimiento.ver")],
+    ["cobros", "Facturas pendientes de cobro", "Facturas emitidas sin cobrar a la fecha final con los días pendientes, y las cobradas en el periodo (fecha, forma, referencia y quién lo comprobó).", can("facturas.ver")],
   ].filter((x) => x[3]);
   el.innerHTML = `<div class="toolbar"><label>Desde<input type="date" id="d" value="${y}-01-01"></label><label>Hasta<input type="date" id="h" value="${today()}"></label>
     <span class="muted">Activo: ${esc(S.asset ? assetName(Number(S.asset)) : "todos los de su ámbito")} (filtro de arriba)</span></div>

@@ -297,8 +297,34 @@ class Payment(BaseModel):
         return self
 
 
+class UnpaidInvoiceIn(BaseModel):
+    """Factura sin cobrar de una reserva. Sin importe ni servicios: todo lo pendiente de facturar."""
+    importe: float = Field(default=0, ge=0)
+    servicios: list[ServiceLine] = []
+    forma_pago: Literal["efectivo", "tarjeta", "transferencia", "domiciliacion", "bizum", "plataforma"] | None = None
+    facturar_a: FacturarA | None = None
+
+
 class InvoiceRectify(BaseModel):
     motivo: str = Field(min_length=5)
+
+
+class InvoicePaid(BaseModel):
+    """Cobro de una factura emitida sin cobrar: cuándo y cómo llegó el dinero."""
+    fecha: date
+    forma_pago: Literal["efectivo", "tarjeta", "transferencia", "domiciliacion", "bizum", "plataforma"] = "transferencia"
+    referencia: str | None = Field(None, max_length=80)
+
+    @field_validator("fecha")
+    @classmethod
+    def _no_futura(cls, v):
+        if v > date.today():
+            raise ValueError("La fecha de cobro no puede ser futura")
+        return v
+
+
+class InvoiceUnpaid(BaseModel):
+    motivo: str = Field(min_length=5, max_length=300)
 
 
 # --------------------------------------------------------------------------- turístico
@@ -315,6 +341,7 @@ class ReservationIn(BaseModel):
     importe_total: float = Field(default=0, ge=0)
     importe_pagado: float = Field(default=0, ge=0)  # si se indica, se registra el cobro y se factura
     forma_pago: Literal["efectivo", "tarjeta", "transferencia", "domiciliacion", "bizum", "plataforma"] | None = None
+    facturar_pendiente: bool = False  # sin cobro: se factura ya y queda pendiente de cobro (transferencia)
     notas: str | None = None
     documentos: list[int] = []  # copias del documento del cliente escaneadas en el alta
 
@@ -332,7 +359,16 @@ class RenewalIn(BaseModel):
     fecha_salida: date
     importe_total: float = Field(default=0, ge=0)
     renovar_garaje: bool = True
+    importe_pagado: float = Field(default=0, ge=0)  # cobrado al renovar: se factura como cobrado
+    forma_pago: Literal["efectivo", "tarjeta", "transferencia", "domiciliacion", "bizum", "plataforma"] | None = None
+    facturar_pendiente: bool = False  # el resto se factura ya y queda pendiente de cobro
     notas: str | None = None
+
+    @model_validator(mode="after")
+    def _pagado(self):
+        if self.importe_pagado > self.importe_total:
+            raise ValueError("Lo cobrado no puede superar el importe de la renovación")
+        return self
 
 
 class ReservationUpdate(BaseModel):

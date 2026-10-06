@@ -138,7 +138,8 @@ def desglose(lineas: list[dict]) -> list[dict]:
 def emitir(db: Session, user: User | None, *, company: Company, serie: str, asset_id: int, cliente: dict,
            contact_id: int | None, lineas: list[dict] | None, fecha_operacion: date,
            forma_pago: str | None = None, charge_id: int | None = None, reservation_id: int | None = None,
-           rectifica: Invoice | None = None, motivo: str | None = None, fecha: date | None = None) -> Invoice:
+           rectifica: Invoice | None = None, motivo: str | None = None, fecha: date | None = None,
+           cobro: str = "cobrada") -> Invoice:
     emisor = datos_emisor(company)
     fecha = fecha or date.today()
     if rectifica:  # anulación exacta de la original, línea a línea
@@ -163,10 +164,56 @@ def emitir(db: Session, user: User | None, *, company: Company, serie: str, asse
                 cuota_iva=cuota, total=total, exencion=EXENCION_ARRENDAMIENTO if 0 in tipos else None,
                 forma_pago=forma_pago, charge_id=charge_id, reservation_id=reservation_id,
                 huella=huella(emisor["nif"], codigo, fecha, total, cuota, anterior), huella_anterior=anterior,
-                user_id=user.id if user else None)
+                user_id=user.id if user else None, cobro=cobro)
     db.add(f)
     db.flush()
     return f
+
+
+ESTANCIA = ("alojamiento", "garaje")  # líneas que cuentan en lo cobrado de la reserva (los servicios van aparte)
+
+
+def importe_estancia(f: Invoice) -> Decimal:
+    return sum((dinero(x["total"]) for x in lineas_de(f) if x["tipo"] in ESTANCIA), Decimal(0))
+
+
+def estancia_facturada(db: Session, reservation_id: int) -> Decimal:
+    """Lo facturado de la estancia de una reserva (las rectificativas restan): no se puede facturar dos veces."""
+    return sum((importe_estancia(f) for f in db.scalars(select(Invoice).where(
+        Invoice.reservation_id == reservation_id))), Decimal(0))
+
+
+def pendientes_cobro(db: Session, asset_ids: set[int] | None, dia: date | None = None) -> list[dict]:
+    """Facturas emitidas sin cobrar, con los días que llevan pendientes. Con `dia` en el pasado, las que estaban
+    pendientes ese día (las cobradas después también cuentan)."""
+    from .models import Asset, Reservation
+    hoy = date.today()
+    dia = dia or hoy
+    stmt = select(Invoice).where(Invoice.tipo == "ordinaria", Invoice.fecha_expedicion <= dia)
+    if dia >= hoy:
+        stmt = stmt.where(Invoice.cobro == "pendiente")
+    else:
+        stmt = stmt.where((Invoice.cobro == "pendiente") | ((Invoice.cobro == "cobrada") & (Invoice.cobro_fecha > dia)))
+    if asset_ids is not None:
+        stmt = stmt.where(Invoice.asset_id.in_(asset_ids or {-1}))
+    filas = list(db.scalars(stmt.order_by(Invoice.fecha_expedicion, Invoice.id)))
+    nombres = dict(db.execute(select(Asset.id, Asset.nombre)).all())
+    reservas = {r.id: r for r in db.scalars(select(Reservation).where(
+        Reservation.id.in_({f.reservation_id for f in filas if f.reservation_id} or {-1})))}
+    contactos = {c.id: c for c in db.scalars(select(Contact).where(
+        Contact.id.in_({f.contact_id for f in filas if f.contact_id} or {-1})))}
+    out = []
+    for f in filas:
+        r, c = reservas.get(f.reservation_id), contactos.get(f.contact_id)
+        out.append({"id": f.id, "codigo": f.codigo, "fecha": f.fecha_expedicion.isoformat(), "asset_id": f.asset_id,
+                    "activo": nombres.get(f.asset_id), "cliente": f.cliente.get("nombre"),
+                    "nif": f.cliente.get("nif"), "telefono": c.telefono if c else None,
+                    "email": c.email if c else None, "unidad": r.unit.codigo if r else None,
+                    "localizador": (r.localizador or f"R-{r.id}") if r else None,
+                    "estancia": f"{r.fecha_entrada:%d/%m/%Y} - {r.fecha_salida:%d/%m/%Y}" if r else None,
+                    "concepto": f.concepto, "total": float(f.total), "forma_pago": f.forma_pago,
+                    "dias": (dia - f.fecha_expedicion).days})
+    return out
 
 
 def lineas_servicios(db: Session, asset_id: int, servicios) -> list[dict]:

@@ -13,9 +13,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..facturacion import bases_por_tipo
+from ..facturacion import FORMAS_PAGO, bases_por_tipo, pendientes_cobro
 from ..models import (MODALIDADES_CONTRATO, MODALIDADES_RESERVA, Asset, Charge, Contact, Invoice, Lease,
-                      Reservation, Unit, WorkOrder)
+                      Reservation, Unit, User, WorkOrder)
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request
 from . import historico
@@ -27,7 +27,7 @@ MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "
 CABECERA = PatternFill("solid", fgColor="13294B")
 TOTAL = PatternFill("solid", fgColor="E3EDF9")
 INFORMES = {"ocupacion": "Ocupación", "produccion": "Producción", "morosidad": "Morosidad",
-            "mantenimiento": "Costes de mantenimiento"}
+            "mantenimiento": "Costes de mantenimiento", "cobros": "Facturas pendientes de cobro"}
 
 
 # --------------------------------------------------------------------------- utilidades
@@ -303,8 +303,38 @@ def _mantenimiento(db, scope, wb, desde, hasta, asset_id):
                            "Coste real"], filas, {2: ENTERO, 3: ENTERO, 4: ENTERO, 5: EUR}, totales=[2, 3, 4, 5])
 
 
+def _cobros(db, scope, wb, desde, hasta, asset_id):
+    """Facturas emitidas sin cobrar a la fecha final, con los días pendientes, y las cobradas en el periodo
+    (cuándo, cómo, quién lo comprobó y cuánto tardó el pago): control económico."""
+    activos = _activos(db, scope, "facturas.ver", asset_id)
+    if not activos:
+        raise HTTPException(403, "Sin permiso para ver facturas")
+    ids = {a.id for a in activos}
+    filas = [[f["activo"], f["codigo"], date.fromisoformat(f["fecha"]), f["cliente"], f["nif"], f["telefono"],
+              f["email"], f["unidad"], f["localizador"], f["estancia"], f["total"], f["dias"], _tramo(f["dias"])]
+             for f in pendientes_cobro(db, ids, hasta)]
+    _hoja(wb, "Pendientes de cobro", ["Activo", "Factura", "Fecha factura", "Cliente", "NIF", "Teléfono", "Email",
+                                      "Apartamento", "Localizador", "Estancia", "Total", "Días pendiente", "Antigüedad"],
+          filas, {2: FECHA, 10: EUR, 11: ENTERO}, totales=[10],
+          nota=f"Facturas emitidas sin cobrar a {hasta:%d/%m/%Y} (renovaciones y reservas que pagan por transferencia). "
+               "Recepción las revisa a diario y las marca cobradas al recibir el pago.")
+    usuarios = dict(db.execute(select(User.id, User.nombre)).all())
+    cobradas = []
+    for f in db.scalars(select(Invoice).where(Invoice.asset_id.in_(ids), Invoice.cobro_marcado.is_not(None),
+                                              Invoice.cobro_fecha >= desde, Invoice.cobro_fecha <= hasta)
+                        .order_by(Invoice.cobro_fecha, Invoice.id)):
+        cobradas.append([f.asset.nombre, f.codigo, f.fecha_expedicion, f.cliente.get("nombre"), float(f.total),
+                         f.cobro_fecha, (f.cobro_fecha - f.fecha_expedicion).days,
+                         FORMAS_PAGO.get(f.cobro_forma or "", f.cobro_forma), f.cobro_ref,
+                         usuarios.get(f.cobro_user_id), f.cobro_marcado])
+    _hoja(wb, "Cobradas en el periodo", ["Activo", "Factura", "Fecha factura", "Cliente", "Total", "Fecha de cobro",
+                                         "Días hasta el cobro", "Forma", "Referencia", "Comprobado por", "Marcado el"],
+          cobradas, {2: FECHA, 4: EUR, 5: FECHA, 6: ENTERO, 10: "DD/MM/YYYY HH:MM"}, totales=[4],
+          nota="Facturas emitidas sin cobrar que se cobraron entre las fechas del informe.")
+
+
 GENERADORES = {"ocupacion": _ocupacion, "produccion": _produccion, "morosidad": _morosidad,
-               "mantenimiento": _mantenimiento}
+               "mantenimiento": _mantenimiento, "cobros": _cobros}
 
 
 @router.get("/{informe}")
