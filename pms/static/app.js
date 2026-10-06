@@ -2608,7 +2608,7 @@ async function subirDocumento(reload) {
   const f = form(`Subir documento recibido · ${assetName(aid)}`, [
     { k: "tipo", t: "Tipo de documento", type: "select", req: true, options: kv(C.tipos_documento), def: "factura" },
     { html: fotosHtml("Documento escaneado: PDF, o fotos de cada página (se unen en un PDF)", true) },
-    { k: "fecha", t: "Fecha del documento (la que figura en la factura)", type: "date", req: true, def: today() },
+    { k: "fecha", t: "Fecha de la factura (la impresa en ella, no la de hoy)", type: "date", req: true },
     { k: "vencimiento", t: "Vencimiento (el de la factura)", type: "date" },
     { k: "emisor", t: "Emisor / proveedor" }, { k: "referencia", t: "Nº de factura / referencia" },
     { k: "descripcion", t: "Descripción", type: "textarea", wide: true },
@@ -2640,7 +2640,7 @@ async function editarGasto(g, reload, aidNuevo) {
   const aid = g ? g.asset_id : aidNuevo || await pickAsset();
   const [C, unidades] = await Promise.all([catGastos(), unidadesActivo(aid)]);
   const f = form(g ? `Gasto · ${g.concepto}` : `Nuevo gasto sin documento · ${assetName(aid)}`, [
-    { k: "fecha", t: "Fecha de la factura", type: "date", req: true, def: today() }, { k: "vencimiento", t: "Vencimiento", type: "date" },
+    { k: "fecha", t: "Fecha de la factura (la impresa en ella)", type: "date", req: true }, { k: "vencimiento", t: "Vencimiento", type: "date" },
     { k: "proveedor", t: "Proveedor" }, { k: "numero_factura", t: "Nº de factura" },
     ...camposGasto(C, unidades), { k: "notas", t: "Notas", type: "textarea", wide: true },
   ], g ? { ...g, base: null } : {}, async (d) => {

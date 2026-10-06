@@ -72,6 +72,8 @@ def _valores_gasto(db: Session, asset_id: int, data: ExpenseIn) -> dict:
         bad_request("Indique el apartamento del gasto")
     if data.tipo_iva not in IVAS:
         bad_request(f"Tipo de IVA no válido: {', '.join(map(str, IVAS))} %")
+    if data.fecha > date.today():
+        bad_request("La fecha de la factura no puede ser posterior a hoy: ponga la que figura en la factura")
     if data.vencimiento and data.vencimiento < data.fecha:
         bad_request("El vencimiento no puede ser anterior a la fecha de la factura")
     if data.forma_pago and data.forma_pago not in FORMAS_PAGO:

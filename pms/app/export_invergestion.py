@@ -226,10 +226,12 @@ def recibidas(db: Session, asset_ids: set[int], desde: date, hasta: date) -> tup
         if not g.numero_factura:
             avisos.append(f"Gasto {g.id} ({_limpio(g.proveedor, 40)}, {g.fecha:%d/%m/%Y}): sin nº de factura; se envía {numero}")
         archivo = ""
-        if d:
-            ext = {"application/pdf": "pdf", "image/png": "png", "image/jpeg": "jpg"}.get(d.mime, "pdf")
-            archivo = _nombre_pdf(f"{prov_nif or 'SINNIF'}-{numero}.{ext}")
+        if d:  # siempre PDF: las fotos se convierten al empaquetar (zip_documentos)
+            archivo = _nombre_pdf(f"{prov_nif or 'SINNIF'}-{numero}.pdf")
             ficheros.append((archivo, d))
+            if g.fecha == (d.subido or g.creado).date():
+                avisos.append(f"{_limpio(g.proveedor, 40)} nº {numero}: la fecha de la factura ({g.fecha:%d/%m/%Y}) es "
+                              "la del día en que se registró; compruebe que es la que figura en la factura")
         forma = FORMAS_RECIBIDAS.get(g.forma_pago or "")
         if not forma:
             forma = "TRANSFERENCIA"
@@ -293,5 +295,15 @@ def zip_documentos(ficheros: list[tuple]) -> bytes:
             if nombre in hechos:
                 continue
             hechos.add(nombre)
-            z.writestr(nombre, documentos.leer(d.fichero))
+            z.writestr(nombre, a_pdf(documentos.leer(d.fichero), d.mime))
+    return out.getvalue()
+
+
+def a_pdf(datos: bytes, mime: str) -> bytes:
+    """El documento como PDF (INVERGESTION solo admite PDF): las fotos escaneadas se convierten."""
+    if mime == "application/pdf" or not mime.startswith("image/"):
+        return datos
+    from PIL import Image
+    out = io.BytesIO()
+    Image.open(io.BytesIO(datos)).convert("RGB").save(out, "PDF", resolution=150)
     return out.getvalue()
