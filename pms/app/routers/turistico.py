@@ -106,8 +106,8 @@ def list_reservations(asset_id: int | None = None, desde: date | None = None, ha
 def create_reservation(data: ReservationIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     unit = _tourist_unit(db, data.unit_id)
     scope.require_asset("reservas.editar", unit.asset_id)
-    if unit.capacidad and data.adultos + data.ninos > unit.capacidad:
-        bad_request(f"Se supera la capacidad de la unidad ({unit.capacidad} plazas)")
+    if unit.capacidad and data.adultos > unit.capacidad:  # los menores de 16 no ocupan plaza
+        bad_request(f"Se supera la capacidad de la unidad ({unit.capacidad} plazas; los menores de 16 años no cuentan)")
     if _conflict(db, unit.id, data.fecha_entrada, data.fecha_salida):
         bad_request(f"La unidad {unit.codigo} ya está reservada en esas fechas")
     asset = unit.asset
@@ -209,6 +209,12 @@ def update_reservation(rid: int, data: ReservationUpdate, scope: Scope = Depends
         bad_request("La fecha de salida debe ser posterior a la de entrada")
     if (data.estado or r.estado) in ACTIVAS and _conflict(db, unit_id, ent, sal, exclude_id=rid):
         bad_request("Conflicto con otra reserva en esas fechas")
+    adultos = data.adultos if data.adultos is not None else r.adultos
+    destino = db.get(Unit, unit_id)
+    # solo al cambiar de apartamento o subir adultos: las reservas anteriores a las plazas se pueden seguir editando
+    if destino.capacidad and adultos > destino.capacidad and (unit_id != r.unit_id or adultos > r.adultos):
+        bad_request(f"Se supera la capacidad de {destino.codigo} ({destino.capacidad} plazas; "
+                    "los menores de 16 años no cuentan)")
     if data.importe_total is not None and dinero(data.importe_total) < dinero(r.importe_pagado):
         bad_request(f"El importe total no puede ser menor que lo ya cobrado ({dinero(r.importe_pagado)} €)")
     garajes = _garajes_asociados(db, r)
@@ -429,8 +435,6 @@ def add_occupant(rid: int, data: OccupantIn, scope: Scope = Depends(get_scope), 
     r = _reserva_editable(db, scope, rid)
     _asegurar_titular(r)
     asset = r.unit.asset
-    if r.unit.capacidad and len(r.ocupantes) >= r.unit.capacidad:
-        bad_request(f"El apartamento {r.unit.codigo} admite como máximo {r.unit.capacidad} personas")
     if data.contact_id:
         c = clientes.del_activo(db, scope, data.contact_id, asset, "huesped")
     elif data.contact:
@@ -448,6 +452,11 @@ def add_occupant(rid: int, data: OccupantIn, scope: Scope = Depends(get_scope), 
         bad_request("Indique los datos del ocupante")
     if any(o.contact_id == c.id for o in r.ocupantes):
         bad_request(f"{c.nombre} ya figura como ocupante de esta reserva")
+    con_plaza = sum(registro_viajeros.ocupa_plaza(o.contact.fecha_nacimiento, r.fecha_entrada) for o in r.ocupantes)
+    if r.unit.capacidad and registro_viajeros.ocupa_plaza(c.fecha_nacimiento, r.fecha_entrada) \
+            and con_plaza >= r.unit.capacidad:
+        bad_request(f"El apartamento {r.unit.codigo} admite como máximo {r.unit.capacidad} personas "
+                    "(los menores de 16 años no cuentan)")
     if data.documentos:
         adjuntar_pendientes(db, scope.user, data.documentos, c)
     if registro_viajeros.es_menor(c.fecha_nacimiento, r.fecha_entrada) and not data.parentesco:
@@ -456,8 +465,8 @@ def add_occupant(rid: int, data: OccupantIn, scope: Scope = Depends(get_scope), 
                          orden=max((x.orden for x in r.ocupantes), default=0) + 1)
     r.ocupantes.append(o)
     total = len(r.ocupantes)
-    if total > r.adultos + r.ninos:  # se ajusta la ocupación de la reserva
-        if registro_viajeros.es_menor(c.fecha_nacimiento, r.fecha_entrada):
+    if total > r.adultos + r.ninos:  # se ajusta la ocupación de la reserva (niños = menores de 16, sin plaza)
+        if not registro_viajeros.ocupa_plaza(c.fecha_nacimiento, r.fecha_entrada):
             r.ninos += 1
         else:
             r.adultos += 1
@@ -650,14 +659,14 @@ def import_reservations(fichero: UploadFile = File(...), asset_id: int = Form(..
                     raise ValueError(f"la unidad {codigo} no existe en {asset.nombre}")
                 if u.estado in NO_ASIGNABLE:
                     raise ValueError(f"la unidad {u.codigo} está en estado «{u.estado}»")
-                if u.capacidad and adultos + ninos > u.capacidad:
+                if u.capacidad and adultos > u.capacidad:  # los menores de 16 no ocupan plaza
                     raise ValueError(f"supera la capacidad de {u.codigo} ({u.capacidad} plazas)")
                 if not libre(u.id, ent, sal):
                     raise ValueError(f"{u.codigo} ya está reservada en esas fechas")
                 r["asignada"] = False
             else:  # sin unidad: la primera libre con capacidad
                 u = next((x for x in sorted(unidades.values(), key=lambda x: (x.bloque or "", x.codigo))
-                          if x.uso != "garaje" and x.estado not in NO_ASIGNABLE and (not x.capacidad or x.capacidad >= adultos + ninos)
+                          if x.uso != "garaje" and x.estado not in NO_ASIGNABLE and (not x.capacidad or x.capacidad >= adultos)
                           and libre(x.id, ent, sal)), None)
                 if not u:
                     raise ValueError("no queda ningún apartamento libre para esas fechas y ocupación")

@@ -53,7 +53,7 @@ def test_utilidades():
 def test_ocupantes_ses_e_ine(client, admin, ids):
     sae = ids["assets"]["SAE"]["id"]
     entrada = date(HOY.year + 3, 3, 30)  # mes futuro sin otras reservas: la encuesta se puede comprobar exacta
-    r = _reserva(client, admin, sae, "A-131", entrada, 4)
+    r = _reserva(client, admin, sae, "A-127", entrada, 4)  # 2 dormitorios: 3 plazas
     lista = client.get(f"/api/turistico/reservas/{r['id']}/ocupantes", headers=admin).json()
     assert lista["requeridos"] == 3 and lista["ocupantes"][0]["contact"]["municipio_ine"] == "28127"
     assert "faltan 2 ocupante(s) por registrar (1 de 3)" in lista["pendiente"]
@@ -75,7 +75,7 @@ def test_ocupantes_ses_e_ine(client, admin, ids):
     assert sol.findtext("codigoEstablecimiento") == "0000012345"
     com = sol.find("comunicacion")
     ct = com.find("contrato")
-    assert ct.findtext("referencia") == "RV-A-131" and ct.findtext("numPersonas") == "3"
+    assert ct.findtext("referencia") == "RV-A-127" and ct.findtext("numPersonas") == "3"
     assert ct.findtext("fechaEntrada") == f"{entrada.isoformat()}T15:00:00" and ct.findtext("internet") == "true"
     assert ct.find("pago").findtext("tipoPago") == "PLATF"
     personas = com.findall("persona")
@@ -172,3 +172,26 @@ def test_firma_en_tablet_y_envio(client, admin, ids):
 
     hist = client.get(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin).json()["historial"]
     assert hist[0]["firmado"] and {e["canal"] for e in hist[0]["envios"]} == {"email", "whatsapp"}
+
+
+def test_menores_de_16_no_ocupan_plaza(client, admin, ids):
+    sae = ids["assets"]["SAE"]["id"]
+    entrada = date(HOY.year + 3, 5, 10)
+    with pytest.raises(AssertionError, match="capacidad"):  # 1 dormitorio: 2 plazas
+        _reserva(client, admin, sae, "A-133", entrada, 2, adultos=3, ninos=0)
+    r = _reserva(client, admin, sae, "A-133", entrada, 2, adultos=2, ninos=2)  # los menores de 16 no cuentan
+    url = f"/api/turistico/reservas/{r['id']}"
+    assert client.put(url, headers=admin, json={"adultos": 3}).status_code == 400
+    assert client.put(url, headers=admin, json={"notas": "cuna"}).status_code == 200
+
+    ocup = f"{url}/ocupantes"
+    assert client.get(ocup, headers=admin).status_code == 200  # el titular ocupa la primera plaza
+    _ocupantes(client, admin, r["id"])  # adulto (2.ª plaza) y una niña de 4 años (sin plaza)
+    nino = {"contact": {"nombre": "Pablo", "apellidos": "Smith", "sexo": "M", "nacionalidad": "España",
+                        "fecha_nacimiento": (entrada - timedelta(days=365 * 15 + 30)).isoformat()}, "parentesco": "HJ"}
+    assert client.post(ocup, headers=admin, json=nino).status_code == 201  # 15 años: sin plaza
+    joven = {"contact": {"nombre": "Ana", "apellidos": "Smith", "sexo": "F", "nacionalidad": "España",
+                         "fecha_nacimiento": (entrada - timedelta(days=365 * 16 + 30)).isoformat()}, "parentesco": "HJ"}
+    res = client.post(ocup, headers=admin, json=joven)  # 16 años: ocupa plaza y ya no quedan
+    assert res.status_code == 400 and "menores de 16" in res.json()["detail"]
+    assert rv.ocupa_plaza(None, entrada) and not rv.ocupa_plaza(date(entrada.year - 15, 1, 1), entrada)

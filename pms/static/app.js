@@ -826,7 +826,7 @@ function editReservation(r, reload) {
   form(`Reserva ${r.localizador || r.id} · ${r.unidad}`, [
     { k: "localizador", t: "Localizador" }, { k: "canal", t: "Canal", type: "select", options: list(S.cat.canales) },
     { k: "fecha_entrada", t: "Entrada", type: "date", req: true }, { k: "fecha_salida", t: "Salida", type: "date", req: true },
-    { k: "adultos", t: "Adultos", type: "number" }, { k: "ninos", t: "Niños", type: "number" },
+    { k: "adultos", t: "Adultos (16 años o más)", type: "number" }, { k: "ninos", t: "Menores de 16 (no ocupan plaza)", type: "number" },
     { k: "importe_total", t: "Importe total € (IVA incluido)", type: "number" },
     { html: `<p class="muted">Cobrado: ${eur(r.importe_pagado)}. Los cobros se registran con el botón <b>Cobro</b>, que emite la factura.</p>` },
     { k: "notas", t: "Notas", type: "textarea", wide: true },
@@ -836,9 +836,9 @@ async function newReservation(reload, fija) {  // fija: {id, codigo, asset_id} p
   const aid = fija ? fija.asset_id : await pickAsset("apartamentos_turisticos");
   form(fija ? `Nueva reserva · apartamento ${fija.codigo}` : `Nueva reserva · ${assetName(aid)}`, [
     { k: "fecha_entrada", t: "Entrada", type: "date", req: true, def: today() }, { k: "fecha_salida", t: "Salida", type: "date", req: true, def: addDays(today(), 1) },
-    { k: "adultos", t: "Adultos", type: "number", def: 2, req: true }, { k: "ninos", t: "Niños", type: "number", def: 0 },
+    { k: "adultos", t: "Adultos (16 años o más)", type: "number", def: 2, req: true }, { k: "ninos", t: "Menores de 16 (no ocupan plaza)", type: "number", def: 0 },
   ], {}, async (q) => {
-    const disp = await get("/api/turistico/disponibilidad", { asset_id: aid, desde: q.fecha_entrada, hasta: q.fecha_salida, capacidad: q.adultos + (q.ninos || 0), uso: fija?.uso === "garaje" ? "garaje" : null });
+    const disp = await get("/api/turistico/disponibilidad", { asset_id: aid, desde: q.fecha_entrada, hasta: q.fecha_salida, capacidad: q.adultos, uso: fija?.uso === "garaje" ? "garaje" : null });
     if (fija) {
       disp.unidades = disp.unidades.filter((u) => u.id === fija.id);
       if (!disp.unidades.length) throw new Error(`El apartamento ${fija.codigo} no está libre esas fechas o no tiene plazas suficientes`);
