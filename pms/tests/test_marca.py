@@ -7,7 +7,7 @@ def test_logos_en_api(client, admin):
     assert socs["A78072915"]["logo"] == "/static/marca/inversiete-oscuro.png"
     assert socs["A28362309"]["logo"] == "/static/marca/comercial_del_campo-oscuro.png"
     assert socs["A28309433"]["logo"] == "/static/marca/edificios_cameranos-oscuro.png"
-    assert socs["A28116853"]["logo"] is None  # ETHOSA: pendiente de logotipo
+    assert socs["A28116853"]["logo"] == "/static/marca/ethosa-oscuro.png"
     activos = {a["codigo"]: a for a in client.get("/api/activos", headers=admin).json()}
     assert activos["SFL"]["logo"] == "/static/marca/suite_florida-oscuro.png"
     assert activos["SAE"]["logo"] == "/static/marca/suite_aeropuerto-oscuro.png"
