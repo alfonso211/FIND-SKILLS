@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import or_, select
 
+from . import hitos
 from .config import settings
 from .database import SessionLocal
 from .models import (MODALIDADES_RESERVA, Asset, Charge, Contact, EmailLog, Lease, PreventivePlan, Reservation,
@@ -42,9 +43,11 @@ TIPOS = {
                           "(resumen diario)", "reservas.ver"),
     "garajes_vencen": ("Plazas de garaje alquiladas a clientes externos: bajas en los próximos 30 días "
                        "(resumen diario)", "reservas.ver"),
+    "hitos_normativos": ("Hitos normativos (Verifactu, factura electrónica…) con antelación para adaptar el PMS "
+                         "(resumen diario)", "finanzas.ver"),
 }
-RESUMEN = ("estancias_vencidas", "recibos_impagados", "contratos_vencen", "garajes_impagados", "garajes_vencen",
-           "revisiones_normativas")
+RESUMEN = ("hitos_normativos", "estancias_vencidas", "recibos_impagados", "contratos_vencen", "garajes_impagados",
+           "garajes_vencen", "revisiones_normativas")
 DIAS_ESTANCIAS = 3
 DIAS_GARAJES = 30
 DIAS_CONTRATOS, DIAS_REVISIONES = 90, 30
@@ -264,12 +267,15 @@ def _datos_resumen(db, dia: date) -> dict[str, list[tuple[int, list]]]:
                                        t.telefono or "", r.fecha_salida.strftime("%d/%m/%Y"),
                                        f"VENCIDA hace {-dias} días" if dias < 0 else "sale hoy" if dias == 0
                                        else f"en {dias} días"]))
-    return {"estancias_vencidas": estancias, "recibos_impagados": recibos, "contratos_vencen": contratos,
+    normativos = [(None, [h.titulo, h.fecha.strftime("%d/%m/%Y"), h.detalle]) for h in hitos.para_correo(dia)]
+    return {"hitos_normativos": normativos, "estancias_vencidas": estancias, "recibos_impagados": recibos, "contratos_vencen": contratos,
             "garajes_impagados": garajes,
             "garajes_vencen": garajes_fin, "revisiones_normativas": revisiones}
 
 
 SECCIONES = {
+    "hitos_normativos": ("Hitos normativos: preparar el PMS con tiempo", ["Hito", "Fecha límite", "Qué hacer"],
+                         "hito(s) normativo(s)"),
     "recibos_impagados": ("Recibos vencidos sin cobrar", ["Activo", "Unidad", "Inquilino", "Periodo", "Vencimiento",
                                                           "Retraso", "Pendiente"], "recibo(s) impagado(s)"),
     "contratos_vencen": ("Contratos que vencen", ["Activo", "Unidad", "Inquilino", "Fin de contrato", "Quedan"],
@@ -295,7 +301,10 @@ def resumen_diario(db, dia: date | None = None, forzar: bool = False) -> dict:
     destinatarios: dict[int, tuple[User, dict]] = {}
     for tipo in RESUMEN:
         for user, ids in suscritos(db, tipo):
-            filas = [f for aid, f in datos[tipo] if ids is None or aid in ids]
+            if tipo == "hitos_normativos":  # del grupo: solo dirección y administración de sociedad o grupo
+                filas = [f for _, f in datos[tipo]] if hitos.autorizado(Scope(user, db)) else []
+            else:
+                filas = [f for aid, f in datos[tipo] if ids is None or aid in ids]
             if filas:
                 destinatarios.setdefault(user.id, (user, {}))[1][tipo] = filas
     clave = f"resumen:{dia.isoformat()}"
