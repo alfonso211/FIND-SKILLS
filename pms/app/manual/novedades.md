@@ -1,5 +1,10 @@
 # Novedades
 
+## 2026-10-06 · Versión 1.1 · Exportación a INVERGESTION
+- **Recepción y dirección**: al subir una factura recibida, la **fecha de la factura** ya no se rellena con la de hoy: hay que poner la **impresa en la factura** (es la que cuenta para el trimestre del IVA). No admite fechas futuras.
+- **Dirección**: en la exportación a INVERGESTION, las facturas subidas como **foto** salen ahora en **PDF**, con el nombre exacto de la columna archivo_pdf.
+- **Dirección**: **Comprobar** avisa de las facturas recibidas con fecha igual al día de registro, para revisarlas antes de enviar.
+
 ## 2026-10-06 · Versión 1.0 · Primer manual
 - **Todos**: nuevo apartado **Manual de uso** en el menú, con el manual de cada puesto y las novedades de cada actualización (también en PDF).
 - **Todos**: si el programa se bloquea, **se recupera solo** en 1-3 minutos; si está muy ocupado, pide **reintentar** en lugar de quedarse parado.

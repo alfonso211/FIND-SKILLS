@@ -9,6 +9,8 @@
 - **Encuesta del INE** de apartamentos turísticos.
 - **Programa anterior (SYADE)**: importar los listados de facturación y ver el resumen mensual.
 - **Exportar a INVERGESTION**: facturas emitidas y recibidas (CSV + PDF). **Envío semanal** con «Semana pasada»; pulse **Comprobar** antes de descargar.
+  - **Comprobar** avisa de las facturas recibidas cuya fecha coincide con el día en que se registraron: revise que sea la de la factura.
+  - Todos los documentos van en **PDF** (las fotos se convierten) con el nombre exacto de la columna archivo_pdf.
 
 ## Facturación
 - **Facturas emitidas**: listado con filtros (pendientes de cobro, cobradas), PDF y **libro de facturas** para la gestoría.
