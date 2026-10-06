@@ -1989,7 +1989,7 @@ V.facturas = async (el) => {
         { k: "forma_pago", t: "Forma de pago", type: "select", req: true, options: kv(S.cat.formas_pago), def: "transferencia" },
         { k: "referencia", t: "Referencia (concepto de la transferencia, nº de operación…)", wide: true },
       ], {}, async (d) => { await post(`/api/facturas/${r.id}/cobro`, clean(d)); toast(`Factura ${r.codigo} marcada como cobrada`); load(); }, "Marcar cobrada"), "primary"],
-      r.cobro_marcado && can("facturas.rectificar") && !r.rectificada_por && ["Deshacer cobro", () => form(`Deshacer el cobro de ${r.codigo}`, [
+      r.cobro_marcado && (can("reservas.editar") || can("facturas.rectificar") || can("alquiler.editar")) && !r.rectificada_por && ["Deshacer cobro", () => form(`Deshacer el cobro de ${r.codigo}`, [
         { html: "<p>La factura vuelve a quedar <b>pendiente de cobro</b> (solo si el cobro se marcó por error).</p>" },
         { k: "motivo", t: "Motivo", type: "textarea", req: true, wide: true }], {}, async (d) => { await post(`/api/facturas/${r.id}/cobro/deshacer`, d); toast("Cobro deshecho"); load(); }, "Deshacer cobro")],
       can("facturas.rectificar") && r.tipo === "ordinaria" && !r.rectificada_por && ["Rectificar", () => form(`Rectificar la factura ${r.codigo} (${eur(r.total)})`, [

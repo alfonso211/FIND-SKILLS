@@ -66,9 +66,11 @@ def test_facturas_pendientes_de_cobro(client, admin, ids):
     lista = client.get("/api/facturas", headers=admin, params={"q": r["factura"]["codigo"]}).json()[0]
     assert lista["cobro_usuario"] == "recepcion.cobros.sae"
 
-    # un cobro marcado por error se deshace (solo administración)
-    assert client.post(f"/api/facturas/{fid}/cobro/deshacer", headers=rec, json={"motivo": "error"}).status_code == 403
-    assert client.post(f"/api/facturas/{fid}/cobro/deshacer", headers=admin,
+    # un cobro marcado por error lo deshace recepción del activo (con motivo); la de otro activo, no
+    assert client.post(f"/api/facturas/{fid}/cobro/deshacer", headers=otra,
+                       json={"motivo": "marcada por error"}).status_code in (403, 404)
+    assert client.post(f"/api/facturas/{fid}/cobro/deshacer", headers=rec, json={"motivo": "x"}).status_code == 422
+    assert client.post(f"/api/facturas/{fid}/cobro/deshacer", headers=rec,
                        json={"motivo": "marcada por error"}).json()["cobro"] == "pendiente"
     assert client.get(f"/api/turistico/reservas?asset_id={sae}&q=TR-PEND-1", headers=admin).json()[0][
         "importe_pagado"] == 0

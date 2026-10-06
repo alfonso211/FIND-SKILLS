@@ -103,8 +103,10 @@ def mark_paid(fid: int, data: InvoicePaid, scope: Scope = Depends(get_scope), db
 
 @router.post("/{fid}/cobro/deshacer")
 def undo_paid(fid: int, data: InvoiceUnpaid, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    """Corrige un cobro marcado por error: la factura vuelve a quedar pendiente (solo administración)."""
-    f = _factura(db, scope, fid, "facturas.rectificar")
+    """Corrige un cobro marcado por error: la factura vuelve a quedar pendiente. Lo pueden hacer quienes marcan
+    cobros (recepción del activo y administración); queda registrado con su motivo."""
+    f = _factura(db, scope, fid)
+    _puede_cobrar(scope, f)
     if f.cobro != "cobrada" or not f.cobro_marcado:
         bad_request("Solo se deshace el cobro marcado de una factura emitida sin cobrar")
     if db.scalar(select(Invoice.id).where(Invoice.rectifica_id == f.id)):
