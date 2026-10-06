@@ -738,7 +738,7 @@ def import_occupancy(fichero: UploadFile = File(...), asset_id: int = Form(...),
     cuenta = dict.fromkeys(("nuevas", "actualizadas", "errores", "vencidas", "garajes"), 0)
     for f in importacion_ocupacion.leer(datos):
         out = {k: f.get(k) for k in ("hoja", "fila", "situacion", "localizador", "ocupante", "telefono", "garaje")}
-        out.update(unidad=f"{f['bloque']}-{f.get('numero', '?')}",
+        out.update(unidad=f["unidad"],
                    entrada=f["entrada"].isoformat() if f.get("entrada") else None,
                    salida=f["salida"].isoformat() if f.get("salida") else None)
         try:

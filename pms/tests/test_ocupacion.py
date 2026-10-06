@@ -97,3 +97,29 @@ def test_fichero_no_valido(client, admin, ids):
     r = client.post("/api/turistico/importar-ocupacion", headers=admin, data={"asset_id": sae},
                     files={"fichero": ("x.xlsx", b.getvalue())})
     assert r.status_code == 400
+
+
+def test_formato_suite_florida(client, admin, ids):
+    """Listado de Suite Florida: portal y «planta letra»; las columnas cambian de sitio según la página."""
+    sfl = ids["assets"]["SFL"]["id"]
+    vigente = (HOY - timedelta(days=3), HOY + timedelta(days=27))
+    fechas = f"{f(vigente[0])}{f(vigente[1])}     30"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Table 1"
+    ws.append(["Localizador", None, "Blo   Por", "Esc   Pla   Let  Tip", "Dorm  C/Mat C/Ind", "Sót", "Plaza",
+               "FEntrada     FSalida    Noches", "Ocupante", "Teléfonos"])
+    ws.append(["A", 92001, 1, "1º     J", "2        1        2", 2, 14, fechas, "ANA PRUEBA FLORIDA", 600000001])
+    ws.append([None, None, 1, "1º     K", "1        1        0"] + [None] * 5)  # apartamento libre: se ignora
+    ws2 = wb.create_sheet("Table 4")
+    ws2.append(["Localizador", None, "Blo   Por", "Esc   Pla   Let  Tip", None, "Dorm  C/Mat C/Ind", None, "Sót",
+                "Plaza", "FEntrada     FSalida    Noches", None, "Ocupante", None, "Teléfonos"])
+    ws2.append(["R", 92002, 2, "1º     G", None, "1        1        0", None, 1, 189, fechas, None, "LUIS PRUEBA .",
+                None, "600000002"])
+    b = io.BytesIO()
+    wb.save(b)
+    filas = io_ocu.leer(b.getvalue())
+    assert [(x["unidad"], x.get("garaje"), x["ocupante"], x["telefono"]) for x in filas] == [
+        ("P1-1J", "S2-14", "ANA PRUEBA FLORIDA", "600000001"), ("P2-1G", "S1-189", "LUIS PRUEBA .", "600000002")]
+    r = _importar(client, admin, sfl, b.getvalue(), True)
+    assert (r["nuevas"], r["errores"], r["garajes"]) == (2, 0, 2), [x.get("motivo") for x in r["filas"]]
