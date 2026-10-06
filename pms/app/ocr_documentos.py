@@ -1,17 +1,23 @@
 """Lectura automática de documentos de identidad escaneados (imagen o PDF), en el propio servidor.
 
 1. Se endereza la imagen: giro de 90/180/270° e inclinación fina (fotos de cámara con el documento torcido).
-2. Se localizan las líneas de la zona MRZ («<<<»), se recortan y se amplían; se leen con varias preparaciones
-   de la imagen hasta que los dígitos de control cuadran.
+2. Se localizan las líneas de la zona MRZ («<<<»), se recortan y se amplían; se leen con el modelo de Tesseract
+   entrenado para la zona MRZ (fuente OCR-B, app/tessdata) con varias preparaciones de la imagen hasta que los
+   dígitos de control cuadran y dos lecturas coinciden. El modelo general (eng) queda de reserva.
+   Las fotos de móvil (12 MP) se reducen antes de leerlas y cada documento tiene un tiempo máximo: nunca se queda
+   «pensando».
 3. En el DNI español se intenta además leer el domicilio del reverso (texto libre: es una propuesta
    que recepción debe revisar).
 El operario puede indicar el tipo de documento y la cara: el anverso de un DNI/NIE no lleva zona MRZ y solo se
 guarda la copia. Nada se envía a servicios externos.
 """
 import io
+import os
 import re
 import shutil
+import time
 from datetime import date
+from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps
@@ -25,6 +31,16 @@ WHITELIST_MRZ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<"
 FIN_DOMICILIO = ("LUGAR DE NAC", "HIJO", "EQUIPO", "NACIMIENTO", "IDESP", "IRESP")
 TIPOS = {"DNI": "DNI", "NIE": "NIE / TIE", "PAS": "Pasaporte", "OTRO": "Otro documento"}
 CON_DOS_CARAS = ("DNI", "NIE")  # tarjetas: la zona MRZ está en el reverso
+TESSDATA = Path(__file__).parent / "tessdata"
+LADO_MAX = 2600  # px: una foto de móvil de 12 MP se reduce (la zona MRZ sigue con letras de sobra)
+TIEMPO_DOCUMENTO = 30  # s como máximo por documento; pasado ese tiempo se responde con lo que haya
+# Tesseract usa por defecto todos los núcleos en cada lectura: con varias lecturas a la vez se estorban.
+os.environ.setdefault("OMP_THREAD_LIMIT", "1")
+
+
+def modelos_mrz() -> list[str]:
+    """Primero el modelo entrenado para la MRZ (OCR-B); el general de Tesseract, de reserva."""
+    return (["mrz"] if (TESSDATA / "mrz.traineddata").exists() else []) + ["eng"]
 
 
 def disponible() -> bool:
@@ -129,22 +145,29 @@ def _variantes(recorte: Image.Image):
     yield ImageOps.autocontrast(base).point(lambda v: 255 if v > 140 else 0)
 
 
-def _lee_mrz(img: Image.Image) -> dict | None:
-    txt = _ocr(img, lang="eng", config=f"--psm 6 -c tessedit_char_whitelist={WHITELIST_MRZ}")
-    return mrz.interpretar([ln for ln in txt.splitlines() if ln.strip()])
+def _lee_mrz(img: Image.Image, modelo: str = "eng") -> dict | None:
+    datos = f"--tessdata-dir {TESSDATA} " if modelo == "mrz" else ""
+    txt = _ocr(img, lang=modelo, config=f"{datos}--psm 6 -c tessedit_char_whitelist={WHITELIST_MRZ}")
+    return mrz.interpretar([ln.replace(" ", "") for ln in txt.splitlines() if ln.strip()])
 
 
 def _firma(r: dict) -> tuple:
     return r["documento_tipo"], r["documento_num"], r["fecha_nacimiento"], r["fecha_caducidad"]
 
 
-def _buscar_mrz(img: Image.Image) -> tuple[dict | None, Image.Image]:
+def _buscar_mrz(img: Image.Image, limite: float | None = None) -> tuple[dict | None, Image.Image]:
     """Las letras confundibles con cifras (L/1, B/1, A/0…) pueden cuadrar igual con el dígito de control: se
-    leen varias preparaciones de la imagen y se da por buena la lectura en la que coinciden al menos dos."""
+    leen varias preparaciones de la imagen y se da por buena la lectura en la que coinciden al menos dos.
+    `limite` (time.monotonic): pasado ese momento no se intentan más lecturas."""
+    limite = limite or time.monotonic() + TIEMPO_DOCUMENTO
     g = ImageOps.grayscale(img)
+    if max(g.size) > LADO_MAX:
+        g.thumbnail((LADO_MAX, LADO_MAX), Image.LANCZOS)
     angulo = _angulo(g)
     mejor, orientada, validas = None, None, []
     for extra in (0, 180):  # al revés: la inclinación es la misma
+        if time.monotonic() > limite:
+            break
         im = g.rotate(angulo + extra, expand=True, fillcolor=255, resample=Image.BICUBIC)
         if im.width < 2000:
             im = _a_ancho(im, 2000)
@@ -153,18 +176,22 @@ def _buscar_mrz(img: Image.Image) -> tuple[dict | None, Image.Image]:
             orientada = im
         zona = _cajas_mrz(im)
         recortes = ([im.crop(zona)] if zona else []) + [im.crop((0, int(im.height * 0.5), im.width, im.height))]
-        for n, recorte in enumerate(recortes):
-            for variante in (_variantes(recorte) if n == 0 and zona else [ImageOps.autocontrast(recorte)]):
-                r = _lee_mrz(variante)
-                if not r:
-                    continue
-                if r["mrz_valido"]:
-                    orientada = im
-                    if any(_firma(v) == _firma(r) for v in validas):
-                        return r, im
-                    validas.append(r)
-                elif not mejor or r["checks_ok"] > mejor["checks_ok"]:
-                    mejor = r
+        preparadas = [list(_variantes(recorte)) if n == 0 and zona else [ImageOps.autocontrast(recorte)]
+                      for n, recorte in enumerate(recortes)]
+        intentos = [(modelo, v) for vs in preparadas for modelo in modelos_mrz() for v in vs]
+        for modelo, variante in intentos:
+            if time.monotonic() > limite:
+                break
+            r = _lee_mrz(variante, modelo)
+            if not r:
+                continue
+            if r["mrz_valido"]:
+                orientada = im
+                if any(_firma(v) == _firma(r) for v in validas):
+                    return r, im
+                validas.append(r)
+            elif not mejor or r["checks_ok"] > mejor["checks_ok"]:
+                mejor = r
         if validas:
             break
     if validas:  # sin coincidencia: la más repetida; a igualdad, la primera
@@ -221,12 +248,17 @@ def _leer(caras, tipo: str | None = None) -> dict:
     imagenes = []
     for _, contenido in a_leer:
         imagenes += a_imagenes(contenido)[1]
+    limite = time.monotonic() + TIEMPO_DOCUMENTO  # para todas las caras juntas
     for img in imagenes:
-        r, orientada = _buscar_mrz(img)
+        if datos_mrz and datos_mrz["mrz_valido"] or time.monotonic() > limite:
+            break
+        r, orientada = _buscar_mrz(img, limite)
         if r and (not datos_mrz or r["checks_ok"] > datos_mrz["checks_ok"]):
             datos_mrz = r
-        if not domicilio and tipo in (None, "DNI"):
-            domicilio = _domicilio(orientada)
+        # el domicilio solo lo lleva el DNI español, en la mitad superior del reverso
+        es_dni = (r or {}).get("documento_tipo") == "DNI" if r else tipo == "DNI"
+        if not domicilio and es_dni and tipo in (None, "DNI") and time.monotonic() < limite:
+            domicilio = _domicilio(orientada.crop((0, 0, orientada.width, int(orientada.height * 0.6))))
     if not datos_mrz:
         donde = {"DNI": "el reverso del DNI", "NIE": "el reverso de la tarjeta NIE/TIE",
                  "PAS": "la página de la foto del pasaporte"}.get(tipo, "la cara que las contiene")

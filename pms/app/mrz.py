@@ -45,6 +45,21 @@ def _alfa(s: str) -> str:
     return s.translate(A_ALFA)
 
 
+# Letras que el dígito de control no distingue de su cifra parecida (valen lo mismo módulo 10: G=16 y 6, S=28 y 8)
+INDISTINGUIBLES = {"G": "6", "S": "8"}
+
+
+def digitos_dudosos(numero: str) -> str:
+    """En el número del documento, una G o S entre cifras (o al final tras varias cifras) es un 6 u 8 mal leído:
+    el dígito de control cuadra igual con las dos, así que no lo puede detectar."""
+    c = list(numero)
+    for i, x in enumerate(c):
+        if x in INDISTINGUIBLES and i > 0 and c[i - 1].isdigit() and (
+                (i + 1 < len(c) and c[i + 1].isdigit()) or (i + 1 == len(c) and sum(ch.isdigit() for ch in c[:i]) >= 3)):
+            c[i] = INDISTINGUIBLES[x]
+    return "".join(c)
+
+
 def _corrige(campo: str, control: str, max_cambios: int = 2) -> str | None:
     """Devuelve el campo (alfanumérico) que cuadra con el dígito de control, probando confusiones del OCR."""
     if _ok(campo, control):
@@ -129,9 +144,20 @@ def _rellena(linea: str, largo: int) -> str:
     return linea
 
 
+def _recortes(linea: str, largo: int) -> list[tuple[str, int]]:
+    """Lecturas posibles de una línea con caracteres de más (el OCR suele añadir ruido del borde de la tarjeta al
+    principio, o algún «<» al final): (línea, caracteres quitados al principio)."""
+    sobra = len(linea) - largo
+    out = [(linea, 0)]
+    if sobra > 0:
+        out += [(linea[k:], k) for k in range(1, min(sobra, 3) + 1)]
+    return out
+
+
 def interpretar(lineas: list[str]) -> dict | None:
     """Interpreta las líneas MRZ leídas. Devuelve None si no forman una MRZ reconocible. Se prueban todos los
-    formatos posibles y se elige el que mejor cuadra con los dígitos de control."""
+    formatos posibles (y, en las líneas con caracteres de más, quitar el ruido del principio) y se elige lo que
+    mejor cuadra con los dígitos de control."""
     ls = [x for x in (_limpia(y) for y in lineas) if len(x) >= 25 or (len(x) >= 5 and "<" in x)]
     # El OCR suele perder los «<» finales de la línea del nombre: esa línea puede llegar más corta
     linea_nombre = {"TD1": 2, "TD3": 0, "TD2": 0}
@@ -142,14 +168,25 @@ def interpretar(lineas: list[str]) -> dict | None:
             if len(bloque) != n:
                 continue
             bloque = [x if j == linea_nombre[fmt] else _rellena(x, largo) for j, x in enumerate(bloque)]
-            if all((len(x) <= largo + 3 and len(x) >= 5) if j == linea_nombre[fmt] else abs(len(x) - largo) <= 3
-                   for j, x in enumerate(bloque)):
-                r = (_td1 if fmt == "TD1" else _td23)([_ajusta(x, largo) for x in bloque], fmt)
+            if not all((len(x) <= largo + 3 and len(x) >= 5) if j == linea_nombre[fmt] else abs(len(x) - largo) <= 3
+                       for j, x in enumerate(bloque)):
+                continue
+            datos = [j for j in range(n) if j != linea_nombre[fmt]]
+            for elegidas in itertools.product(*(_recortes(bloque[j], largo) for j in datos)):
+                lineas_ok = dict(zip(datos, elegidas))
+                # la línea del nombre no tiene dígito de control: se le quita el mismo margen que a las demás
+                k = max(q for _, q in elegidas)
+                nombre = bloque[linea_nombre[fmt]]
+                lineas_ok[linea_nombre[fmt]] = (nombre[k:] if k and len(nombre) - k >= largo - 3 else nombre, k)
+                prueba = [lineas_ok[j][0] for j in range(n)]
+                r = (_td1 if fmt == "TD1" else _td23)([_ajusta(x, largo) for x in prueba], fmt)
+                if r and k and not (r["mrz_valido"] and not r["corregido"]):
+                    continue  # quitar caracteres y además corregir cifras daría lecturas válidas por casualidad
                 if r and r["checks_ok"] >= r["checks_total"] - 1:
                     # código del documento: «P» en pasaportes (TD3), «I/A/C» en tarjetas (TD1/TD2)
-                    propio = (bloque[0][:1] == "P") == (fmt == "TD3")
+                    propio = (prueba[0][:1] == "P") == (fmt == "TD3")
                     clave = (r["mrz_valido"], r["checks_ok"] - r["checks_total"], propio,
-                             -sum(abs(len(x) - largo) for x in bloque))
+                             -sum(abs(len(x) - largo) for x in prueba), -k)
                     if mejor is None or clave > mejor[0]:
                         mejor = (clave, r)
     return mejor[1] if mejor else None
@@ -170,6 +207,7 @@ def _resultado(fmt, codigo, emisor, numero, nac, nacim, sexo, cad, nombre, apell
          "nombre": nombre, "apellidos": apellidos, "sexo": {"M": "M", "F": "F"}.get(sexo),
          "fecha_nacimiento": nacim, "fecha_caducidad": cad,
          "checks_ok": sum(checks), "checks_total": len(checks)}
+    numero = digitos_dudosos(numero)
     if emisor == "ESP" and tipo == "I" and codigo in ("ID", "I<"):
         r.update(documento_tipo="DNI", documento_num=opcional[:9].rstrip("<"), num_soporte=numero)
     elif emisor == "ESP" and tipo in ("I", "A", "C") and codigo != "ID":
