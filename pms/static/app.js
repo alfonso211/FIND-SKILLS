@@ -2841,9 +2841,60 @@ V.perfil = async (el) => {
     async (d) => { await post("/api/auth/password", d); toast("Contraseña cambiada"); });
 };
 
+// ------------------------------------------------------------------ manual de uso
+// Markdown sencillo (títulos, listas, negrita, cursiva, citas) del manual a HTML. El texto viene del programa.
+function mdHtml(md) {
+  const enLinea = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(^|[^\w*])\*(?!\s)(.+?)\*(?![\w*])/g, "$1<i>$2</i>").replace(/`(.+?)`/g, "<code>$1</code>");
+  let out = "", lista = null;
+  const cierra = () => { if (lista) { out += `</${lista}>`; lista = null; } };
+  for (const ln of md.split("\n")) {
+    let m;
+    if (!ln.trim()) { cierra(); continue; }
+    if ((m = ln.match(/^(#{1,3}) (.+)/))) { cierra(); const n = m[1].length + 1; out += `<h${n}>${enLinea(m[2])}</h${n}>`; }
+    else if ((m = ln.match(/^(\s*)([-*]|\d+\.) (.+)/))) {
+      const num = /\d/.test(m[2]), tipo = num ? "ol" : "ul";
+      // sub-viñeta: dentro de la lista en curso, sin cortar la numeración
+      if (m[1] && lista) { out += `<li class="sub">${enLinea(m[3])}</li>`; continue; }
+      if (lista !== tipo) { cierra(); out += `<${tipo}>`; lista = tipo; }
+      out += `<li${num ? ` value="${parseInt(m[2])}"` : ""}>${enLinea(m[3])}</li>`;
+    }
+    else if (ln.startsWith("> ")) { cierra(); out += `<blockquote>${enLinea(ln.slice(2))}</blockquote>`; }
+    else { cierra(); out += `<p>${enLinea(ln)}</p>`; }
+  }
+  cierra(); return out;
+}
+V.manual = async (el) => {
+  const idx = await get("/api/manual");
+  let sec = idx.recomendada;
+  try { localStorage.setItem("pms_manual_visto", idx.version); } catch {}
+  el.innerHTML = `<div class="toolbar"><div class="chips">${idx.secciones.map((s) => `<button class="chip" data-s="${s.id}">${esc(s.titulo)}</button>`).join("")}</div>
+    <span class="spacer"></span><button class="btn" id="mPdf">Descargar PDF para enviar</button></div>
+    <p class="muted">Versión: ${esc(idx.version)}. Recomendado para su puesto: <b>${esc(idx.secciones.find((s) => s.id === idx.recomendada).titulo)}</b>.</p>
+    <article class="manual card" id="mTxt"></article>`;
+  const pinta = async () => {
+    el.querySelectorAll("[data-s]").forEach((b) => b.classList.toggle("on", b.dataset.s === sec));
+    $("#mTxt", el).innerHTML = mdHtml((await get(`/api/manual/${sec}`)).texto);
+  };
+  el.querySelectorAll("[data-s]").forEach((b) => b.onclick = () => { sec = b.dataset.s; pinta(); });
+  $("#mPdf", el).onclick = async () => { try { await download("GET", `/api/manual/${sec}/pdf`); } catch (e) { toast(e.message, true); } };
+  await pinta();
+};
+// Tras una actualización, la primera vez que entra cada usuario: aviso con las novedades.
+async function avisoNovedades() {
+  let visto = null;
+  try { visto = localStorage.getItem("pms_manual_visto"); } catch { return; }
+  const idx = await get("/api/manual").catch(() => null);
+  if (!idx || !idx.version || visto === idx.version) return;
+  try { localStorage.setItem("pms_manual_visto", idx.version); } catch {}
+  if (visto === null) return;  // primer uso en este navegador: no hay «novedades» que contar
+  const md = (await get("/api/manual/novedades")).texto;
+  const ultima = md.split(/\n(?=## )/)[1] || "";
+  cerrarSolo(form("Novedades de esta actualización", [{ html: `<div class="manual">${mdHtml(ultima)}</div><p class="muted">Tiene el detalle en <b>Manual de uso</b>.</p>` }], {}, async () => {}));
+}
+
 // ------------------------------------------------------------------ navegación
 const MENU = [
-  ["General", [["panel", "Panel de control", null], ["agenda", "Agenda", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
+  ["General", [["panel", "Panel de control", null], ["agenda", "Agenda", null], ["manual", "Manual de uso", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
   ["Apartamentos turísticos", [["plano", "Plano de apartamentos", "activos.ver"], ["hoy", "Llegadas / salidas", "reservas.ver"], ["reservas", "Reservas", "reservas.ver"], ["planning", "Planning", "reservas.ver"], ["huespedes", "Huéspedes", "reservas.ver"], ["ses", "Parte de viajeros (SES)", "reservas.ver"], ["garajes", "Alquiler de garajes", "reservas.ver"]]],
   ["Alquiler residencial", [["contratos", "Contratos", "alquiler.ver"], ["recibos", "Recibos y cobros", "alquiler.ver"], ["inquilinos", "Inquilinos", "alquiler.ver"]]],
   ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["servicios", "Servicios", "activos.ver"], ["informes", "Informes Excel", "informes"]]],
@@ -2913,6 +2964,7 @@ async function start() {
   pintarUsuario();
   renderNav();
   go(location.hash.slice(1) || "panel");
+  avisoNovedades();
 }
 function pintarUsuario() {
   $("#userAvatar").textContent = iniciales(S.me.nombre); $("#userAvatar").title = S.me.nombre;
