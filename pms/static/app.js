@@ -1988,6 +1988,7 @@ V.facturas = async (el) => {
     <label>Serie<select id="s"><option value="">Todas</option>${series.flatMap((x) => [x, x + "R"]).map((x) => `<option>${esc(x)}</option>`).join("")}</select></label>
     <label>Buscar<input id="q" placeholder="Nº de factura, cliente, concepto"></label>
     <label>Cobro<select id="c"><option value="">Todas</option><option value="pendiente" ${S.filtroCobro === "pendiente" ? "selected" : ""}>Pendientes de cobro</option><option value="cobrada">Cobradas</option></select></label><span class="spacer"></span>
+    <span class="muted peq" title="Criterio de la gestoría">Fecha de factura: último día del mes de emisión</span>
     <button class="btn" id="csv">Libro de facturas emitidas (Excel)</button>${can("reservas.editar") || can("alquiler.editar") ? '<button class="btn primary" id="fsrv">Nueva factura de servicios</button>' : ""}</div><div id="t"></div><p id="tot"></p>`;
   S.filtroCobro = null;
   const filtros = () => ({ asset_id: S.asset, anio: $("#c", el).value === "pendiente" ? "" : $("#y", el).value, serie: $("#s", el).value, q: $("#q", el).value, cobro: $("#c", el).value });
@@ -1995,7 +1996,7 @@ V.facturas = async (el) => {
     const rows = await get("/api/facturas", filtros());
     table($("#t", el), [
       { k: "codigo", t: "Factura", f: (v, r) => `<b>${esc(v)}</b>`
-        + (r.tipo === "ordinaria" && r.cobro === "pendiente" ? `<br><span class="badge b-cancelada">pendiente de cobro · ${Math.round((new Date(today()) - new Date(r.fecha_expedicion)) / 864e5)} días</span>` : "")
+        + (r.tipo === "ordinaria" && r.cobro === "pendiente" ? `<br><span class="badge b-cancelada">pendiente de cobro · ${Math.max(0, Math.round((new Date(today()) - new Date(r.creada.slice(0, 10))) / 864e5))} días</span>` : "")
         + (r.cobro_marcado ? `<br><span class="badge b-vigente" title="${esc(`${r.cobro_forma || ""} ${r.cobro_ref || ""} · comprobado por ${r.cobro_usuario || ""}`)}">cobrada ${fdate(r.cobro_fecha)}</span>` : "") },
       { k: "fecha_expedicion", t: "Fecha", f: fdate }, { k: "activo", t: "Activo" },
       { k: "cliente", t: "Cliente", f: (v) => esc(v.nombre) }, { k: "cliente", t: "NIF", f: (v) => esc(v.nif || "") },
@@ -2560,7 +2561,8 @@ async function subirDocumento(reload) {
   const f = form(`Subir documento recibido · ${assetName(aid)}`, [
     { k: "tipo", t: "Tipo de documento", type: "select", req: true, options: kv(C.tipos_documento), def: "factura" },
     { html: fotosHtml("Documento escaneado: PDF, o fotos de cada página (se unen en un PDF)", true) },
-    { k: "fecha", t: "Fecha del documento", type: "date", req: true, def: today() },
+    { k: "fecha", t: "Fecha del documento (la que figura en la factura)", type: "date", req: true, def: today() },
+    { k: "vencimiento", t: "Vencimiento (el de la factura)", type: "date" },
     { k: "emisor", t: "Emisor / proveedor" }, { k: "referencia", t: "Nº de factura / referencia" },
     { k: "descripcion", t: "Descripción", type: "textarea", wide: true },
     { k: "es_gasto", t: "Es un gasto: anotarlo en la cuenta de gastos del activo", type: "checkbox", wide: true, def: true },
@@ -2571,9 +2573,9 @@ async function subirDocumento(reload) {
     const fd = new FormData();
     ficheros.forEach((x) => fd.append("ficheros", x));
     fd.append("asset_id", aid); fd.append("tipo", d.tipo); fd.append("fecha", d.fecha);
-    ["emisor", "referencia", "descripcion"].forEach((k) => d[k] && fd.append(k, d[k]));
+    ["vencimiento", "emisor", "referencia", "descripcion"].forEach((k) => d[k] && fd.append(k, d[k]));
     if (d.ambito === "apartamento" && d.unit_id) fd.append("unit_id", d.unit_id);
-    if (d.es_gasto) fd.append("gasto", JSON.stringify(datosGasto(d, { fecha: d.fecha, concepto: d.concepto || d.descripcion || `${C.tipos_documento[d.tipo]} ${d.emisor || ""}`.trim(),
+    if (d.es_gasto) fd.append("gasto", JSON.stringify(datosGasto(d, { fecha: d.fecha, vencimiento: d.vencimiento, concepto: d.concepto || d.descripcion || `${C.tipos_documento[d.tipo]} ${d.emisor || ""}`.trim(),
       proveedor: d.emisor, numero_factura: d.referencia })));
     const r = await upload("/api/documentos-recibidos", fd);
     toast(`Documento guardado en la carpeta de ${assetName(aid)}${r.gasto ? ` · gasto de ${eur(r.gasto.total)} anotado` : ""}`);
@@ -2591,11 +2593,11 @@ async function editarGasto(g, reload, aidNuevo) {
   const aid = g ? g.asset_id : aidNuevo || await pickAsset();
   const [C, unidades] = await Promise.all([catGastos(), unidadesActivo(aid)]);
   const f = form(g ? `Gasto · ${g.concepto}` : `Nuevo gasto sin documento · ${assetName(aid)}`, [
-    { k: "fecha", t: "Fecha", type: "date", req: true, def: today() },
+    { k: "fecha", t: "Fecha de la factura", type: "date", req: true, def: today() }, { k: "vencimiento", t: "Vencimiento", type: "date" },
     { k: "proveedor", t: "Proveedor" }, { k: "numero_factura", t: "Nº de factura" },
     ...camposGasto(C, unidades), { k: "notas", t: "Notas", type: "textarea", wide: true },
   ], g ? { ...g, base: null } : {}, async (d) => {
-    const body = datosGasto(d, { fecha: d.fecha, concepto: d.concepto, proveedor: d.proveedor, numero_factura: d.numero_factura, notas: d.notas });
+    const body = datosGasto(d, { fecha: d.fecha, vencimiento: d.vencimiento, concepto: d.concepto, proveedor: d.proveedor, numero_factura: d.numero_factura, notas: d.notas });
     if (!body.concepto) throw new Error("Indique el concepto del gasto");
     await (g ? put(`/api/gastos/${g.id}`, body) : post("/api/gastos", { ...body, asset_id: aid }));
     toast(g ? "Gasto actualizado" : "Gasto anotado"); reload && reload();
@@ -2615,7 +2617,7 @@ V.docrecibidos = async (el) => {
   const load = async () => {
     const docs = await get("/api/documentos-recibidos", { asset_id: S.asset, tipo: $("#tp", el).value, desde: $("#d", el).value, hasta: $("#h", el).value, q: $("#q", el).value });
     table($("#t", el), [
-      { k: "fecha", t: "Fecha", f: fdate }, { k: "activo", t: "Activo" }, { k: "tipo_nombre", t: "Tipo" }, { k: "emisor", t: "Emisor" },
+      { k: "fecha", t: "Fecha", f: (v, x) => fdate(v) + (x.vencimiento ? `<div class="muted peq">vence ${fdate(x.vencimiento)}</div>` : "") }, { k: "activo", t: "Activo" }, { k: "tipo_nombre", t: "Tipo" }, { k: "emisor", t: "Emisor" },
       { k: "referencia", t: "Referencia" }, { k: "descripcion", t: "Descripción" }, { k: "unidad", t: "Apartamento" },
       { k: "gasto", t: "Gasto", f: (v) => (v ? `${eur(v.total)} <span class="muted">${esc(v.categoria_nombre)}${v.pagado ? " · pagado" : " · pendiente"}</span>` : '<span class="muted">—</span>') },
       { k: "usuario", t: "Subido por", f: (v, x) => `${esc(v || "")}<div class="muted peq">${fdt(x.subido)}</div>` },
@@ -2623,9 +2625,9 @@ V.docrecibidos = async (el) => {
       ["Ver", () => abrirFichero(`/api/documentos-recibidos/${x.id}/fichero`)],
       editar && !x.gasto && ["Anotar gasto", async () => {
         const [C2, unidades] = await Promise.all([catGastos(), unidadesActivo(x.asset_id)]);
-        const f = form(`Gasto del documento · ${x.tipo_nombre} ${x.emisor || ""}`, [{ k: "fecha", t: "Fecha", type: "date", req: true }, ...camposGasto(C2, unidades)],
-          { fecha: x.fecha, concepto: x.descripcion || `${x.tipo_nombre} ${x.emisor || ""}`.trim(), unit_id: x.unit_id, ambito: x.unit_id ? "apartamento" : "general" },
-          async (d) => { await post("/api/gastos", datosGasto(d, { fecha: d.fecha, concepto: d.concepto, documento_id: x.id, proveedor: x.emisor, numero_factura: x.referencia })); toast("Gasto anotado"); load(); });
+        const f = form(`Gasto del documento · ${x.tipo_nombre} ${x.emisor || ""}`, [{ k: "fecha", t: "Fecha de la factura", type: "date", req: true }, { k: "vencimiento", t: "Vencimiento", type: "date" }, ...camposGasto(C2, unidades)],
+          { fecha: x.fecha, vencimiento: x.vencimiento, concepto: x.descripcion || `${x.tipo_nombre} ${x.emisor || ""}`.trim(), unit_id: x.unit_id, ambito: x.unit_id ? "apartamento" : "general" },
+          async (d) => { await post("/api/gastos", datosGasto(d, { fecha: d.fecha, vencimiento: d.vencimiento, concepto: d.concepto, documento_id: x.id, proveedor: x.emisor, numero_factura: x.referencia })); toast("Gasto anotado"); load(); });
         bindAmbito(f);
       }],
       x.gasto && editar && ["Gasto", () => editarGasto(x.gasto, load)],
@@ -2659,7 +2661,8 @@ V.gastos = async (el) => {
       { k: "concepto", t: "Concepto" }, { k: "proveedor", t: "Proveedor", f: (v, g) => `${esc(v || "")}${g.numero_factura ? `<div class="muted peq">${esc(g.numero_factura)}</div>` : ""}` },
       { k: "base", t: "Base", num: true, f: eur }, { k: "cuota", t: "IVA", num: true, f: (v, g) => `${eur(v)}<div class="muted peq">${g.tipo_iva} %</div>` },
       { k: "total", t: "Total", num: true, f: eur },
-      { k: "pagado", t: "Pago", f: (v, g) => (v ? `<span class="badge b-vigente">pagado</span><div class="muted peq">${fdate(g.fecha_pago)}</div>` : '<span class="badge b-pendiente">pendiente</span>') },
+      { k: "pagado", t: "Pago", f: (v, g) => (v ? `<span class="badge b-vigente">pagado</span><div class="muted peq">${fdate(g.fecha_pago)}</div>`
+        : `<span class="badge ${g.vencimiento && g.vencimiento < today() ? "b-cancelada" : "b-pendiente"}">${g.vencimiento && g.vencimiento < today() ? "vencida" : "pendiente"}</span>${g.vencimiento ? `<div class="muted peq">vence ${fdate(g.vencimiento)}</div>` : ""}`) },
       { k: "documento_tipo", t: "Documento", f: (v) => (v ? esc(v) : '<span class="badge b-cancelada">sin documento</span>') },
     ], r.gastos, (g) => [
       g.documento_id && ["Ver", () => abrirFichero(`/api/documentos-recibidos/${g.documento_id}/fichero`)],

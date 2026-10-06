@@ -1,6 +1,7 @@
 """Facturación: al registrar un cobro se emite la factura, con numeración correlativa por serie y año."""
 from datetime import date, timedelta
 
+from app.facturacion import fin_de_mes
 from conftest import domicilio_fiscal, login
 
 HOY = date.today()
@@ -125,7 +126,8 @@ def test_alquiler_iva_por_uso(client, admin, ids):
     f = _factura(client, admin, p["factura"]["id"])
     assert f["serie"] == "B35" and f["emisor"]["nombre"] == "COMERCIAL DEL CAMPO S.A."
     assert (f["base_imponible"], f["cuota_iva"], f["total"], f["exencion"]) == (100, 21, 121, None)
-    assert f["fecha_operacion"] == "2026-02-05" and f["fecha_expedicion"] == HOY.isoformat()
+    # criterio de la gestoría: fecha de la factura = último día del mes en que se emite
+    assert f["fecha_operacion"] == "2026-02-05" and f["fecha_expedicion"] == fin_de_mes(HOY).isoformat()
     assert f["concepto"].startswith("Renta febrero 2026 · Garaje")
 
     # vivienda: exenta, con la mención legal

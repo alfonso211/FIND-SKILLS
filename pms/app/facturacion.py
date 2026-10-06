@@ -8,10 +8,10 @@
   sociedad: si alguien alterase una factura en la base de datos, la cadena dejaría de cuadrar.
 """
 import hashlib
-from datetime import date
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import Date, cast, select
 from sqlalchemy.orm import Session
 
 from .contratos import MESES
@@ -135,13 +135,21 @@ def desglose(lineas: list[dict]) -> list[dict]:
     return [{"tipo_iva": t, "base": float(b), "cuota": float(c)} for t, (b, c) in sorted(g.items())]
 
 
+def fin_de_mes(d: date) -> date:
+    """Último día del mes de `d`."""
+    return (d.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+
+
 def emitir(db: Session, user: User | None, *, company: Company, serie: str, asset_id: int, cliente: dict,
            contact_id: int | None, lineas: list[dict] | None, fecha_operacion: date,
            forma_pago: str | None = None, charge_id: int | None = None, reservation_id: int | None = None,
            rectifica: Invoice | None = None, motivo: str | None = None, fecha: date | None = None,
            cobro: str = "cobrada") -> Invoice:
     emisor = datos_emisor(company)
-    fecha = fecha or date.today()
+    # Criterio de la gestoría: toda factura emitida lleva como fecha de expedición el último día del mes en que se
+    # emite, sea cual sea el día (PDF, libro de facturas y exportaciones). El día real del cobro o del servicio
+    # queda como fecha de la operación y el momento real de emisión en `creada`.
+    fecha = fin_de_mes(fecha or date.today())
     if rectifica:  # anulación exacta de la original, línea a línea
         lineas = [{**x, "cantidad": -x["cantidad"], "base": -x["base"], "cuota": -x["cuota"], "total": -x["total"]}
                   for x in lineas_de(rectifica)]
@@ -189,7 +197,8 @@ def pendientes_cobro(db: Session, asset_ids: set[int] | None, dia: date | None =
     from .models import Asset, Reservation
     hoy = date.today()
     dia = dia or hoy
-    stmt = select(Invoice).where(Invoice.tipo == "ordinaria", Invoice.fecha_expedicion <= dia)
+    emitida = cast(Invoice.creada, Date)  # día real de emisión (la fecha de la factura es el fin de mes)
+    stmt = select(Invoice).where(Invoice.tipo == "ordinaria", emitida <= dia)
     if dia >= hoy:
         stmt = stmt.where(Invoice.cobro == "pendiente")
     else:
@@ -212,7 +221,7 @@ def pendientes_cobro(db: Session, asset_ids: set[int] | None, dia: date | None =
                     "localizador": (r.localizador or f"R-{r.id}") if r else None,
                     "estancia": f"{r.fecha_entrada:%d/%m/%Y} - {r.fecha_salida:%d/%m/%Y}" if r else None,
                     "concepto": f.concepto, "total": float(f.total), "forma_pago": f.forma_pago,
-                    "dias": (dia - f.fecha_expedicion).days})
+                    "emitida": f.creada.date().isoformat(), "dias": (dia - f.creada.date()).days})
     return out
 
 

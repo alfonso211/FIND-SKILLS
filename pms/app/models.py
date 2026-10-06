@@ -439,7 +439,8 @@ class ReceivedDocument(Base):
     asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
     unit_id: Mapped[int | None] = mapped_column(ForeignKey("unidades.id"))
     tipo: Mapped[str] = mapped_column(String(20))
-    fecha: Mapped[date] = mapped_column(Date, index=True)  # fecha del documento
+    fecha: Mapped[date] = mapped_column(Date, index=True)  # fecha del documento (la que figura en la factura)
+    vencimiento: Mapped[date | None] = mapped_column(Date)  # vencimiento de la factura recibida
     emisor: Mapped[str | None] = mapped_column(String(200))
     referencia: Mapped[str | None] = mapped_column(String(60))  # nº de factura, expediente…
     descripcion: Mapped[str | None] = mapped_column(Text)
@@ -467,6 +468,7 @@ class Expense(Base):
     proveedor: Mapped[str | None] = mapped_column(String(200))
     supplier_id: Mapped[int | None] = mapped_column(ForeignKey("proveedores.id"))
     numero_factura: Mapped[str | None] = mapped_column(String(60))
+    vencimiento: Mapped[date | None] = mapped_column(Date)  # vencimiento de la factura del proveedor
     base: Mapped[float] = mapped_column(Numeric(12, 2))
     tipo_iva: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
     cuota: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
