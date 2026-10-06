@@ -388,3 +388,11 @@ body.sin-scroll { overflow: hidden; }
 .busca-cliente input { width: 100%; }
 .cli-res { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .cli-ok { margin: 4px 0 0; color: #1f7a3d; }
+
+/* buscador del panel */
+.buscador { margin-bottom: 16px; }
+.buscador input[type=search] { width: 100%; font-size: 16px; padding: 12px 14px; border: 1px solid #d8c48f; border-radius: 10px; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .05); }
+.buscador input[type=search]:focus { outline: 2px solid #c9a24a; border-color: #c9a24a; }
+#busqRes:not(:empty) { margin-top: 10px; padding: 12px 14px; background: #fff; border: 1px solid #ecdfbe; border-radius: 10px; }
+.busq-grupo h4 { margin: 14px 0 6px; color: #6d5310; }
+.busq-grupo .table-wrap + p.muted { display: none; }
