@@ -88,8 +88,8 @@ def mark_paid(fid: int, data: InvoicePaid, scope: Scope = Depends(get_scope), db
     _puede_cobrar(scope, f)
     if f.cobro != "pendiente":
         bad_request(f"La factura {f.codigo} no está pendiente de cobro")
-    if data.fecha < f.fecha_expedicion:
-        bad_request("La fecha de cobro no puede ser anterior a la de la factura")
+    if data.fecha < f.creada.date():
+        bad_request(f"La fecha de cobro no puede ser anterior a la emisión de la factura ({f.creada:%d/%m/%Y})")
     f.cobro, f.cobro_fecha, f.cobro_forma, f.cobro_ref = "cobrada", data.fecha, data.forma_pago, data.referencia
     f.cobro_user_id, f.cobro_marcado = scope.user.id, datetime.now()
     if f.reservation_id:

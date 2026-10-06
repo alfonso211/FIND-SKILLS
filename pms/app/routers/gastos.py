@@ -40,6 +40,7 @@ class ExpenseIn(BaseModel):
     ambito_detalle: str | None = Field(default=None, max_length=200)
     proveedor: str | None = Field(default=None, max_length=200)
     numero_factura: str | None = Field(default=None, max_length=60)
+    vencimiento: date | None = None  # vencimiento de la factura (tal como figura en ella)
     total: float = Field(gt=-1_000_000, lt=1_000_000)  # IVA incluido (negativo: abono)
     tipo_iva: float = 21
     base: float | None = None  # si se indica (varios tipos de IVA), la cuota es total - base
@@ -71,6 +72,8 @@ def _valores_gasto(db: Session, asset_id: int, data: ExpenseIn) -> dict:
         bad_request("Indique el apartamento del gasto")
     if data.tipo_iva not in IVAS:
         bad_request(f"Tipo de IVA no válido: {', '.join(map(str, IVAS))} %")
+    if data.vencimiento and data.vencimiento < data.fecha:
+        bad_request("El vencimiento no puede ser anterior a la fecha de la factura")
     if data.forma_pago and data.forma_pago not in FORMAS_PAGO:
         bad_request("Forma de pago no válida")
     _unidad(db, asset_id, data.unit_id)
@@ -87,6 +90,7 @@ def _valores_gasto(db: Session, asset_id: int, data: ExpenseIn) -> dict:
             "ambito": data.ambito, "unit_id": data.unit_id if data.ambito == "apartamento" else None,
             "ambito_detalle": data.ambito_detalle if data.ambito == "otro" else None, "proveedor": prov,
             "supplier_id": supplier.id if supplier else None, "numero_factura": data.numero_factura,
+            "vencimiento": data.vencimiento,
             "total": total, "base": base, "cuota": total - base, "tipo_iva": data.tipo_iva,
             "forma_pago": data.forma_pago, "pagado": data.pagado,
             "fecha_pago": (data.fecha_pago or date.today()) if data.pagado else None, "notas": data.notas}
@@ -154,7 +158,8 @@ def list_documents(asset_id: int | None = None, tipo: str | None = None, desde: 
 
 @router.post("/documentos-recibidos", status_code=201)
 def upload_document(ficheros: list[UploadFile] = File(...), asset_id: int = Form(...), tipo: str = Form(...),
-                    fecha: date = Form(...), emisor: str | None = Form(None), referencia: str | None = Form(None),
+                    fecha: date = Form(...), vencimiento: date | None = Form(None),
+                    emisor: str | None = Form(None), referencia: str | None = Form(None),
                     descripcion: str | None = Form(None), unit_id: int | None = Form(None),
                     gasto: str | None = Form(None), scope: Scope = Depends(get_scope),
                     db: Session = Depends(get_db)):
@@ -165,6 +170,8 @@ def upload_document(ficheros: list[UploadFile] = File(...), asset_id: int = Form
     if tipo not in TIPOS_DOCUMENTO:
         bad_request(f"Tipo de documento no válido. Opciones: {', '.join(TIPOS_DOCUMENTO)}")
     _unidad(db, asset_id, unit_id)
+    if vencimiento and vencimiento < fecha:
+        bad_request("El vencimiento no puede ser anterior a la fecha del documento")
     datos, mime, nombre = _fichero(ficheros)
     gasto_in = None
     if gasto:
@@ -172,7 +179,7 @@ def upload_document(ficheros: list[UploadFile] = File(...), asset_id: int = Form
             gasto_in = ExpenseIn(**json.loads(gasto))
         except (ValueError, ValidationError) as e:
             bad_request(f"Datos del gasto no válidos: {str(e)[:300]}")
-    x = ReceivedDocument(asset_id=asset_id, unit_id=unit_id, tipo=tipo, fecha=fecha,
+    x = ReceivedDocument(asset_id=asset_id, unit_id=unit_id, tipo=tipo, fecha=fecha, vencimiento=vencimiento,
                          emisor=" ".join((emisor or "").split()) or None, referencia=referencia or None,
                          descripcion=descripcion or None, nombre=nombre, fichero=documentos.guardar(datos), mime=mime,
                          tamano=len(datos), sha256=documentos.huella(datos), user_id=scope.user.id)
@@ -359,20 +366,23 @@ def expenses_excel(asset_id: int | None = None, desde: date | None = None, hasta
     """Cuenta de gastos en Excel: detalle, resumen por categoría y mes, y gasto por apartamento."""
     from openpyxl import Workbook
 
-    from .informes import ENTERO, EUR, _hoja
+    from .informes import ENTERO, EUR, FECHA, _hoja
     filas = _gastos(db, scope, asset_id, desde, hasta, categoria, unit_id, None)
     wb = Workbook()
     wb.remove(wb.active)
     periodo = f"{desde:%d/%m/%Y} – {hasta:%d/%m/%Y}" if desde and hasta else "todo el periodo"
-    _hoja(wb, "Gastos", ["Fecha", "Activo", "Ámbito", "Categoría", "Concepto", "Proveedor", "Nº factura", "Base",
-                         "IVA %", "Cuota IVA", "Total", "Pagado", "Fecha pago", "Forma de pago", "Documento",
-                         "Registrado por"],
+    _hoja(wb, "Gastos", ["Fecha factura", "Activo", "Ámbito", "Categoría", "Concepto", "Proveedor", "Nº factura",
+                         "Vencimiento", "Base", "IVA %", "Cuota IVA", "Total", "Pagado", "Fecha pago", "Forma de pago",
+                         "Documento", "Registrado por"],
           [[date.fromisoformat(g["fecha"]), g["activo"], g["lugar"], g["categoria_nombre"], g["concepto"],
-            g["proveedor"] or "", g["numero_factura"] or "", g["base"], g["tipo_iva"], g["cuota"], g["total"],
+            g["proveedor"] or "", g["numero_factura"] or "",
+            date.fromisoformat(g["vencimiento"]) if g["vencimiento"] else None, g["base"], g["tipo_iva"], g["cuota"],
+            g["total"],
             "Sí" if g["pagado"] else "No", date.fromisoformat(g["fecha_pago"]) if g["fecha_pago"] else None,
             FORMAS_PAGO.get(g["forma_pago"], ""), g["documento_tipo"] or "SIN DOCUMENTO", g["usuario"] or ""]
            for g in sorted(filas, key=lambda x: (x["fecha"], x["id"]))],
-          {7: EUR, 8: ENTERO, 9: EUR, 10: EUR}, totales=[7, 9, 10], nota=f"Cuenta de gastos · {periodo}")
+          {7: FECHA, 8: EUR, 9: ENTERO, 10: EUR, 11: EUR, 13: FECHA}, totales=[8, 10, 11],
+          nota=f"Cuenta de gastos · {periodo}. Fecha y vencimiento tal como figuran en la factura recibida.")
     res = defaultdict(lambda: defaultdict(float))
     for g in filas:
         res[(g["activo"], g["categoria_nombre"])][g["fecha"][:7]] += g["base"]

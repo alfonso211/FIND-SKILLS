@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..facturacion import FORMAS_PAGO, bases_por_tipo, pendientes_cobro
+from ..facturacion import FORMAS_PAGO, bases_por_tipo, fin_de_mes, pendientes_cobro
 from ..models import (MODALIDADES_CONTRATO, MODALIDADES_RESERVA, Asset, Charge, Contact, Invoice, Lease,
                       Reservation, Unit, User, WorkOrder)
 from ..security import Scope, audit, get_scope
@@ -174,7 +174,10 @@ def _ocupacion(db, scope, wb, desde, hasta, asset_id):
 
 
 def _facturado(db, ids: list[int], desde: date, hasta: date) -> dict[tuple[int, str], dict[str, float]]:
-    """Base imponible facturada por activo, mes (fecha de factura) y tipo de línea; también IVA, total y nº."""
+    """Base imponible facturada por activo, mes (fecha de factura) y tipo de línea; también IVA, total y nº.
+    Las facturas emitidas llevan fecha del último día del mes (criterio de la gestoría): el mes de la fecha final
+    cuenta entero, aunque se consulte a mitad de mes."""
+    hasta = fin_de_mes(hasta)
     out: dict[tuple[int, str], dict[str, float]] = defaultdict(lambda: defaultdict(float))
     facturas = list(db.scalars(select(Invoice).where(Invoice.asset_id.in_(ids or [-1]),
                                                      Invoice.fecha_expedicion >= desde,
@@ -324,7 +327,7 @@ def _cobros(db, scope, wb, desde, hasta, asset_id):
                                               Invoice.cobro_fecha >= desde, Invoice.cobro_fecha <= hasta)
                         .order_by(Invoice.cobro_fecha, Invoice.id)):
         cobradas.append([f.asset.nombre, f.codigo, f.fecha_expedicion, f.cliente.get("nombre"), float(f.total),
-                         f.cobro_fecha, (f.cobro_fecha - f.fecha_expedicion).days,
+                         f.cobro_fecha, max(0, (f.cobro_fecha - f.creada.date()).days),
                          FORMAS_PAGO.get(f.cobro_forma or "", f.cobro_forma), f.cobro_ref,
                          usuarios.get(f.cobro_user_id), f.cobro_marcado])
     _hoja(wb, "Cobradas en el periodo", ["Activo", "Factura", "Fecha factura", "Cliente", "Total", "Fecha de cobro",
