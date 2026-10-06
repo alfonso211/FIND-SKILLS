@@ -54,3 +54,21 @@ def tarjeta(lineas_texto, lineas_mrz, ancho=1300, girar=0, borroso=False, format
 def reverso_dni(**kw):
     texto = ["DOMICILIO", "C. MAYOR 1 P03 B", "SEVILLA", "SEVILLA", "LUGAR DE NACIMIENTO", "SEVILLA"]
     return tarjeta(texto, mrz_dni(), **kw)
+
+
+def foto_camara(doc: bytes, angulo=6.0, escala=0.45, luz=0.4, semilla=1) -> bytes:
+    """Simula una foto de webcam/móvil: documento pequeño y torcido sobre la mesa, luz irregular, JPEG."""
+    import numpy as np
+    rnd = np.random.default_rng(semilla)
+    ancho, alto = 1920, 1080
+    fondo = Image.fromarray(rnd.normal(120, 25, (alto, ancho, 3)).clip(0, 255).astype("uint8")).filter(ImageFilter.GaussianBlur(3))
+    card = Image.open(io.BytesIO(doc)).convert("RGB")
+    w = int(ancho * escala)
+    card = card.resize((w, int(w * card.height / card.width)), Image.LANCZOS)
+    mascara = Image.new("L", card.size, 255).rotate(angulo, expand=True)
+    card = card.rotate(angulo, expand=True)
+    fondo.paste(card, ((ancho - card.width) // 2, (alto - card.height) // 2), mascara)
+    a = np.asarray(fondo).astype(float) * np.linspace(1 - luz, 1, ancho)[None, :, None]
+    out = io.BytesIO()
+    Image.fromarray(a.clip(0, 255).astype("uint8")).save(out, "JPEG", quality=70)
+    return out.getvalue()

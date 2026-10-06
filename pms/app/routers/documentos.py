@@ -67,7 +67,10 @@ def _guardar_caras(db: Session, scope: Scope, contact_id: int | None, anverso: U
             mimes.append(ocr_documentos.a_imagenes(d)[0])
         except ValueError as e:
             bad_request(str(e))
-    lectura = ocr_documentos.leer([d for _, d in caras])
+    tipo = (tipo or "").upper() or None
+    if tipo and tipo not in ocr_documentos.TIPOS:
+        bad_request(f"Tipo de documento no válido. Opciones: {', '.join(ocr_documentos.TIPOS)}")
+    lectura = ocr_documentos.leer(caras, tipo)
     tipo_doc = lectura.get("documento_tipo") or tipo
     guardados = []
     for (cara, d), mime in zip(caras, mimes):
@@ -117,7 +120,9 @@ def adjuntar_pendientes(db: Session, user: User, ids: list[int], c: Contact) -> 
         bad_request("Alguna copia del documento ya no está disponible: vuelva a escanearlo")
     for d in docs:
         d.contact_id = c.id
-    aplicado = aplicar_lectura(c, docs[0].lectura or {})
+    # la lectura válida (el anverso de un DNI/NIE se guarda solo como copia, sin lectura)
+    lecturas = sorted((d.lectura or {} for d in docs), key=lambda x: (bool(x.get("mrz_valido")), bool(x.get("leido"))))
+    aplicado = aplicar_lectura(c, lecturas[-1] if lecturas else {})
     audit(db, user, "adjuntar_documento", "tercero", c.id, {"documentos": ids, "aplicado": aplicado})
     return aplicado
 

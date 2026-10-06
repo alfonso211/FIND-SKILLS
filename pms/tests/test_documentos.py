@@ -2,7 +2,7 @@ import pytest
 
 from app import ocr_documentos
 from app.config import settings
-from docs_sinteticos import reverso_dni, tarjeta
+from docs_sinteticos import foto_camara, mrz_pasaporte, reverso_dni, tarjeta
 from test_contrato_alojamiento import _reserva
 from test_pms import _new_user
 
@@ -121,3 +121,41 @@ def test_alta_de_huesped_con_documento_y_purga(client, admin, ids):
         db.commit()
     _leer(client, admin, reverso_dni(formato="JPEG"))  # cualquier escaneo nuevo purga los abandonados
     assert client.get(f"/api/documentos/{viejo}", headers=admin).status_code == 404
+
+
+def test_foto_de_camara_torcida_y_con_poca_luz():
+    """Webcam de recepción: documento pequeño, inclinado y con luz irregular."""
+    lec = ocr_documentos.leer([("reverso", foto_camara(reverso_dni(), angulo=7, escala=0.42))], "DNI")
+    assert lec["leido"] and lec["mrz_valido"] and lec["documento_num"] == "99999999R"
+    pas = foto_camara(tarjeta(["PASAPORTE"], mrz_pasaporte(), ancho=1400), angulo=-5, escala=0.5, semilla=3)
+    lec = ocr_documentos.leer([("anverso", pas)], "PAS")
+    assert lec["leido"] and lec["documento_tipo"] == "PAS" and lec["documento_num"] == "XDB123456"
+
+
+def test_tipo_y_cara_indicados_por_el_operario(client, admin, ids):
+    sae = ids["assets"]["SAE"]["id"]
+    rec = _new_user(client, admin, "rec.caras@inversiete.es", [{"role_id": ids["roles"]["Recepción"], "asset_id": sae}])
+    h = rec
+    # anverso del DNI: solo se guarda la copia (no lleva líneas «<<<») y se pide el reverso
+    a = client.post("/api/documentos/leer", headers=h, data={"tipo": "DNI"},
+                    files={"anverso": ("a.png", tarjeta(["DNI", "LUCIA"], []), "image/png")}).json()
+    assert a["lectura"]["solo_copia"] and not a["lectura"]["leido"] and "reverso" in a["lectura"]["avisos"][0]
+    assert a["documentos"][0]["cara"] == "anverso" and a["documentos"][0]["tipo"] == "DNI"
+    r = client.post("/api/documentos/leer", headers=h, data={"tipo": "DNI"},
+                    files={"reverso": ("r.jpg", reverso_dni(formato="JPEG"), "image/jpeg")}).json()
+    assert r["lectura"]["leido"] and r["documentos"][0]["cara"] == "reverso"
+    # el tipo indicado no coincide con el leído: se avisa y manda lo leído
+    p = client.post("/api/documentos/leer", headers=h, data={"tipo": "PAS"},
+                    files={"reverso": ("r.jpg", reverso_dni(formato="JPEG"), "image/jpeg")}).json()
+    assert p["lectura"]["documento_tipo"] == "DNI" and any("Pasaporte" in x for x in p["lectura"]["avisos"])
+    assert client.post("/api/documentos/leer", headers=h, data={"tipo": "CARNET"},
+                       files={"reverso": ("r.jpg", reverso_dni(formato="JPEG"), "image/jpeg")}).status_code == 400
+    # alta con las dos copias (primero el anverso, sin lectura): los datos salen del reverso
+    unit = client.get(f"/api/unidades?asset_id={sae}&q=B-212", headers=admin).json()[0]
+    res = client.post("/api/turistico/reservas", headers=h, json={
+        "unit_id": unit["id"], "fecha_entrada": "2027-05-01", "fecha_salida": "2027-05-03",
+        "guest": {"nombre": "Lucía", "apellidos": "Martín Sanz"},
+        "documentos": [a["documentos"][0]["id"], r["documentos"][0]["id"]]})
+    assert res.status_code == 201, res.text
+    g = client.get("/api/terceros?tipo=huesped&q=99999999R", headers=h).json()[0]
+    assert (g["documento_num"], g["num_soporte"]) == ("99999999R", "BAA000589")
