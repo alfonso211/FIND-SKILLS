@@ -368,6 +368,9 @@ body.sin-scroll { overflow: hidden; }
   border-radius: 2px; padding: 0 2px; line-height: 1.2; }
 .m-ej.venc { background: #c62828; color: #fff; border-color: #c62828; }
 .aviso-vencidas { background: #fff7f6; border: 1px solid #f3c4bf; border-left: 4px solid #c62828; border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; }
+.aviso-hito { background: #fffaf0; border: 1px solid #ecd9a8; border-left: 4px solid #b8902e; border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; }
+.aviso-hito h4 { margin: 0 0 4px; color: #6d5310; }
+.aviso-hito p { margin: 0; }
 .aviso-vencidas h4 { margin: 0 0 4px; color: #a12020; }
 .aviso-vencidas .table-wrap { background: #fff; }
 

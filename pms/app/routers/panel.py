@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from .. import hitos
 from ..database import get_db
 from ..facturacion import bases_por_tipo
 from ..models import MODALIDADES, Asset, Charge, Invoice, Lease, Reservation, Unit, WorkOrder
@@ -103,4 +104,4 @@ def panel(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
             k["ot_urgentes"] = db.scalar(wo.where(WorkOrder.prioridad == "urgente"))
             k["ot_pendientes_cierre"] = db.scalar(wo.where(WorkOrder.estado == "pendiente_cierre"))
         out.append(k)
-    return {"fecha": hoy.isoformat(), "activos": out}
+    return {"fecha": hoy.isoformat(), "activos": out, "hitos": hitos.para(scope, hoy)}
