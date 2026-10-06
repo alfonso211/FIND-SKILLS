@@ -9,7 +9,7 @@ from . import avisos
 from .config import BASE_DIR
 from .database import SessionLocal
 from .migraciones import migrar
-from .routers import (admin, alquiler, auth, documentos, estructura, facturas, garajes, gastos, informes, mantenimiento,
+from .routers import (admin, alquiler, auth, buscar, documentos, estructura, facturas, garajes, gastos, informes, mantenimiento,
                       panel, personal, plano, proveedores, turistico)
 from .seed import seed
 
@@ -32,7 +32,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="INVERPMS", version="0.1.0", lifespan=lifespan)
 for r in (auth, estructura, alquiler, garajes, gastos, turistico, plano, facturas, mantenimiento, personal, proveedores,
-          informes, admin, panel, documentos):
+          informes, admin, panel, documentos, buscar):
     app.include_router(r.router)
 app.include_router(facturas.router_servicios)
 app.include_router(turistico.publico)

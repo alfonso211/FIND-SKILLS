@@ -207,8 +207,11 @@ V.panel = async (el) => {
   // Quien solo ve su activo (o filtra uno): situación informativa y las plantas en miniatura para trabajar.
   const varios = S.assets.length > 1 && !S.asset;
   const conMapa = new Set(conPlano.map((a) => a.id));
+  S.conPlano = conMapa;
   const planos = varios ? [] : conPlano.filter((a) => !S.asset || String(a.id) === String(S.asset));
-  el.innerHTML = `${planos.map((a) => `<section class="plano-resumen" data-plano="${a.id}"><div class="toolbar"><h3 style="margin:0">${esc(a.nombre)} · plano por plantas</h3><span class="spacer"></span>${leyendaHtml()}</div><div class="minis"><p class="muted">Cargando plano…</p></div></section>`).join("")}
+  el.innerHTML = `<div class="buscador"><input id="busq" type="search" autocomplete="off" placeholder="🔍 Buscar: documento, apartamento, cliente, teléfono, localizador, factura, OT, proveedor…" aria-label="Buscar">
+      <div id="busqRes"></div></div>
+    ${planos.map((a) => `<section class="plano-resumen" data-plano="${a.id}"><div class="toolbar"><h3 style="margin:0">${esc(a.nombre)} · plano por plantas</h3><span class="spacer"></span>${leyendaHtml()}</div><div class="minis"><p class="muted">Cargando plano…</p></div></section>`).join("")}
     ${(p.hitos || []).map((h) => `<div class="aviso-hito"><h4>📅 ${esc(h.titulo)} · ${fdate(h.fecha)} (${h.dias > 0 ? `faltan ${h.dias} días` : h.dias === 0 ? "hoy" : `hace ${-h.dias} días`})</h4><p>${esc(h.detalle)}</p></div>`).join("")}
     <p class="muted">Situación a ${fdate(p.fecha)}</p><div class="cards">${p.activos.filter((a) => !S.asset || String(a.id) === String(S.asset)).map((a) => {
     const k = [];
@@ -242,7 +245,64 @@ V.panel = async (el) => {
     c.onclick = abrir; c.onkeydown = (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), abrir());
   });
   pintarMinis(el).catch((e) => el.querySelectorAll(".minis").forEach((m) => (m.innerHTML = `<p class="error">${esc(e.message)}</p>`)));
+  bindBuscador($("#busq", el), $("#busqRes", el));
 };
+
+// ------------------------------------------------------------------ buscador del panel
+// Un dato cualquiera y se ven todas las coincidencias con sus acciones (ficha, cobro, check-in…) sin cambiar de página.
+function bindBuscador(inp, res) {
+  let t = null, n = 0;
+  try { inp.value = sessionStorage.getItem("pms_busq") || ""; } catch {}
+  const buscar = async () => {
+    const q = inp.value.trim(), gen = ++n;
+    try { sessionStorage.setItem("pms_busq", q); } catch {}
+    if (q.length < 2) { res.innerHTML = ""; return; }
+    res.innerHTML = '<p class="muted">Buscando…</p>';
+    try {
+      const d = await get("/api/buscar", { q });
+      if (gen === n) pintaBusqueda(res, d, buscar);
+    } catch (e) { if (gen === n) res.innerHTML = `<p class="error">${esc(e.message)}</p>`; }
+  };
+  inp.oninput = () => { clearTimeout(t); t = setTimeout(buscar, 350); };
+  inp.onkeydown = (e) => { if (e.key === "Escape") { inp.value = ""; buscar(); } if (e.key === "Enter") { clearTimeout(t); buscar(); } };
+  if (inp.value) buscar();
+}
+function pintaBusqueda(res, d, recargar) {
+  const grupos = [
+    ["clientes", "Clientes", [{ k: "nombre", t: "Nombre", f: (v) => `<b>${esc(v)}</b>` }, { k: "tipo_nombre", t: "Tipo" }, { k: "documento", t: "Documento" },
+      { k: "telefono", t: "Teléfono" }, { k: "activo", t: "Activo" }, { k: "unidades", t: "Ahora en", f: (v) => esc((v || []).join(", ")) }],
+      (c) => [["Ficha", () => editGuest(c.id, c.tipo, recargar)]]],
+    ["reservas", "Reservas", [{ k: "localizador", t: "Localizador" }, { k: "unidad", t: "Unidad", f: (v) => `<b>${esc(v)}</b>` }, { k: "huesped", t: "Huésped" },
+      { k: "fecha_entrada", t: "Entrada", f: fdate }, { k: "fecha_salida", t: "Salida", f: fdate },
+      { k: "importe_total", t: "Pendiente", num: true, f: (v, r) => eur(v - r.importe_pagado) }, { k: "estado", t: "Estado", f: badge }], resActions(recargar)],
+    ["unidades", "Apartamentos y plazas", [{ k: "codigo", t: "Unidad", f: (v) => `<b>${esc(v)}</b>` }, { k: "activo", t: "Activo" }, { k: "tipologia", t: "Tipología" },
+      { k: "estado", t: "Estado", f: badge }, { k: "ocupante", t: "Ocupado por", f: (v) => (v ? esc(v) : '<span class="muted">libre</span>') }],
+      (u) => [
+        conPlanoActivo(u.asset_id) && ["Plano", () => { S.plano = { asset: u.asset_id }; go("plano"); }],
+        u.modalidad === "apartamentos_turisticos" && can("reservas.editar") && ["Reservar", () => newReservation(recargar, { id: u.id, codigo: u.codigo, asset_id: u.asset_id, uso: u.uso })],
+        canOpenOT() && ["Abrir OT", () => newWorkOrder(u.asset_id, u.id)],
+      ]],
+    ["contratos", "Contratos de alquiler", [{ k: "referencia", t: "Ref." }, { k: "unidad", t: "Unidad" }, { k: "inquilino", t: "Inquilino" },
+      { k: "fecha_inicio", t: "Inicio", f: fdate }, { k: "fecha_fin", t: "Fin", f: fdate }, { k: "renta_mensual", t: "Renta", num: true, f: eur }, { k: "estado", t: "Estado", f: badge }],
+      (l) => [["Inquilino", () => editGuest(l.tenant_id, l.tenant_tipo, recargar)]]],
+    ["facturas", "Facturas", [{ k: "codigo", t: "Factura", f: (v) => `<b>${esc(v)}</b>` }, { k: "fecha_expedicion", t: "Fecha", f: fdate }, { k: "activo", t: "Activo" },
+      { k: "cliente", t: "Cliente", f: (v) => esc(v.nombre) }, { k: "total", t: "Total", num: true, f: eur }],
+      (f) => [["PDF", () => descargarFactura(f.id)]]],
+    ["ordenes", "Órdenes de trabajo", [{ k: "id", t: "OT", f: (v) => `<b>${otNum(v)}</b>` }, { k: "titulo", t: "Título" }, { k: "activo", t: "Activo" },
+      { k: "unidad", t: "Unidad", f: (v, w) => esc(v || w.zona_nombre || "") }, { k: "prioridad", t: "Prioridad", f: badge }, { k: "estado", t: "Estado", f: badge }],
+      (w) => [["Adjuntos", () => adjuntosOT(w, recargar)], puedeEnviarOT() && ["Enviar", () => enviarOT(w, recargar)]]],
+    ["proveedores", "Proveedores", [{ k: "nombre", t: "Nombre", f: (v) => `<b>${esc(v)}</b>` }, { k: "nif", t: "NIF" }, { k: "actividad", t: "Actividad" },
+      { k: "telefono", t: "Teléfono" }, { k: "email", t: "Correo" }], null],
+  ];
+  const hay = grupos.filter(([k]) => d[k]?.length);
+  if (!hay.length) { res.innerHTML = `<p class="muted">Sin resultados para «${esc(d.q)}».</p>`; return; }
+  res.innerHTML = `<p class="muted">${hay.map(([k, t]) => `<a href="#" data-ir="${k}">${esc(t)} (${d[k].length})</a>`).join(" · ")}
+    <a href="#" data-cerrar class="peq">✕ cerrar</a></p>` + hay.map(([k, t]) => `<section class="busq-grupo" id="bq-${k}"><h4>${esc(t)}</h4><div data-g="${k}"></div></section>`).join("");
+  hay.forEach(([k, , cols, acciones]) => table(res.querySelector(`[data-g="${k}"]`), cols, d[k], acciones));
+  res.querySelectorAll("[data-ir]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); res.querySelector(`#bq-${a.dataset.ir}`).scrollIntoView({ behavior: "smooth", block: "start" }); }));
+  res.querySelector("[data-cerrar]").onclick = (e) => { e.preventDefault(); const i = $("#busq"); i.value = ""; i.oninput(); res.innerHTML = ""; };
+}
+const conPlanoActivo = (aid) => S.conPlano?.has(aid);
 
 // miniaturas del plano en el panel (se rellenan después para no retrasar el resto)
 async function pintarMinis(el) {
