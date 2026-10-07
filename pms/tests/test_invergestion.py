@@ -1,5 +1,7 @@
-"""Exportación a INVERGESTION: formato (CSV «;», UTF-8, fechas ISO, importes con punto), una fila por tipo de IVA,
-cuadre, PDF en un .zip con el mismo nombre que su CSV, y avisos de lo que INVERGESTION rechazaría."""
+"""Exportación a INVERGESTION: un solo ZIP (CSV en la raíz, manifest.json y PDF en pdf/emitidas y pdf/recibidas),
+CSV UTF-8 sin BOM con LF y «;», una fila por tipo de IVA, cuadre, nº de factura = nombre del PDF, país ISO, conceptos
+con «|», avisos de lo que INVERGESTION rechazaría y bloqueo si falta algún PDF."""
+import hashlib
 import csv
 import io
 import json
@@ -20,14 +22,21 @@ HOY = date.today()
 def test_formato():
     assert ex.iso2("España") == "ES" and ex.iso2("Francia") == "FR" and ex.iso2("GBR") == "GB" and ex.iso2("") == ""
     assert ex.importe(1234.5) == "1234.50" and ex.porcentaje(10) == "10" and ex.porcentaje(0) == "0"
-    datos = ex.a_csv(["a", "b"], [{"a": 'texto; con "comillas"', "b": None}]).decode("utf-8")
-    assert datos.startswith("﻿a;b\r\n") and '"texto; con ""comillas"""' in datos and datos.endswith(";\r\n")
+    crudo = ex.a_csv(["a", "b"], [{"a": 'texto; con "comillas"', "b": "dos\nlíneas"}])
+    datos = crudo.decode("utf-8")
+    assert not crudo.startswith(b"\xef\xbb\xbf") and "\r" not in datos  # sin BOM y con LF
+    assert datos.startswith("a;b\n") and '"texto; con ""comillas"""' in datos and '"dos\nlíneas"' in datos
+    assert ex.conceptos(["Alojamiento 4 noches", "Parking | plaza 3", " "]) == "Alojamiento 4 noches|Parking / plaza 3"
+    assert ex.pais_iso(None, nif_="00000023T") == ("ES", True) and ex.pais_iso("Francia") == ("FR", False)
+    assert ex.pais_iso(None, nif_="NL000000000B01") == ("NL", True)
     assert ex.nombre_fichero("EMITIDAS", "TODOS", date(2026, 10, 1), date(2026, 10, 7), "csv") == \
         "EMITIDAS_TODOS_20261001_20261007.csv"
 
 
 def _csv(z: zipfile.ZipFile, nombre: str) -> list[dict]:
-    return list(csv.DictReader(io.StringIO(z.read(nombre).decode("utf-8-sig")), delimiter=";"))
+    crudo = z.read(nombre)
+    assert not crudo.startswith(b"\xef\xbb\xbf") and b"\r\n" not in crudo
+    return list(csv.DictReader(io.StringIO(crudo.decode("utf-8")), delimiter=";"))
 
 
 def test_paquete_emitidas_y_recibidas(client, admin, ids):
@@ -76,21 +85,28 @@ def test_paquete_emitidas_y_recibidas(client, admin, ids):
     assert c["emitidas"]["facturas"] >= 1 and c["recibidas"]["facturas"] >= 1
     assert c["emitidas"]["csv"].startswith("EMITIDAS_TODOS_")
 
-    z = zipfile.ZipFile(io.BytesIO(client.get("/api/exportacion/invergestion", headers=admin, params=q).content))
+    resp = client.get("/api/exportacion/invergestion", headers=admin, params=q)
+    assert resp.status_code == 200, resp.text
+    periodo = f"{(HOY - timedelta(days=1)):%Y%m%d}_{HOY:%Y%m%d}"
+    assert resp.headers["content-disposition"].endswith(f'"INVERGESTION_TODOS_{periodo}.zip"')
+    assert c["paquete"] == f"INVERGESTION_TODOS_{periodo}.zip"
+    z = zipfile.ZipFile(io.BytesIO(resp.content))
     nombres = set(z.namelist())
-    em = f"EMITIDAS_TODOS_{(HOY - timedelta(days=1)):%Y%m%d}_{HOY:%Y%m%d}"
-    re_ = f"RECIBIDAS_TODOS_{(HOY - timedelta(days=1)):%Y%m%d}_{HOY:%Y%m%d}"
-    assert {em + ".csv", em + ".zip", re_ + ".csv", re_ + ".zip"} <= nombres
+    em, re_ = f"EMITIDAS_TODOS_{periodo}.csv", f"RECIBIDAS_TODOS_{periodo}.csv"
+    # un solo ZIP, sin ZIP dentro: CSV y manifest en la raíz, PDF en sus carpetas
+    assert {em, re_, "manifest.json"} <= nombres and not any(n.endswith(".zip") for n in nombres)
+    assert all(n in (em, re_, "manifest.json") or n.startswith(("pdf/emitidas/", "pdf/recibidas/")) for n in nombres)
 
-    emitidas = _csv(z, em + ".csv")
+    emitidas = _csv(z, em)
     assert list(emitidas[0]) == ex.COLUMNAS_EMITIDAS
-    pdfs = set(zipfile.ZipFile(io.BytesIO(z.read(em + ".zip"))).namelist())
-    assert {f["archivo_pdf"] for f in emitidas} == pdfs
     for f in emitidas:  # fecha de la factura: último día del mes; código de activo de la especificación
         assert f["activo"] in ("SFLORIDA", "SAEROPUERTO", "BABILONIA35") and f["tipo_factura"] in ("COMPLETA", "RECTIFICATIVA")
         if f["tipo_factura"] == "COMPLETA":
             assert date.fromisoformat(f["fecha_expedicion"]) == fin_de_mes(date.fromisoformat(f["fecha_expedicion"]))
-        assert "," not in f["base"] and f["estado"] == "EMITIDA"
+        assert "," not in f["base"] and f["estado"] == "EMITIDA" and f["cliente_pais"] == "ES"
+        # nº de factura único: el mismo que el nombre del PDF (SF-00001-2026), que está en el paquete
+        assert f["numero"].startswith(f["serie"] + "-") and f["archivo_pdf"] == f"pdf/emitidas/{f['numero']}.pdf"
+        assert f["archivo_pdf"] in nombres
     # cuadre por factura (todas sus filas de IVA): base + cuota = total
     por_factura = {}
     for f in emitidas:
@@ -98,29 +114,54 @@ def test_paquete_emitidas_y_recibidas(client, admin, ids):
         por_factura.setdefault(k, [Decimal(0), Decimal(f["total"])])
         por_factura[k][0] += Decimal(f["base"]) + Decimal(f["cuota_iva"])
     assert all(abs(s - t) <= Decimal("0.02") for s, t in por_factura.values())
+    numeros = {f["numero"] for f in emitidas}
     rect = [f for f in emitidas if f["tipo_factura"] == "RECTIFICATIVA"]
     assert all(f["numero_rectificada"] and Decimal(f["total"]) < 0 for f in rect)
+    assert all("/" not in f["numero_rectificada"] and "-" in f["numero_rectificada"] for f in rect)
+    assert numeros
 
-    recibidas = _csv(z, re_ + ".csv")
+    recibidas = _csv(z, re_)
     assert list(recibidas[0]) == ex.COLUMNAS_RECIBIDAS
     lav = next(f for f in recibidas if f["numero"] == "LAV-77")
-    assert lav["forma_pago"] == "DOMICILIACION"
+    assert lav["forma_pago"] == "DOMICILIACION" and lav["proveedor_pais"] == "ES"
     assert next(f for f in recibidas if f["numero"] == "F26/5594")["forma_pago"] == "TRANSFERENCIA"
     assert (lav["proveedor_nif"], lav["categoria"], lav["inversion_sujeto_pasivo"], lav["base"], lav["cuota_iva"],
             lav["total"], lav["fecha_vencimiento"], lav["importe_pagado"], lav["estado"]) == (
         "00000023T", "LIMPIEZA", "N", "100.00", "21.00", "121.00", (HOY + timedelta(days=30)).isoformat(), "0.00",
         "REGISTRADA")
-    pdfs = zipfile.ZipFile(io.BytesIO(z.read(re_ + ".zip")))
-    assert {f["archivo_pdf"] for f in recibidas if f["archivo_pdf"]} == set(pdfs.namelist())
     ago = next(f for f in recibidas if f["numero"] == "F26/5594")
     assert (ago["fecha_factura"], ago["fecha_recepcion"], ago["archivo_pdf"]) == (
-        agosto.isoformat(), HOY.isoformat(), "00000023T-F26-5594.pdf")
-    assert all(pdfs.read(n).startswith(b"%PDF") for n in pdfs.namelist())
+        agosto.isoformat(), HOY.isoformat(), "pdf/recibidas/00000023T-F26-5594.pdf")
+    assert next(f for f in recibidas if f["numero"] == "ANT-1")["archivo_pdf"] == ""  # sin documento: vacío
+    for f in recibidas:
+        assert not f["archivo_pdf"] or f["archivo_pdf"] in nombres
+    pdfs = [n for n in nombres if n.startswith("pdf/")]
+    assert pdfs and all(z.read(n).startswith(b"%PDF") for n in pdfs)
+
+    # manifest: activo, periodo, filas de cada CSV y ruta + SHA-256 de cada PDF
+    m = json.loads(z.read("manifest.json"))
+    assert (m["activo"], m["desde"], m["hasta"]) == ("TODOS", q["desde"], q["hasta"])
+    assert {x["fichero"]: x["filas"] for x in m["csv"]} == {em: len(emitidas), re_: len(recibidas)}
+    assert {x["ruta"] for x in m["pdf"]} == set(pdfs)
+    assert all(x["sha256"] == hashlib.sha256(z.read(x["ruta"])).hexdigest() for x in m["pdf"])
+
+    # si falta el PDF de una fila, la exportación no se genera (ni a medias) y se dice cuál
+    from app import documentos
+    with SessionLocal() as db:
+        from app.models import ReceivedDocument
+        d = db.scalar(__import__("sqlalchemy").select(ReceivedDocument).where(ReceivedDocument.referencia == "LAV-77"))
+        documentos.borrar(d.fichero)
+    c = client.get("/api/exportacion/invergestion/comprobar", headers=admin, params=q).json()
+    assert any("00000023T-LAV-77.pdf" in x for x in c["recibidas"]["bloquea"])
+    falla = client.get("/api/exportacion/invergestion", headers=admin, params=q)
+    assert falla.status_code == 409 and "pdf/recibidas/00000023T-LAV-77.pdf" in falla.json()["detail"]
+    assert client.get("/api/exportacion/invergestion", headers=admin, params={**q, "tipos": "emitidas"}).status_code == 200
 
     # un activo concreto y un periodo sin nada
     solo = client.get("/api/exportacion/invergestion/comprobar", headers=admin,
                       params={**q, "activo": "BABILONIA35", "tipos": "recibidas"}).json()
-    assert set(solo) == {"recibidas"} and solo["recibidas"]["csv"].startswith("RECIBIDAS_BABILONIA35_")
+    assert set(solo) == {"recibidas", "paquete"} and solo["recibidas"]["csv"].startswith("RECIBIDAS_BABILONIA35_")
+    assert solo["paquete"].startswith("INVERGESTION_BABILONIA35_")
     assert client.get("/api/exportacion/invergestion/comprobar", headers=admin,
                       params={"desde": "2026-12-01", "hasta": "2026-01-01"}).status_code == 400
 

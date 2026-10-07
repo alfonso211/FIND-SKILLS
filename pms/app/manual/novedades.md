@@ -1,5 +1,10 @@
 # Novedades
 
+## 2026-10-07 · Versión 1.8 · Exportación a INVERGESTION con los PDF
+- **Dirección**: la exportación a INVERGESTION sale en **un solo ZIP** con los CSV, un **manifest.json** y los **PDF** en las carpetas pdf/emitidas y pdf/recibidas, para que INVERGESTION adjunte cada PDF a su factura.
+- **Dirección**: el nº de las facturas emitidas va como **SF-00001-2026** (igual que el nombre de su PDF), también en las rectificativas; el país siempre en código (ES) y las líneas del concepto separadas con «|».
+- **Dirección**: si a alguna factura le falta su PDF, la exportación **no se genera** y avisa de cuál.
+
 ## 2026-10-07 · Versión 1.7 · Informe mensual a la presidencia
 - **Recepción 1**: el primer día laborable de cada mes recibe el aviso para preparar el **informe a la presidencia** del mes anterior (**Facturación e informes → Informe a presidencia**).
 - **Recepción 1**: el informe se **revisa en pantalla**, se marca como comprobado y se envía en **PDF** por **correo** o **WhatsApp**; el **Excel** queda guardado en los documentos del activo.
