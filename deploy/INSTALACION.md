@@ -254,6 +254,36 @@ Cada usuario elige qué avisos recibe en *Mi perfil*.
   configuración del apartado 8 ter; el de WhatsApp abre WhatsApp en la tablet con el mensaje y el enlace preparados
   (caduca a los 7 días).
 
+## 8 quinquies. Mantenimiento diario automático
+
+Cada día a las **06:00 (hora de Madrid)** `mantenimiento.sh` revisa el servidor y el PMS, arregla solo lo que puede
+y avisa por correo a `PMS_MANTENIMIENTO_EMAIL` (por defecto alfonso@inversiete.es). Activarlo una sola vez:
+
+```bash
+/opt/pms/deploy/mantenimiento.sh --instalar   # lo programa en cron
+/opt/pms/deploy/mantenimiento.sh              # primera revisión a mano: muestra el informe
+```
+
+| Revisa | Si falla, lo arregla solo | Si no puede: correo URGENTE |
+|---|---|---|
+| Docker y contenedores db, app, caddy | arranca Docker, reinicia el contenedor | no arranca |
+| Acceso https y certificado | reinicia el proxy, fuerza la renovación | no responde, caduca en menos de 7 días |
+| Disco y memoria | borra imágenes, registros y paquetes antiguos | disco al 90 % o más |
+| Copias de seguridad (servidor y Google Drive) | programa la copia diaria, hace la copia que falte | sin copia de 24 h o sin subir a Drive |
+| Base de datos y su versión | aplica las migraciones pendientes | la migración falla |
+| Documentos cifrados (presentes y legibles) | — | falta alguno o no se descifra |
+| Correo de avisos | — | el servidor de correo rechaza la conexión |
+| Seguridad: cortafuegos, permisos del .env | activa ufw (SSH, 80, 443), pone el .env en 600 | — |
+
+Son **avisos** (correo normal, solo la primera vez que aparecen): actualizaciones automáticas desactivadas, reinicio
+pendiente por actualizaciones, puertos abiertos no previstos, SSH con contraseña sin fail2ban, usuarios con contraseña
+provisional, cuelgues, errores en el registro y ficheros modificados a mano en `/opt/pms`. Si arregla algo, también
+lo comunica. Los **lunes** envía un resumen aunque todo esté bien, para confirmar que el mantenimiento sigue en marcha.
+Nunca reinicia el servidor ni instala programas por su cuenta.
+
+- Último informe: `cat /var/lib/pms-mantenimiento/ultimo.txt`. Histórico: `/var/log/pms-mantenimiento.log`.
+- Si no llega ningún correo un lunes, revisar el histórico y la configuración del correo (apartado 8 ter).
+
 ## 9. Actualizaciones del PMS
 
 ```bash

@@ -38,6 +38,8 @@ class Settings:
     avisos_hora: str = os.environ.get("PMS_AVISOS_HORA") or "07:30"  # hora del resumen diario
     avisos_auto: bool = (os.environ.get("PMS_AVISOS_AUTO") or "1") != "0"
     url: str = (os.environ.get("PMS_URL") or "").rstrip("/")  # enlace en los correos (https://pms.inversiete.es)
+    # Mantenimiento diario (deploy/mantenimiento.sh): a quién se avisa si hay un fallo grave
+    mantenimiento_email: str = os.environ.get("PMS_MANTENIMIENTO_EMAIL") or "alfonso@inversiete.es"
 
 
 settings = Settings()

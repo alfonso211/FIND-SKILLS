@@ -1,5 +1,9 @@
 # Novedades
 
+## 2026-10-07 · Versión 1.9 · Mantenimiento diario automático
+- **Dirección**: cada día a las **06:00** el sistema revisa el servidor y el PMS (contenedores, acceso web, certificado, disco, copias de seguridad, base de datos, documentos, correo y seguridad) y **arregla solo** lo que puede.
+- **Dirección**: si hay un fallo grave que necesita intervención, llega un **correo URGENTE** con lo que falla y qué hacer; lo arreglado y los avisos nuevos llegan en un correo normal, y los lunes un resumen semanal.
+
 ## 2026-10-07 · Versión 1.8 · Exportación a INVERGESTION con los PDF
 - **Dirección**: la exportación a INVERGESTION sale en **un solo ZIP** con los CSV, un **manifest.json** y los **PDF** en las carpetas pdf/emitidas y pdf/recibidas, para que INVERGESTION adjunte cada PDF a su factura.
 - **Dirección**: el nº de las facturas emitidas va como **SF-00001-2026** (igual que el nombre de su PDF), también en las rectificativas; el país siempre en código (ES) y las líneas del concepto separadas con «|».
