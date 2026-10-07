@@ -263,34 +263,45 @@ V.panel = async (el) => {
     <p class="muted panel-fecha">Situación a ${fdate(p.fecha)}</p><div class="cards panel-cards">${visibles.map((a) => {
     const k = [];
     // los datos del edificio son de los alojamientos: las plazas de garaje van aparte y no computan
-    k.push([a.unidades, Object.entries(a.usos || {}).filter(([u]) => u !== "garaje").map(([u, n]) => `${n} ${n === 1 ? u : plural(u)}`).join(" · ") || "Unidades"]);
-    if (a.ocupacion_hoy != null) k.push([a.ocupacion_hoy + " %", "Ocupación hoy"]);
-    if (a.llegadas_hoy != null) k.push([`${a.llegadas_hoy} / ${a.salidas_hoy}`, "Llegadas / salidas hoy"]);
-    if (a.estancias_vencidas) k.push([a.estancias_vencidas, "Estancias vencidas (renovar o salida)", "mal"]);
+    // cada casilla lleva a su listado (5º elemento: pantalla); el plano, con su botón
+    k.push([a.unidades, Object.entries(a.usos || {}).filter(([u]) => u !== "garaje").map(([u, n]) => `${n} ${n === 1 ? u : plural(u)}`).join(" · ") || "Unidades", "", "", "unidades"]);
+    if (a.ocupacion_hoy != null) k.push([a.ocupacion_hoy + " %", "Ocupación hoy", "", "Ocupación de hoy: abre el plano", "plano"]);
+    if (a.llegadas_hoy != null) k.push([`${a.llegadas_hoy} / ${a.salidas_hoy}`, "Llegadas / salidas hoy", "", "", "hoy"]);
+    if (a.estancias_vencidas) k.push([a.estancias_vencidas, "Estancias vencidas (renovar o salida)", "mal", "", "hoy"]);
     if (a.contratos_vigentes != null) {
       const al = a.alquiladas_por_uso || {};
       Object.entries(a.usos || {}).filter(([u]) => u !== "garaje").forEach(([u, n]) => {
         const t = plural(u);
-        k.push([`${al[u] || 0} / ${n}`, `${t[0].toUpperCase()}${t.slice(1)} alquilad${["vivienda", "oficina"].includes(u) ? "as" : "os"}`]);
+        k.push([`${al[u] || 0} / ${n}`, `${t[0].toUpperCase()}${t.slice(1)} alquilad${["vivienda", "oficina"].includes(u) ? "as" : "os"}`, "", "", "contratos"]);
       });
     }
-    if (a.produccion_mes != null) k.push([eur(a.produccion_mes), "Producción del mes", "", "Producción del mes: facturado sin IVA ni garajes" + (a.produccion_mes_externa ? ` · ${eur(a.produccion_mes_externa)} del programa anterior (SYADE)` : "")]);
-    if (a.garajes) k.push([`${a.garajes_ocupados} / ${a.garajes}`, "Garajes alquilados", "", "Plazas de garaje alquiladas hoy (no computan en la ocupación)"]);
-    else if (a.usos?.garaje && a.alquiladas_por_uso) k.push([`${a.alquiladas_por_uso.garaje || 0} / ${a.usos.garaje}`, "Garajes alquilados", "", "Plazas de garaje alquiladas (no computan en la ocupación)"]);
-    if (a.garajes_facturado_mes) k.push([eur(a.garajes_facturado_mes), "Garajes facturados mes (aparte)"]);
-    if (a.renta_mensual != null) k.push([eur(a.renta_mensual), "Renta mensual"], [eur(a.deuda_vencida), "Deuda vencida"]);
-    if (a.ot_abiertas != null) k.push([`${a.ot_abiertas} · ${a.ot_urgentes} · ${a.ot_pendientes_cierre}`, "OT abiert. · urg. · cerrar", a.ot_urgentes ? "mal" : "", "Órdenes de trabajo: abiertas · urgentes · pendientes de cierre"]);
+    if (a.produccion_mes != null) k.push([eur(a.produccion_mes), "Producción del mes", "", "Producción del mes: facturado sin IVA ni garajes" + (a.produccion_mes_externa ? ` · ${eur(a.produccion_mes_externa)} del programa anterior (SYADE)` : ""), "facturas"]);
+    if (a.garajes) k.push([`${a.garajes_ocupados} / ${a.garajes}`, "Garajes alquilados", "", "Plazas de garaje alquiladas hoy (no computan en la ocupación)", "garajes"]);
+    else if (a.usos?.garaje && a.alquiladas_por_uso) k.push([`${a.alquiladas_por_uso.garaje || 0} / ${a.usos.garaje}`, "Garajes alquilados", "", "Plazas de garaje alquiladas (no computan en la ocupación)", "contratos"]);
+    if (a.garajes_facturado_mes) k.push([eur(a.garajes_facturado_mes), "Garajes facturados mes (aparte)", "", "", "facturas"]);
+    if (a.renta_mensual != null) k.push([eur(a.renta_mensual), "Renta mensual", "", "", "recibos"], [eur(a.deuda_vencida), "Deuda vencida", "", "", "recibos"]);
+    if (a.ot_abiertas != null) k.push([`${a.ot_abiertas} · ${a.ot_urgentes} · ${a.ot_pendientes_cierre}`, "OT abiert. · urg. · cerrar", a.ot_urgentes ? "mal" : "", "Órdenes de trabajo: abiertas · urgentes · pendientes de cierre", "ordenes"]);
     const est = Object.entries(a.estados).map(([e, n]) => `${badge(e)} ${n}`).join(" ");
-    const clic = varios && conMapa.has(a.id);
-    return `<div class="card${clic ? " clic" : ""}" ${clic ? `data-abrir="${a.id}" tabindex="0" role="button" title="Abrir el plano de ${esc(a.nombre)}"` : ""}>${logoActivo(a.id)}<h3>${esc(a.nombre)}${clic ? '<span class="ver-plano">Ver plano →</span>' : ""}</h3><div class="sub" title="${esc(`${a.modalidad_nombre} · Gestiona ${a.sociedad} · Propiedad ${a.propietaria}`)}">${esc(a.modalidad_nombre)} · ${esc(a.sociedad)}</div>
+    const clic = conMapa.has(a.id);  // el plano: con su botón o pulsando en una zona en blanco de la tarjeta
+    return `<div class="card${clic ? " clic" : ""}" ${clic ? `data-abrir="${a.id}" title="Pulse en una zona en blanco o en «Ver plano» para abrir el plano de ${esc(a.nombre)}"` : ""}>${logoActivo(a.id)}<h3>${esc(a.nombre)}${clic ? `<button type="button" class="btn sm ver-plano" data-plano-btn="${a.id}" title="Abrir el plano del edificio de ${esc(a.nombre)}">🗺️ Ver plano del edificio</button>` : ""}</h3><div class="sub" title="${esc(`${a.modalidad_nombre} · Gestiona ${a.sociedad} · Propiedad ${a.propietaria}`)}">${esc(a.modalidad_nombre)} · ${esc(a.sociedad)}</div>
       ${a.ocupacion_hoy != null ? `<div class="bar"><i style="width:${Math.min(100, a.ocupacion_hoy)}%"></i></div>` : ""}
-      <div class="kpis">${k.map(([v, l, cls, tip]) => `<div class="kpi ${cls || ""}" title="${esc(tip || l)}"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("")}</div>
+      <div class="kpis">${k.map(([v, l, cls, tip, ir]) => {
+        const ok = ir && puedeIr(ir);
+        return `<div class="kpi ${cls || ""}${ok ? " ir" : ""}" ${ok ? `data-ir="${ir}" data-a="${a.id}" tabindex="0" role="button"` : ""} title="${esc((tip || l) + (ok ? ` · Pulse para abrir «${tituloVista(ir)}»` : ""))}"><b>${esc(v)}</b><span>${esc(l)}</span></div>`;
+      }).join("")}</div>
       <p class="estados">${est || '<span class="muted">Sin unidades dadas de alta</span>'}</p></div>`;
   }).join("")}</div></div>
     <aside class="panel-lateral"><section class="panel-agenda"><h3>📅 Agenda</h3><div id="agp"></div></section>${avisos.join("")}</aside></div>`;
   el.querySelectorAll("[data-abrir]").forEach((c) => {
-    const abrir = () => { S.plano = { asset: Number(c.dataset.abrir) }; go("plano"); };
-    c.onclick = abrir; c.onkeydown = (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), abrir());
+    c.onclick = (e) => {  // zona en blanco o botón «Ver plano»; las casillas llevan a su listado
+      if (e.target.closest("[data-ir]")) return;
+      S.plano = { asset: Number(c.dataset.abrir) }; go("plano");
+    };
+  });
+  el.querySelectorAll("[data-ir]").forEach((k) => {
+    const ir = () => { setAsset(k.dataset.a); if (k.dataset.ir === "plano") S.plano = { asset: Number(k.dataset.a) }; go(k.dataset.ir); };
+    k.onclick = (e) => { e.stopPropagation(); ir(); };
+    k.onkeydown = (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), e.stopPropagation(), ir());
   });
   el.querySelectorAll("[data-elegir]").forEach((b) => (b.onclick = () => {
     try { localStorage.setItem("pms_panel_plano", b.dataset.elegir); } catch {}
@@ -3458,6 +3469,9 @@ const allowed = (p) => !p || (p === "admin" ? S.me.admin_grupo : p === "informes
   : p === "personal" ? ["mantenimiento.ver", "limpieza.editar", "limpieza.confirmar_ot"].some(can)
   : p === "proveedores" ? verProveedores() : can(p));
 const TITLES = Object.fromEntries(MENU.flatMap(([, items]) => items.map(([id, t]) => [id, t])));
+const PERMISO_VISTA = Object.fromEntries(MENU.flatMap(([, items]) => items.map(([id, , p]) => [id, p])));
+const puedeIr = (vista) => vista in PERMISO_VISTA && allowed(PERMISO_VISTA[vista]);  // pantalla del menú visible
+const tituloVista = (vista) => TITLES[vista] || vista;
 
 // Menú lateral sin desplazamiento: grupos plegables. Si todo cabe en la altura de la pantalla se ven abiertos;
 // si no, solo «General» y el grupo de la pantalla actual (pulsando un título se abre ese y se cierran los demás).

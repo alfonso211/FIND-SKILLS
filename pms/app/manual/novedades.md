@@ -1,5 +1,8 @@
 # Novedades
 
+## 2026-10-07 · Versión 1.14 · Panel: cada casilla abre su listado
+- **Todos**: en la situación de cada activo del panel, **cada casilla lleva a su listado** (llegadas y salidas, contratos, facturas, recibos, órdenes de trabajo, unidades…). El plano se abre con el botón **«🗺️ Ver plano del edificio»** o pulsando en una zona en blanco de la tarjeta.
+
 ## 2026-10-07 · Versión 1.13 · Factura de servicios aparte y parte de limpieza ajustable
 - **Recepción**: los servicios (extras, limpieza contratada…) se facturan siempre en una **factura aparte** de la estancia. Al emitirlas se pueden **imprimir o enviar las dos** al cliente por correo o WhatsApp.
 - **Recepción**: antes de imprimir o enviar el parte de limpieza se puede **ordenar**, marcar **urgente**, añadir notas o **pasar una limpieza a otro día**.

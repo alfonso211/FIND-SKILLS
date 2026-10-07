@@ -8,7 +8,7 @@
 
 ## Qué ve en pantalla
 - **Menú de la izquierda**: solo aparece lo de su puesto y de su activo (Suite Florida, Suite Aeropuerto o Babilonia 35).
-- **Panel de control**: es la pantalla de inicio y cabe entera en la pantalla. Arriba, el **buscador** (documento, apartamento, cliente, teléfono, localizador, factura, orden de trabajo…) y el **plano por plantas** (si ve varios edificios, elija cuál con los botones de arriba; el programa recuerda el último). Pulse una planta para trabajar en ella. Debajo, la **situación de cada activo** en una franja.
+- **Panel de control**: es la pantalla de inicio y cabe entera en la pantalla. Arriba, el **buscador** (documento, apartamento, cliente, teléfono, localizador, factura, orden de trabajo…) y el **plano por plantas** (si ve varios edificios, elija cuál con los botones de arriba; el programa recuerda el último). Pulse una planta para trabajar en ella. Debajo, la **situación de cada activo** en una franja: **cada casilla abre su listado** (llegadas/salidas, contratos, facturas, recibos, órdenes de trabajo, unidades…; la flecha › lo indica) y el botón **«🗺️ Ver plano del edificio»** (o una zona en blanco de la tarjeta) abre el plano.
 - A la derecha, estrecha, su **agenda** y los **avisos importantes** con fondo de color (por ejemplo, facturas pendientes de cobro).
 - Las **listas** (reservas, facturas, gastos…) se desplazan dentro de su recuadro: la cabecera y los **botones de cada fila** quedan siempre a la vista.
 - El **menú de la izquierda** cabe siempre en la pantalla: si no caben todos los grupos, algunos se muestran plegados (▸). Pulse el título del grupo para abrirlo. El grupo de la pantalla en la que está queda siempre abierto.
