@@ -1,7 +1,11 @@
-"""Exportación de facturas emitidas y recibidas a INVERGESTION (especificación v1.0 del 6/10/2026).
+"""Exportación de facturas emitidas y recibidas a INVERGESTION (especificación v1.0 del 6/10/2026 y formato del
+paquete acordado con INVERGESTION el 7/10/2026).
 
-Dos CSV (UTF-8 con BOM, separador «;», fechas AAAA-MM-DD, importes con punto y 2 decimales) y, junto a cada uno,
-un .zip con los PDF de las facturas. Una fila por factura y tipo de IVA; el total se repite en cada fila.
+Un solo ZIP, sin ZIP dentro: los CSV en la raíz (UTF-8 sin BOM, fin de línea LF, separador «;», campos con «;»,
+comillas o saltos de línea entre comillas dobles, fechas AAAA-MM-DD, importes con punto y 2 decimales), un
+manifest.json (activo, periodo, filas de cada CSV y ruta y SHA-256 de cada PDF) y los PDF en pdf/emitidas/ y
+pdf/recibidas/. `archivo_pdf` lleva la ruta dentro del ZIP (vacío si la fila no tiene PDF). Una fila por factura
+y tipo de IVA; el total se repite en cada fila. Las líneas del concepto van separadas con «|».
 
 Qué facturas entran en un periodo (envío semanal, con reenvíos sin duplicados en INVERGESTION):
 - Emitidas: las emitidas en el periodo (día real de emisión: la fecha de la factura es el último día del mes) y
@@ -10,7 +14,9 @@ Qué facturas entran en un periodo (envío semanal, con reenvíos sin duplicados
 El PMS no calcula vencimientos ni estados: solo informa lo que tiene registrado.
 """
 import csv
+import hashlib
 import io
+import json
 import re
 import zipfile
 from datetime import date, datetime, time
@@ -113,12 +119,13 @@ def nombre_fichero(prefijo: str, activo: str, desde: date, hasta: date, ext: str
 
 
 def a_csv(columnas: list[str], filas: list[dict]) -> bytes:
+    """UTF-8 sin BOM, fin de línea LF; entre comillas dobles los campos con «;», comillas o saltos de línea."""
     out = io.StringIO()
-    w = csv.writer(out, delimiter=";", quotechar='"', quoting=csv.QUOTE_MINIMAL, lineterminator="\r\n")
+    w = csv.writer(out, delimiter=";", quotechar='"', quoting=csv.QUOTE_MINIMAL, lineterminator="\n")
     w.writerow(columnas)
     for f in filas:
         w.writerow(["" if f.get(c) is None else f.get(c) for c in columnas])
-    return ("﻿" + out.getvalue()).encode("utf-8")
+    return out.getvalue().encode("utf-8")
 
 
 def _limpio(s: str | None, largo: int = 200) -> str:
@@ -127,6 +134,31 @@ def _limpio(s: str | None, largo: int = 200) -> str:
 
 def _nombre_pdf(texto: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "-", texto).strip("-")
+
+
+DIR_EMITIDAS, DIR_RECIBIDAS = "pdf/emitidas/", "pdf/recibidas/"
+
+
+def numero_factura(f: Invoice) -> str:
+    """Nº de la factura emitida, el mismo que el nombre de su PDF: SF/00001/2026 -> SF-00001-2026."""
+    return _nombre_pdf(f.codigo.replace("/", "-"))
+
+
+def conceptos(textos: list[str]) -> str:
+    """Las líneas del concepto, separadas con «|» (sin «|» ni saltos de línea dentro de cada una)."""
+    return "|".join(t for t in (_limpio((x or "").replace("|", "/"), 120) for x in textos) if t)[:500]
+
+
+def pais_iso(*candidatos: str | None, nif_: str | None = None) -> tuple[str, bool]:
+    """Código ISO del país (obligatorio): el de la ficha; si no consta, el del NIF (español -> ES; intracomunitario
+    -> sus dos letras). (código, deducido) — deducido si no venía en la ficha."""
+    for c in candidatos:
+        if iso2(c):
+            return iso2(c), False
+    n = (nif_ or "").upper().replace(" ", "")
+    if n and not nif.tipo(n) and re.match(r"^[A-Z]{2}[0-9A-Z]", n) and not n.startswith("ES") and iso2(n[:2]):
+        return n[:2], True
+    return "ES", True
 
 
 # --------------------------------------------------------------------------- emitidas
@@ -153,7 +185,8 @@ def emitidas(db: Session, asset_ids: set[int], desde: date, hasta: date) -> tupl
         cliente = contactos.get(f.contact_id)
         rect = f.tipo == "rectificativa"
         original = originales.get(f.rectifica_id)
-        pdf = _nombre_pdf(f"{f.codigo}.pdf")
+        numero = numero_factura(f)
+        pdf = f"{DIR_EMITIDAS}{numero}.pdf"
         if f.cobro == "pendiente" or f.cobro == "anulada":
             cobrado, f_cobro = Decimal(0), None
         elif rect:  # devolución de lo cobrado con la original (si se llegó a cobrar)
@@ -166,12 +199,14 @@ def emitidas(db: Session, asset_ids: set[int], desde: date, hasta: date) -> tupl
             forma = "TRANSFERENCIA"
             avisos.append(f"{f.codigo}: sin forma de pago registrada; se envía TRANSFERENCIA")
         canal = "CONTRATO" if lease else CANALES.get((r.canal or "").lower(), (r.canal or "").upper()) if r else ""
-        pais = iso2(cliente.pais if cliente else None) or ("ES" if nif.tipo(f.cliente.get("nif") or "") else "")
+        pais, deducido = pais_iso(cliente.pais if cliente else None, nif_=f.cliente.get("nif"))
+        if deducido and not nif.tipo(f.cliente.get("nif") or ""):
+            avisos.append(f"{numero}: país del cliente sin indicar en su ficha; se envía {pais}")
         cab = {
             "activo": codigo_activo(f.asset), "nif_emisor": f.emisor.get("nif"), "serie": f.serie,
-            "numero": f"{f.numero:05d}/{f.anio}",
+            "numero": numero,
             "tipo_factura": "RECTIFICATIVA" if rect else "COMPLETA",
-            "numero_rectificada": f"{original.serie} {original.numero:05d}/{original.anio}" if original else "",
+            "numero_rectificada": numero_factura(original) if original else "",
             "fecha_expedicion": fecha(f.fecha_expedicion),
             "fecha_operacion": fecha(f.fecha_operacion) if f.fecha_operacion != f.fecha_expedicion else "",
             "cliente_nombre": _limpio(f.cliente.get("nombre")), "cliente_nif": f.cliente.get("nif") or "",
@@ -187,9 +222,8 @@ def emitidas(db: Session, asset_ids: set[int], desde: date, hasta: date) -> tupl
         }
         lineas = lineas_de(f)
         for g in desglose(lineas):
-            conceptos = [x["concepto"] for x in lineas if x["tipo_iva"] == g["tipo_iva"]]
-            filas.append({**cab, "concepto": _limpio(conceptos[0] if conceptos else f.concepto) +
-                          (f" (+{len(conceptos) - 1})" if len(conceptos) > 1 else ""),
+            textos = [x["concepto"] for x in lineas if x["tipo_iva"] == g["tipo_iva"]]
+            filas.append({**cab, "concepto": conceptos(textos or [f.concepto]),
                           "base": importe(g["base"]), "tipo_iva": porcentaje(g["tipo_iva"]),
                           "causa_exencion": (f.exencion or "") if g["tipo_iva"] == 0 else "",
                           "cuota_iva": importe(g["cuota"])})
@@ -217,17 +251,16 @@ def recibidas(db: Session, asset_ids: set[int], desde: date, hasta: date) -> tup
     for g in gastos:
         a, s, d = activos[g.asset_id], proveedores.get(g.supplier_id), docs.get(g.documento_id)
         prov_nif = (s.nif if s else "") or ""
-        pais = iso2(s.pais if s else None) or ("ES" if not prov_nif or nif.tipo(prov_nif) else "")
-        extranjero = bool(prov_nif) and not nif.tipo(prov_nif) and re.match(r"^[A-Z]{2}", prov_nif or "") \
-            and not prov_nif.upper().startswith("ES")
-        if extranjero and not pais:
-            pais = prov_nif[:2].upper()
+        pais, deducido = pais_iso(s.pais if s else None, nif_=prov_nif)
         numero = g.numero_factura or f"SN-{g.id}"
+        if deducido and not nif.tipo(prov_nif):
+            avisos.append(f"{_limpio(g.proveedor, 40)} nº {numero}: país del proveedor sin indicar en su ficha; "
+                          f"se envía {pais}")
         if not g.numero_factura:
             avisos.append(f"Gasto {g.id} ({_limpio(g.proveedor, 40)}, {g.fecha:%d/%m/%Y}): sin nº de factura; se envía {numero}")
         archivo = ""
         if d:  # siempre PDF: las fotos se convierten al empaquetar (zip_documentos)
-            archivo = _nombre_pdf(f"{prov_nif or 'SINNIF'}-{numero}.pdf")
+            archivo = DIR_RECIBIDAS + _nombre_pdf(f"{prov_nif or 'SINNIF'}-{numero}") + ".pdf"
             ficheros.append((archivo, d))
             if g.fecha == (d.subido or g.creado).date():
                 avisos.append(f"{_limpio(g.proveedor, 40)} nº {numero}: la fecha de la factura ({g.fecha:%d/%m/%Y}) es "
@@ -241,10 +274,10 @@ def recibidas(db: Session, asset_ids: set[int], desde: date, hasta: date) -> tup
         isp = "S" if Decimal(str(g.tipo_iva)) == 0 and pais and pais != "ES" else "N"
         filas.append({
             "activo": codigo_activo(a), "nif_receptor": a.company.cif, "proveedor_nombre": _limpio(g.proveedor),
-            "proveedor_nif": prov_nif, "proveedor_pais": pais if pais != "ES" else "", "proveedor_iban": "",
+            "proveedor_nif": prov_nif, "proveedor_pais": pais, "proveedor_iban": "",
             "numero": numero, "tipo_factura": "RECTIFICATIVA" if dinero(g.total) < 0 else "ORDINARIA",
             "numero_rectificada": "", "fecha_factura": fecha(g.fecha), "fecha_recepcion": fecha(d.subido if d else g.creado),
-            "concepto": _limpio(g.concepto), "categoria": CATEGORIAS.get(g.categoria, "OTROS"),
+            "concepto": conceptos((g.concepto or "").splitlines()), "categoria": CATEGORIAS.get(g.categoria, "OTROS"),
             "unidad": unidades.get(g.unit_id, ""), "base": importe(g.base), "tipo_iva": porcentaje(g.tipo_iva),
             "cuota_iva": importe(g.cuota), "inversion_sujeto_pasivo": isp,
             "retencion": importe(g.retencion) if g.retencion else "", "total": importe(liquido),
@@ -282,24 +315,81 @@ def validar(filas: list[dict], obligatorias: list[str], clave: str, campo_nif: s
 
 
 # --------------------------------------------------------------------------- paquete
-def zip_pdfs_emitidas(db: Session, pdfs: list[tuple]) -> bytes:
-    out = io.BytesIO()
-    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-        for nombre, f in pdfs:
-            original = db.get(Invoice, f.rectifica_id) if f.rectifica_id else None
-            z.writestr(nombre, factura_pdf.generar(f, f.asset, original))
-    return out.getvalue()
+class PaqueteIncompleto(ValueError):
+    """Algún `archivo_pdf` de los CSV no está en el paquete: no se genera (INVERGESTION no adjuntaría los PDF)."""
 
 
-def zip_documentos(ficheros: list[tuple]) -> bytes:
+def _pdfs_emitidas(db: Session, pdfs: list[tuple]) -> dict[str, bytes]:
+    out = {}
+    for ruta, f in pdfs:
+        original = db.get(Invoice, f.rectifica_id) if f.rectifica_id else None
+        out[ruta] = factura_pdf.generar(f, f.asset, original)
+    return out
+
+
+def _pdfs_recibidas(ficheros: list[tuple]) -> tuple[dict[str, bytes], list[str]]:
+    out, errores = {}, []
+    for ruta, d in ficheros:
+        if ruta in out:
+            continue
+        try:
+            out[ruta] = a_pdf(documentos.leer(d.fichero), d.mime)
+        except Exception as e:  # noqa: BLE001 — fichero perdido o ilegible: se informa y no se genera el paquete
+            errores.append(f"{ruta}: no se puede leer el documento «{d.nombre}» ({str(e)[:80]})")
+    return out, errores
+
+
+def documentos_ilegibles(ficheros: list[tuple]) -> list[str]:
+    """Documentos escaneados que no se pueden leer: la exportación no se generaría (falta su PDF)."""
+    out, vistos = [], set()
+    for ruta, d in ficheros:
+        if ruta in vistos:
+            continue
+        vistos.add(ruta)
+        try:
+            documentos.leer(d.fichero)
+        except Exception:  # noqa: BLE001
+            out.append(f"{ruta}: no se puede leer el documento «{d.nombre}»; la exportación no se generará "
+                       "hasta subirlo de nuevo")
+    return out
+
+
+def paquete(db: Session, datos: dict, activo: str, desde: date, hasta: date, pdf: bool = True) -> bytes:
+    """El ZIP para INVERGESTION. `datos`: {"emitidas"|"recibidas": (cod, filas, ficheros, avisos)}.
+    Comprueba antes que cada `archivo_pdf` de los CSV está en el paquete; si falta alguno, PaqueteIncompleto."""
+    ficheros: dict[str, bytes] = {}
+    errores: list[str] = []
+    csvs: dict[str, tuple[bytes, int]] = {}
+    for tipo, (cod, filas, adjuntos, _) in datos.items():
+        if pdf:
+            if tipo == "emitidas":
+                ficheros.update(_pdfs_emitidas(db, adjuntos))
+            else:
+                leidos, err = _pdfs_recibidas(adjuntos)
+                ficheros.update(leidos)
+                errores += err
+        else:
+            filas = [{**f, "archivo_pdf": ""} for f in filas]
+        columnas = COLUMNAS_EMITIDAS if tipo == "emitidas" else COLUMNAS_RECIBIDAS
+        csvs[nombre_fichero(tipo.upper(), cod, desde, hasta, "csv")] = (a_csv(columnas, filas), len(filas))
+        faltan = sorted({f["archivo_pdf"] for f in filas if f.get("archivo_pdf") and f["archivo_pdf"] not in ficheros})
+        errores += [f"{x}: figura en {tipo.upper()} pero no está en el paquete" for x in faltan
+                    if not any(e.startswith(x + ":") for e in errores)]
+    if errores:
+        raise PaqueteIncompleto("; ".join(errores[:20]) + (f" (y {len(errores) - 20} más)" if len(errores) > 20 else ""))
+    manifiesto = {
+        "formato": "INVERGESTION-PMS 1.1", "activo": activo, "desde": desde.isoformat(), "hasta": hasta.isoformat(),
+        "generado": datetime.now().isoformat(timespec="seconds"),
+        "csv": [{"fichero": n, "filas": filas} for n, (_, filas) in csvs.items()],
+        "pdf": [{"ruta": r, "sha256": hashlib.sha256(c).hexdigest(), "bytes": len(c)} for r, c in sorted(ficheros.items())],
+    }
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-        hechos = set()
-        for nombre, d in ficheros:
-            if nombre in hechos:
-                continue
-            hechos.add(nombre)
-            z.writestr(nombre, a_pdf(documentos.leer(d.fichero), d.mime))
+        for n, (contenido, _) in csvs.items():
+            z.writestr(n, contenido)
+        z.writestr("manifest.json", json.dumps(manifiesto, ensure_ascii=False, indent=2))
+        for r, c in sorted(ficheros.items()):
+            z.writestr(r, c)
     return out.getvalue()
 
 

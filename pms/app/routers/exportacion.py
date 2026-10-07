@@ -1,6 +1,4 @@
 """Exportación a INVERGESTION: facturas emitidas y recibidas en CSV, con sus PDF en un .zip junto a cada CSV."""
-import io
-import zipfile
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -63,28 +61,30 @@ def check(desde: date, hasta: date, activo: str | None = None, tipos: str = "emi
                                                                     for f in filas}.values()), 2),
                      "avisos": avisos[:200], "n_avisos": len(avisos),
                      "csv": ex.nombre_fichero(tipo.upper(), cod, desde, hasta, "csv")}
+        if tipo == "recibidas":  # los documentos escaneados tienen que poder leerse para ir en el paquete
+            faltan = ex.documentos_ilegibles(ficheros)
+            out[tipo]["avisos"] = faltan + out[tipo]["avisos"]
+            out[tipo]["n_avisos"] += len(faltan)
+            out[tipo]["bloquea"] = faltan
+    out["paquete"] = ex.nombre_fichero("INVERGESTION", (activo or "TODOS").upper(), desde, hasta, "zip")
     return out
 
 
 @router.get("/invergestion")
 def export(desde: date, hasta: date, activo: str | None = None, tipos: str = "emitidas,recibidas",
            pdf: bool = True, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    """Paquete .zip con, por cada tipo, su CSV y (si `pdf`) el .zip de PDF con el mismo nombre."""
+    """Un solo ZIP: CSV en la raíz, manifest.json y los PDF en pdf/emitidas/ y pdf/recibidas/. Si a alguna fila le
+    falta su PDF, no se genera (409) y se dice cuál."""
     datos = _datos(db, scope, desde, hasta, activo, tipos)
-    paquete = io.BytesIO()
     cod = activo.upper() if activo else "TODOS"
-    with zipfile.ZipFile(paquete, "w", zipfile.ZIP_DEFLATED) as z:
-        for tipo, (cod_t, filas, ficheros, _) in datos.items():
-            nombre = ex.nombre_fichero(tipo.upper(), cod_t, desde, hasta, "csv")
-            columnas = ex.COLUMNAS_EMITIDAS if tipo == "emitidas" else ex.COLUMNAS_RECIBIDAS
-            z.writestr(nombre, ex.a_csv(columnas, filas))
-            if pdf:
-                adjuntos = ex.zip_pdfs_emitidas(db, ficheros) if tipo == "emitidas" else ex.zip_documentos(ficheros)
-                z.writestr(nombre[:-4] + ".zip", adjuntos)
+    try:
+        contenido = ex.paquete(db, datos, cod, desde, hasta, pdf)
+    except ex.PaqueteIncompleto as e:
+        raise HTTPException(409, f"Exportación no generada: faltan PDF en el paquete. {e}") from e
     audit(db, scope.user, "exportar_invergestion", "facturas", None,
           {"desde": str(desde), "hasta": str(hasta), "activo": cod, "tipos": tipos, "pdf": pdf,
            **{t: len(v[1]) for t, v in datos.items()}})
     db.commit()
-    return Response(paquete.getvalue(), media_type="application/zip", headers={
+    return Response(contenido, media_type="application/zip", headers={
         "Content-Disposition": f'attachment; filename="{ex.nombre_fichero("INVERGESTION", cod, desde, hasta, "zip")}"',
         "Cache-Control": "no-store"})

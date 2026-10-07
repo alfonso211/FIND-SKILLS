@@ -8,7 +8,7 @@
 - **Ocupación**, **Producción**, **Morosidad**, **Costes de mantenimiento** y **Facturas pendientes de cobro** (con días pendientes y quién comprobó cada cobro).
 - **Encuesta del INE** de apartamentos turísticos.
 - **Programa anterior (SYADE)**: importar los listados de facturación y ver el resumen mensual.
-- **Exportar a INVERGESTION**: facturas emitidas y recibidas (CSV + PDF). **Envío semanal** con «Semana pasada»; pulse **Comprobar** antes de descargar.
+- **Exportar a INVERGESTION**: facturas emitidas y recibidas en **un solo ZIP** (CSV, manifest.json y los PDF en pdf/emitidas y pdf/recibidas). **Envío semanal** con «Semana pasada»; pulse **Comprobar** antes de descargar. Si a alguna factura le falta su PDF, el paquete **no se genera** y se indica cuál (vuelva a subir ese documento).
   - **Comprobar** avisa de las facturas recibidas cuya fecha coincide con el día en que se registraron: revise que sea la de la factura.
   - Todos los documentos van en **PDF** (las fotos se convierten) con el nombre exacto de la columna archivo_pdf.
 

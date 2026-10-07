@@ -2182,14 +2182,14 @@ function semanaPasada() {
 function exportarInvergestion() {
   const [d0, d1] = semanaPasada();
   const f = cerrarSolo(form("Exportar a INVERGESTION", [
-    { html: `<p>Genera los ficheros de la especificación de INVERGESTION: <b>EMITIDAS</b> y <b>RECIBIDAS</b> en CSV y, junto a cada uno, un .zip con los PDF de las facturas.</p>
+    { html: `<p>Genera <b>un solo ZIP</b> para INVERGESTION: los CSV de <b>EMITIDAS</b> y <b>RECIBIDAS</b>, el <b>manifest.json</b> y los PDF de las facturas en las carpetas <b>pdf/emitidas</b> y <b>pdf/recibidas</b>. Si falta el PDF de alguna factura, no se genera y se indica cuál.</p>
       <ul class="muted"><li>Emitidas: las <b>emitidas</b> en el periodo (aunque su fecha de factura sea el último día del mes) y las <b>cobradas</b> en el periodo, para informar el cobro.</li>
       <li>Recibidas: las de la cuenta de gastos con fecha de factura, registro o pago en el periodo.</li>
       <li>INVERGESTION actualiza las facturas que ya tiene: se pueden repetir periodos sin duplicar nada.</li></ul>` },
     { k: "desde", t: "Desde", type: "date", req: true, def: d0 }, { k: "hasta", t: "Hasta", type: "date", req: true, def: d1 },
     { k: "activo", t: "Activo", type: "select", req: true, def: "TODOS", options: [["TODOS", "Todos"], ["SFLORIDA", "Suite Florida"], ["SAEROPUERTO", "Suite Aeropuerto"], ["BABILONIA35", "C/ Babilonia 35"]] },
     { k: "emitidas", t: "Facturas emitidas", type: "checkbox", def: true }, { k: "recibidas", t: "Facturas recibidas", type: "checkbox", def: true },
-    { k: "pdf", t: "Incluir los PDF de las facturas (.zip)", type: "checkbox", def: true, wide: true },
+    { k: "pdf", t: "Incluir los PDF de las facturas", type: "checkbox", def: true, wide: true },
     { html: `<div class="toolbar"><button type="button" class="btn sm" data-p="semana">Semana pasada</button><button type="button" class="btn sm" data-p="mes">Este mes</button>
       <button type="button" class="btn sm" data-p="hist">Histórico 2026</button><span class="spacer"></span>
       <button type="button" class="btn" data-comprobar>Comprobar</button><button type="button" class="btn primary" data-bajar>Descargar ficheros</button></div><div data-res></div>` },
@@ -2204,13 +2204,15 @@ function exportarInvergestion() {
   $("[data-comprobar]", f).onclick = async () => {
     const q = v(); if (!q.tipos) return toast("Elija emitidas, recibidas o ambas", true);
     const r = await run(() => get("/api/exportacion/invergestion/comprobar", { desde: q.desde, hasta: q.hasta, activo: q.activo, tipos: q.tipos }));
-    $("[data-res]", f).innerHTML = Object.entries(r).map(([t, x]) => `<fieldset><legend>${t === "emitidas" ? "Facturas emitidas" : "Facturas recibidas"} · ${esc(x.csv)}</legend>
+    const paquete = r.paquete; delete r.paquete;
+    $("[data-res]", f).innerHTML = `<p>Paquete: <b>${esc(paquete || "")}</b></p>` + Object.entries(r).map(([t, x]) => `<fieldset><legend>${t === "emitidas" ? "Facturas emitidas" : "Facturas recibidas"} · ${esc(x.csv)}</legend>
       <p><b>${x.facturas}</b> factura(s) · ${x.filas} fila(s) · ${x.ficheros} PDF · total ${eur(x.total)}</p>
+      ${(x.bloquea || []).length ? `<p class="error"><b>No se generará el paquete:</b> falta el PDF de ${x.bloquea.length} factura(s). Vuelva a subir esos documentos.</p>` : ""}
       ${x.n_avisos ? `<p class="error">${x.n_avisos} aviso(s): INVERGESTION rechazaría esas filas hasta corregirlas.</p><ul class="muted">${x.avisos.map((a) => `<li>${esc(a)}</li>`).join("")}</ul>` : '<p class="ok">✔ Sin avisos: cumple la especificación.</p>'}</fieldset>`).join("");
   };
   $("[data-bajar]", f).onclick = () => {
     const q = v(); if (!q.tipos) return toast("Elija emitidas, recibidas o ambas", true);
-    toast("Preparando los ficheros…");
+    toast("Preparando el paquete…");
     run(() => download("GET", "/api/exportacion/invergestion?" + new URLSearchParams(q)));
   };
 }
