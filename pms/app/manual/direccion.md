@@ -38,4 +38,5 @@
 
 ## Seguridad y continuidad
 - Copia de seguridad **antes de cada actualización** y copia diaria **fuera del servidor** (Google Drive).
+- **Mantenimiento diario a las 06:00**: revisa servidor, copias, base de datos, documentos, correo y seguridad; arregla solo lo que puede y, si hay un fallo grave, envía un **correo URGENTE** al director técnico. Los lunes, resumen semanal.
 - Si el programa se bloquea, **se reinicia solo** en 1-3 minutos y deja un informe con la causa.

@@ -77,12 +77,13 @@ def remitente() -> str | None:
 
 
 def enviar(destino: str, asunto: str, texto: str, html: str,
-           adjuntos: list[tuple[str, bytes, str]] | None = None) -> None:
-    """Envía un correo. `adjuntos`: [(nombre, contenido, tipo MIME)]. Lanza excepción si falla."""
+           adjuntos: list[tuple[str, bytes, str]] | None = None, urgente: bool = False) -> None:
+    """Envía un correo. `adjuntos`: [(nombre, contenido, tipo MIME)]. `urgente`: prioridad alta.
+    Lanza excepción si falla."""
     if not configurado():
         raise RuntimeError("Correo no configurado (falta PMS_SMTP_HOST en el servidor)")
     if settings.smtp_host == "memoria":
-        BANDEJA.append({"para": destino, "asunto": asunto, "texto": texto, "html": html,
+        BANDEJA.append({"para": destino, "asunto": asunto, "texto": texto, "html": html, "urgente": urgente,
                         "adjuntos": [(n, len(c), m) for n, c, m in adjuntos or []]})
         return
     msg = EmailMessage()
@@ -90,6 +91,9 @@ def enviar(destino: str, asunto: str, texto: str, html: str,
     msg["To"] = destino
     msg["Subject"] = asunto
     msg["Message-ID"] = make_msgid(domain=(remitente() or "pms").split("@")[-1])
+    if urgente:
+        msg["X-Priority"] = "1 (Highest)"
+        msg["Importance"] = "High"
     msg.set_content(texto)
     msg.add_alternative(html, subtype="html")
     for nombre, contenido, mime in adjuntos or []:
