@@ -572,3 +572,11 @@ dialog { max-height: 94vh; overflow: auto; }
   .sidebar.open { transform: none; box-shadow: 20px 0 60px rgba(0, 0, 0, .4); }
   .menu-btn { display: inline-block; }
 }
+/* menú lateral: grupos plegables, sin desplazamiento */
+nav .grupo > .group { display: flex; align-items: center; width: 100%; background: none; border: 0; cursor: pointer; text-align: left; font-family: inherit; }
+nav .grupo > .group:hover { color: #f0d79a; }
+nav .group .flecha { margin-left: auto; font-size: 10px; transition: transform .15s; opacity: .7; }
+nav .grupo.cerrado > .items { display: none; }
+nav .grupo.cerrado .flecha { transform: rotate(-90deg); }
+nav .grupo.cerrado > .group { padding-bottom: 6px; }
+nav .grupo.fijo { margin-top: 8px; border-top: 1px solid rgba(201, 164, 90, .16); padding-top: 6px; }
