@@ -1219,10 +1219,10 @@ function historicoHtml(c) {
       <tr><td>Total con IVA</td><td class="num">${eur(h.total)}</td></tr>
       ${h.fianzas_cobradas || h.fianzas_devueltas ? `<tr><td>Fianzas cobradas / devueltas</td><td class="num">${eur(h.fianzas_cobradas)} / ${eur(h.fianzas_devueltas)}</td></tr>` : ""}
     </tbody></table></div>
-    <details><summary>Ver las ${h.detalle.length} líneas</summary><div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Factura</th><th>Localizador</th><th class="num">Base</th><th class="num">Total</th><th class="num">Fianza</th></tr></thead><tbody>
-      ${h.detalle.map((x) => `<tr><td>${fdate(x.fecha)}</td><td>${HIST_TIPO[x.tipo] || esc(x.tipo)}</td><td>${esc(x.factura)}</td><td>${esc(x.localizador || "")}</td><td class="num">${eur(x.base)}</td><td class="num">${eur(x.total)}</td><td class="num">${x.fianza ? eur(x.fianza) : "—"}</td></tr>`).join("")}
+    <details><summary>Ver las ${h.detalle.length} líneas</summary><div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Factura</th><th>Localizador</th><th class="num">Base</th><th class="num">Total</th><th class="num">Fianza</th><th>Enlazado por</th></tr></thead><tbody>
+      ${h.detalle.map((x) => `<tr><td>${fdate(x.fecha)}</td><td>${HIST_TIPO[x.tipo] || esc(x.tipo)}</td><td>${esc(x.factura)}</td><td>${esc(x.localizador || "")}</td><td class="num">${eur(x.base)}</td><td class="num">${eur(x.total)}</td><td class="num">${x.fianza ? eur(x.fianza) : "—"}</td><td>${{ documento: "DNI/NIF", nombre: "nombre", reserva: "reserva" }[x.enlace] || ""}</td></tr>`).join("")}
     </tbody></table></div></details>
-    <p class="muted">Datos del programa anterior, enlazados por el DNI/NIF del cliente. No son facturas del PMS: la facturación válida para Hacienda empieza el 1 de enero de 2027.</p></fieldset>`;
+    <p class="muted">Datos del programa anterior, enlazados por el DNI/NIF del cliente o, si no lo tiene, por su nombre y apellidos. No son facturas del PMS: la facturación válida para Hacienda empieza el 1 de enero de 2027.</p></fieldset>`;
 }
 async function editGuest(id, tipo = "huesped", onSaved) {
   const c = await get(`/api/terceros/${id}`).catch(() => null);
@@ -2419,7 +2419,7 @@ async function importarHistorico(recargar) {
       const bloques = prev.map((p, i) => p.error ? `<div class="aviso-faltan"><b>${esc(fichs[i].name)}</b>: ${esc(p.error)}</div>` : `
         <fieldset><legend>${esc(p.tipo_nombre)} · ${esc(fichs[i].name)}</legend>
         <p>${p.cuadra ? '<span class="badge b-vigente">✔ cuadra con los totales del listado</span>' : '<span class="badge b-cancelada">no cuadra</span>'}
-          ${p.registros} registros (${p.nuevas} nuevos, ${p.actualizadas} a actualizar) · ${fdate(p.desde)} → ${fdate(p.hasta)}${p.con_reserva ? ` · ${p.con_reserva} enlazados con su reserva` : ""}${p.clientes ? ` · ${p.con_cliente} registro(s) de ${p.clientes} cliente(s) del PMS (por DNI/NIF)` : ""}</p>
+          ${p.registros} registros (${p.nuevas} nuevos, ${p.actualizadas} a actualizar) · ${fdate(p.desde)} → ${fdate(p.hasta)}${p.con_reserva ? ` · ${p.con_reserva} enlazados con su reserva` : ""}${p.clientes ? ` · ${p.con_cliente} registro(s) de ${p.clientes} cliente(s) del PMS${p.por_nombre ? ` (${p.por_nombre} por nombre)` : ""}` : ""}</p>
         <div class="table-wrap"><table><thead><tr><th></th>${Object.keys(p.leido).map((k) => `<th class="num">${HIST_CMP[k] || k}</th>`).join("")}</tr></thead><tbody>
           <tr><td>Leído</td>${Object.entries(p.leido).map(([k, v]) => `<td class="num">${k === "registros" ? v : eur(v)}</td>`).join("")}</tr>
           ${p.esperado ? `<tr><td>Totales del listado</td>${Object.keys(p.leido).map((k) => `<td class="num">${p.esperado[k] == null ? "—" : k === "registros" ? p.esperado[k] : eur(p.esperado[k])}</td>`).join("")}</tr>` : ""}
@@ -2446,7 +2446,7 @@ async function resumenHistorico() {
     const celda = (k, v) => `<td class="num">${k === "n" ? (v || 0) : v ? eur(v) : "—"}</td>`;
     const mes = (m) => { const [y, mm] = m.split("-"); return `${MESES[Number(mm) - 1]} ${y}`; };
     return `<h4>${esc(a.activo)}</h4><p class="muted">${fdate(a.desde)} → ${fdate(a.hasta)} · importado ${fdt(a.importado)} · ${Object.entries(a.registros).map(([t, n]) => `${n} ${label(t)}`).join(" · ")}</p>
-      <p>${a.clientes.con_cliente} de ${a.clientes.facturas} facturas y abonos enlazados por DNI/NIF con <b>${a.clientes.clientes} cliente(s)</b> del PMS: sus importes se ven en la ficha de cada cliente.</p>
+      <p>${a.clientes.con_cliente} de ${a.clientes.facturas} facturas y abonos enlazados con <b>${a.clientes.clientes} cliente(s)</b> del PMS (por DNI/NIF o, si no lo tienen, por nombre${a.clientes.por_nombre ? `: ${a.clientes.por_nombre}` : ""}): sus importes se ven en la ficha de cada cliente.</p>
       <div class="table-wrap"><table><thead><tr><th>Mes</th>${col.map(([, t]) => `<th class="num">${t}</th>`).join("")}</tr></thead><tbody>
       ${a.meses.map((m) => `<tr><td>${mes(m.mes)}</td>${col.map(([k]) => celda(k, m[k])).join("")}</tr>`).join("")}
       <tr class="total"><td><b>Total</b></td>${col.map(([k]) => `<td class="num"><b>${k === "n" ? tot[k] : eur(tot[k])}</b></td>`).join("")}</tr></tbody></table></div>

@@ -5,7 +5,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 import re
@@ -38,32 +38,69 @@ def claves_cliente(doc: str | None) -> set[str]:
     return {k for k in out if k and len(k) >= 5}
 
 
-def clientes_por_clave(db: Session, asset_ids: list[int]) -> dict[str, int]:
-    """Clave del documento -> cliente de esos activos (el huésped primero y, si hay varias fichas, la más antigua)."""
-    out: dict[str, int] = {}
-    filas = db.execute(select(Contact.id, Contact.documento_num, Contact.tipo).where(
-        Contact.asset_id.in_(asset_ids or [-1]), Contact.documento_num.isnot(None))
-        .order_by((Contact.tipo != "huesped"), Contact.id)).all()
-    for cid, doc, _ in filas:
-        for k in claves_cliente(doc):
-            out.setdefault(k, cid)
-    return out
+FORMAS_SOCIALES = {"SL", "SA", "SLU", "SAU", "SLL", "SLP", "SC", "CB", "SCOOP", "SLNE"}
+
+
+def clave_nombre(*partes: str | None) -> str | None:
+    """Nombre sin tildes, signos ni orden: «GARCÍA LÓPEZ, ANA» y «Ana García López» dan la misma clave. Con una
+    sola palabra no se cruza (demasiado ambiguo), salvo una empresa con su forma social."""
+    texto = re.sub(r"\b(\w) (?=\w\b)", r"\1", nif.nombre_clave(*partes))  # «S L U» -> «SLU»
+    palabras = texto.split()
+    empresa = bool(palabras) and palabras[-1] in FORMAS_SOCIALES
+    if empresa:  # «EMPRESA, S.L.» y «Empresa SL» son la misma
+        palabras = palabras[:-1]
+    palabras.sort()
+    return " ".join(palabras) if len(palabras) >= 2 or (empresa and palabras) else None
+
+
+class Cruce:
+    """Clientes del PMS de unos activos para enlazar las líneas del listado: primero por DNI/NIF y, si no, por
+    nombre y apellidos cuando el nombre corresponde a un único cliente (dos fichas con el mismo nombre no se usan)."""
+
+    def __init__(self, db: Session, asset_ids: list[int]):
+        self.docs: dict[str, int] = {}
+        self.docs_de: dict[int, set[str]] = {}
+        self.nombres: dict[str, int | None] = {}
+        socs = select(Asset.company_id).where(Asset.id.in_(asset_ids or [-1]))
+        filas = db.execute(select(Contact.id, Contact.documento_num, Contact.nombre, Contact.apellidos).where(
+            or_(Contact.asset_id.in_(asset_ids or [-1]), Contact.asset_id.is_(None) & Contact.company_id.in_(socs)))
+            .order_by(Contact.asset_id.is_(None), (Contact.tipo != "huesped"), Contact.id)).all()
+        for cid, doc, nombre, apellidos in filas:
+            self.docs_de[cid] = claves_cliente(doc)
+            for k in self.docs_de[cid]:
+                self.docs.setdefault(k, cid)
+            k = clave_nombre(nombre, apellidos)
+            if k:
+                self.nombres[k] = cid if self.nombres.get(k, cid) == cid else None
+
+    def cliente(self, nif_: str | None, nombre: str | None) -> tuple[int | None, str | None]:
+        """(cliente, «documento» | «nombre») o (None, None)."""
+        k = clave(nif_)
+        if k and k in self.docs:
+            return self.docs[k], "documento"
+        cid = self.nombres.get(clave_nombre(nombre) or "")
+        if not cid or (k and self.docs_de.get(cid)):  # mismo nombre pero el cliente tiene otro documento
+            return None, None
+        return cid, "nombre"
 
 
 def del_cliente(db: Session, c: Contact) -> dict | None:
-    """Facturación del programa anterior de un cliente del PMS: por su documento (NIF del listado) o por sus
-    reservas (las fianzas devueltas no traen NIF). Solo para el control de producción."""
+    """Facturación del programa anterior de un cliente del PMS: por su documento (NIF del listado), por su nombre
+    (ver Cruce) o por sus reservas. Solo para el control de producción."""
     if c.asset_id:
         activos = [c.asset_id]
     else:
         activos = list(db.scalars(select(Asset.id).where(Asset.company_id == c.company_id)))
-    claves = claves_cliente(c.documento_num)
     reservas = set(db.scalars(select(Reservation.id).where(Reservation.guest_id == c.id)))
-    if not claves and not reservas:
-        return None
-    filas = [x for x in db.scalars(select(ExternalInvoice).where(ExternalInvoice.asset_id.in_(activos or [-1]))
-                                   .order_by(ExternalInvoice.fecha.desc(), ExternalInvoice.id.desc()))
-             if (x.nif and clave(x.nif) in claves) or (x.reservation_id and x.reservation_id in reservas)]
+    cruce = Cruce(db, activos)
+    filas, enlace = [], {}
+    for x in db.scalars(select(ExternalInvoice).where(ExternalInvoice.asset_id.in_(activos or [-1]))
+                        .order_by(ExternalInvoice.fecha.desc(), ExternalInvoice.id.desc())):
+        cid, como = cruce.cliente(x.nif, x.cliente)
+        como = como if cid == c.id else ("reserva" if x.reservation_id and x.reservation_id in reservas else None)
+        if como:
+            filas.append(x)
+            enlace[x.id] = como
     if not filas:
         return None
     fact = [x for x in filas if x.tipo != "fianza_devuelta"]
@@ -77,7 +114,7 @@ def del_cliente(db: Session, c: Contact) -> dict | None:
             "desde": min(x.fecha for x in filas).isoformat(), "hasta": max(x.fecha for x in filas).isoformat(),
             "detalle": [{"tipo": x.tipo, "factura": f"{x.serie} {x.numero}", "fecha": x.fecha.isoformat(),
                          "localizador": x.localizador, "base": float(x.base), "total": float(x.total),
-                         "fianza": float(x.fianza)} for x in filas]}
+                         "fianza": float(x.fianza), "enlace": enlace[x.id]} for x in filas]}
 
 
 def _json(d: dict) -> dict:
@@ -107,14 +144,15 @@ def import_file(fichero: UploadFile = File(...), asset_id: int = Form(...), conf
             Unit.asset_id == asset_id, Reservation.localizador.in_({f["localizador"] for f in filas if f["localizador"]}
                                                                    or {"-"}))).all())
     nuevas = sum(1 for f in filas if (r["tipo"], f["serie"], f["numero"]) not in previas)
-    por_clave = clientes_por_clave(db, [asset_id])
-    con_cliente = {por_clave[clave(f["nif"])] for f in filas if f["nif"] and clave(f["nif"]) in por_clave}
+    cruce = Cruce(db, [asset_id])
+    enlaces = [cruce.cliente(f["nif"], f["cliente"]) for f in filas]
     resumen = {"tipo": r["tipo"], "tipo_nombre": importacion_syade.TIPOS[r["tipo"]], "registros": len(filas),
                "nuevas": nuevas, "actualizadas": len(filas) - nuevas, "cuadra": r["cuadra"],
                "leido": _json(r["leido"]), "esperado": _json(r["esperado"]) if r["esperado"] else None,
                "avisos": r["avisos"], "con_reserva": sum(1 for f in filas if f["localizador"] in reservas),
-               "con_cliente": sum(1 for f in filas if f["nif"] and clave(f["nif"]) in por_clave),
-               "clientes": len(con_cliente),
+               "con_cliente": sum(1 for cid, _ in enlaces if cid),
+               "por_nombre": sum(1 for _, como in enlaces if como == "nombre"),
+               "clientes": len({cid for cid, _ in enlaces if cid}),
                "desde": min((f["fecha"] for f in filas), default=None),
                "hasta": max((f["fecha"] for f in filas), default=None)}
     if not confirmar:
@@ -176,13 +214,15 @@ def summary(asset_id: int | None = None, scope: Scope = Depends(get_scope), db: 
         meses = mensual(db, [aid], ini, fin)
         tipos = dict(db.execute(select(ExternalInvoice.tipo, func.count()).where(ExternalInvoice.asset_id == aid)
                                 .group_by(ExternalInvoice.tipo)).all())
-        por_clave = clientes_por_clave(db, [aid])
-        nifs = [clave(n) for n in db.scalars(select(ExternalInvoice.nif).where(
-            ExternalInvoice.asset_id == aid, ExternalInvoice.tipo != "fianza_devuelta"))]
-        enlazadas = [por_clave[k] for k in nifs if k in por_clave]
+        cruce = Cruce(db, [aid])
+        lineas = db.execute(select(ExternalInvoice.nif, ExternalInvoice.cliente).where(
+            ExternalInvoice.asset_id == aid, ExternalInvoice.tipo != "fianza_devuelta")).all()
+        enlaces = [cruce.cliente(n, nom) for n, nom in lineas]
+        enlazadas = [cid for cid, _ in enlaces if cid]
         out.append({"asset_id": aid, "activo": nombres.get(aid), "desde": ini.isoformat(), "hasta": fin.isoformat(),
                     "importado": importado.isoformat(timespec="minutes") if importado else None, "registros": tipos,
-                    "clientes": {"facturas": len(nifs), "con_cliente": len(enlazadas), "clientes": len(set(enlazadas))},
+                    "clientes": {"facturas": len(lineas), "con_cliente": len(enlazadas), "clientes": len(set(enlazadas)),
+                                 "por_nombre": sum(1 for _, como in enlaces if como == "nombre")},
                     "meses": [{"mes": m, **{k: round(v, 2) for k, v in d.items()},
                                "produccion": round(d.get("base", 0), 2)}
                               for (_, m), d in sorted(meses.items())]})

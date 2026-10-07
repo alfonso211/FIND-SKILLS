@@ -1,5 +1,8 @@
 # Novedades
 
+## 2026-10-07 · Versión 1.18 · SYADE: enlace también por nombre del cliente
+- **Dirección**: si el cliente no tiene DNI/NIF en el PMS, la facturación de SYADE se enlaza por su **nombre y apellidos** (sin importar tildes, mayúsculas ni el orden; en empresas, «S.L.» o «SL» da igual). Si hay dos fichas con el mismo nombre, no se enlaza con ninguna. En la ficha se indica cómo se enlazó cada línea.
+
 ## 2026-10-07 · Versión 1.17 · Importes de SYADE en la ficha del cliente
 - **Dirección**: la facturación importada de SYADE se enlaza por **DNI/NIF** con los clientes del PMS. En la **ficha del cliente** se ven sus facturas, abonos, producción y fianzas del programa anterior. Solo es control de producción: no son facturas del PMS.
 
