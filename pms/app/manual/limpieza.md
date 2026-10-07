@@ -10,6 +10,7 @@
   - **Contratadas** por el cliente en su reserva (según el día y la periodicidad que eligió).
   - **Extra**: las que añade recepción (repaso, a fondo…).
   - **De días anteriores**: lo que no se validó sigue en el parte, con «pendiente desde…».
+- Recepción puede ordenar el parte, marcar urgencias o pasar una limpieza a otro día antes de enviarlo. Las **órdenes de limpieza urgentes** del día llegan aparte (impresas o por WhatsApp/correo) y van las primeras.
 - **Imprimir PDF** o **Enviar** (WhatsApp o correo, al personal o a otro número): el Excel del día queda en **Documentos recibidos**.
 - Al terminar cada limpieza, avise a recepción: pulsa **Hecha** y sale del parte. Si es de salida, el apartamento queda **disponible**.
 

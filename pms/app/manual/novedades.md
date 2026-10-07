@@ -1,5 +1,10 @@
 # Novedades
 
+## 2026-10-07 · Versión 1.13 · Factura de servicios aparte y parte de limpieza ajustable
+- **Recepción**: los servicios (extras, limpieza contratada…) se facturan siempre en una **factura aparte** de la estancia. Al emitirlas se pueden **imprimir o enviar las dos** al cliente por correo o WhatsApp.
+- **Recepción**: antes de imprimir o enviar el parte de limpieza se puede **ordenar**, marcar **urgente**, añadir notas o **pasar una limpieza a otro día**.
+- **Recepción y limpieza**: **orden de limpieza urgente** durante el día, que se imprime o se envía al momento.
+
 ## 2026-10-07 · Versión 1.12 · Limpieza de salida solo tras el check-out
 - **Recepción y limpieza**: la limpieza por salida entra en el parte **cuando recepción hace el check-out**. Ya no se prevé por la fecha de salida, porque el cliente puede renovar.
 

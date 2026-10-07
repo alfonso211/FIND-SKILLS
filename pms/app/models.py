@@ -738,6 +738,9 @@ class CleaningTask(Base):
     reservation_id: Mapped[int | None] = mapped_column(ForeignKey("reservas.id"), index=True)
     clave: Mapped[str | None] = mapped_column(String(60), unique=True)  # evita duplicar las generadas solas
     nota: Mapped[str | None] = mapped_column(String(300))
+    # recepción ordena el parte del día y marca lo urgente antes de imprimirlo o enviarlo
+    orden: Mapped[int | None] = mapped_column(Integer)
+    urgente: Mapped[bool] = mapped_column(Boolean, default=False)
     estado: Mapped[str] = mapped_column(String(20), default="pendiente")  # pendiente | hecha | anulada
     creada: Mapped[datetime] = mapped_column(DateTime, default=_now)
     creada_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))

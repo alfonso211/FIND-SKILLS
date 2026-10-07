@@ -959,7 +959,7 @@ function fechasLimpieza(p, ent, sal) {  // igual que en el servidor: dentro de l
 function extrasHtml(r = null) {
   const fact = (r?.extras || []).filter((e) => e.factura);
   return `${fact.length ? `<p class="muted">Ya facturado: ${fact.map((e) => `${esc(e.concepto)} (${esc(e.factura)})`).join(" · ")}</p>` : ""}
-    ${serviciosHtml("Servicios extra que pide el cliente (plaza extra, toallas…): van a la factura de la estancia")}
+    ${serviciosHtml("Servicios extra que pide el cliente (plaza extra, toallas…): se facturan aparte de la estancia")}
     <fieldset class="limpieza-plan"><legend>Limpieza contratada</legend>
       <label class="check"><input type="checkbox" data-lp-on> El cliente contrata limpieza durante la estancia</label>
       <div data-lp style="display:none"><div class="grid">
@@ -1025,20 +1025,44 @@ function facturarExtras(r, reload) {
     { k: "forma_pago", t: "Forma de pago", type: "select", options: kv(S.cat.formas_pago) },
   ], {}, async (d) => {
     const x = await post(`/api/turistico/reservas/${r.id}/extras/factura`, clean(d));
-    toast(`Factura ${x.factura.codigo} emitida`); reload && reload(); await descargarFactura(x.factura.id);
+    toast(`Factura ${x.factura.codigo} emitida`); reload && reload(); setTimeout(() => facturasEmitidas(x), 0);
   }, "Emitir factura");
+}
+// Facturas recién emitidas (la de la estancia y, aparte, la de servicios): imprimir o enviar al cliente
+async function facturasEmitidas(resp, despues = null) {
+  const fs = resp.facturas || (resp.factura ? [resp.factura] : []);
+  if (!fs.length) return despues && despues();
+  const g = resp.guest_id ? await get(`/api/terceros/${resp.guest_id}`).catch(() => ({})) : {};
+  const varias = fs.length > 1;
+  const f = form(varias ? "Facturas emitidas: estancia y servicios" : `Factura ${fs[0].codigo} emitida`, [
+    { html: `${varias ? '<p class="muted">La estancia y los servicios van en facturas separadas (control de la gestoría).</p>' : ""}
+      <ul class="envios">${fs.map((x) => `<li><b>${esc(x.codigo)}</b> · ${x.tipo === "servicios" ? "Servicios" : "Estancia"}${x.total != null ? " · " + eur(x.total) : ""}${x.cobro === "pendiente" ? ' <span class="badge b-pendiente">pendiente de cobro</span>' : ""}
+        <button type="button" class="btn sm" data-imp="${x.id}">Imprimir</button></li>`).join("")}</ul>
+      ${varias ? '<button type="button" class="btn" data-todas>Imprimir las dos</button>' : ""}<h4>Enviar al cliente</h4>` },
+    { k: "canal", t: "Enviar por", type: "select", options: [["email", "Correo (con los PDF)"], ["whatsapp", "WhatsApp (enlace de descarga, 7 días)"]], def: g.email ? "email" : "whatsapp" },
+    { k: "email", t: "Correo del cliente", type: "email", def: g.email || "" }, { k: "telefono", t: "Móvil del cliente", def: g.telefono || "" },
+  ], {}, async (d) => {
+    const r = await post("/api/facturas/enviar", { factura_ids: fs.map((x) => x.id), canal: d.canal, email: d.email || null, telefono: d.telefono || null });
+    if (r.whatsapp) window.open(r.whatsapp, "_blank", "noopener");
+    toast(r.canal === "email" ? `Enviada${varias ? "s" : ""} por correo a ${r.destino}` : "WhatsApp abierto con el mensaje: pulse «Enviar»");
+    if (despues) setTimeout(despues, 0);
+  }, varias ? "Enviar las dos" : "Enviar");
+  f.querySelectorAll("[data-imp]").forEach((b) => (b.onclick = () => descargarFactura(Number(b.dataset.imp))));
+  if ($("[data-todas]", f)) $("[data-todas]", f).onclick = async () => { for (const x of fs) await descargarFactura(x.id); };
+  $("#fCancel").textContent = despues ? "No enviar y continuar" : "Cerrar";
+  $("#fCancel").onclick = () => { $("#modal").close(); if (despues) despues(); };
 }
 // sinCobro: se factura ya y la factura queda «pendiente de cobro» (renovaciones y reservas que pagan por transferencia)
 function cobroForm(titulo, pendiente, url, reload, assetId, sinCobro = false, despues = null, reserva = null) {
   const pendExtras = (reserva?.extras || []).filter((e) => !e.factura);
   const f = form(titulo, [
     ...(pendExtras.length ? [{ html: `<p class="aviso-amarillo">Servicios extra pedidos por el cliente: ${pendExtras.map((e) => `${esc(e.concepto)} (${e.cantidad} × ${eur(e.precio)})`).join(" · ")} · <b>${eur(reserva.extras_pendientes)}</b></p>` },
-      { k: "incluir_extras", t: "Incluirlos en esta factura", type: "checkbox", def: true, wide: true }] : []),
+      { k: "incluir_extras", t: "Facturarlos ahora (en una factura de servicios aparte de la estancia)", type: "checkbox", def: true, wide: true }] : []),
     ...(sinCobro ? [{ html: '<p class="aviso-faltan">La factura se emite <b>sin cobrar</b>: queda <b>pendiente de cobro</b>, recepción la revisa cada día y la marca <b>cobrada</b> cuando llegue la transferencia (Facturas emitidas → Cobrada).</p>' }] : []),
     { k: "importe", t: sinCobro ? "Importe a facturar € (IVA incluido)" : pendiente > 0 ? "Importe cobrado € (IVA incluido)" : "Importe cobrado € (nada pendiente)", type: "number", req: true },
     ...(sinCobro ? [] : [{ k: "fecha_pago", t: "Fecha del cobro", type: "date", def: today() }]),
     { k: "forma_pago", t: sinCobro ? "Forma de pago prevista" : "Forma de pago", type: "select", options: kv(S.cat.formas_pago), def: sinCobro ? "transferencia" : undefined },
-    ...(assetId ? [{ html: serviciosHtml("Servicios en la misma factura (limpieza, aparcamiento…)") }] : []),
+    ...(assetId ? [{ html: serviciosHtml("Servicios (limpieza, aparcamiento…): se emite una factura de servicios aparte") }] : []),
     { k: "otra", t: "Facturar a una empresa u otra persona (no al cliente)", type: "checkbox", wide: true },
     { k: "fa_nombre", t: "Razón social / nombre" }, { k: "fa_nif", t: "CIF / NIF" }, { k: "fa_domicilio", t: "Domicilio fiscal completo", wide: true },
     { html: `<p class="muted">${sinCobro ? "Se emite" : "Al registrar el cobro se emite"} la factura con el siguiente número de la serie del activo y se descarga en PDF. Una factura emitida no se puede modificar: si hay un error, Administración emite una rectificativa.</p>` },
@@ -1049,10 +1073,10 @@ function cobroForm(titulo, pendiente, url, reload, assetId, sinCobro = false, de
     const soloExtras = !body.importe && !body.servicios.length && body.incluir_extras;  // nada más que los extras
     const r = await post(soloExtras ? url.replace(/\/cobro$/, "/extras/factura") : sinCobro ? url.replace(/\/cobro$/, "/facturar") : url,
       clean(soloExtras ? { cobrado: !sinCobro, fecha_pago: d.fecha_pago, forma_pago: d.forma_pago, facturar_a: body.facturar_a } : body));
-    toast(sinCobro ? `Factura ${r.factura.codigo} emitida · pendiente de cobro` : `Cobro registrado · Factura ${r.factura.codigo}`);
+    const codigos = (r.facturas || [r.factura]).map((x) => x.codigo).join(" y ");
+    toast(sinCobro ? `Factura ${codigos} emitida · pendiente de cobro` : `Cobro registrado · Factura ${codigos}`);
     reload && reload();
-    await descargarFactura(r.factura.id);
-    if (despues) setTimeout(despues, 0);
+    setTimeout(() => facturasEmitidas(r, despues), 0);
   }, sinCobro ? "Emitir factura pendiente de cobro" : "Registrar cobro y facturar");
   const sync = () => f.querySelectorAll('[name^="fa_"]').forEach((i) => {
     i.closest("label").style.display = f.elements.otra.checked ? "" : "none"; i.required = f.elements.otra.checked;
@@ -1444,9 +1468,8 @@ async function newReservation(reload, fija) {  // fija: {id, codigo, asset_id} p
       const nueva = await post("/api/turistico/reservas", { ...clean(d), ...q, unit_id: Number(d.unit_id), ...cliente, documentos: fr._docs.map((x) => x.id) });
       toast("Reserva creada" + (nueva.factura ? ` · Factura ${nueva.factura.codigo}${nueva.factura.cobro === "pendiente" ? " (pendiente de cobro)" : ""}` : "") + ". Complete ahora el contrato (puede guardarlo e imprimirlo a la llegada).");
       reload && reload();
-      if (nueva.factura) await descargarFactura(nueva.factura.id);
-      if (nueva.adultos + nueva.ninos > 1) await ocupantesReserva(nueva, reload, () => accommodationContract(nueva));
-      else await accommodationContract(nueva);
+      const seguir = () => (nueva.adultos + nueva.ninos > 1 ? ocupantesReserva(nueva, reload, () => accommodationContract(nueva)) : accommodationContract(nueva));
+      if (nueva.factura) setTimeout(() => facturasEmitidas(nueva, seguir), 0); else await seguir();
     }, "Crear reserva")), aid), 0);
     if (fija?.uso !== "garaje") setTimeout(() => bindExtras($("#modalForm"), aid, null, () => q).catch((e) => toast(e.message, true)), 0);
   }, "Buscar disponibilidad");
@@ -2815,19 +2838,19 @@ V.limpieza = async (el) => {
   S.limpieza.asset = cur.id;
   el.innerHTML = `<div class="toolbar">${pool.length > 1 ? `<select id="la">${pool.map((a) => `<option value="${a.id}" ${a.id === cur.id ? "selected" : ""}>${esc(a.nombre)}</option>`).join("")}</select>` : `<strong>${esc(cur.nombre)}</strong>`}
     <label>Día<input type="date" id="lf" value="${S.limpieza.fecha || today()}"></label><button class="btn" id="lhoy">Hoy</button><button class="btn" id="lman">Mañana</button>
-    <span class="spacer"></span><button class="btn" id="lextra">＋ Limpieza extra</button><button class="btn" id="lpdf">Imprimir PDF</button><button class="btn" id="lxls">Excel</button><button class="btn primary" id="lenv">Enviar</button></div>
+    <span class="spacer"></span><button class="btn danger" id="lurg">⚡ Limpieza urgente</button><button class="btn" id="lextra">＋ Limpieza extra</button><button class="btn" id="lpdf">Imprimir PDF</button><button class="btn" id="lxls">Excel</button><button class="btn primary" id="lenv">Enviar</button></div>
     <div class="kpis" id="lk"></div><div id="lt"></div>
-    <p class="muted">Limpieza avisa al terminar y recepción pulsa <b>Hecha</b>: sale del parte (si es de salida, el apartamento queda disponible). Lo que no se valida sigue en el parte del día siguiente. Al imprimir o enviar, el Excel del día queda en Documentos recibidos.</p>`;
+    <p class="muted">Antes de imprimir o enviar, recepción puede <b>ordenar</b> el parte (↑ ↓), marcar algo como <b>urgente</b>, añadir una nota o <b>pasarlo a otro día</b> («Cambiar»). Limpieza avisa al terminar y recepción pulsa <b>Hecha</b>: sale del parte (si es de salida, el apartamento queda disponible). Lo que no se valida sigue en el parte del día siguiente. Al imprimir o enviar, el Excel del día queda en Documentos recibidos.</p>`;
   let p;
   const fecha = () => $("#lf", el).value || today();
   const load = async () => {
     S.limpieza.fecha = fecha();
     p = await get("/api/limpieza/parte", { asset_id: cur.id, fecha: fecha() });
     const pend = p.limpiezas.filter((x) => x.estado === "pendiente"), n = (t) => pend.filter((x) => x.tipo === t).length;
-    $("#lk", el).innerHTML = [[pend.length, "Pendientes", pend.length ? "" : ""], [pend.filter((x) => x.urgente).length, "Llegada hoy (primero)", pend.some((x) => x.urgente) ? "mal" : ""],
+    $("#lk", el).innerHTML = [[pend.length, "Pendientes", pend.length ? "" : ""], [pend.filter((x) => x.urgente).length, "Urgentes / llegada hoy", pend.some((x) => x.urgente) ? "mal" : ""],
       [n("salida"), "Por salida"], [n("contratada"), "Contratadas"], [n("extra"), "Extra"], [pend.filter((x) => x.arrastrada).length, "De días anteriores", pend.some((x) => x.arrastrada) ? "mal" : ""],
       [p.limpiezas.length - pend.length, "Validadas hoy"]].map(([v, l, c]) => `<div class="kpi ${c || ""}"><b>${v}</b><span>${l}</span></div>`).join("");
-    const pri = (x) => x.antes_de ? (x.urgente ? `<span class="badge b-cancelada">LLEGADA HOY${x.pax_llegada ? ` · ${x.pax_llegada} pax` : ""}</span>` : `<span class="badge b-pendiente">Antes del ${fdate(x.antes_de).slice(0, 5)}${x.pax_llegada ? ` · ${x.pax_llegada} pax` : ""}</span>`) : "";
+    const pri = (x) => (x.urgente_manual ? '<span class="badge b-cancelada">⚡ URGENTE</span> ' : "") + (x.antes_de ? (x.urgente ? `<span class="badge b-cancelada">LLEGADA HOY${x.pax_llegada ? ` · ${x.pax_llegada} pax` : ""}</span>` : `<span class="badge b-pendiente">Antes del ${fdate(x.antes_de).slice(0, 5)}${x.pax_llegada ? ` · ${x.pax_llegada} pax` : ""}</span>`) : "");
     table($("#lt", el), [
       { k: "codigo", t: "Apartamento", f: (v, x) => `<b>${esc(v)}</b><div class="muted peq">${esc([x.bloque, x.planta ? "planta " + x.planta : ""].filter(Boolean).join(" · "))}</div>` },
       { k: "tipo_nombre", t: "Tipo", f: (v, x) => `<span class="tipo t-${x.tipo === "salida" ? "reserva" : x.tipo === "extra" ? "incidencia" : "cliente"}">${esc(v)}</span>` },
@@ -2835,10 +2858,49 @@ V.limpieza = async (el) => {
       { k: "antes_de", t: "Prioridad", f: (v, x) => pri(x) },
       { k: "estado", t: "Estado", f: (v, x) => v === "hecha" ? `<span class="badge b-vigente">hecha</span><div class="muted peq">${fdt(x.hecha)}${x.validada_por ? " · " + esc(x.validada_por) : ""}</div>` : '<span class="badge b-pendiente">pendiente</span>' },
     ], p.limpiezas, (x) => x.estado === "pendiente" ? [
+      ["↑", () => mover(x, -1)], ["↓", () => mover(x, 1)],
+      ["Cambiar", () => form(`Limpieza de ${x.codigo}`, [
+        { k: "urgente", t: "Urgente: va la primera del parte", type: "checkbox", wide: true },
+        { k: "nota", t: "Nota para limpieza", wide: true },
+        { k: "fecha", t: "Día (pasarla a otro día)", type: "date", req: true },
+      ], { urgente: x.urgente_manual, nota: x.nota, fecha: x.fecha < fecha() ? fecha() : x.fecha }, async (d) => {
+        await put(`/api/limpieza/${x.id}`, { urgente: !!d.urgente, nota: d.nota || null, ...(d.fecha !== x.fecha && d.fecha !== fecha() ? { fecha: d.fecha } : {}) });
+        toast("Parte actualizado"); load();
+      })],
       ["✔ Hecha", () => run(() => post(`/api/limpieza/${x.id}/hecha`), `Limpieza de ${x.codigo} validada`).then(load), "primary"],
       x.tipo === "extra" && ["Quitar", () => confirm(`¿Quitar la limpieza extra de ${x.codigo}?`) && run(() => api("DELETE", `/api/limpieza/${x.id}`), "Limpieza extra quitada").then(load), "danger"],
     ] : [["Deshacer", () => run(() => post(`/api/limpieza/${x.id}/deshacer`), "Vuelve a estar pendiente").then(load)]]);
   };
+  const mover = async (x, paso) => {  // recepción fija el orden del parte (todas las pendientes)
+    const ids = p.limpiezas.filter((y) => y.estado === "pendiente").map((y) => y.id);
+    const i = ids.indexOf(x.id), j = i + paso;
+    if (j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    await run(() => post("/api/limpieza/orden", { ids })); load();
+  };
+  const enviarUna = async (tid, gente) => form("Enviar orden de limpieza urgente", [
+    ...(gente.length ? [{ k: "personal_ids", t: "Personal de limpieza", type: "checks", options: gente.map((x) => [String(x.id), personaTxt(x)]) }] : []),
+    canalEnvio(" (con el PDF)"), { k: "telefono", t: "Otro número (WhatsApp)" }, { k: "email", t: "Otro correo", type: "email" },
+  ], {}, async (d) => {
+    const r = await post(`/api/limpieza/${tid}/enviar`, { ...clean(d), personal_ids: (d.personal_ids || []).map(Number) });
+    setTimeout(() => resultadoEnvio("Orden de limpieza urgente enviada", r.enviados), 0);
+  }, "Enviar");
+  $("#lurg", el).onclick = () => form(`⚡ Orden de limpieza urgente · ${cur.nombre}`, [
+    { html: '<p class="muted">Para hoy y la primera del parte. Al guardarla se imprime o se envía al momento al personal de limpieza.</p>' },
+    { k: "unit_id", t: "Apartamento", type: "select", req: true, options: p.unidades.map((u) => [u.id, `${u.codigo}${u.bloque ? " · " + u.bloque : ""}`]) },
+    { k: "nota", t: "Qué hay que hacer", req: true, wide: true },
+  ], {}, async (d) => {
+    const t = await post("/api/limpieza/urgente", { asset_id: cur.id, unit_id: Number(d.unit_id), nota: d.nota });
+    load();
+    const gente = await get("/api/personal", { asset_id: cur.id, area: "limpieza", solo_activos: true }).catch(() => []);
+    setTimeout(() => {
+      const f = cerrarSolo(form("Orden de limpieza urgente creada", [{ html: `<div class="acciones-ap">
+        <button type="button" class="accion-ap" data-imp><span class="caja">🖨️</span><b>Imprimir</b><small>PDF de la orden</small></button>
+        <button type="button" class="accion-ap" data-env><span class="caja">📲</span><b>Enviar</b><small>WhatsApp o correo al personal de limpieza</small></button></div>` }], {}, async () => {}));
+      $("[data-imp]", f).onclick = () => run(() => download("GET", `/api/limpieza/${t.id}/orden.pdf`));
+      $("[data-env]", f).onclick = () => enviarUna(t.id, gente);
+    }, 0);
+  }, "Crear orden urgente");
   $("#lf", el).onchange = load;
   $("#lhoy", el).onclick = () => { $("#lf", el).value = today(); load(); };
   $("#lman", el).onclick = () => { $("#lf", el).value = addDays(today(), 1); load(); };

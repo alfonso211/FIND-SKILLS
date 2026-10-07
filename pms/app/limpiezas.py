@@ -108,9 +108,7 @@ def _asegura(db: Session, clave: str, **campos) -> CleaningTask:
         db.add(t)
     elif t.estado == "anulada":  # vuelve a corresponder (p.ej. se reactivó la reserva)
         t.estado, t.fecha = "pendiente", campos["fecha"]
-    elif t.estado == "pendiente" and t.fecha != campos["fecha"]:
-        t.fecha = campos["fecha"]
-    return t
+    return t  # pendiente: se respeta el día (recepción puede haberla pasado a otro día)
 
 
 def sincronizar(db: Session, asset_id: int, dia: date) -> None:
@@ -143,9 +141,9 @@ def sincronizar(db: Session, asset_id: int, dia: date) -> None:
             t.estado = "anulada"
         elif t.tipo == "salida" and r.estado != "checkout":
             t.estado = "anulada"  # sin check-out no hay limpieza de salida
-        elif t.tipo == "contratada" and (r.estado == "checkout"
-                                         or t.fecha not in fechas_plan(r.limpieza, r.fecha_entrada, r.fecha_salida)):
-            t.estado = "anulada"
+        elif t.tipo == "contratada" and (r.estado == "checkout" or date.fromisoformat(t.clave.split(":")[2])
+                                         not in fechas_plan(r.limpieza, r.fecha_entrada, r.fecha_salida)):
+            t.estado = "anulada"  # (se compara el día previsto: recepción puede haberla pasado a otro día)
     db.flush()
 
 
@@ -187,17 +185,20 @@ def parte(db: Session, asset_id: int, dia: date) -> list[dict]:
             motivo = "Limpieza contratada" + (f" ({describir(r.limpieza)})" if r and r.limpieza else "")
         else:
             motivo = "Limpieza extra" + (f": {t.nota}" if t.nota else "")
-        urgente = antes is not None and antes <= dia
+        urgente = t.urgente or (antes is not None and antes <= dia)
         out.append({"id": t.id, "unit_id": u.id, "codigo": u.codigo, "bloque": u.bloque, "planta": u.planta,
                     "tipologia": u.tipologia, "tipo": t.tipo, "tipo_nombre": TIPOS[t.tipo], "motivo": motivo,
                     "nota": t.nota, "fecha": t.fecha.isoformat(), "arrastrada": t.fecha < dia,
                     "antes_de": antes.isoformat() if antes else None, "urgente": urgente,
+                    "urgente_manual": t.urgente, "orden": t.orden,
                     "pax_llegada": (llegada.adultos + llegada.ninos) if llegada else None,
                     "estado": t.estado, "hecha": t.hecha.isoformat() if t.hecha else None,
                     "validada_por": nombres.get(t.validada_por), "creada_por": nombres.get(t.creada_por)})
     orden_tipo = {"salida": 0, "contratada": 1, "extra": 2}
-    out.sort(key=lambda x: (x["estado"] != "pendiente", not x["urgente"], x["antes_de"] or "9999",
-                            orden_tipo[x["tipo"]], x["bloque"] or "", x["codigo"]))
+    # primero lo que recepción marca urgente, después el orden que haya fijado y, si no, por prioridad
+    out.sort(key=lambda x: (x["estado"] != "pendiente", not x["urgente_manual"],
+                            x["orden"] if x["orden"] is not None else 10**6, not x["urgente"],
+                            x["antes_de"] or "9999", orden_tipo[x["tipo"]], x["bloque"] or "", x["codigo"]))
     return out
 
 
@@ -224,6 +225,8 @@ def _lugar(x: dict) -> str:
 
 
 def _prioridad(x: dict, dia: date) -> str:
+    if x.get("urgente_manual") and not x["antes_de"]:
+        return "URGENTE"
     if x["antes_de"]:
         antes = date.fromisoformat(x["antes_de"])
         pax = f" ({x['pax_llegada']} pax)" if x["pax_llegada"] else ""
@@ -231,18 +234,18 @@ def _prioridad(x: dict, dia: date) -> str:
     return ""
 
 
-def texto(asset, dia: date, filas: list[dict], nota: str | None = None) -> str:
+def texto(asset, dia: date, filas: list[dict], nota: str | None = None, titulo: str = "Parte de limpieza") -> str:
     pend = [x for x in filas if x["estado"] == "pendiente"]
     lineas = [f"- {x['codigo']}{' (' + _lugar(x) + ')' if _lugar(x) else ''}: {x['motivo']}"
               + (f" · {_prioridad(x, dia)}" if _prioridad(x, dia) else "")
               + (f" · pendiente desde {date.fromisoformat(x['fecha']):%d/%m}" if x["arrastrada"] else "")
               for x in pend]
-    return (f"Parte de limpieza {asset.nombre} · {dia:%d/%m/%Y} · {len(pend)} limpieza(s)\n" + "\n".join(lineas)
+    return (f"{titulo} {asset.nombre} · {dia:%d/%m/%Y} · {len(pend)} limpieza(s)\n" + "\n".join(lineas)
             + (f"\n\nNota: {nota}" if nota else "")
             + "\n\nPrimero las de LLEGADA HOY. Avise a recepción al terminar cada una.")
 
 
-def pdf(asset, company, dia: date, filas: list[dict], nota: str | None = None) -> bytes:
+def pdf(asset, company, dia: date, filas: list[dict], nota: str | None = None, titulo: str = "Parte de limpieza") -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -251,7 +254,7 @@ def pdf(asset, company, dia: date, filas: list[dict], nota: str | None = None) -
 
     out = BytesIO()
     doc = SimpleDocTemplate(out, pagesize=A4, leftMargin=14 * mm, rightMargin=14 * mm, topMargin=12 * mm,
-                            bottomMargin=12 * mm, title=f"Parte de limpieza {asset.nombre} {dia:%d-%m-%Y}")
+                            bottomMargin=12 * mm, title=f"{titulo} {asset.nombre} {dia:%d-%m-%Y}")
     st = getSampleStyleSheet()
     p = ParagraphStyle("p", parent=st["BodyText"], fontSize=9, leading=11)
     h = ParagraphStyle("h", parent=st["Title"], fontSize=15, alignment=0, spaceAfter=2)
@@ -262,7 +265,7 @@ def pdf(asset, company, dia: date, filas: list[dict], nota: str | None = None) -
     if cab is not None:
         el += [cab, Spacer(1, 4 * mm)]
     pend = [x for x in filas if x["estado"] == "pendiente"]
-    el += [Paragraph(f"Parte de limpieza · {asset.nombre}", h),
+    el += [Paragraph(f"{titulo} · {asset.nombre}", h),
            Paragraph(f"{dia:%d/%m/%Y} · {len(pend)} limpieza(s) pendiente(s). Primero las de <b>LLEGADA HOY</b>. "
                      "Marque cada una al terminar y avise a recepción.", p), Spacer(1, 4 * mm)]
     esc = lambda s: str(s or "").replace("&", "&amp;").replace("<", "&lt;")  # noqa: E731
