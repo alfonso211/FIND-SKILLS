@@ -1,5 +1,8 @@
 # Novedades
 
+## 2026-10-07 · Versión 1.6 · Menú sin desplazamiento
+- **Todos**: el **menú de la izquierda** cabe entero en la pantalla. Si no caben todos los grupos, los que no está usando se pliegan (▸) y se abren con un clic en su título.
+
 ## 2026-10-07 · Versión 1.5 · Pantallas de un vistazo
 - **Todos**: **panel de control** reordenado: el **plano por plantas arriba** (con botones para elegir el edificio) y la situación de cada activo en una franja; la **agenda**, reducida, a la **derecha** con los avisos.
 - **Todos**: las pantallas caben en el monitor sin bajar: las listas se desplazan dentro de su recuadro, con la **cabecera fija** y los **botones de cada fila siempre visibles**.

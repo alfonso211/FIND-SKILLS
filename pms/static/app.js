@@ -3027,16 +3027,46 @@ const allowed = (p) => !p || (p === "admin" ? S.me.admin_grupo : p === "informes
   : p === "proveedores" ? verProveedores() : can(p));
 const TITLES = Object.fromEntries(MENU.flatMap(([, items]) => items.map(([id, t]) => [id, t])));
 
+// Menú lateral sin desplazamiento: grupos plegables. Si todo cabe en la altura de la pantalla se ven abiertos;
+// si no, solo «General» y el grupo de la pantalla actual (pulsando un título se abre ese y se cierran los demás).
 function renderNav() {
-  $("#nav").innerHTML = MENU.map(([g, items]) => {
+  $("#nav").innerHTML = MENU.map(([g, items], i) => {
     const vis = items.filter(([, , p]) => allowed(p));
-    return vis.length ? `${g ? `<div class="group">${g}</div>` : "<br>"}${vis.map(([id, t]) => `<a href="#${id}" data-v="${id}">${t}</a>`).join("")}` : "";
+    if (!vis.length) return "";
+    const links = vis.map(([id, t]) => `<a href="#${id}" data-v="${id}">${t}</a>`).join("");
+    return g ? `<div class="grupo" data-g="${i}"><button type="button" class="group">${g}<span class="flecha">▾</span></button><div class="items">${links}</div></div>`
+      : `<div class="grupo fijo">${links}</div>`;
   }).join("");
+  $("#nav").querySelectorAll(".grupo > .group").forEach((b) => (b.onclick = () => {
+    const g = b.parentElement, abrir = g.classList.contains("cerrado");
+    if (abrir && S.navPlegado) $("#nav").querySelectorAll(".grupo[data-g]").forEach((x) => x !== g && !x.querySelector("a.active") && x.dataset.g !== "0" && x.classList.add("cerrado"));
+    g.classList.toggle("cerrado", !abrir);
+    if (abrir) ajustarNav(g);
+  }));
+  ajustarNav();
 }
+function ajustarNav(prioritario) {
+  const sb = $(".sidebar"), grupos = [...$("#nav").querySelectorAll(".grupo[data-g]")];
+  if (!sb || !grupos.length) return;
+  grupos.forEach((g) => g.classList.remove("cerrado"));
+  S.navPlegado = sb.scrollHeight > sb.clientHeight + 1;
+  if (!S.navPlegado) return;
+  // se pliegan los grupos (de abajo arriba) que no son el de la pantalla actual, General ni el que se acaba de abrir
+  const plegables = grupos.filter((g) => g !== prioritario && !g.querySelector("a.active") && g.dataset.g !== "0").reverse();
+  for (const g of plegables) g.classList.add("cerrado");
+  // y se vuelven a abrir, de arriba abajo, todos los que quepan
+  const cabe = () => sb.scrollHeight <= sb.clientHeight + 1;
+  for (const g of [...plegables].reverse()) { g.classList.remove("cerrado"); if (!cabe()) g.classList.add("cerrado"); }
+  // si aun así no cabe, se pliega también General
+  const gen = grupos.find((g) => g.dataset.g === "0");
+  if (sb.scrollHeight > sb.clientHeight + 1 && gen && gen !== prioritario && !gen.querySelector("a.active")) gen.classList.add("cerrado");
+}
+window.addEventListener("resize", () => { clearTimeout(S._navT); S._navT = setTimeout(() => $("#nav") && $("#nav").children.length && ajustarNav(), 150); });
 async function go(view) {
   view = TITLES[view] && allowed(MENU.flatMap(([, i]) => i).find(([id]) => id === view)[2]) ? view : "panel";
   if (location.hash !== "#" + view) history.replaceState(null, "", "#" + view);
   document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.v === view));
+  ajustarNav();
   $(".sidebar").classList.remove("open");
   $("#viewTitle").textContent = TITLES[view];
   // contenedor nuevo por navegación: una carga anterior aún en curso escribe en uno ya desmontado
