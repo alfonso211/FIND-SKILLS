@@ -36,6 +36,9 @@ class AssetIn(BaseModel):
     provincia: str | None = None
     cp: str | None = None
     pais: str | None = None
+    informe_responsable_id: int | None = None
+    informe_emails: str | None = None
+    informe_whatsapp: str | None = None
     ref_catastral: str | None = None
     num_registro_turistico: str | None = None
     serie_factura: str | None = Field(default=None, pattern=r"^[A-Z0-9]{1,8}$")
@@ -56,6 +59,9 @@ class AssetUpdate(BaseModel):
     provincia: str | None = None
     cp: str | None = None
     pais: str | None = None
+    informe_responsable_id: int | None = None
+    informe_emails: str | None = None
+    informe_whatsapp: str | None = None
     ref_catastral: str | None = None
     num_registro_turistico: str | None = None
     serie_factura: str | None = Field(default=None, pattern=r"^[A-Z0-9]{1,8}$")

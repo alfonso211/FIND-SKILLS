@@ -47,6 +47,9 @@ TIPOS = {
                             "transferencia): revisar si ha llegado el pago (resumen diario)", "facturas.ver"),
     "pagos_retenidos": ("Facturas recibidas con el pago retenido: aviso al momento de retenerlas y, en el resumen "
                         "diario, las retenidas con su fecha de revisión", "finanzas.ver"),
+    "informe_presidencia": ("Informe mensual a la presidencia: aviso el primer día laborable del mes para revisarlo "
+                            "y enviarlo (a quien lo tiene asignado, por defecto «Recepción 1» de cada activo)",
+                            "facturas.ver"),
     "hitos_normativos": ("Hitos normativos (Verifactu, factura electrónica…) con antelación para adaptar el PMS "
                          "(resumen diario)", "finanzas.ver"),
     "agenda": ("Agenda: tareas, reuniones y recordatorios que le envían, aviso antes de cada cita y su agenda del "
@@ -267,6 +270,39 @@ def pago_retenido(gid: int, autor_id: int | None) -> int:
         return enviados
 
 
+# --------------------------------------------------------------------------- informe a la presidencia
+def informe_mensual(db, dia: date) -> int:
+    """El primer día laborable del mes: aviso a quien revisa y envía el informe del mes anterior de cada activo."""
+    from .calendario import primer_laborable
+    from .informe_presidencia import MESES
+    from .routers.presidencia import _registro, responsable
+    if dia != primer_laborable(dia.year, dia.month):
+        return 0
+    anio, mes = (dia.year - 1, 12) if dia.month == 1 else (dia.year, dia.month - 1)
+    periodo = f"{MESES[mes - 1]} {anio}"
+    enviados = 0
+    for a in db.scalars(select(Asset).where(Asset.activo).order_by(Asset.id)):
+        u = responsable(db, a)
+        r = _registro(db, a.id, anio, mes)
+        if u is None or not quiere(u, "informe_presidencia") or (r is not None and r.enviado_en):
+            continue
+        clave = f"informe_presidencia:{a.id}:{anio}-{mes:02d}"
+        if db.scalar(select(EmailLog.id).where(EmailLog.clave == clave, EmailLog.user_id == u.id, EmailLog.ok)):
+            continue
+        asunto = f"Informe mensual a la presidencia · {a.nombre} · {periodo}: pendiente de revisar y enviar"
+        texto = (f"Hoy toca preparar el informe mensual a la presidencia de {a.nombre} ({periodo}).\n"
+                 "Entre en INVERPMS → Facturación e informes → Informe a presidencia, revise que todos los datos son "
+                 "correctos y envíelo por correo o por WhatsApp (siempre en PDF)."
+                 + (f"\n\n{settings.url}/#presidencia" if settings.url else ""))
+        html = _html("Informe mensual a la presidencia", f"<p>Hoy toca preparar el informe mensual a la presidencia "
+                     f"de <b>{escape(a.nombre)}</b> ({escape(periodo)}).</p><p>Entre en <b>Facturación e informes → "
+                     "Informe a presidencia</b>, revise que todos los datos son correctos y envíelo por correo o por "
+                     "WhatsApp (siempre en PDF).</p>")
+        enviados += _enviar_registrado(db, u, u.email, clave, "informe_presidencia", asunto, texto, html)
+    db.commit()
+    return enviados
+
+
 # --------------------------------------------------------------------------- resumen diario
 def _renovada():
     from .routers.turistico import _renovada as cond  # import local: el router importa este módulo
@@ -364,6 +400,7 @@ SECCIONES = {
 def resumen_diario(db, dia: date | None = None, forzar: bool = False) -> dict:
     """Envía a cada usuario su resumen. Sin `forzar`, no repite a quien ya lo recibió ese día."""
     dia = dia or hoy()
+    informe_mensual(db, dia)
     from .recibos import garajes_al_dia
     garajes_al_dia(db, hoy=dia)  # emite los recibos de garaje del mes aunque nadie haya entrado en el PMS
     datos = _datos_resumen(db, dia)

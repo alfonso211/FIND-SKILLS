@@ -247,6 +247,10 @@ V.panel = async (el) => {
   if (pr.length) avisos.push(`<div class="aviso-hito aviso-cobro"><h4>⛔ Pago retenido: ${pr.reduce((s, a) => s + a.pagos_retenidos, 0)} · ${eur(pr.reduce((s, a) => s + a.pagos_retenidos_importe, 0))}</h4>
     <p>${pr.map((a) => `${esc(a.nombre)}: ${a.pagos_retenidos}${a.pagos_retenidos_revisar ? ` (<b>${a.pagos_retenidos_revisar} para revisar ya</b>)` : ""}`).join(" · ")}. No pagarlas hasta revisarlas.</p>
     <button class="btn sm primary" id="verRetenidas">Ver gastos</button></div>`);
+  const ip = (p.informes_pendientes || []).filter((x) => !S.asset || String(x.asset_id) === String(S.asset));
+  if (ip.length) avisos.push(`<div class="aviso-hito"><h4>📊 Informe a presidencia de ${esc(ip[0].periodo)}: pendiente</h4>
+    <p>${ip.map((x) => `${esc(x.activo)} (lo envía ${esc(x.responsable)})`).join(" · ")}. Revíselo y envíelo por correo o WhatsApp.</p>
+    <button class="btn sm primary" id="verPresidencia" data-a="${ip[0].asset_id}">Preparar informe</button></div>`);
   (p.hitos || []).forEach((h) => avisos.push(`<div class="aviso-hito"><h4>📅 ${esc(h.titulo)} · ${fdate(h.fecha)} (${h.dias > 0 ? `faltan ${h.dias} días` : h.dias === 0 ? "hoy" : `hace ${-h.dias} días`})</h4><p>${esc(h.detalle)}</p></div>`));
   el.innerHTML = `<div class="panel-grid"><div class="panel-main">
     <div class="buscador"><input id="busq" type="search" autocomplete="off" placeholder="🔍 Buscar: documento, apartamento, cliente, teléfono, localizador, factura, OT, proveedor…" aria-label="Buscar">
@@ -298,6 +302,7 @@ V.panel = async (el) => {
   if ($("#abrirPlano", el)) $("#abrirPlano", el).onclick = () => { S.plano = { asset: Number($("[data-plano]", el).dataset.plano) }; go("plano"); };
   if ($("#verCobros", el)) $("#verCobros", el).onclick = () => { S.filtroCobro = "pendiente"; go("facturas"); };
   if ($("#verRetenidas", el)) $("#verRetenidas", el).onclick = () => go("gastos");
+  if ($("#verPresidencia", el)) $("#verPresidencia", el).onclick = (e) => { S.presidencia = { asset: e.currentTarget.dataset.a }; go("presidencia"); };
   pintarMinis(el).catch((e) => el.querySelectorAll(".minis").forEach((m) => (m.innerHTML = `<p class="error">${esc(e.message)}</p>`)));
   bindBuscador($("#busq", el), $("#busqRes", el));
   agendaWidget($("#agp", el), false, true);
@@ -663,7 +668,7 @@ async function zonaComun(assetId, zona, recarga) {
 }
 
 V.activos = async (el) => {
-  const rows = await get("/api/activos");
+  const [rows, usuarios] = await Promise.all([get("/api/activos"), get("/api/agenda/usuarios").catch(() => [])]);
   el.innerHTML = `<div class="toolbar"><span class="spacer"></span>${can("activos.editar") ? '<button class="btn primary" id="new">Nuevo activo</button>' : ""}</div><div id="t"></div>`;
   const fields = (isNew) => [
     ...(isNew ? [{ k: "codigo", t: "Código", req: true }] : []),
@@ -679,6 +684,9 @@ V.activos = async (el) => {
     { html: "<h4>Datos de la empresa en los contratos de alojamiento</h4>" },
     { k: "contrato_representante", t: "Representante (firma por la empresa)" }, { k: "contrato_representante_dni", t: "DNI del representante" },
     { k: "contrato_email", t: "Correo para notificaciones", type: "email" },
+    { html: "<h4>Informe mensual a la presidencia</h4><p class='muted'>El primer día laborable de cada mes se avisa a quien lo revisa y envía (si no se indica, «Recepción 1» del activo). Correos: si se deja vacío, a la presidencia.</p>" },
+    { k: "informe_responsable_id", t: "Revisa y envía el informe", type: "select", options: usuarios.map((u) => [u.id, u.nombre]) },
+    { k: "informe_emails", t: "Correos de envío (separados por comas)", wide: true }, { k: "informe_whatsapp", t: "WhatsApp de envío (teléfono)" },
     { k: "activo", t: "Activo en explotación", type: "checkbox", def: true }, { k: "notas", t: "Notas", type: "textarea", wide: true },
   ];
   const edit = (a) => form(a ? `Editar ${a.nombre}` : "Nuevo activo", fields(!a), a || {}, async (d) => {
@@ -2960,6 +2968,90 @@ V.perfil = async (el) => {
     async (d) => { await post("/api/auth/password", d); toast("Contraseña cambiada"); });
 };
 
+// ------------------------------------------------------------------ informe mensual a la presidencia
+const pctTxt = (x, signo) => (x == null ? "—" : `${signo && x > 0 ? "+" : ""}${x.toFixed(1).replace(".", ",")} %`);
+const numTxt = (x) => (x == null ? "—" : Number(x).toLocaleString("es-ES"));
+V.presidencia = async (el) => {
+  const hoy = new Date(), prev = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+  const ym = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const ini = S.presidencia || {};
+  const aid = String(ini.asset || S.asset || S.assets[0]?.id || "");
+  el.innerHTML = `<div class="toolbar"><select id="pa">${S.assets.map((a) => `<option value="${a.id}" ${String(a.id) === aid ? "selected" : ""}>${esc(a.nombre)}</option>`).join("")}</select>
+    <label>Mes<input type="month" id="pm" value="${ini.mes || ym(prev)}" max="${ym(hoy)}"></label>
+    <button class="btn" id="ppdf">Descargar PDF</button><button class="btn" id="pxls">Descargar Excel</button><span class="spacer"></span>
+    <label class="check" id="prevLbl"><input type="checkbox" id="prev"> He revisado el informe y todos los datos son correctos</label>
+    <button class="btn primary" id="pmail" disabled>Enviar por correo</button><button class="btn primary" id="pwa" disabled>Enviar por WhatsApp</button></div>
+    <div id="pest" class="muted"></div><div id="pinf" class="informe-pres"><p class="muted">Cargando…</p></div>`;
+  const q = () => { const [anio, mes] = $("#pm", el).value.split("-").map(Number); return { asset_id: $("#pa", el).value, anio, mes }; };
+  let j = null;
+  const tablaAnual = (r) => `<table class="tabla-inf"><thead><tr><th>Mes</th><th class="num">Producción</th><th class="num">Pernoct.</th><th class="num">Ocupación</th>
+      <th class="num" title="Producción: variación respecto al mes anterior">Δ prod. mes</th><th class="num" title="Pernoctaciones: variación respecto al mes anterior">Δ pern. mes</th><th class="num" title="Producción: variación respecto al mismo mes del año anterior">Δ prod. año</th><th class="num" title="Pernoctaciones: variación respecto al mismo mes del año anterior">Δ pern. año</th></tr></thead><tbody>
+    ${r.meses.map((m) => `<tr><td>${esc(m.nombre)}</td><td class="num">${eur(m.produccion)}</td><td class="num">${numTxt(m.pernoctaciones)}</td><td class="num">${pctTxt(m.ocupacion)}</td>
+      ${["var_mes_produccion", "var_mes_pernoctaciones", "var_anio_produccion", "var_anio_pernoctaciones"].map((k) => `<td class="num ${m[k] == null ? "" : m[k] >= 0 ? "sube" : "baja"}">${pctTxt(m[k], true)}</td>`).join("")}</tr>`).join("")}
+    <tr class="tot"><td>Total</td><td class="num">${eur(r.total_produccion)}</td><td class="num">${numTxt(r.total_pernoctaciones)}</td><td colspan="5"></td></tr></tbody></table>`;
+  const pinta = () => {
+    const d = j.datos, r = j.registro;
+    $("#pest", el).innerHTML = r && r.enviado_en
+      ? `✅ Enviado el ${fdate(r.enviado_en.slice(0, 10))} ${r.enviado_en.slice(11, 16)} por ${esc(r.enviado_por_nombre || "")} · ${r.canal === "email" ? "correo" : "WhatsApp"} a ${esc(r.destino || "")}. El Excel está en Documentos recibidos (tipo «Informe mensual»). Puede volver a enviarlo.`
+      : `Pendiente de revisar y enviar${j.responsable ? ` · lo envía ${esc(j.responsable)}` : ""}.`;
+    $("#pinf", el).innerHTML = `<div class="inf-cols"><section class="card"><h3>Producción · ${esc(d.periodo)}</h3>
+      <table class="tabla-inf"><thead><tr><th>Ingresos por alquileres</th><th class="num">Contratos</th><th class="num">Pernoct.</th><th class="num">Importe</th></tr></thead><tbody>
+        ${d.alquileres.map((f) => `<tr><td>${esc(f.concepto)}</td><td class="num">${numTxt(f.contratos)}</td><td class="num">${numTxt(f.pernoctaciones)}</td><td class="num">${eur(f.importe)}</td></tr>`).join("")}
+        <tr class="tot"><td>Total alquileres</td><td></td><td class="num">${numTxt(d.total_pernoctaciones)}</td><td class="num">${eur(d.total_alquileres)}</td></tr></tbody></table>
+      <table class="tabla-inf"><thead><tr><th>Ingresos por servicios</th><th class="num">Importe</th></tr></thead><tbody>
+        ${d.servicios.map((x) => `<tr><td>${esc(x.concepto)}</td><td class="num">${eur(x.importe)}</td></tr>`).join("") || '<tr><td class="muted">Sin servicios facturados</td><td></td></tr>'}
+        <tr class="tot"><td>Total servicios</td><td class="num">${eur(d.total_servicios)}</td></tr>
+        <tr class="tot grande"><td>TOTAL PRODUCCIÓN · ${esc(d.periodo.toUpperCase())}</td><td class="num">${eur(d.total_ingresos)}</td></tr></tbody></table>
+      <table class="tabla-inf"><thead><tr><th>Gastos: proveedor</th><th>Nº de factura</th><th class="num">Importe sin IVA</th><th>CAPEX / OPEX</th></tr></thead><tbody>
+        ${d.gastos.map((g) => `<tr><td>${esc(g.proveedor || "")}</td><td>${esc(g.facturas.join(", "))}</td><td class="num">${eur(g.importe)}</td><td>${esc(g.naturaleza)}</td></tr>`).join("") || '<tr><td class="muted" colspan="4">Sin gastos registrados en el mes</td></tr>'}
+        <tr class="tot"><td>Total gastos</td><td></td><td class="num">${eur(d.total_gastos)}</td><td></td></tr></tbody></table>
+      <table class="tabla-inf"><tbody><tr><td>Total producción (ingresos)</td><td class="num">${eur(d.total_ingresos)}</td></tr><tr><td>Total gastos</td><td class="num">${eur(-d.total_gastos)}</td></tr>
+        <tr class="tot grande"><td>RESULTADO DE PRODUCCIÓN</td><td class="num">${eur(d.resultado)}</td></tr>
+        <tr class="sem sem-${d.semaforo}"><td>Porcentaje de resultado sobre la producción</td><td class="num">${pctTxt(d.porcentaje)}</td></tr></tbody></table>
+      <p class="muted peq">Sin IVA. Semáforo: rojo de 0 % a 12 % · naranja de 13 % a 25 % · verde de 26 % en adelante.</p></section>
+      <section class="card"><div class="toolbar" style="margin:0 0 8px"><h3 style="margin:0">Resumen mensual</h3><span class="spacer"></span>
+        <span class="chips" style="margin:0"><button class="chip" data-anio="anterior">${d.anterior.anio}</button><button class="chip on" data-anio="actual">${d.actual.anio}</button></span></div>
+        <div id="anual">${tablaAnual(d.actual)}</div>
+        <p class="muted peq">Producción: facturado sin IVA. Pernoctaciones y ocupación: noches en ${d.actual.apartamentos} apartamentos (sin garajes). «—»: sin datos.</p></section></div>`;
+    el.querySelectorAll("[data-anio]").forEach((b) => (b.onclick = () => {
+      el.querySelectorAll("[data-anio]").forEach((x) => x.classList.toggle("on", x === b)); $("#anual", el).innerHTML = tablaAnual(d[b.dataset.anio]);
+    }));
+  };
+  const load = async () => {
+    S.presidencia = { asset: $("#pa", el).value, mes: $("#pm", el).value };
+    $("#prev", el).checked = false; $("#pmail", el).disabled = $("#pwa", el).disabled = true;
+    try { j = await get("/api/presidencia", q()); pinta(); } catch (e) { $("#pinf", el).innerHTML = `<p class="error">${esc(e.message)}</p>`; }
+  };
+  $("#pa", el).onchange = load; $("#pm", el).onchange = load;
+  $("#prev", el).onchange = () => { $("#pmail", el).disabled = $("#pwa", el).disabled = !$("#prev", el).checked; };
+  const qs = () => new URLSearchParams(q()).toString();
+  $("#ppdf", el).onclick = () => run(() => download("GET", `/api/presidencia/pdf?${qs()}`));
+  $("#pxls", el).onclick = () => run(() => download("GET", `/api/presidencia/excel?${qs()}`));
+  $("#pmail", el).onclick = () => form("Enviar el informe por correo (PDF)", [
+    { html: `<p class="muted">Se envía en PDF y el Excel queda guardado en los documentos del activo.</p>` },
+    { k: "destinatarios", t: "Correos (separados por comas)", wide: true, req: true }], { destinatarios: (j.destinatarios || []).join(", ") },
+    async (d) => { await post("/api/presidencia/enviar", { ...q(), revisado: true, canal: "email", destinatarios: d.destinatarios.split(/[,;\s]+/).filter(Boolean) }); toast("Informe enviado por correo"); load(); }, "Enviar");
+  $("#pwa", el).onclick = () => form("Enviar el informe por WhatsApp (PDF)", [
+    { html: `<p class="muted">Se abre WhatsApp con el mensaje; en el móvil se adjunta el PDF directamente, en el ordenador se descarga para adjuntarlo. El Excel queda guardado en los documentos del activo.</p>` },
+    { k: "telefono", t: "Teléfono de WhatsApp", req: true }], { telefono: j.whatsapp || "" },
+    async (d) => {
+      const w = window.open("about:blank", "_blank");
+      const r = await post("/api/presidencia/enviar", { ...q(), revisado: true, canal: "whatsapp", telefono: d.telefono });
+      const res = await fetch(`/api/presidencia/pdf?${qs()}`, { headers: { Authorization: `Bearer ${S.token}` } });
+      const fichero = new File([await res.blob()], r.pdf, { type: "application/pdf" });
+      if (navigator.canShare && navigator.canShare({ files: [fichero] })) {
+        if (w) w.close();
+        await navigator.share({ files: [fichero], text: decodeURIComponent(r.whatsapp_url.split("text=")[1] || "") }).catch(() => {});
+      } else {
+        const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(fichero), download: r.pdf });
+        document.body.appendChild(a); a.click(); a.remove();
+        if (w) w.location = r.whatsapp_url; else window.open(r.whatsapp_url, "_blank");
+      }
+      toast("Informe preparado para WhatsApp: adjunte el PDF descargado"); load();
+    }, "Abrir WhatsApp");
+  load();
+};
+
 // ------------------------------------------------------------------ manual de uso
 // Markdown sencillo (títulos, listas, negrita, cursiva, citas) del manual a HTML. El texto viene del programa.
 function mdHtml(md) {
@@ -3016,7 +3108,7 @@ const MENU = [
   ["General", [["panel", "Panel de control", null], ["agenda", "Agenda", null], ["manual", "Manual de uso", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
   ["Apartamentos turísticos", [["plano", "Plano de apartamentos", "activos.ver"], ["hoy", "Llegadas / salidas", "reservas.ver"], ["reservas", "Reservas", "reservas.ver"], ["planning", "Planning", "reservas.ver"], ["huespedes", "Huéspedes", "reservas.ver"], ["ses", "Parte de viajeros (SES)", "reservas.ver"], ["garajes", "Alquiler de garajes", "reservas.ver"]]],
   ["Alquiler residencial", [["contratos", "Contratos", "alquiler.ver"], ["recibos", "Recibos y cobros", "alquiler.ver"], ["inquilinos", "Inquilinos", "alquiler.ver"]]],
-  ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["servicios", "Servicios", "activos.ver"], ["informes", "Informes Excel", "informes"]]],
+  ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["servicios", "Servicios", "activos.ver"], ["informes", "Informes Excel", "informes"], ["presidencia", "Informe a presidencia", "facturas.ver"]]],
   ["Documentos y gastos", [["docrecibidos", "Documentos recibidos", "documentos.ver"], ["gastos", "Cuenta de gastos", "documentos.ver"]]],
   ["Mantenimiento", [["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["personal", "Personal mto. y limpieza", "personal"], ["proveedores", "Proveedores", "proveedores"]]],
   ["Administración", [["usuarios", "Usuarios", "admin"], ["roles", "Roles y permisos", "admin"], ["sociedades", "Sociedades", "admin"], ["avisos", "Avisos por correo", "admin"], ["auditoria", "Auditoría", "auditoria.ver"]]],

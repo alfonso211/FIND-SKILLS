@@ -1,5 +1,11 @@
 # Novedades
 
+## 2026-10-07 · Versión 1.7 · Informe mensual a la presidencia
+- **Recepción 1**: el primer día laborable de cada mes recibe el aviso para preparar el **informe a la presidencia** del mes anterior (**Facturación e informes → Informe a presidencia**).
+- **Recepción 1**: el informe se **revisa en pantalla**, se marca como comprobado y se envía en **PDF** por **correo** o **WhatsApp**; el **Excel** queda guardado en los documentos del activo.
+- **Dirección**: el informe incluye producción por tipo de estancia (menos de 1 semana, 1 semana, 2 semanas, 1 mes, renovaciones), servicios, gastos por proveedor con CAPEX/OPEX, **resultado con semáforo** (rojo, naranja, verde) y el **resumen mensual** del año anterior y del año en curso.
+- **Dirección**: en la ficha de cada activo se puede indicar quién envía el informe, los correos y el WhatsApp de destino.
+
 ## 2026-10-07 · Versión 1.6 · Menú sin desplazamiento
 - **Todos**: el **menú de la izquierda** cabe entero en la pantalla. Si no caben todos los grupos, los que no está usando se pliegan (▸) y se abren con un clic en su título.
 
