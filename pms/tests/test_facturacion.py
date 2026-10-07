@@ -214,8 +214,8 @@ def test_serie_unica_y_requerida(client, admin, ids):
     assert "transferencia" in cats["formas_pago"]
 
 
-def test_servicios_en_factura(client, admin, ids):
-    """Servicios al 21 % dentro de la factura del alojamiento (10 %), o en una factura solo de servicios."""
+def test_servicios_en_factura(client, admin, ids, monkeypatch):
+    """Servicios al 21 % en una factura APARTE de la del alojamiento (10 %): la gestoría las controla por separado."""
     domicilio_fiscal(client, admin)
     sae = ids["assets"]["SAE"]["id"]
     cat = client.get(f"/api/servicios?asset_id={sae}", headers=admin).json()
@@ -233,21 +233,38 @@ def test_servicios_en_factura(client, admin, ids):
                       {"servicio_id": parking["id"], "cantidad": 3}]})
     assert c.status_code == 200, c.text
     assert c.json()["importe_pagado"] == 220  # lo cobrado de la reserva es solo el alojamiento
-    f = _factura(client, admin, c.json()["factura"]["id"])
-    assert [(x["tipo"], x["tipo_iva"], x["total"]) for x in f["lineas"]] == [
-        ("alojamiento", 10, 220), ("servicio", 21, 60), ("servicio", 21, 36.3)]
-    assert f["lineas"][2]["concepto"] == "Parking exterior Campezo (día)" and f["lineas"][2]["base"] == 30
-    assert f["desglose"] == [{"tipo_iva": 10, "base": 200, "cuota": 20}, {"tipo_iva": 21, "base": 79.59, "cuota": 16.71}]
-    assert (f["base_imponible"], f["cuota_iva"], f["total"], f["tipo_iva"]) == (279.59, 36.71, 316.3, None)
-    pdf = client.get(f"/api/facturas/{f['id']}/pdf", headers=admin)
+    assert [x["tipo"] for x in c.json()["facturas"]] == ["estancia", "servicios"]
+    f = _factura(client, admin, c.json()["facturas"][0]["id"])
+    s = _factura(client, admin, c.json()["facturas"][1]["id"])
+    assert [(x["tipo"], x["tipo_iva"], x["total"]) for x in f["lineas"]] == [("alojamiento", 10, 220)]
+    assert [(x["tipo"], x["tipo_iva"], x["total"]) for x in s["lineas"]] == [("servicio", 21, 60), ("servicio", 21, 36.3)]
+    assert s["lineas"][1]["concepto"] == "Parking exterior Campezo (día)" and s["lineas"][1]["base"] == 30
+    assert f["desglose"] == [{"tipo_iva": 10, "base": 200, "cuota": 20}]
+    assert s["desglose"] == [{"tipo_iva": 21, "base": 79.59, "cuota": 16.71}] and s["total"] == 96.3
+    pdf = client.get(f"/api/facturas/{s['id']}/pdf", headers=admin)
     assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")
     libro = client.get(f"/api/facturas/libro.csv?anio={ANIO}", headers=admin).content.decode("utf-8-sig")
-    filas = [x for x in libro.splitlines() if f"{f['codigo']};" in x]
-    assert len(filas) == 2 and ";200,00;10,00;20,00;220,00;" in filas[0] and ";79,59;21,00;16,71;96,30;" in filas[1]
+    assert ";200,00;10,00;20,00;220,00;" in next(x for x in libro.splitlines() if f"{f['codigo']};" in x)
+    assert ";79,59;21,00;16,71;96,30;" in next(x for x in libro.splitlines() if f"{s['codigo']};" in x)
+    # enviar las dos al cliente: por WhatsApp, un enlace de descarga por factura
+    from app.config import settings
+    monkeypatch.setattr(settings, "url", "https://pms.example.com")
+    env = client.post("/api/facturas/enviar", headers=admin, json={
+        "factura_ids": [f["id"], s["id"]], "canal": "whatsapp", "telefono": "600 111 222"})
+    assert env.status_code == 200, env.text
+    assert env.json()["whatsapp"].startswith("https://wa.me/34600111222?text=")
+    from urllib.parse import unquote, urlparse
+    enlace = next(x for x in unquote(env.json()["whatsapp"]).split() if "/api/publico/factura/" in x)
+    ruta = urlparse(enlace)
+    assert client.get(f"{ruta.path}?{ruta.query}").content.startswith(b"%PDF")  # sin iniciar sesión
+    assert client.get(f"{ruta.path}?{ruta.query.replace('f=', 'f=0')}").status_code == 404  # firma falsa
+    mail = client.post("/api/facturas/enviar", headers=admin, json={
+        "factura_ids": [f["id"], s["id"]], "canal": "email", "email": "cliente@example.com"})
+    assert mail.status_code == 200, mail.text
 
     # la rectificativa deshace solo el cobro del alojamiento
     rect = client.post(f"/api/facturas/{f['id']}/rectificar", headers=admin, json={"motivo": "Error en servicios"}).json()
-    assert rect["total"] == -316.3 and [x["total"] for x in rect["lineas"]] == [-220, -60, -36.3]
+    assert rect["total"] == -220 and [x["total"] for x in rect["lineas"]] == [-220]
     res = client.get(f"/api/turistico/reservas?q={r['localizador'] or ''}&desde={d(30)}", headers=admin).json()
     assert [x for x in res if x["id"] == r["id"]][0]["importe_pagado"] == 0
 

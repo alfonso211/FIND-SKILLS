@@ -15,7 +15,8 @@
 3. Si el cliente **ya estuvo alojado**, búsquelo en «¿Ya ha estado alojado?» y se reutiliza su ficha.
 4. Indique **apartamento, canal, importe** y, si paga ahora, lo **cobrado** y la **forma de pago**: se emite la factura.
 5. Si **no paga ahora** (empresa o transferencia), marque **«facturar ya el importe total y dejarlo pendiente de cobro»**.
-6. **Servicios extra** (plaza extra, toallas…): elíjalos del catálogo o escríbalos, con cantidad y precio. **Limpieza contratada**: marque la casilla, el precio por limpieza, la **periodicidad** (un día, diaria, cada 2 o 3 días, semanal, quincenal u otra, indicando los días) y el primer día. Verá cuántas limpiezas salen y en qué días. Todo pasa a la **factura de la estancia**; si se pide después, **Editar** la reserva y **Facturar extras**.
+6. **Servicios extra** (plaza extra, toallas…): elíjalos del catálogo o escríbalos, con cantidad y precio. **Limpieza contratada**: marque la casilla, el precio por limpieza, la **periodicidad** (un día, diaria, cada 2 o 3 días, semanal, quincenal u otra, indicando los días) y el primer día. Verá cuántas limpiezas salen y en qué días. Los servicios se facturan **en una factura aparte de la estancia** (control de la gestoría); si se piden después, **Editar** la reserva y **Facturar extras**.
+7. Al emitir, aparecen **las dos facturas** (estancia y servicios): **Imprimir** cada una o las dos, o **Enviar** al cliente por **correo** (con los PDF) o **WhatsApp** (enlace de descarga, caduca a los 7 días).
 
 ## Ocupantes y contrato
 - Registre a **todos los ocupantes** (botón **Ocupantes**). Los **menores de 16 años no cuentan como plaza**.
@@ -24,7 +25,7 @@
 ## Check-in y check-out
 - **Check-in** en la reserva cuando el cliente llega (exige el registro completo de ocupantes).
 - **Check-out** a la salida: el apartamento pasa a **pendiente de limpieza**, sale en el **parte de limpieza** y se abre sola una **OT de revisión de salida** para mantenimiento.
-- **Parte de limpieza**: cada mañana, **Imprimir PDF** o **Enviar** a limpieza (el Excel queda en Documentos recibidos). Añada las **limpiezas extra** del día. Cuando limpieza avise, pulse **Hecha** en cada una; lo no validado pasa al día siguiente.
+- **Parte de limpieza**: la limpieza de salida entra en el parte **al hacer el check-out**, no antes (el cliente puede renovar). Haga el check-out en cuanto el cliente entregue las llaves. Cada mañana, **Imprimir PDF** o **Enviar** a limpieza (el Excel queda en Documentos recibidos). Antes de imprimir o enviar puede **ordenarlo** (↑ ↓), marcar algo como **urgente**, añadir una **nota** o **pasarlo a otro día** («Cambiar»). Añada las **limpiezas extra** del día. Para algo que no puede esperar: **⚡ Limpieza urgente** (va la primera y se imprime o envía al momento). Cuando limpieza avise, pulse **Hecha** en cada una; lo no validado pasa al día siguiente.
 - **Plano de apartamentos**: colores por estado. Pulse un apartamento para ver su ficha, reservar, bloquear o abrir una incidencia.
 
 ## Cobros y facturas

@@ -1,15 +1,22 @@
 """Facturas emitidas: consulta, PDF, rectificativas y libro registro para la gestoría.
 Las facturas se emiten solas al registrar un cobro (recibos de alquiler y reservas turísticas)."""
 import csv
+import hashlib
+import hmac
 import io
+import time
 from datetime import date, datetime
 from decimal import Decimal
+from html import escape
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, Field
 from sqlalchemy import String, cast, or_, select
 from sqlalchemy.orm import Session
 
-from .. import factura_pdf
+from .. import avisos, factura_pdf, firma_contrato
+from ..config import settings
 from ..database import get_db
 from ..facturacion import (FORMAS_PAGO, datos_cliente, desglose, dinero, emitir, factura_out, importe_estancia,
                            lineas_de, lineas_servicios, pendientes_cobro, serie_activo)
@@ -20,6 +27,8 @@ from ..utils import apply, bad_request, get_or_404, scoped
 
 router = APIRouter(prefix="/api/facturas", tags=["facturación"])
 router_servicios = APIRouter(prefix="/api/servicios", tags=["facturación"])
+publico = APIRouter(prefix="/api/publico", tags=["público"])
+DIAS_ENLACE = 7  # el enlace de descarga enviado por WhatsApp caduca a los 7 días
 
 
 def _filtrar(scope: Scope, asset_id, anio, serie, q, company_id=None):
@@ -161,13 +170,74 @@ def get_invoice(fid: int, scope: Scope = Depends(get_scope), db: Session = Depen
     return factura_out(f, _rectificadas(db, [f.id]).get(f.id))
 
 
+def _pdf(db: Session, f: Invoice) -> tuple[str, bytes]:
+    original = db.get(Invoice, f.rectifica_id) if f.rectifica_id else None
+    return f"Factura_{f.codigo.replace('/', '-')}.pdf", factura_pdf.generar(f, f.asset, original)
+
+
 @router.get("/{fid}/pdf")
 def invoice_pdf(fid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    f = _factura(db, scope, fid)
-    original = db.get(Invoice, f.rectifica_id) if f.rectifica_id else None
-    pdf = factura_pdf.generar(f, f.asset, original)
-    nombre = f"Factura_{f.codigo.replace('/', '-')}.pdf"
+    nombre, pdf = _pdf(db, _factura(db, scope, fid))
     return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
+
+
+def _firma(fid: int, caduca: int) -> str:
+    return hmac.new(settings.secret_key.encode(), f"factura:{fid}:{caduca}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def enlace(fid: int) -> str:
+    caduca = int(time.time()) + DIAS_ENLACE * 86400
+    return f"{settings.url}/api/publico/factura/{fid}?c={caduca}&f={_firma(fid, caduca)}"
+
+
+@publico.get("/factura/{fid}")
+def public_invoice(fid: int, c: int, f: str, db: Session = Depends(get_db)):
+    """Descarga de la factura desde el enlace enviado por WhatsApp (firmado y con caducidad)."""
+    if c < time.time() or not hmac.compare_digest(f, _firma(fid, c)):
+        raise HTTPException(404, "Enlace no válido o caducado. Pida la factura en recepción.")
+    nombre, pdf = _pdf(db, get_or_404(db, Invoice, fid))
+    return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{nombre}"'})
+
+
+class EnvioFacturasIn(BaseModel):
+    factura_ids: list[int] = Field(min_length=1, max_length=10)
+    canal: str  # email | whatsapp
+    email: str | None = Field(default=None, max_length=160)
+    telefono: str | None = Field(default=None, max_length=30)
+
+
+@router.post("/enviar")
+def send_invoices(data: EnvioFacturasIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Envía al cliente sus facturas (p.ej. la de la estancia y la de servicios). Correo: con los PDF adjuntos.
+    WhatsApp: mensaje con un enlace de descarga por factura (caduca a los 7 días)."""
+    fs = [_factura(db, scope, fid) for fid in dict.fromkeys(data.factura_ids)]
+    a = fs[0].asset
+    codigos = ", ".join(f.codigo for f in fs)
+    if data.canal == "email":
+        if not data.email:
+            bad_request("Indique el correo del cliente")
+        if not avisos.configurado():
+            bad_request("El correo no está configurado en el servidor: envíelas por WhatsApp")
+        asunto = f"Factura{'s' if len(fs) > 1 else ''} {codigos} · {a.nombre}"
+        texto = f"Le adjuntamos {'sus facturas' if len(fs) > 1 else 'su factura'} {codigos}. Gracias por su estancia."
+        avisos.enviar(data.email, asunto, texto, avisos._html(asunto, f"<p>{escape(texto)}</p>"),
+                      [(*_pdf(db, f), "application/pdf") for f in fs])
+        audit(db, scope.user, "enviar_facturas", "factura", fs[0].id, {"facturas": codigos, "canal": "email"})
+        db.commit()
+        return {"ok": True, "canal": "email", "destino": data.email}
+    if data.canal != "whatsapp":
+        bad_request("Canal no válido: email o whatsapp")
+    movil = firma_contrato.movil_whatsapp(data.telefono or "")
+    if not movil:
+        bad_request("Indique un móvil válido para WhatsApp")
+    if not settings.url:
+        bad_request("Falta PMS_URL en el servidor para generar los enlaces de descarga")
+    texto = (f"{a.nombre}: {'sus facturas' if len(fs) > 1 else 'su factura'}\n"
+             + "\n".join(f"{f.codigo} ({f.total} €): {enlace(f.id)}" for f in fs)
+             + f"\nEl enlace caduca en {DIAS_ENLACE} días.")
+    audit(db, scope.user, "enviar_facturas", "factura", fs[0].id, {"facturas": codigos, "canal": "whatsapp"})
+    db.commit()
+    return {"ok": True, "canal": "whatsapp", "destino": movil, "whatsapp": f"https://wa.me/{movil}?text={quote(texto)}"}
 
 
 @router.post("/{fid}/rectificar", status_code=201)

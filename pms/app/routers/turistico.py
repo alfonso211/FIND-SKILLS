@@ -198,23 +198,29 @@ def create_reservation(data: ReservationIn, scope: Scope = Depends(get_scope), d
         _guardar_extras(db, r, data.extras, data.limpieza)
     audit(db, scope.user, "crear", "reserva", r.id,
           {"unidad": unit.codigo, "entrada": str(r.fecha_entrada), "salida": str(r.fecha_salida)})
-    factura = None
-    if data.importe_pagado:  # pagado al reservar: se registra el cobro y se factura
-        factura = _cobrar(db, scope, r, Payment(importe=data.importe_pagado, forma_pago=data.forma_pago))
+    facturas = []
+    if data.importe_pagado:  # pagado al reservar: se registra el cobro y se factura (estancia y servicios aparte)
+        facturas = _cobrar(db, scope, r, Payment(importe=data.importe_pagado, forma_pago=data.forma_pago))
     elif data.facturar_pendiente and data.importe_total:  # sin cobrar: factura pendiente (pagará por transferencia)
-        factura = _cobrar(db, scope, r, Payment(importe=data.importe_total, forma_pago=data.forma_pago),
-                          cobrado=False)
+        facturas = _cobrar(db, scope, r, Payment(importe=data.importe_total, forma_pago=data.forma_pago),
+                           cobrado=False)
     db.commit()
     db.refresh(r)
-    out = _res_out(r)
-    if factura:
-        out["factura"] = {"id": factura.id, "codigo": factura.codigo, "cobro": factura.cobro}
-    return out
+    return {**_res_out(r), **_fact_out(facturas)}
 
 
-def _cobrar(db: Session, scope: Scope, r: Reservation, data: Payment, cobrado: bool = True):
-    """Emite la factura de la reserva. Cobrada (lo normal): suma lo pagado. Sin cobrar (`cobrado=False`): la
-    factura queda pendiente de cobro y lo pagado no cambia hasta que se marque cobrada."""
+def _fact_out(fs: list[Invoice]) -> dict:
+    """«factura»: la primera (la de la estancia si la hay); «facturas»: todas (estancia y servicios, por separado)."""
+    lista = [{"id": f.id, "codigo": f.codigo, "cobro": f.cobro, "tipo": "servicios" if not any(
+        x["tipo"] in ("alojamiento", "garaje") for x in f.lineas or []) else "estancia", "total": float(f.total)}
+        for f in fs]
+    return {"factura": lista[0], "facturas": lista} if lista else {}
+
+
+def _cobrar(db: Session, scope: Scope, r: Reservation, data: Payment, cobrado: bool = True) -> list[Invoice]:
+    """Emite las facturas de la reserva: la de la estancia y, APARTE, la de los servicios (extras pedidos y
+    servicios añadidos en el cobro): la gestoría las controla por separado. Cobrada (lo normal): suma lo pagado.
+    Sin cobrar (`cobrado=False`): quedan pendientes de cobro y lo pagado no cambia hasta que se marquen cobradas."""
     facturado = estancia_facturada(db, r.id)
     pendiente = dinero(r.importe_total) - max(dinero(r.importe_pagado), facturado)
     if dinero(data.importe) > pendiente:
@@ -242,25 +248,28 @@ def _cobrar(db: Session, scope: Scope, r: Reservation, data: Payment, cobrado: b
             concepto = ("Pago a cuenta · " if cobrado else "Facturación parcial · ") + concepto
         lineas.append(linea("garaje", concepto, data.importe, IVA_GENERAL) if garaje
                       else linea("alojamiento", concepto, data.importe, IVA_ALOJAMIENTO))
-    lineas += lineas_servicios(db, a.id, data.servicios)
+    servicios = lineas_servicios(db, a.id, data.servicios)
     extras = [dict(e) for e in r.extras or []]
     pend = [e for e in extras if not e.get("factura")] if getattr(data, "incluir_extras", True) else []
-    lineas += [linea("servicio", e["concepto"], e["precio"], e["tipo_iva"], e["cantidad"], e.get("servicio_id"))
-               for e in pend]
-    if not lineas:
+    servicios += [linea("servicio", e["concepto"], e["precio"], e["tipo_iva"], e["cantidad"], e.get("servicio_id"))
+                  for e in pend]
+    if not lineas and not servicios:
         bad_request("No hay nada que facturar")
-    f = emitir(db, scope.user, company=a.company, serie=serie_activo(a), asset_id=a.id,
-               cliente=datos_cliente(r.guest, data.facturar_a), contact_id=r.guest_id, lineas=lineas,
-               fecha_operacion=data.fecha_pago or date.today(),
-               forma_pago=data.forma_pago or (None if cobrado else "transferencia"), reservation_id=r.id,
-               cobro="cobrada" if cobrado else "pendiente")
+    emitidas = []
+    for grupo in (lineas, servicios):
+        if grupo:
+            emitidas.append(emitir(db, scope.user, company=a.company, serie=serie_activo(a), asset_id=a.id,
+                                   cliente=datos_cliente(r.guest, data.facturar_a), contact_id=r.guest_id,
+                                   lineas=grupo, fecha_operacion=data.fecha_pago or date.today(),
+                                   forma_pago=data.forma_pago or (None if cobrado else "transferencia"),
+                                   reservation_id=r.id, cobro="cobrada" if cobrado else "pendiente"))
     if pend:
         for e in pend:
-            e["factura"] = f.codigo
+            e["factura"] = emitidas[-1].codigo
         r.extras = extras  # nueva lista: SQLAlchemy detecta el cambio del JSON
     audit(db, scope.user, "cobro" if cobrado else "factura_pendiente", "reserva", r.id,
-          {"importe": data.importe, "factura": f.codigo})
-    return f
+          {"importe": data.importe, "facturas": [f.codigo for f in emitidas]})
+    return emitidas
 
 
 @router.post("/reservas/{rid}/cobro")
@@ -268,9 +277,9 @@ def register_payment(rid: int, data: Payment, scope: Scope = Depends(get_scope),
     """Cobro de una reserva: suma lo pagado y emite la factura (serie del activo)."""
     r = get_or_404(db, Reservation, rid)
     scope.require_asset("reservas.editar", r.unit.asset_id)
-    f = _cobrar(db, scope, r, data)
+    fs = _cobrar(db, scope, r, data)
     db.commit()
-    return {**_res_out(r), "factura": {"id": f.id, "codigo": f.codigo}}
+    return {**_res_out(r), **_fact_out(fs)}
 
 
 @router.post("/reservas/{rid}/facturar")
@@ -288,9 +297,9 @@ def invoice_unpaid(rid: int, data: UnpaidInvoiceIn, scope: Scope = Depends(get_s
     pago = Payment.model_construct(importe=importe, servicios=data.servicios, fecha_pago=None,
                                    forma_pago=data.forma_pago, facturar_a=data.facturar_a,
                                    incluir_extras=data.incluir_extras)
-    f = _cobrar(db, scope, r, pago, cobrado=False)
+    fs = _cobrar(db, scope, r, pago, cobrado=False)
     db.commit()
-    return {**_res_out(r), "factura": {"id": f.id, "codigo": f.codigo, "cobro": f.cobro}}
+    return {**_res_out(r), **_fact_out(fs)}
 
 
 @router.post("/reservas/{rid}/extras/factura")
@@ -302,9 +311,9 @@ def invoice_extras(rid: int, data: ExtrasPaymentIn, scope: Scope = Depends(get_s
         bad_request("La reserva no tiene servicios extra pendientes de facturar")
     pago = Payment.model_construct(importe=0, servicios=[], fecha_pago=data.fecha_pago, forma_pago=data.forma_pago,
                                    facturar_a=data.facturar_a, incluir_extras=True)
-    f = _cobrar(db, scope, r, pago, cobrado=data.cobrado)
+    fs = _cobrar(db, scope, r, pago, cobrado=data.cobrado)
     db.commit()
-    return {**_res_out(r), "factura": {"id": f.id, "codigo": f.codigo, "cobro": f.cobro}}
+    return {**_res_out(r), **_fact_out(fs)}
 
 
 @router.put("/reservas/{rid}")
@@ -393,6 +402,7 @@ def checkout(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(
     r.estado = "checkout"
     r.unit.estado = "pendiente_limpieza"
     revision_salida(db, r, scope.user)  # orden de trabajo a mantenimiento para revisar el apartamento
+    limpiezas.salida_realizada(db, r)  # la limpieza de salida entra en el parte de hoy
     for g in _garajes_asociados(db, r):  # la plaza de garaje sale con el apartamento
         g.estado = "checkout"
         if g.unit.estado == "ocupada":
@@ -1027,11 +1037,11 @@ def renew_stay(rid: int, data: RenewalIn, scope: Scope = Depends(get_scope), db:
                                                        "hasta": str(data.fecha_salida)})
     facturas = []
     if data.importe_pagado:  # cobrado al renovar
-        facturas.append(_cobrar(db, scope, nueva, Payment(importe=data.importe_pagado, forma_pago=data.forma_pago)))
+        facturas += _cobrar(db, scope, nueva, Payment(importe=data.importe_pagado, forma_pago=data.forma_pago))
     resto = dinero(data.importe_total) - dinero(data.importe_pagado)
     if data.facturar_pendiente and resto > 0:  # el resto se factura ya y queda pendiente de cobro
-        facturas.append(_cobrar(db, scope, nueva, Payment(importe=float(resto), forma_pago=data.forma_pago),
-                                cobrado=False))
+        facturas += _cobrar(db, scope, nueva, Payment(importe=float(resto), forma_pago=data.forma_pago),
+                            cobrado=False)
     db.commit()
     db.refresh(nueva)
     return {**_res_out(nueva), "facturas": [{"id": f.id, "codigo": f.codigo, "cobro": f.cobro} for f in facturas]}
