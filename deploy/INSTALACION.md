@@ -1,5 +1,7 @@
 # Instalación del PMS en el servidor de Arsys
 
+> **¿El sistema se ha caído, se ha perdido o hay un virus?** Siga la guía de emergencia [RECUPERACION.md](RECUPERACION.md).
+
 ## Instalación rápida (sin conocimientos técnicos)
 
 El guion `deploy/instalar.sh` hace automáticamente todo lo de los apartados 2 a 8: actualizaciones, cortafuegos,
