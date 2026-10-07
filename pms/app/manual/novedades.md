@@ -1,5 +1,8 @@
 # Novedades
 
+## 2026-10-07 · Versión 1.16 · Guía de emergencia
+- **Dirección**: nueva **guía de emergencia** para recuperar el sistema si se cae, se pierde el servidor o hay un virus (`deploy/RECUPERACION.md`, también en PDF). Incluye el **kit de emergencia** que hay que guardar fuera del servidor y un simulacro trimestral.
+
 ## 2026-10-07 · Versión 1.15 · Órdenes de trabajo a personal propio o subcontrata
 - **Mantenimiento**: en la OT, «Asignado a» es **Personal propio** o **Subcontrata** (de Proveedores). La orden se envía a quien la hace: al personal propio por WhatsApp; a la subcontrata por correo (con el PDF) y/o WhatsApp (con enlace al PDF), según se elija. Siempre con **copia al personal de mantenimiento propio**.
 
