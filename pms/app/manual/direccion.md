@@ -25,6 +25,7 @@
 - **Recibos y cobros**: recibos mensuales de renta y su cobro.
 
 ## Gastos
+- **Informe a presidencia** (mensual, por activo): producción por tipo de estancia y servicios, gastos por proveedor con CAPEX/OPEX, resultado con semáforo y resumen mensual del año anterior y del actual. Lo revisa y envía «Recepción 1» de cada activo (o quien se indique en la ficha del activo, junto con los correos y el WhatsApp de envío; si no se indican correos, va a la presidencia).
 - **Documentos recibidos**: carpeta de facturas y cartas de cada activo. El **lector** rellena los datos de la factura y marca en amarillo lo dudoso; las facturas **duplicadas** (mismo proveedor y nº) no se registran.
 - **OPEX / CAPEX**: cada gasto lo indica; la cuenta de gastos muestra el total de cada uno y el Excel lo incluye.
 - **Cuenta de gastos**: con **fecha de factura, vencimiento y forma de pago** (transferencia o cargo en cuenta); las pendientes vencidas se marcan en rojo y las que no tienen forma de pago muestran «falta forma de pago». Exportable a Excel.

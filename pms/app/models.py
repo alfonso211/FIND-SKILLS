@@ -63,6 +63,10 @@ class Asset(Base):
     provincia: Mapped[str | None] = mapped_column(String(100))
     cp: Mapped[str | None] = mapped_column(String(10))
     pais: Mapped[str | None] = mapped_column(String(60))
+    # informe mensual a la presidencia: quién lo revisa y envía (por defecto, «Recepción 1» del activo) y a dónde
+    informe_responsable_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    informe_emails: Mapped[str | None] = mapped_column(String(500))
+    informe_whatsapp: Mapped[str | None] = mapped_column(String(30))
     ref_catastral: Mapped[str | None] = mapped_column(String(30))
     num_registro_turistico: Mapped[str | None] = mapped_column(String(60))
     # Serie de sus facturas (B35, SF, SA...). Factura la sociedad gestora.
@@ -420,7 +424,7 @@ class StaffMember(Base):
 TIPOS_DOCUMENTO = {
     "factura": "Factura", "ticket": "Ticket / recibo", "albaran": "Albarán", "presupuesto": "Presupuesto",
     "carta": "Carta", "notificacion": "Notificación / requerimiento", "contrato": "Contrato",
-    "seguro": "Póliza / seguro", "otro": "Otro",
+    "seguro": "Póliza / seguro", "informe": "Informe mensual (presidencia)", "otro": "Otro",
 }
 TIPOS_GASTO = ("factura", "ticket", "albaran")  # tipos que normalmente son un gasto
 CATEGORIAS_GASTO = {
@@ -449,7 +453,7 @@ class ReceivedDocument(Base):
     descripcion: Mapped[str | None] = mapped_column(Text)
     nombre: Mapped[str] = mapped_column(String(200))
     fichero: Mapped[str] = mapped_column(String(64))
-    mime: Mapped[str] = mapped_column(String(60))
+    mime: Mapped[str] = mapped_column(String(100))
     tamano: Mapped[int] = mapped_column(Integer)
     sha256: Mapped[str] = mapped_column(String(64))
     subido: Mapped[datetime] = mapped_column(DateTime, default=_now)
@@ -676,3 +680,22 @@ class ExternalInvoice(Base):
     reservation_id: Mapped[int | None] = mapped_column(ForeignKey("reservas.id", ondelete="SET NULL"))
     importado: Mapped[datetime] = mapped_column(DateTime, default=_now)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+
+
+class PresidencyReport(Base):
+    """Informe mensual a la presidencia de un activo: quién comprobó los datos y cómo y a quién se envió.
+    El Excel queda en los documentos del activo (tipo «informe»)."""
+    __tablename__ = "informes_presidencia"
+    __table_args__ = (UniqueConstraint("asset_id", "anio", "mes"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
+    anio: Mapped[int] = mapped_column(Integer)
+    mes: Mapped[int] = mapped_column(Integer)
+    revisado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    revisado_en: Mapped[datetime | None] = mapped_column(DateTime)
+    enviado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    enviado_en: Mapped[datetime | None] = mapped_column(DateTime)
+    canal: Mapped[str | None] = mapped_column(String(12))  # email | whatsapp
+    destino: Mapped[str | None] = mapped_column(String(500))
+    documento_id: Mapped[int | None] = mapped_column(ForeignKey("documentos_recibidos.id"))
+    resumen: Mapped[dict | None] = mapped_column(JSON)  # totales enviados (ingresos, gastos, resultado, %)

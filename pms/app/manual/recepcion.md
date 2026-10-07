@@ -58,3 +58,14 @@
 - **Retención de IRPF** (facturas de profesionales, alquileres…): elija el tipo en **Retención** y compruebe el **%** (15 % profesionales, 7 % inicio de actividad, 19 % arrendamientos, 1 % módulos, u «Otra» con su %). Ponga como total el **que figura en la factura** (ya con la retención descontada).
 - **Retener el pago** (una factura que no se debe pagar todavía): marque **«Retener el pago»**, escriba el **motivo** y la **fecha de revisión**. Dirección y administración reciben un aviso al momento y cada día en el resumen. También desde **Cuenta de gastos → Retener pago**.
 - Si se equivocó: **Cuenta de gastos → Editar** y corrija la **Fecha de la factura** o la forma de pago.
+
+## Informe mensual a la presidencia (Recepción 1)
+- El **primer día laborable de cada mes** le llega un correo (y un aviso en el panel) para preparar el informe del mes anterior.
+- Entre en **Facturación e informes → Informe a presidencia**, elija el activo y el mes, y **revise** que todo es correcto:
+  - **Producción**: alquileres por tipo de estancia (menos de 1 semana, 1 semana, 2 semanas, 1 mes, renovaciones mensuales) con contratos, pernoctaciones e importes; servicios uno a uno; total del mes.
+  - **Gastos**: por proveedor (varias facturas del mismo proveedor en una línea), con nº de factura, importe sin IVA y CAPEX / OPEX.
+  - **Resultado** y su **porcentaje**: rojo (0 a 12 %), naranja (13 a 25 %) o verde (26 % o más).
+  - **Resumen mensual** del año anterior y del año en curso: producción, pernoctaciones, ocupación y variaciones.
+- Si algo no cuadra, corríjalo antes (facturas, gastos, reservas) y vuelva a abrir el informe.
+- Marque **«He revisado el informe y todos los datos son correctos»** y pulse **Enviar por correo** o **Enviar por WhatsApp**. Siempre se envía en **PDF**; el **Excel** queda guardado en **Documentos recibidos** (tipo «Informe mensual»).
+- Por WhatsApp: en el móvil se adjunta el PDF directamente; en el ordenador se descarga el PDF y se abre WhatsApp con el mensaje: adjunte el PDF.

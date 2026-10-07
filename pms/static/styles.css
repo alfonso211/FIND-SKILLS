@@ -580,3 +580,20 @@ nav .grupo.cerrado > .items { display: none; }
 nav .grupo.cerrado .flecha { transform: rotate(-90deg); }
 nav .grupo.cerrado > .group { padding-bottom: 6px; }
 nav .grupo.fijo { margin-top: 8px; border-top: 1px solid rgba(201, 164, 90, .16); padding-top: 6px; }
+/* informe a la presidencia */
+.informe-pres .inf-cols { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+@media (max-width: 1500px) { .informe-pres .inf-cols { grid-template-columns: 1fr; } }
+.informe-pres .card h3 { margin: 0 0 8px; font-size: 15px; }
+.tabla-inf { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-bottom: 10px; }
+.tabla-inf th, .tabla-inf td { padding: 4px 8px; border-bottom: 1px solid var(--line-2); white-space: normal; position: static; }
+.tabla-inf th { background: #f6f1e6; color: #6d5310; font-size: 10.5px; }
+.tabla-inf tr.tot td { font-weight: 700; background: #faf8f3; }
+.tabla-inf tr.grande td { font-size: 14px; }
+.tabla-inf tr.sem td { font-weight: 700; color: #fff; }
+.tabla-inf tr.sem-rojo td { background: #c62828; } .tabla-inf tr.sem-naranja td { background: #ef7d00; } .tabla-inf tr.sem-verde td { background: #2e7d32; }
+.tabla-inf td.sube { color: #2e7d32; } .tabla-inf td.baja { color: #c62828; }
+#pest { margin: -6px 0 10px; }
+.tabla-inf th { white-space: normal; }
+.informe-pres #anual { overflow-x: auto; }
+.informe-pres #anual .tabla-inf { font-size: 11.5px; }
+.informe-pres #anual .tabla-inf th, .informe-pres #anual .tabla-inf td { padding: 3px 5px; }

@@ -21,8 +21,8 @@ from sqlalchemy.orm import Session
 from .. import adjuntos, avisos, documentos
 from ..database import get_db
 from ..facturacion import FORMAS_PAGO, dinero
-from ..models import (AMBITOS_GASTO, CATEGORIAS_GASTO, TIPOS_DOCUMENTO, Asset, Company, Expense, ReceivedDocument,
-                      Supplier, Unit, User)
+from ..models import (AMBITOS_GASTO, CATEGORIAS_GASTO, TIPOS_DOCUMENTO, Asset, Company, Expense,
+                      PresidencyReport, ReceivedDocument, Supplier, Unit, User)
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request, get_or_404, scoped
 
@@ -414,6 +414,8 @@ def delete_document(did: int, scope: Scope = Depends(get_scope), db: Session = D
     _puede_borrar(scope, x.asset_id, x.user_id, x.subido)
     for g in db.scalars(select(Expense).where(Expense.documento_id == did)):
         g.documento_id = None  # el apunte del gasto se conserva
+    for r in db.scalars(select(PresidencyReport).where(PresidencyReport.documento_id == did)):
+        r.documento_id = None  # el registro del envío del informe se conserva
     documentos.borrar(x.fichero)
     audit(db, scope.user, "borrar", "documento_recibido", did, {"tipo": x.tipo, "emisor": x.emisor,
                                                                  "nombre": x.nombre})

@@ -122,4 +122,6 @@ def panel(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
             k["ot_urgentes"] = db.scalar(wo.where(WorkOrder.prioridad == "urgente"))
             k["ot_pendientes_cierre"] = db.scalar(wo.where(WorkOrder.estado == "pendiente_cierre"))
         out.append(k)
-    return {"fecha": hoy.isoformat(), "activos": out, "hitos": hitos.para(scope, hoy)}
+    from .presidencia import pendientes
+    return {"fecha": hoy.isoformat(), "activos": out, "hitos": hitos.para(scope, hoy),
+            "informes_pendientes": pendientes(db, scope, hoy)}
