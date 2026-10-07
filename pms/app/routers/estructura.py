@@ -423,6 +423,10 @@ def contact_detail(cid: int, scope: Scope = Depends(get_scope), db: Session = De
     d["unidades"] = unidades_de(db, [cid]).get(cid, [])
     d["n_apartamentos"] = sum(1 for x in d["unidades"] if x["uso"] != "garaje")
     d["n_estancias"] = db.scalar(select(func.count()).select_from(Reservation).where(Reservation.guest_id == cid))
+    fin = scope.asset_ids("finanzas.ver")  # importes del programa anterior: solo quien ve las finanzas del activo
+    if fin is None or (c.asset_id and c.asset_id in fin):
+        from .historico import del_cliente  # import local: historico no depende de este módulo
+        d["historico"] = del_cliente(db, c)
     return d
 
 

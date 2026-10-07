@@ -1205,10 +1205,29 @@ function unidadesHtml(c) {
   return `<fieldset><legend>Tiene ${c.n_apartamentos} apartamento(s)${u.length > c.n_apartamentos ? ` y ${u.length - c.n_apartamentos} plaza(s) de garaje` : ""}${c.n_estancias ? ` · ${c.n_estancias} estancia(s) en total` : ""}</legend>
     <ul class="envios">${u.map((x) => `<li><b>${esc(x.codigo)}</b> · ${esc(x.activo)} · ${x.tipo === "reserva" ? `reserva ${esc(x.localizador || "")} (${x.estado === "checkin" ? "alojado" : "confirmada"})` : `contrato ${esc(x.localizador || "")}`} · ${fdate(x.desde)} → ${x.hasta ? fdate(x.hasta) : "indefinido"}</li>`).join("")}</ul></fieldset>`;
 }
+// facturación del programa anterior (SYADE) del cliente, cruzada por su documento: solo control de producción
+const HIST_TIPO = { alojamiento: "Alojamiento", servicio: "Servicios", abono: "Abono", fianza_devuelta: "Fianza devuelta" };
+function historicoHtml(c) {
+  const h = c.historico;
+  if (!h) return "";
+  return `<fieldset><legend>Facturación del programa anterior (SYADE) · control de producción</legend>
+    <p>${h.facturas} factura(s)${h.abonos ? ` y ${h.abonos} abono(s)` : ""} · ${fdate(h.desde)} → ${fdate(h.hasta)}</p>
+    <div class="table-wrap"><table><tbody>
+      <tr><td>Alojamiento (base)</td><td class="num">${eur(h.alojamiento)}</td></tr>
+      <tr><td>Servicios (base)</td><td class="num">${eur(h.servicios)}</td></tr>
+      <tr class="total"><td><b>Producción (base)</b></td><td class="num"><b>${eur(h.produccion)}</b></td></tr>
+      <tr><td>Total con IVA</td><td class="num">${eur(h.total)}</td></tr>
+      ${h.fianzas_cobradas || h.fianzas_devueltas ? `<tr><td>Fianzas cobradas / devueltas</td><td class="num">${eur(h.fianzas_cobradas)} / ${eur(h.fianzas_devueltas)}</td></tr>` : ""}
+    </tbody></table></div>
+    <details><summary>Ver las ${h.detalle.length} líneas</summary><div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Factura</th><th>Localizador</th><th class="num">Base</th><th class="num">Total</th><th class="num">Fianza</th></tr></thead><tbody>
+      ${h.detalle.map((x) => `<tr><td>${fdate(x.fecha)}</td><td>${HIST_TIPO[x.tipo] || esc(x.tipo)}</td><td>${esc(x.factura)}</td><td>${esc(x.localizador || "")}</td><td class="num">${eur(x.base)}</td><td class="num">${eur(x.total)}</td><td class="num">${x.fianza ? eur(x.fianza) : "—"}</td></tr>`).join("")}
+    </tbody></table></div></details>
+    <p class="muted">Datos del programa anterior, enlazados por el DNI/NIF del cliente. No son facturas del PMS: la facturación válida para Hacienda empieza el 1 de enero de 2027.</p></fieldset>`;
+}
 async function editGuest(id, tipo = "huesped", onSaved) {
   const c = await get(`/api/terceros/${id}`).catch(() => null);
   if (!c) return toast("Cliente no encontrado", true);
-  const f = form(`${{ huesped: "Huésped", cliente_garaje: "Cliente de garaje" }[tipo] || "Inquilino"}: ${c.nombre} ${c.apellidos || ""}${c.activo ? ` · ${c.activo}` : ""}`.trim(), [{ html: unidadesHtml(c) }, { html: scanHtml() }, ...guestFields, { k: "iban", t: "IBAN" }, { k: "notas", t: "Notas", type: "textarea", wide: true }], c,
+  const f = form(`${{ huesped: "Huésped", cliente_garaje: "Cliente de garaje" }[tipo] || "Inquilino"}: ${c.nombre} ${c.apellidos || ""}${c.activo ? ` · ${c.activo}` : ""}`.trim(), [{ html: unidadesHtml(c) }, { html: historicoHtml(c) }, { html: scanHtml() }, ...guestFields, { k: "iban", t: "IBAN" }, { k: "notas", t: "Notas", type: "textarea", wide: true }], c,
     async (d) => { await put(`/api/terceros/${id}`, { ...d, company_id: c.company_id, tipo: c.tipo }); toast("Datos guardados"); onSaved && onSaved(); });
   bindScan(f, id, (lec) => rellenaFicha(f, lec));
 }
@@ -2400,7 +2419,7 @@ async function importarHistorico(recargar) {
       const bloques = prev.map((p, i) => p.error ? `<div class="aviso-faltan"><b>${esc(fichs[i].name)}</b>: ${esc(p.error)}</div>` : `
         <fieldset><legend>${esc(p.tipo_nombre)} · ${esc(fichs[i].name)}</legend>
         <p>${p.cuadra ? '<span class="badge b-vigente">✔ cuadra con los totales del listado</span>' : '<span class="badge b-cancelada">no cuadra</span>'}
-          ${p.registros} registros (${p.nuevas} nuevos, ${p.actualizadas} a actualizar) · ${fdate(p.desde)} → ${fdate(p.hasta)}${p.con_reserva ? ` · ${p.con_reserva} enlazados con su reserva` : ""}</p>
+          ${p.registros} registros (${p.nuevas} nuevos, ${p.actualizadas} a actualizar) · ${fdate(p.desde)} → ${fdate(p.hasta)}${p.con_reserva ? ` · ${p.con_reserva} enlazados con su reserva` : ""}${p.clientes ? ` · ${p.con_cliente} registro(s) de ${p.clientes} cliente(s) del PMS (por DNI/NIF)` : ""}</p>
         <div class="table-wrap"><table><thead><tr><th></th>${Object.keys(p.leido).map((k) => `<th class="num">${HIST_CMP[k] || k}</th>`).join("")}</tr></thead><tbody>
           <tr><td>Leído</td>${Object.entries(p.leido).map(([k, v]) => `<td class="num">${k === "registros" ? v : eur(v)}</td>`).join("")}</tr>
           ${p.esperado ? `<tr><td>Totales del listado</td>${Object.keys(p.leido).map((k) => `<td class="num">${p.esperado[k] == null ? "—" : k === "registros" ? p.esperado[k] : eur(p.esperado[k])}</td>`).join("")}</tr>` : ""}
@@ -2427,6 +2446,7 @@ async function resumenHistorico() {
     const celda = (k, v) => `<td class="num">${k === "n" ? (v || 0) : v ? eur(v) : "—"}</td>`;
     const mes = (m) => { const [y, mm] = m.split("-"); return `${MESES[Number(mm) - 1]} ${y}`; };
     return `<h4>${esc(a.activo)}</h4><p class="muted">${fdate(a.desde)} → ${fdate(a.hasta)} · importado ${fdt(a.importado)} · ${Object.entries(a.registros).map(([t, n]) => `${n} ${label(t)}`).join(" · ")}</p>
+      <p>${a.clientes.con_cliente} de ${a.clientes.facturas} facturas y abonos enlazados por DNI/NIF con <b>${a.clientes.clientes} cliente(s)</b> del PMS: sus importes se ven en la ficha de cada cliente.</p>
       <div class="table-wrap"><table><thead><tr><th>Mes</th>${col.map(([, t]) => `<th class="num">${t}</th>`).join("")}</tr></thead><tbody>
       ${a.meses.map((m) => `<tr><td>${mes(m.mes)}</td>${col.map(([k]) => celda(k, m[k])).join("")}</tr>`).join("")}
       <tr class="total"><td><b>Total</b></td>${col.map(([k]) => `<td class="num"><b>${k === "n" ? tot[k] : eur(tot[k])}</b></td>`).join("")}</tr></tbody></table></div>
