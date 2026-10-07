@@ -100,13 +100,33 @@ async function run(fn, okMsg) {
 function table(el, cols, rows, actions) {
   if (!el) return;  // la vista cambió mientras se cargaban los datos
   if (!rows.length) { el.innerHTML = `<div class="table-wrap"><div class="empty">Sin resultados</div></div>`; return; }
-  const head = cols.map((c) => `<th class="${c.num ? "num" : ""}">${esc(c.t)}</th>`).join("") + (actions ? "<th></th>" : "");
+  const head = cols.map((c) => `<th class="${c.num ? "num" : ""}">${esc(c.t)}</th>`).join("") + (actions ? '<th class="acc"></th>' : "");
   const acts = rows.map((r) => (actions ? actions(r).filter(Boolean) : []));
   const body = rows.map((r, i) => "<tr>" + cols.map((c) => `<td class="${c.num ? "num" : ""}">${c.f ? c.f(r[c.k], r) : esc(r[c.k])}</td>`).join("") +
-    (actions ? `<td>${acts[i].map(([l, , cls], j) => `<button class="btn sm ${cls || ""}" data-r="${i}" data-a="${j}">${esc(l)}</button>`).join(" ")}</td>` : "") + "</tr>").join("");
+    (actions ? `<td class="acc">${acts[i].map(([l, , cls], j) => `<button class="btn sm ${cls || ""}" data-r="${i}" data-a="${j}">${esc(l)}</button>`).join(" ")}</td>` : "") + "</tr>").join("");
   el.innerHTML = `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
     <p class="muted">${rows.length} registro(s)</p>`;
   el.querySelectorAll("button[data-r]").forEach((b) => (b.onclick = () => acts[b.dataset.r][b.dataset.a][1](rows[b.dataset.r])));
+}
+
+// Pantallas de un vistazo: cada lista ocupa como mucho lo que queda de pantalla y se desplaza por dentro
+// (cabecera fija), así la página no crece hacia abajo y los botones quedan a mano.
+function encajarTablas() {
+  const vista = document.getElementById("view");
+  if (!vista) return;
+  vista.querySelectorAll(".table-wrap").forEach((w) => {
+    if (w.closest("dialog") || w.closest(".no-encajar")) return;
+    const top = w.getBoundingClientRect().top + window.scrollY;
+    const pie = w.nextElementSibling?.matches("p.muted") ? 30 : 12;
+    w.style.maxHeight = `${Math.max(260, window.innerHeight - top - pie - 14)}px`;
+  });
+}
+let _encajeT;
+const encajeDiferido = () => { clearTimeout(_encajeT); _encajeT = setTimeout(encajarTablas, 60); };
+window.addEventListener("resize", encajeDiferido);
+{
+  const observar = () => { const v = document.getElementById("view"); if (v) new MutationObserver(encajeDiferido).observe(v, { childList: true, subtree: true }); };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", observar); else observar();
 }
 
 // ------------------------------------------------------------------ formulario modal genérico
@@ -208,31 +228,40 @@ V.panel = async (el) => {
     el.innerHTML = `<section class="panel-agenda"><h3>📅 Agenda</h3><div id="agp"></div></section>`;
     return agendaWidget($("#agp", el));
   }
-  // Quien ve varios activos: tarjetas de situación interactivas (abren el plano del activo, si lo tiene).
-  // Quien solo ve su activo (o filtra uno): situación informativa y las plantas en miniatura para trabajar.
+  // Diseño: a la izquierda (lo que se trabaja) el plano por plantas arriba y la situación de cada activo;
+  // a la derecha, estrecho, la agenda y los avisos. Todo cabe en la pantalla sin bajar.
   const varios = S.assets.length > 1 && !S.asset;
   const conMapa = new Set(conPlano.map((a) => a.id));
   S.conPlano = conMapa;
-  const planos = varios ? [] : conPlano.filter((a) => !S.asset || String(a.id) === String(S.asset));
-  el.innerHTML = `<div class="buscador"><input id="busq" type="search" autocomplete="off" placeholder="🔍 Buscar: documento, apartamento, cliente, teléfono, localizador, factura, OT, proveedor…" aria-label="Buscar">
+  const planos = conPlano.filter((a) => !S.asset || String(a.id) === String(S.asset));
+  let elegido = null;
+  try { elegido = localStorage.getItem("pms_panel_plano"); } catch {}
+  const plano = planos.find((a) => String(a.id) === elegido) || planos[0];
+  const visibles = p.activos.filter((a) => !S.asset || String(a.id) === String(S.asset));
+  const avisos = [];
+  const pf = visibles.filter((a) => a.facturas_pendientes);
+  if (pf.length) avisos.push(`<div class="aviso-hito aviso-cobro"><h4>💶 Pendientes de cobro: ${pf.reduce((s, a) => s + a.facturas_pendientes, 0)} · ${eur(pf.reduce((s, a) => s + a.facturas_pendientes_importe, 0))}</h4>
+    <p>${pf.map((a) => `${esc(a.nombre)}: ${a.facturas_pendientes} (${eur(a.facturas_pendientes_importe)}), la más antigua de ${a.facturas_pendientes_dias} días`).join(" · ")}.</p>
+    <button class="btn sm primary" id="verCobros">Revisar</button></div>`);
+  const pr = visibles.filter((a) => a.pagos_retenidos);
+  if (pr.length) avisos.push(`<div class="aviso-hito aviso-cobro"><h4>⛔ Pago retenido: ${pr.reduce((s, a) => s + a.pagos_retenidos, 0)} · ${eur(pr.reduce((s, a) => s + a.pagos_retenidos_importe, 0))}</h4>
+    <p>${pr.map((a) => `${esc(a.nombre)}: ${a.pagos_retenidos}${a.pagos_retenidos_revisar ? ` (<b>${a.pagos_retenidos_revisar} para revisar ya</b>)` : ""}`).join(" · ")}. No pagarlas hasta revisarlas.</p>
+    <button class="btn sm primary" id="verRetenidas">Ver gastos</button></div>`);
+  (p.hitos || []).forEach((h) => avisos.push(`<div class="aviso-hito"><h4>📅 ${esc(h.titulo)} · ${fdate(h.fecha)} (${h.dias > 0 ? `faltan ${h.dias} días` : h.dias === 0 ? "hoy" : `hace ${-h.dias} días`})</h4><p>${esc(h.detalle)}</p></div>`));
+  el.innerHTML = `<div class="panel-grid"><div class="panel-main">
+    <div class="buscador"><input id="busq" type="search" autocomplete="off" placeholder="🔍 Buscar: documento, apartamento, cliente, teléfono, localizador, factura, OT, proveedor…" aria-label="Buscar">
       <div id="busqRes"></div></div>
-    <section class="panel-agenda"><h3>📅 Agenda</h3><div id="agp"></div></section>
-    ${planos.map((a) => `<section class="plano-resumen" data-plano="${a.id}"><div class="toolbar"><h3 style="margin:0">${esc(a.nombre)} · plano por plantas</h3><span class="spacer"></span>${leyendaHtml()}</div><div class="minis"><p class="muted">Cargando plano…</p></div></section>`).join("")}
-    ${(() => { const pf = p.activos.filter((a) => a.facturas_pendientes && (!S.asset || String(a.id) === String(S.asset)));
-      return pf.length ? `<div class="aviso-hito aviso-cobro"><h4>💶 Facturas pendientes de cobro: ${pf.reduce((s, a) => s + a.facturas_pendientes, 0)} · ${eur(pf.reduce((s, a) => s + a.facturas_pendientes_importe, 0))}</h4>
-        <p>${pf.map((a) => `${esc(a.nombre)}: ${a.facturas_pendientes} (${eur(a.facturas_pendientes_importe)}), la más antigua de ${a.facturas_pendientes_dias} días`).join(" · ")}. Compruebe en el banco si han llegado las transferencias y márquelas cobradas.</p>
-        <button class="btn sm primary" id="verCobros">Revisar facturas pendientes</button></div>` : ""; })()}
-    ${(() => { const pr = p.activos.filter((a) => a.pagos_retenidos && (!S.asset || String(a.id) === String(S.asset)));
-      return pr.length ? `<div class="aviso-hito aviso-cobro"><h4>⛔ Facturas con el pago retenido: ${pr.reduce((s, a) => s + a.pagos_retenidos, 0)} · ${eur(pr.reduce((s, a) => s + a.pagos_retenidos_importe, 0))}</h4>
-        <p>${pr.map((a) => `${esc(a.nombre)}: ${a.pagos_retenidos}${a.pagos_retenidos_revisar ? ` (<b>${a.pagos_retenidos_revisar} para revisar ya</b>)` : ""}`).join(" · ")}. No pagarlas hasta revisarlas; al revisarlas, libere el pago o cambie la fecha de revisión.</p>
-        <button class="btn sm primary" id="verRetenidas">Ver cuenta de gastos</button></div>` : ""; })()}
-    ${(p.hitos || []).map((h) => `<div class="aviso-hito"><h4>📅 ${esc(h.titulo)} · ${fdate(h.fecha)} (${h.dias > 0 ? `faltan ${h.dias} días` : h.dias === 0 ? "hoy" : `hace ${-h.dias} días`})</h4><p>${esc(h.detalle)}</p></div>`).join("")}
-    <p class="muted">Situación a ${fdate(p.fecha)}</p><div class="cards">${p.activos.filter((a) => !S.asset || String(a.id) === String(S.asset)).map((a) => {
+    ${plano ? `<section class="plano-resumen" data-plano="${plano.id}"><div class="toolbar">
+      ${planos.length > 1 ? `<span class="chips" style="margin:0">${planos.map((a) => `<button class="chip${a.id === plano.id ? " on" : ""}" data-elegir="${a.id}">${esc(a.nombre)}</button>`).join("")}</span>`
+        : `<h3 style="margin:0">${esc(plano.nombre)}</h3>`}
+      <button class="btn sm" id="abrirPlano">Abrir plano completo</button><span class="spacer"></span>${leyendaHtml()}</div>
+      <div class="minis"><p class="muted">Cargando plano…</p></div></section>` : ""}
+    <p class="muted panel-fecha">Situación a ${fdate(p.fecha)}</p><div class="cards panel-cards">${visibles.map((a) => {
     const k = [];
     // los datos del edificio son de los alojamientos: las plazas de garaje van aparte y no computan
     k.push([a.unidades, Object.entries(a.usos || {}).filter(([u]) => u !== "garaje").map(([u, n]) => `${n} ${n === 1 ? u : plural(u)}`).join(" · ") || "Unidades"]);
     if (a.ocupacion_hoy != null) k.push([a.ocupacion_hoy + " %", "Ocupación hoy"]);
-    if (a.llegadas_hoy != null) k.push([a.llegadas_hoy, "Llegadas hoy"], [a.salidas_hoy, "Salidas hoy"]);
+    if (a.llegadas_hoy != null) k.push([`${a.llegadas_hoy} / ${a.salidas_hoy}`, "Llegadas / salidas hoy"]);
     if (a.estancias_vencidas) k.push([a.estancias_vencidas, "Estancias vencidas (renovar o salida)", "mal"]);
     if (a.contratos_vigentes != null) {
       const al = a.alquiladas_por_uso || {};
@@ -241,28 +270,37 @@ V.panel = async (el) => {
         k.push([`${al[u] || 0} / ${n}`, `${t[0].toUpperCase()}${t.slice(1)} alquilad${["vivienda", "oficina"].includes(u) ? "as" : "os"}`]);
       });
     }
-    if (a.produccion_mes != null) k.push([eur(a.produccion_mes), "Producción mes (facturado sin IVA ni garajes)" + (a.produccion_mes_externa ? ` · ${eur(a.produccion_mes_externa)} de SYADE` : "")]);
-    if (a.garajes) k.push([`${a.garajes_ocupados} / ${a.garajes}`, "Plazas de garaje alquiladas hoy (no computa)"]);
-    else if (a.usos?.garaje && a.alquiladas_por_uso) k.push([`${a.alquiladas_por_uso.garaje || 0} / ${a.usos.garaje}`, "Plazas de garaje alquiladas (no computa)"]);
+    if (a.produccion_mes != null) k.push([eur(a.produccion_mes), "Producción del mes", "", "Producción del mes: facturado sin IVA ni garajes" + (a.produccion_mes_externa ? ` · ${eur(a.produccion_mes_externa)} del programa anterior (SYADE)` : "")]);
+    if (a.garajes) k.push([`${a.garajes_ocupados} / ${a.garajes}`, "Garajes alquilados", "", "Plazas de garaje alquiladas hoy (no computan en la ocupación)"]);
+    else if (a.usos?.garaje && a.alquiladas_por_uso) k.push([`${a.alquiladas_por_uso.garaje || 0} / ${a.usos.garaje}`, "Garajes alquilados", "", "Plazas de garaje alquiladas (no computan en la ocupación)"]);
     if (a.garajes_facturado_mes) k.push([eur(a.garajes_facturado_mes), "Garajes facturados mes (aparte)"]);
     if (a.renta_mensual != null) k.push([eur(a.renta_mensual), "Renta mensual"], [eur(a.deuda_vencida), "Deuda vencida"]);
-    if (a.ot_abiertas != null) k.push([a.ot_abiertas, "OT abiertas"], [a.ot_urgentes, "OT urgentes"], [a.ot_pendientes_cierre, "OT pendientes de cierre"]);
+    if (a.ot_abiertas != null) k.push([`${a.ot_abiertas} · ${a.ot_urgentes} · ${a.ot_pendientes_cierre}`, "OT abiert. · urg. · cerrar", a.ot_urgentes ? "mal" : "", "Órdenes de trabajo: abiertas · urgentes · pendientes de cierre"]);
     const est = Object.entries(a.estados).map(([e, n]) => `${badge(e)} ${n}`).join(" ");
     const clic = varios && conMapa.has(a.id);
-    return `<div class="card${clic ? " clic" : ""}" ${clic ? `data-abrir="${a.id}" tabindex="0" role="button" title="Abrir el plano de ${esc(a.nombre)}"` : ""}>${logoActivo(a.id)}<h3>${esc(a.nombre)}${clic ? '<span class="ver-plano">Ver plano →</span>' : ""}</h3><div class="sub">${esc(a.modalidad_nombre)} · Gestiona ${esc(a.sociedad)} · Propiedad ${esc(a.propietaria)}</div>
+    return `<div class="card${clic ? " clic" : ""}" ${clic ? `data-abrir="${a.id}" tabindex="0" role="button" title="Abrir el plano de ${esc(a.nombre)}"` : ""}>${logoActivo(a.id)}<h3>${esc(a.nombre)}${clic ? '<span class="ver-plano">Ver plano →</span>' : ""}</h3><div class="sub" title="${esc(`${a.modalidad_nombre} · Gestiona ${a.sociedad} · Propiedad ${a.propietaria}`)}">${esc(a.modalidad_nombre)} · ${esc(a.sociedad)}</div>
       ${a.ocupacion_hoy != null ? `<div class="bar"><i style="width:${Math.min(100, a.ocupacion_hoy)}%"></i></div>` : ""}
-      <div class="kpis">${k.map(([v, l, cls]) => `<div class="kpi ${cls || ""}"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("")}</div>
-      <p style="margin-top:12px">${est || '<span class="muted">Sin unidades dadas de alta</span>'}</p></div>`;
-  }).join("")}</div>`;
+      <div class="kpis">${k.map(([v, l, cls, tip]) => `<div class="kpi ${cls || ""}" title="${esc(tip || l)}"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("")}</div>
+      <p class="estados">${est || '<span class="muted">Sin unidades dadas de alta</span>'}</p></div>`;
+  }).join("")}</div></div>
+    <aside class="panel-lateral"><section class="panel-agenda"><h3>📅 Agenda</h3><div id="agp"></div></section>${avisos.join("")}</aside></div>`;
   el.querySelectorAll("[data-abrir]").forEach((c) => {
     const abrir = () => { S.plano = { asset: Number(c.dataset.abrir) }; go("plano"); };
     c.onclick = abrir; c.onkeydown = (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), abrir());
   });
+  el.querySelectorAll("[data-elegir]").forEach((b) => (b.onclick = () => {
+    try { localStorage.setItem("pms_panel_plano", b.dataset.elegir); } catch {}
+    const sec = $("[data-plano]", el);
+    sec.dataset.plano = b.dataset.elegir;
+    el.querySelectorAll("[data-elegir]").forEach((x) => x.classList.toggle("on", x === b));
+    pintarMinis(el).catch(() => {});
+  }));
+  if ($("#abrirPlano", el)) $("#abrirPlano", el).onclick = () => { S.plano = { asset: Number($("[data-plano]", el).dataset.plano) }; go("plano"); };
   if ($("#verCobros", el)) $("#verCobros", el).onclick = () => { S.filtroCobro = "pendiente"; go("facturas"); };
   if ($("#verRetenidas", el)) $("#verRetenidas", el).onclick = () => go("gastos");
   pintarMinis(el).catch((e) => el.querySelectorAll(".minis").forEach((m) => (m.innerHTML = `<p class="error">${esc(e.message)}</p>`)));
   bindBuscador($("#busq", el), $("#busqRes", el));
-  agendaWidget($("#agp", el));
+  agendaWidget($("#agp", el), false, true);
 };
 
 // ------------------------------------------------------------------ agenda (calendario de todos los usuarios)
@@ -328,7 +366,7 @@ function citaHtml(e, conFecha = false) {
 }
 
 // Calendario mensual con los días que tienen citas marcados; al pulsar un día se ven sus citas al lado.
-function agendaWidget(cont, grande = false) {
+function agendaWidget(cont, grande = false, compacta = false) {
   const hoy = new Date();
   let mes = new Date(hoy.getFullYear(), hoy.getMonth(), 1), sel = isoLocal(hoy), citas = [], pend = { tareas: [], nuevas: [] };
   const cargar = async () => {
@@ -350,9 +388,9 @@ function agendaWidget(cont, grande = false) {
     }).join("");
     const delDia = porDia[sel] || [];
     const f = new Date(sel + "T12:00");
-    cont.innerHTML = `<div class="agenda${grande ? " grande" : ""}">
+    cont.innerHTML = `<div class="agenda${grande ? " grande" : ""}${compacta ? " compacta" : ""}">
       <div class="ag-cal"><div class="toolbar"><button class="btn sm" data-mes="-1">‹</button><b class="ag-mes">${MESES[mes.getMonth()]} ${mes.getFullYear()}</b><button class="btn sm" data-mes="1">›</button>
-        <button class="btn sm" data-mes="0">Hoy</button><span class="spacer"></span><button class="btn sm primary" data-nueva>+ Nueva</button></div>
+        <button class="btn sm" data-mes="0">Hoy</button><span class="spacer"></span><button class="btn sm primary" data-nueva title="Nueva cita, tarea o recordatorio">${compacta ? "+" : "+ Nueva"}</button></div>
         <div class="ag-sem">${["L", "M", "X", "J", "V", "S", "D"].map((x) => `<span>${x}</span>`).join("")}</div><div class="ag-grid">${celdas}</div>
         <p class="ag-leyenda">${Object.values(AG_TIPOS).map(([t, c]) => `<span><i style="background:${c}"></i>${t}</span>`).join("")}</p></div>
       <div class="ag-lista">
@@ -449,6 +487,9 @@ const conPlanoActivo = (aid) => S.conPlano?.has(aid);
 async function pintarMinis(el) {
   for (const sec of el.querySelectorAll("[data-plano]")) {
     const pl = await get(`/api/plano/${sec.dataset.plano}`);
+    // panel: todas las plantas en una sola fila (si caben), para ver el edificio entero de un vistazo
+    $(".minis", sec).style.gridTemplateColumns = sec.closest(".panel-main") && sec.clientWidth / pl.plantas.length >= 105
+      ? `repeat(${pl.plantas.length}, minmax(0, 1fr))` : "";
     $(".minis", sec).innerHTML = pl.plantas.map((x) => `<button class="mini-planta" data-p="${esc(x.planta)}" title="Abrir ${esc(x.etiqueta)}">
         ${gridPlano(pl, x, true)}<b>${esc(x.etiqueta)}</b>${contadores(x.resumen)}</button>`).join("");
     sec.querySelectorAll(".mini-planta").forEach((b) => (b.onclick = () => { S.plano = { asset: pl.asset.id, planta: b.dataset.p }; go("plano"); }));

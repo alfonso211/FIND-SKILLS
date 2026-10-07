@@ -1,5 +1,11 @@
 # Novedades
 
+## 2026-10-07 · Versión 1.5 · Pantallas de un vistazo
+- **Todos**: **panel de control** reordenado: el **plano por plantas arriba** (con botones para elegir el edificio) y la situación de cada activo en una franja; la **agenda**, reducida, a la **derecha** con los avisos.
+- **Todos**: las pantallas caben en el monitor sin bajar: las listas se desplazan dentro de su recuadro, con la **cabecera fija** y los **botones de cada fila siempre visibles**.
+- **Todos**: menú más compacto; en tableta se abre con **☰** para dejar todo el ancho a la pantalla de trabajo.
+- **Todos**: las ventanas de datos (formularios) nunca son más altas que la pantalla: el botón **Guardar** queda siempre a la vista.
+
 ## 2026-10-07 · Versión 1.4 · Lector de facturas y duplicados
 - **Todos**: los formularios ya no montan unas casillas sobre otras; todo queda legible.
 - **Todos**: clientes, proveedores, sociedades y activos tienen **código postal, población, provincia y país**.
