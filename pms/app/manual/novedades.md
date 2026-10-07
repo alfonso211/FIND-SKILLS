@@ -1,5 +1,10 @@
 # Novedades
 
+## 2026-10-07 · Versión 1.11 · Parte de limpieza y revisión de salida
+- **Recepción**: en la reserva se añaden los **servicios extra** (plaza extra, toallas… del catálogo o escritos) y la **limpieza contratada** con su día y periodicidad; todo pasa a la **factura de la estancia** («Facturar extras» si se pide después).
+- **Recepción y limpieza**: nuevo **Parte de limpieza** diario con las salidas (y si hay llegada, «antes del…»), las limpiezas contratadas y las extra. Se imprime en PDF o se envía por WhatsApp o correo, y el Excel queda en Documentos recibidos. Recepción valida cada limpieza con **Hecha**; lo no validado pasa al día siguiente.
+- **Mantenimiento**: con cada check-out se abre sola una **OT de revisión de salida** del apartamento.
+
 ## 2026-10-07 · Versión 1.10 · Babilonia 35 en carpetas
 - **Dirección**: en el **Plano de apartamentos** y en el panel, Babilonia 35 aparece como **carpetas por planta** (y por sótano) con el logotipo de Comercial del Campo; dentro, sus viviendas o plazas.
 - **Dirección**: la primera vez que se abre una vivienda se indica su **situación** (alquilada, vacía, en reforma, en obra…). Si está alquilada, se pide **completar el contrato** cada día hasta que esté completo, sin impedir trabajar en la vivienda.

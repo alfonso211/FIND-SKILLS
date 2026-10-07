@@ -897,7 +897,7 @@ function serviciosHtml(titulo = "Servicios (IVA 21 % salvo que se indique otro)"
   return `<fieldset class="servicios"><legend>${esc(titulo)}</legend><div data-lineas></div>
     <button type="button" class="btn sm" data-addsrv>+ Añadir servicio</button> <span class="muted" data-srvtot></span></fieldset>`;
 }
-async function bindServicios(f, assetId, inicial = 0) {
+async function bindServicios(f, assetId, inicial = 0, valores = []) {
   const cat = await get("/api/servicios", { asset_id: assetId });
   const cont = $("[data-lineas]", f);
   if (!cont) return;
@@ -926,6 +926,15 @@ async function bindServicios(f, assetId, inicial = 0) {
   };
   $("[data-addsrv]", f).onclick = fila;
   for (let i = 0; i < inicial; i++) fila();
+  valores.forEach((v) => {  // líneas ya guardadas (extras de la reserva aún sin facturar)
+    fila();
+    const r = cont.lastElementChild;
+    $("[data-s]", r).value = v.servicio_id && cat.some((x) => x.id === v.servicio_id) ? String(v.servicio_id) : "";
+    $("[data-s]", r).onchange();
+    $("[data-c]", r).value = v.concepto || ""; $("[data-n]", r).value = v.cantidad ?? 1;
+    $("input[data-p]", r).value = v.precio ?? ""; $("select[data-i]", r).value = String(Number(v.tipo_iva ?? 21));
+  });
+  total();
 }
 function leerServicios(f) {
   return [...f.querySelectorAll(".srv-fila")].map((r) => {
@@ -934,9 +943,97 @@ function leerServicios(f) {
       cantidad: Number(v("[data-n]") || 1), precio: v("input[data-p]") === "" ? null : Number(v("input[data-p]")), tipo_iva: Number(v("select[data-i]")) });
   }).filter((x) => x.servicio_id || x.concepto);
 }
+// ---- servicios extra y limpieza contratada en la reserva (pasan a la factura de la estancia)
+const PERIODICIDADES = [["unica", "Un día concreto"], ["diaria", "Diaria"], ["cada_2", "Cada 2 días"], ["cada_3", "Cada 3 días"], ["semanal", "Semanal"], ["quincenal", "Quincenal"], ["otra", "Otra (indicar)"]];
+const PASO_LIMPIEZA = { diaria: 1, cada_2: 2, cada_3: 3, semanal: 7, quincenal: 15 };
+function fechasLimpieza(p, ent, sal) {  // igual que en el servidor: dentro de la estancia, sin entrada ni salida
+  if (!p || !ent || !sal) return [];
+  const dentro = (d) => d > ent && d < sal;
+  if (p.periodicidad === "otra") return [...new Set(p.fechas || [])].filter(dentro).sort();
+  if (!p.inicio) return [];
+  if (p.periodicidad === "unica") return dentro(p.inicio) ? [p.inicio] : [];
+  const out = [], paso = PASO_LIMPIEZA[p.periodicidad] || 0;
+  for (let d = p.inicio; paso && d < sal; d = addDays(d, paso)) if (dentro(d)) out.push(d);
+  return out;
+}
+function extrasHtml(r = null) {
+  const fact = (r?.extras || []).filter((e) => e.factura);
+  return `${fact.length ? `<p class="muted">Ya facturado: ${fact.map((e) => `${esc(e.concepto)} (${esc(e.factura)})`).join(" · ")}</p>` : ""}
+    ${serviciosHtml("Servicios extra que pide el cliente (plaza extra, toallas…): van a la factura de la estancia")}
+    <fieldset class="limpieza-plan"><legend>Limpieza contratada</legend>
+      <label class="check"><input type="checkbox" data-lp-on> El cliente contrata limpieza durante la estancia</label>
+      <div data-lp style="display:none"><div class="grid">
+        <label>Servicio<select data-lp-srv><option value="">— Otro (escribir) —</option></select></label>
+        <label data-lp-concepto-l>Concepto<input data-lp-concepto value="Limpieza"></label>
+        <label>Precio por limpieza € (IVA incl.)<input data-lp-precio type="number" step="0.01" min="0"></label>
+        <label>Periodicidad<select data-lp-per>${PERIODICIDADES.map(([k, t]) => `<option value="${k}">${t}</option>`).join("")}</select></label>
+        <label data-lp-inicio-l>Día de la (primera) limpieza<input data-lp-inicio type="date"></label>
+        <label data-lp-texto-l style="display:none">Indique la periodicidad *<input data-lp-texto maxlength="120" placeholder="p.ej. martes y viernes"></label>
+        <label data-lp-dia-l style="display:none">Añadir día<span class="fila-dia"><input data-lp-dia type="date"><button type="button" class="btn sm" data-lp-add>Añadir</button></span></label>
+      </div><div class="chips" data-lp-dias></div><p class="muted" data-lp-res></p></div></fieldset>`;
+}
+// fechas(): {fecha_entrada, fecha_salida} actuales del formulario
+async function bindExtras(f, assetId, r, fechas) {
+  const cat = await get("/api/servicios", { asset_id: assetId });
+  await bindServicios(f, assetId, 0, (r?.extras || []).filter((e) => !e.factura && !e.limpieza));
+  const q = (s) => $(s, f), p = r?.limpieza || null;
+  let dias = [...(p?.fechas || [])];
+  q("[data-lp-srv]").insertAdjacentHTML("beforeend", cat.map((x) => `<option value="${x.id}" data-precio="${x.precio ?? ""}">${esc(x.nombre)}${x.precio != null ? " · " + eur(x.precio) : ""}</option>`).join(""));
+  const lim = cat.find((x) => /limpieza/i.test(x.nombre));
+  q("[data-lp-srv]").value = p?.servicio_id ? String(p.servicio_id) : lim && !p ? String(lim.id) : "";
+  if (p) { q("[data-lp-precio]").value = p.precio ?? ""; q("[data-lp-concepto]").value = p.concepto || "Limpieza"; q("[data-lp-per]").value = p.periodicidad; q("[data-lp-inicio]").value = p.inicio || ""; q("[data-lp-texto]").value = p.texto || ""; }
+  else if (lim?.precio != null) q("[data-lp-precio]").value = lim.precio;
+  q("[data-lp-on]").checked = !!p;
+  const plan = () => ({ periodicidad: q("[data-lp-per]").value, inicio: q("[data-lp-inicio]").value || null, texto: q("[data-lp-texto]").value.trim() || null, fechas: dias });
+  const pinta = () => {
+    const on = q("[data-lp-on]").checked, otra = q("[data-lp-per]").value === "otra";
+    q("[data-lp]").style.display = on ? "" : "none";
+    q("[data-lp-concepto-l]").style.display = q("[data-lp-srv]").value ? "none" : "";
+    q("[data-lp-inicio-l]").style.display = otra ? "none" : "";
+    q("[data-lp-texto-l]").style.display = q("[data-lp-dia-l]").style.display = otra ? "" : "none";
+    q("[data-lp-dias]").innerHTML = otra ? dias.map((d, i) => `<button type="button" class="chip on" data-quita="${i}" title="Quitar">${fdate(d)} ✕</button>`).join("") : "";
+    f.querySelectorAll("[data-quita]").forEach((b) => (b.onclick = () => { dias.splice(Number(b.dataset.quita), 1); pinta(); }));
+    const { fecha_entrada: ent, fecha_salida: sal } = fechas();
+    const fs = fechasLimpieza(plan(), ent, sal), precio = Number(q("[data-lp-precio]").value || 0);
+    q("[data-lp-res]").innerHTML = !on ? "" : fs.length ? `<b>${fs.length} limpieza${fs.length === 1 ? "" : "s"}</b>: ${fs.map((d) => fdate(d).slice(0, 5)).join(", ")}${precio ? ` · ${eur(precio * fs.length)}` : ""}. Saldrán en el parte de limpieza de cada día.`
+      : '<span class="error">Elija un día dentro de la estancia (sin el día de entrada ni el de salida).</span>';
+  };
+  q("[data-lp-srv]").onchange = () => { const o = q("[data-lp-srv]").selectedOptions[0]; if (o?.dataset.precio) q("[data-lp-precio]").value = o.dataset.precio; pinta(); };
+  q("[data-lp-add]").onclick = () => { const d = q("[data-lp-dia]").value; if (d && !dias.includes(d)) dias.push(d); dias.sort(); pinta(); };
+  f.querySelectorAll("[data-lp-on],[data-lp-per],[data-lp-inicio],[data-lp-precio]").forEach((i) => (i.oninput = i.onchange = pinta));
+  ["fecha_entrada", "fecha_salida"].forEach((k) => f.elements[k] && f.elements[k].addEventListener("change", pinta));
+  pinta();
+  f._extras = () => {
+    const out = { extras: leerServicios(f) };
+    if (q("[data-lp-on]").checked) {
+      const pl = plan(), { fecha_entrada: ent, fecha_salida: sal } = fechas();
+      if (pl.periodicidad === "otra" && !pl.texto) throw new Error("Indique la periodicidad de la limpieza");
+      if (!fechasLimpieza(pl, ent, sal).length) throw new Error("Elija un día de limpieza dentro de la estancia");
+      const srv = q("[data-lp-srv]").value;
+      out.limpieza = clean({ ...pl, servicio_id: srv ? Number(srv) : null, concepto: srv ? null : q("[data-lp-concepto]").value || "Limpieza",
+        precio: q("[data-lp-precio]").value === "" ? null : Number(q("[data-lp-precio]").value), fechas: pl.periodicidad === "otra" ? pl.fechas : [] });
+    } else if (p) out.quitar_limpieza = true;
+    return out;
+  };
+}
+// Factura solo de los servicios extra pendientes (pedidos con la estancia ya pagada)
+function facturarExtras(r, reload) {
+  const pend = (r.extras || []).filter((e) => !e.factura);
+  form(`Servicios extra · reserva ${r.localizador || r.id} · ${r.unidad}`, [
+    { html: `<ul>${pend.map((e) => `<li>${esc(e.concepto)} · ${e.cantidad} × ${eur(e.precio)}</li>`).join("")}</ul><p><b>Total: ${eur(r.extras_pendientes)}</b> (IVA incluido)</p>` },
+    { k: "cobrado", t: "Cobrado ahora (si no, la factura queda pendiente de cobro)", type: "checkbox", def: true, wide: true },
+    { k: "forma_pago", t: "Forma de pago", type: "select", options: kv(S.cat.formas_pago) },
+  ], {}, async (d) => {
+    const x = await post(`/api/turistico/reservas/${r.id}/extras/factura`, clean(d));
+    toast(`Factura ${x.factura.codigo} emitida`); reload && reload(); await descargarFactura(x.factura.id);
+  }, "Emitir factura");
+}
 // sinCobro: se factura ya y la factura queda «pendiente de cobro» (renovaciones y reservas que pagan por transferencia)
-function cobroForm(titulo, pendiente, url, reload, assetId, sinCobro = false, despues = null) {
+function cobroForm(titulo, pendiente, url, reload, assetId, sinCobro = false, despues = null, reserva = null) {
+  const pendExtras = (reserva?.extras || []).filter((e) => !e.factura);
   const f = form(titulo, [
+    ...(pendExtras.length ? [{ html: `<p class="aviso-amarillo">Servicios extra pedidos por el cliente: ${pendExtras.map((e) => `${esc(e.concepto)} (${e.cantidad} × ${eur(e.precio)})`).join(" · ")} · <b>${eur(reserva.extras_pendientes)}</b></p>` },
+      { k: "incluir_extras", t: "Incluirlos en esta factura", type: "checkbox", def: true, wide: true }] : []),
     ...(sinCobro ? [{ html: '<p class="aviso-faltan">La factura se emite <b>sin cobrar</b>: queda <b>pendiente de cobro</b>, recepción la revisa cada día y la marca <b>cobrada</b> cuando llegue la transferencia (Facturas emitidas → Cobrada).</p>' }] : []),
     { k: "importe", t: sinCobro ? "Importe a facturar € (IVA incluido)" : pendiente > 0 ? "Importe cobrado € (IVA incluido)" : "Importe cobrado € (nada pendiente)", type: "number", req: true },
     ...(sinCobro ? [] : [{ k: "fecha_pago", t: "Fecha del cobro", type: "date", def: today() }]),
@@ -946,9 +1043,12 @@ function cobroForm(titulo, pendiente, url, reload, assetId, sinCobro = false, de
     { k: "fa_nombre", t: "Razón social / nombre" }, { k: "fa_nif", t: "CIF / NIF" }, { k: "fa_domicilio", t: "Domicilio fiscal completo", wide: true },
     { html: `<p class="muted">${sinCobro ? "Se emite" : "Al registrar el cobro se emite"} la factura con el siguiente número de la serie del activo y se descarga en PDF. Una factura emitida no se puede modificar: si hay un error, Administración emite una rectificativa.</p>` },
   ], { importe: Math.max(0, pendiente) }, async (d, fr) => {
-    const body = { importe: d.importe || 0, fecha_pago: d.fecha_pago, forma_pago: d.forma_pago, servicios: leerServicios(fr) };
+    const body = { importe: d.importe || 0, fecha_pago: d.fecha_pago, forma_pago: d.forma_pago, servicios: leerServicios(fr),
+      incluir_extras: pendExtras.length ? !!d.incluir_extras : undefined };
     if (d.otra) body.facturar_a = { nombre: d.fa_nombre, nif: d.fa_nif, domicilio: d.fa_domicilio };
-    const r = await post(sinCobro ? url.replace(/\/cobro$/, "/facturar") : url, clean(body));
+    const soloExtras = !body.importe && !body.servicios.length && body.incluir_extras;  // nada más que los extras
+    const r = await post(soloExtras ? url.replace(/\/cobro$/, "/extras/factura") : sinCobro ? url.replace(/\/cobro$/, "/facturar") : url,
+      clean(soloExtras ? { cobrado: !sinCobro, fecha_pago: d.fecha_pago, forma_pago: d.forma_pago, facturar_a: body.facturar_a } : body));
     toast(sinCobro ? `Factura ${r.factura.codigo} emitida · pendiente de cobro` : `Cobro registrado · Factura ${r.factura.codigo}`);
     reload && reload();
     await descargarFactura(r.factura.id);
@@ -965,9 +1065,10 @@ function resActions(reload) {
     r.uso !== "garaje" && ["Ocupantes", () => ocupantesReserva(r, reload)],
     r.uso !== "garaje" && ["Contrato", () => accommodationContract(r)],
     [r.importe_total - r.importe_pagado > 0.004 ? "Cobro" : "Servicios", () => cobroForm(`Cobro reserva ${r.localizador || r.id} · ${r.unidad} · pendiente ${eur(r.importe_total - r.importe_pagado)}`,
-      Math.round((r.importe_total - r.importe_pagado) * 100) / 100, `/api/turistico/reservas/${r.id}/cobro`, reload, r.asset_id)],
+      Math.round((r.importe_total - r.importe_pagado) * 100) / 100, `/api/turistico/reservas/${r.id}/cobro`, reload, r.asset_id, false, null, r)],
     r.importe_total - r.importe_pagado > 0.004 && ["Facturar sin cobrar", () => cobroForm(`Facturar sin cobrar · reserva ${r.localizador || r.id} · ${r.unidad}`,
-      Math.round((r.importe_total - r.importe_pagado) * 100) / 100, `/api/turistico/reservas/${r.id}/cobro`, reload, r.asset_id, true)],
+      Math.round((r.importe_total - r.importe_pagado) * 100) / 100, `/api/turistico/reservas/${r.id}/cobro`, reload, r.asset_id, true, null, r)],
+    r.extras_pendientes > 0 && ["Facturar extras", () => facturarExtras(r, reload)],
     r.estado === "confirmada" && ["Check-in", () => run(() => post(`/api/turistico/reservas/${r.id}/checkin`), "Check-in realizado").then(reload).catch(() => ocupantesReserva(r, reload))],
     ["confirmada", "checkin"].includes(r.estado) && r.uso !== "garaje" && ["Renovar", () => renovarEstancia(r, reload)],
     r.estado === "checkin" && ["Check-out", () => run(() => post(`/api/turistico/reservas/${r.id}/checkout`), "Check-out realizado").then(reload)],
@@ -1298,7 +1399,13 @@ function editReservation(r, reload) {
     { k: "importe_total", t: "Importe total € (IVA incluido)", type: "number" },
     { html: `<p class="muted">Cobrado: ${eur(r.importe_pagado)}. Los cobros se registran con el botón <b>Cobro</b>, que emite la factura.</p>` },
     { k: "notas", t: "Notas", type: "textarea", wide: true },
-  ], r, async (d) => { await put(`/api/turistico/reservas/${r.id}`, d); toast("Reserva actualizada"); reload(); });
+    ...(r.uso !== "garaje" ? [{ html: extrasHtml(r) }] : []),
+  ], r, async (d, fr) => {
+    const ex = fr._extras ? fr._extras() : {};
+    await put(`/api/turistico/reservas/${r.id}`, { ...d, ...ex }); toast("Reserva actualizada"); reload();
+  });
+  const f = $("#modalForm");
+  if (r.uso !== "garaje") bindExtras(f, r.asset_id, r, () => ({ fecha_entrada: f.elements.fecha_entrada.value, fecha_salida: f.elements.fecha_salida.value })).catch((e) => toast(e.message, true));
 }
 async function newReservation(reload, fija) {  // fija: {id, codigo, asset_id} para reservar un apartamento concreto
   const aid = fija ? fija.asset_id : await pickAsset("apartamentos_turisticos");
@@ -1325,7 +1432,9 @@ async function newReservation(reload, fija) {  // fija: {id, codigo, asset_id} p
       { k: "forma_pago", t: "Forma de pago", type: "select", options: kv(S.cat.formas_pago) },
       { k: "facturar_pendiente", t: "Si no se cobra ahora: facturar ya el importe total y dejarlo pendiente de cobro (pagará por transferencia)", type: "checkbox", wide: true },
       { k: "notas", t: "Notas", type: "textarea", wide: true },
+      ...(fija?.uso === "garaje" ? [] : [{ html: extrasHtml() }]),
     ], {}, async (d, fr) => {
+      Object.assign(d, fr._extras ? fr._extras() : {});
       const g = {}; guestFields.filter((f) => f.k).forEach((f) => { g[f.k] = d[f.k]; delete d[f.k]; });
       let cliente = { guest: clean(g) };
       if (fr._cliente) {  // cliente habitual: se actualiza su ficha y se reutiliza
@@ -1339,6 +1448,7 @@ async function newReservation(reload, fija) {  // fija: {id, codigo, asset_id} p
       if (nueva.adultos + nueva.ninos > 1) await ocupantesReserva(nueva, reload, () => accommodationContract(nueva));
       else await accommodationContract(nueva);
     }, "Crear reserva")), aid), 0);
+    if (fija?.uso !== "garaje") setTimeout(() => bindExtras($("#modalForm"), aid, null, () => q).catch((e) => toast(e.message, true)), 0);
   }, "Buscar disponibilidad");
 }
 
@@ -2694,27 +2804,68 @@ async function enviarOT(w, reload) {
   }, "Enviar");
 }
 
-async function parteLimpieza(fecha) {
-  const aid = await pickAsset();
-  const [p, gente] = await Promise.all([get("/api/personal/limpieza", { asset_id: aid, fecha }),
-    get("/api/personal", { asset_id: aid, area: "limpieza", solo_activos: true })]);
-  if (!gente.length) return toast("No hay personal de limpieza dado de alta para este activo (Mantenimiento → Personal)", true);
-  if (!p.unidades.length) return toast(`No hay unidades pendientes de limpieza ni salidas el ${fdate(p.fecha)}`);
-  form(`Parte de limpieza · ${assetName(aid)} · ${fdate(p.fecha)}`, [
-    { html: '<p class="muted">Unidades pendientes de limpieza y salidas del día; primero las que tienen llegada. Para repartir el trabajo, marque las unidades de cada persona y envíe; repita con el resto.</p>' },
-    { k: "unit_ids", t: `Unidades (${p.unidades.length})`, type: "checks", options: p.unidades.map((u) => [String(u.unit_id), `${u.codigo} · ${u.motivo}${u.llegada ? ` · LLEGADA (${u.pax_llegada} pax)` : ""}`]) },
-    { k: "personal_ids", t: "Enviar a", type: "checks", options: gente.map((x) => [String(x.id), personaTxt(x)]) },
-    canalEnvio(""),
-    { k: "nota", t: "Nota (opcional)", type: "textarea", wide: true },
-  ], { unit_ids: p.unidades.map((u) => String(u.unit_id)) }, async (d) => {
-    if (!d.unit_ids.length) throw new Error("Elija al menos una unidad");
-    if (!d.personal_ids.length) throw new Error("Elija al menos una persona");
-    const r = await post("/api/personal/limpieza/enviar", { ...clean(d), asset_id: aid, fecha: p.fecha,
-      unit_ids: d.unit_ids.map(Number), personal_ids: d.personal_ids.map(Number) });
-    resultadoEnvio("Parte de limpieza enviado", r.enviados);
-  }, "Enviar");
-}
-
+// ---- parte diario de limpieza: salidas (con la próxima llegada), contratadas por el cliente y extras de recepción.
+// Lo que no se valida pasa al día siguiente. PDF para imprimir, envío por WhatsApp o correo y Excel en documentos.
+async function parteLimpieza(fecha) { S.limpieza = { ...(S.limpieza || {}), fecha }; go("limpieza"); }
+V.limpieza = async (el) => {
+  const pool = assetsOf("apartamentos_turisticos");
+  if (!pool.length) { el.innerHTML = '<div class="empty">Sin activos turísticos</div>'; return; }
+  S.limpieza = S.limpieza || {};
+  const cur = pool.find((a) => a.id === S.limpieza.asset) || pool.find((a) => String(a.id) === String(S.asset)) || pool[0];
+  S.limpieza.asset = cur.id;
+  el.innerHTML = `<div class="toolbar">${pool.length > 1 ? `<select id="la">${pool.map((a) => `<option value="${a.id}" ${a.id === cur.id ? "selected" : ""}>${esc(a.nombre)}</option>`).join("")}</select>` : `<strong>${esc(cur.nombre)}</strong>`}
+    <label>Día<input type="date" id="lf" value="${S.limpieza.fecha || today()}"></label><button class="btn" id="lhoy">Hoy</button><button class="btn" id="lman">Mañana</button>
+    <span class="spacer"></span><button class="btn" id="lextra">＋ Limpieza extra</button><button class="btn" id="lpdf">Imprimir PDF</button><button class="btn" id="lxls">Excel</button><button class="btn primary" id="lenv">Enviar</button></div>
+    <div class="kpis" id="lk"></div><div id="lt"></div>
+    <p class="muted">Limpieza avisa al terminar y recepción pulsa <b>Hecha</b>: sale del parte (si es de salida, el apartamento queda disponible). Lo que no se valida sigue en el parte del día siguiente. Al imprimir o enviar, el Excel del día queda en Documentos recibidos.</p>`;
+  let p;
+  const fecha = () => $("#lf", el).value || today();
+  const load = async () => {
+    S.limpieza.fecha = fecha();
+    p = await get("/api/limpieza/parte", { asset_id: cur.id, fecha: fecha() });
+    const pend = p.limpiezas.filter((x) => x.estado === "pendiente"), n = (t) => pend.filter((x) => x.tipo === t).length;
+    $("#lk", el).innerHTML = [[pend.length, "Pendientes", pend.length ? "" : ""], [pend.filter((x) => x.urgente).length, "Llegada hoy (primero)", pend.some((x) => x.urgente) ? "mal" : ""],
+      [n("salida"), "Por salida"], [n("contratada"), "Contratadas"], [n("extra"), "Extra"], [pend.filter((x) => x.arrastrada).length, "De días anteriores", pend.some((x) => x.arrastrada) ? "mal" : ""],
+      [p.limpiezas.length - pend.length, "Validadas hoy"]].map(([v, l, c]) => `<div class="kpi ${c || ""}"><b>${v}</b><span>${l}</span></div>`).join("");
+    const pri = (x) => x.antes_de ? (x.urgente ? `<span class="badge b-cancelada">LLEGADA HOY${x.pax_llegada ? ` · ${x.pax_llegada} pax` : ""}</span>` : `<span class="badge b-pendiente">Antes del ${fdate(x.antes_de).slice(0, 5)}${x.pax_llegada ? ` · ${x.pax_llegada} pax` : ""}</span>`) : "";
+    table($("#lt", el), [
+      { k: "codigo", t: "Apartamento", f: (v, x) => `<b>${esc(v)}</b><div class="muted peq">${esc([x.bloque, x.planta ? "planta " + x.planta : ""].filter(Boolean).join(" · "))}</div>` },
+      { k: "tipo_nombre", t: "Tipo", f: (v, x) => `<span class="tipo t-${x.tipo === "salida" ? "reserva" : x.tipo === "extra" ? "incidencia" : "cliente"}">${esc(v)}</span>` },
+      { k: "motivo", t: "Limpieza", f: (v, x) => `${esc(v)}${x.arrastrada ? `<div class="peq" style="color:#a15c00">Pendiente desde el ${fdate(x.fecha)}</div>` : ""}` },
+      { k: "antes_de", t: "Prioridad", f: (v, x) => pri(x) },
+      { k: "estado", t: "Estado", f: (v, x) => v === "hecha" ? `<span class="badge b-vigente">hecha</span><div class="muted peq">${fdt(x.hecha)}${x.validada_por ? " · " + esc(x.validada_por) : ""}</div>` : '<span class="badge b-pendiente">pendiente</span>' },
+    ], p.limpiezas, (x) => x.estado === "pendiente" ? [
+      ["✔ Hecha", () => run(() => post(`/api/limpieza/${x.id}/hecha`), `Limpieza de ${x.codigo} validada`).then(load), "primary"],
+      x.tipo === "extra" && ["Quitar", () => confirm(`¿Quitar la limpieza extra de ${x.codigo}?`) && run(() => api("DELETE", `/api/limpieza/${x.id}`), "Limpieza extra quitada").then(load), "danger"],
+    ] : [["Deshacer", () => run(() => post(`/api/limpieza/${x.id}/deshacer`), "Vuelve a estar pendiente").then(load)]]);
+  };
+  $("#lf", el).onchange = load;
+  $("#lhoy", el).onclick = () => { $("#lf", el).value = today(); load(); };
+  $("#lman", el).onclick = () => { $("#lf", el).value = addDays(today(), 1); load(); };
+  if ($("#la", el)) $("#la", el).onchange = () => { S.limpieza.asset = Number($("#la", el).value); go("limpieza"); };
+  $("#lextra", el).onclick = () => form(`Limpieza extra · ${cur.nombre}`, [
+    { html: '<p class="muted">Limpieza no programada (repaso, a fondo, petición del cliente…). Saldrá en el parte del día elegido.</p>' },
+    { k: "unit_id", t: "Apartamento", type: "select", req: true, options: p.unidades.map((u) => [u.id, `${u.codigo}${u.bloque ? " · " + u.bloque : ""}`]) },
+    { k: "fecha", t: "Día", type: "date", req: true, def: fecha() < today() ? today() : fecha() },
+    { k: "nota", t: "Qué hay que hacer", wide: true },
+  ], {}, async (d) => { await post("/api/limpieza/extra", { ...clean(d), asset_id: cur.id, unit_id: Number(d.unit_id) }); toast("Limpieza extra añadida"); load(); }, "Añadir");
+  $("#lpdf", el).onclick = () => run(() => download("GET", `/api/limpieza/parte.pdf?asset_id=${cur.id}&fecha=${fecha()}`));
+  $("#lxls", el).onclick = () => run(() => download("GET", `/api/limpieza/parte.xlsx?asset_id=${cur.id}&fecha=${fecha()}`));
+  $("#lenv", el).onclick = async () => {
+    const gente = await get("/api/personal", { asset_id: cur.id, area: "limpieza", solo_activos: true }).catch(() => []);
+    form(`Enviar parte de limpieza · ${fdate(fecha())}`, [
+      { html: `<p class="muted">${p.limpiezas.filter((x) => x.estado === "pendiente").length} limpieza(s) pendiente(s). Por correo va el PDF adjunto; por WhatsApp, el parte escrito.</p>` },
+      ...(gente.length ? [{ k: "personal_ids", t: "Personal de limpieza", type: "checks", options: gente.map((x) => [String(x.id), personaTxt(x)]) }] : [{ html: '<p class="muted">No hay personal de limpieza dado de alta (Mantenimiento → Personal): indique un número o un correo.</p>' }]),
+      canalEnvio(" (con el PDF)"),
+      { k: "telefono", t: "Otro número (WhatsApp)" }, { k: "email", t: "Otro correo", type: "email" },
+      { k: "nota", t: "Nota (opcional)", type: "textarea", wide: true },
+    ], {}, async (d) => {
+      const r = await post("/api/limpieza/parte/enviar", { ...clean(d), asset_id: cur.id, fecha: fecha(), personal_ids: (d.personal_ids || []).map(Number) });
+      setTimeout(() => resultadoEnvio("Parte de limpieza enviado · Excel guardado en documentos", r.enviados), 0);
+    }, "Enviar");
+  };
+  await load();
+};
 V.personal = async (el) => {
   const editar = (area) => can(area === "limpieza" ? "limpieza.editar" : "mantenimiento.editar");
   const areas = AREAS.filter(([a]) => editar(a));
@@ -3233,7 +3384,7 @@ async function avisoNovedades() {
 // ------------------------------------------------------------------ navegación
 const MENU = [
   ["General", [["panel", "Panel de control", null], ["agenda", "Agenda", null], ["manual", "Manual de uso", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
-  ["Apartamentos turísticos", [["plano", "Plano de apartamentos", "activos.ver"], ["hoy", "Llegadas / salidas", "reservas.ver"], ["reservas", "Reservas", "reservas.ver"], ["planning", "Planning", "reservas.ver"], ["huespedes", "Huéspedes", "reservas.ver"], ["ses", "Parte de viajeros (SES)", "reservas.ver"], ["garajes", "Alquiler de garajes", "reservas.ver"]]],
+  ["Apartamentos turísticos", [["plano", "Plano de apartamentos", "activos.ver"], ["hoy", "Llegadas / salidas", "reservas.ver"], ["limpieza", "Parte de limpieza", "limpieza.editar"], ["reservas", "Reservas", "reservas.ver"], ["planning", "Planning", "reservas.ver"], ["huespedes", "Huéspedes", "reservas.ver"], ["ses", "Parte de viajeros (SES)", "reservas.ver"], ["garajes", "Alquiler de garajes", "reservas.ver"]]],
   ["Alquiler residencial", [["contratos", "Contratos", "alquiler.ver"], ["recibos", "Recibos y cobros", "alquiler.ver"], ["inquilinos", "Inquilinos", "alquiler.ver"]]],
   ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["servicios", "Servicios", "activos.ver"], ["informes", "Informes Excel", "informes"], ["presidencia", "Informe a presidencia", "facturas.ver"]]],
   ["Documentos y gastos", [["docrecibidos", "Documentos recibidos", "documentos.ver"], ["gastos", "Cuenta de gastos", "documentos.ver"]]],

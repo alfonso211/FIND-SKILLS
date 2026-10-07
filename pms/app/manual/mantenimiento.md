@@ -11,6 +11,7 @@
 - **Enviar**: manda la OT a un técnico o subcontrata por **correo o WhatsApp**.
 - **Parte PDF**: hoja de la OT para imprimir o firmar.
 - Si la OT **bloquea el apartamento**, este no se puede reservar hasta cerrarla.
+- **Revisión de salida**: con cada check-out se abre sola una OT «Revisión de salida · Apartamento …» (instalaciones, electrodomésticos, fontanería, climatización, iluminación, cerraduras y desperfectos). Revise el apartamento y ciérrela como cualquier OT; si hay algo que reparar, anótelo.
 
 ## Plan preventivo
 - **Plan preventivo**: revisiones periódicas y normativas (PCI, ascensores, legionela, BT…).

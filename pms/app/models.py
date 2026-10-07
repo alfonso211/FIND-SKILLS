@@ -250,6 +250,11 @@ class Reservation(Base):
     creada: Mapped[datetime] = mapped_column(DateTime, default=_now)
     ses_comunicado: Mapped[datetime | None] = mapped_column(DateTime)  # parte de viajeros generado para SES
     renueva_id: Mapped[int | None] = mapped_column(ForeignKey("reservas.id"))  # renovación de esta reserva
+    # Servicios extra que pide el cliente (limpieza, plaza extra…): [{concepto, servicio_id, cantidad, precio,
+    # tipo_iva, limpieza, factura}]. Se añaden a la factura de la estancia; «factura» = código ya facturado.
+    extras: Mapped[list | None] = mapped_column(JSON)
+    # Limpieza contratada: {inicio, periodicidad, cada, texto, fechas}. Ver app/limpiezas.py
+    limpieza: Mapped[dict | None] = mapped_column(JSON)
     unit: Mapped[Unit] = relationship()
     guest: Mapped[Contact] = relationship()
     ocupantes: Mapped[list["ReservationGuest"]] = relationship(order_by="ReservationGuest.orden",
@@ -443,7 +448,8 @@ class StaffMember(Base):
 TIPOS_DOCUMENTO = {
     "factura": "Factura", "ticket": "Ticket / recibo", "albaran": "Albarán", "presupuesto": "Presupuesto",
     "carta": "Carta", "notificacion": "Notificación / requerimiento", "contrato": "Contrato",
-    "seguro": "Póliza / seguro", "informe": "Informe mensual (presidencia)", "otro": "Otro",
+    "seguro": "Póliza / seguro", "informe": "Informe mensual (presidencia)", "limpieza": "Parte de limpieza",
+    "otro": "Otro",
 }
 TIPOS_GASTO = ("factura", "ticket", "albaran")  # tipos que normalmente son un gasto
 CATEGORIAS_GASTO = {
@@ -718,3 +724,23 @@ class PresidencyReport(Base):
     destino: Mapped[str | None] = mapped_column(String(500))
     documento_id: Mapped[int | None] = mapped_column(ForeignKey("documentos_recibidos.id"))
     resumen: Mapped[dict | None] = mapped_column(JSON)  # totales enviados (ingresos, gastos, resultado, %)
+
+
+class CleaningTask(Base):
+    """Limpieza del parte diario: por salida de un cliente, contratada por el cliente (según su periodicidad) o
+    extra añadida por recepción. Queda pendiente (y pasa al día siguiente) hasta que recepción la valida."""
+    __tablename__ = "limpiezas"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
+    unit_id: Mapped[int] = mapped_column(ForeignKey("unidades.id"), index=True)
+    fecha: Mapped[date] = mapped_column(Date, index=True)  # día previsto
+    tipo: Mapped[str] = mapped_column(String(20))  # salida | contratada | extra
+    reservation_id: Mapped[int | None] = mapped_column(ForeignKey("reservas.id"), index=True)
+    clave: Mapped[str | None] = mapped_column(String(60), unique=True)  # evita duplicar las generadas solas
+    nota: Mapped[str | None] = mapped_column(String(300))
+    estado: Mapped[str] = mapped_column(String(20), default="pendiente")  # pendiente | hecha | anulada
+    creada: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    creada_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    hecha: Mapped[datetime | None] = mapped_column(DateTime)
+    validada_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    unit: Mapped[Unit] = relationship()
