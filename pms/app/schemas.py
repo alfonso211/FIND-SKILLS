@@ -503,6 +503,9 @@ class WorkOrderIn(BaseModel):
     descripcion: str | None = None
     asignado_a: str | None = None
     proveedor: str | None = None
+    asignacion: Literal["propio", "subcontrata"] | None = None  # personal propio o subcontrata
+    personal_id: int | None = None  # personal propio (Mantenimiento → Personal)
+    proveedor_id: int | None = None  # subcontrata (Proveedores); o su nombre en «proveedor»
     coste_estimado: float | None = None
     bloquea_unidad: bool = False
     fecha_prevista: date | None = None
@@ -517,6 +520,9 @@ class WorkOrderUpdate(BaseModel):
     descripcion: str | None = None
     asignado_a: str | None = None
     proveedor: str | None = None
+    asignacion: Literal["propio", "subcontrata"] | None = None
+    personal_id: int | None = None
+    proveedor_id: int | None = None
     coste_estimado: float | None = None
     coste_real: float | None = None
     fecha_prevista: date | None = None

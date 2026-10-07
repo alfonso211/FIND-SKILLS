@@ -1,5 +1,8 @@
 # Novedades
 
+## 2026-10-07 · Versión 1.15 · Órdenes de trabajo a personal propio o subcontrata
+- **Mantenimiento**: en la OT, «Asignado a» es **Personal propio** o **Subcontrata** (de Proveedores). La orden se envía a quien la hace: al personal propio por WhatsApp; a la subcontrata por correo (con el PDF) y/o WhatsApp (con enlace al PDF), según se elija. Siempre con **copia al personal de mantenimiento propio**.
+
 ## 2026-10-07 · Versión 1.14 · Panel: cada casilla abre su listado
 - **Todos**: en la situación de cada activo del panel, **cada casilla lleva a su listado** (llegadas y salidas, contratos, facturas, recibos, órdenes de trabajo, unidades…). El plano se abre con el botón **«🗺️ Ver plano del edificio»** o pulsando en una zona en blanco de la tarjeta.
 

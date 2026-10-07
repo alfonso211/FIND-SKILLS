@@ -8,7 +8,11 @@
   3. **Trabajo realizado**: al terminar, pulse **Trabajo realizado**, describa la solución, el **coste real** y añada **fotos** del resultado.
   4. Si el trabajo fue en un apartamento, **limpieza lo revisa** («Unidad OK») o lo devuelve si no está bien.
   5. **Pendiente de cierre**: recepción la cierra.
-- **Enviar**: manda la OT a un técnico o subcontrata por **correo o WhatsApp**.
+- **Asignado a**: elija **Personal propio** (la persona de Mantenimiento → Personal) o **Subcontrata** (escriba y elija de **Proveedores**). Al guardar, se ofrece **enviar la orden**:
+  - Personal propio: por **WhatsApp** (y por correo si se marca).
+  - Subcontrata: por **correo** con el parte en PDF y/o por **WhatsApp** con enlace al PDF, según los datos de su ficha de proveedor (marque uno o ambos).
+  - Con **copia al personal de mantenimiento propio**, para que sepa qué trabajos se van a hacer.
+- **Enviar**: vuelve a enviar la OT a quien la tiene asignada. **Enviar a otros**: a cualquier persona del personal.
 - **Parte PDF**: hoja de la OT para imprimir o firmar.
 - Si la OT **bloquea el apartamento**, este no se puede reservar hasta cerrarla.
 - **Revisión de salida**: con cada check-out se abre sola una OT «Revisión de salida · Apartamento …» (instalaciones, electrodomésticos, fontanería, climatización, iluminación, cerraduras y desperfectos). Revise el apartamento y ciérrela como cualquier OT; si hay algo que reparar, anótelo.

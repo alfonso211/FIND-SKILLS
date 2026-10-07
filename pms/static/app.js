@@ -485,7 +485,7 @@ function pintaBusqueda(res, d, recargar) {
       (f) => [["PDF", () => descargarFactura(f.id)]]],
     ["ordenes", "Órdenes de trabajo", [{ k: "id", t: "OT", f: (v) => `<b>${otNum(v)}</b>` }, { k: "titulo", t: "Título" }, { k: "activo", t: "Activo" },
       { k: "unidad", t: "Unidad", f: (v, w) => esc(v || w.zona_nombre || "") }, { k: "prioridad", t: "Prioridad", f: badge }, { k: "estado", t: "Estado", f: badge }],
-      (w) => [["Adjuntos", () => adjuntosOT(w, recargar)], puedeEnviarOT() && ["Enviar", () => enviarOT(w, recargar)]]],
+      (w) => [["Adjuntos", () => adjuntosOT(w, recargar)], puedeEnviarOT() && ["Enviar", () => enviarAsignado(w, recargar)]]],
     ["proveedores", "Proveedores", [{ k: "nombre", t: "Nombre", f: (v) => `<b>${esc(v)}</b>` }, { k: "nif", t: "NIF" }, { k: "actividad", t: "Actividad" },
       { k: "telefono", t: "Teléfono" }, { k: "email", t: "Correo" }], null],
   ];
@@ -2639,28 +2639,67 @@ async function sugerirProveedores(f, ...campos) {
 }
 
 // ---- mantenimiento
+// «Asignado a»: personal propio (ficha de Personal) o subcontrata (ficha de Proveedores)
+const camposAsignacion = (gente) => [
+  { k: "asignacion", t: "Asignado a", type: "select", options: [["propio", "Personal propio"], ["subcontrata", "Subcontrata (proveedor)"]] },
+  { k: "personal_id", t: "Persona de mantenimiento", type: "select", options: gente.map((p) => [p.id, `${p.nombre}${p.telefono ? "" : " · sin móvil"}`]) },
+  { k: "proveedor", t: "Subcontrata (escriba y elija de Proveedores)" },
+];
+function bindAsignacion(f) {
+  const pinta = () => {
+    const v = f.elements.asignacion.value;
+    f.elements.personal_id.closest("label").style.display = v === "propio" ? "" : "none";
+    f.elements.proveedor.closest("label").style.display = v === "subcontrata" ? "" : "none";
+  };
+  f.elements.asignacion.addEventListener("change", pinta); pinta();
+  return f;
+}
+const datosAsignacion = (d) => ({ ...d, asignacion: d.asignacion || null, personal_id: d.asignacion === "propio" && d.personal_id ? Number(d.personal_id) : null,
+  proveedor: d.asignacion === "subcontrata" ? d.proveedor || null : d.asignacion === "propio" ? null : d.proveedor });
+const personalMto = (aid) => get("/api/personal", { asset_id: aid, area: "mantenimiento", solo_activos: true }).catch(() => []);
+// Enviar la OT a quien la tiene asignada (WhatsApp y/o correo) con copia al personal de mantenimiento propio
+function enviarAsignado(w, reload) {
+  const c = w.contacto;
+  if (!w.asignacion) return enviarOT(w, reload);
+  if (!c) return toast(w.asignacion === "subcontrata" ? "La subcontrata no está en Proveedores: dela de alta con su correo o teléfono y vuelva a elegirla en la OT" : "Elija en la OT la persona de mantenimiento", true);
+  const canales = [["whatsapp", `WhatsApp${c.whatsapp ? " (con enlace al parte en PDF)" : " · sin móvil en la ficha"}`], ["email", `Correo${c.email ? ` a ${c.email} (con el parte en PDF)` : " · sin correo en la ficha"}`]];
+  const def = w.asignacion === "propio" ? ["whatsapp"] : ["email", "whatsapp"].filter((k) => (k === "email" ? c.email : c.whatsapp));
+  form(`Enviar ${otNum(w.id)} · ${w.titulo}`, [
+    { html: `<p>Se envía a <b>${esc(c.nombre)}</b> · ${w.asignacion === "propio" ? "personal propio" : "subcontrata"}.</p>` },
+    { k: "canales", t: "Enviar por", type: "checks", options: canales },
+    { k: "copia", t: "Enviar copia al personal de mantenimiento propio (para que sepan qué trabajos se van a hacer)", type: "checkbox", wide: true, def: true },
+    { k: "nota", t: "Nota (opcional)", type: "textarea", wide: true },
+  ], { canales: def }, async (d) => {
+    if (!d.canales.length) throw new Error("Elija por dónde se envía");
+    const r = await post(`/api/mantenimiento/ordenes/${w.id}/enviar-asignado`, { canales: d.canales, copia_mantenimiento: !!d.copia, nota: d.nota || null });
+    reload && reload();
+    setTimeout(() => resultadoEnvio(`${otNum(w.id)} enviada`, r.enviados.map((x) => (x.copia ? { ...x, nombre: `${x.nombre} (copia)` } : x))), 0);
+  }, "Enviar");
+}
 async function newWorkOrder(assetId, unitId, zona) {  // zona: {zona, nombre} de una zona común del plano
   const aid = assetId || await pickAsset();
   const units = zona ? [] : await get("/api/unidades", { asset_id: aid });
   const titulo = zona ? `Nueva incidencia · ${zona.nombre}` : unitId ? `Nueva incidencia · ${units.find((u) => u.id === unitId)?.codigo ?? ""}` : `Nueva orden de trabajo · ${assetName(aid)}`;
-  return new Promise((resolve) => sugerirProveedores(bindFotos(form(titulo, [
+  const gente = can("mantenimiento.editar") ? await personalMto(aid) : [];
+  return new Promise((resolve) => sugerirProveedores((can("mantenimiento.editar") ? bindAsignacion : (x) => x)(bindFotos(form(titulo, [
     { k: "titulo", t: "Título", req: true, wide: true },
     ...(zona ? [] : [{ k: "unit_id", t: "Unidad (vacío = zonas comunes)", type: "select", options: units.map((u) => [u.id, u.codigo]) }]),
     ...(can("mantenimiento.editar") ? [{ k: "tipo", t: "Tipo", type: "select", req: true, options: list(["correctivo", "preventivo", "normativo", "mejora"]), def: "correctivo" }] : []),
     { k: "categoria", t: "Instalación / gremio", type: "select", req: true, options: list(S.cat.categorias_mto), def: "general" },
     { k: "prioridad", t: "Prioridad", type: "select", req: true, options: list(S.cat.prioridades), def: "media" },
-    ...(can("mantenimiento.editar") ? [{ k: "asignado_a", t: "Asignado a" }, { k: "proveedor", t: "Proveedor" },
+    ...(can("mantenimiento.editar") ? [...camposAsignacion(gente),
       { k: "coste_estimado", t: "Coste estimado €", type: "number" }, { k: "fecha_prevista", t: "Fecha prevista", type: "date" }] : []),
     ...(zona ? [] : [{ k: "bloquea_unidad", t: "Bloquear unidad (fuera de venta hasta cierre)", type: "checkbox", wide: true }]),
     { k: "descripcion", t: "Descripción de la avería", type: "textarea", wide: true },
     { html: fotosHtml("Fotos de la avería (opcional)") },
   ], { unit_id: unitId }, async (d, f) => {
-    const w = await post("/api/mantenimiento/ordenes", clean({ ...d, asset_id: aid, unit_id: d.unit_id ? Number(d.unit_id) : null, zona: zona?.zona }));
+    const w = await post("/api/mantenimiento/ordenes", clean({ ...(can("mantenimiento.editar") ? datosAsignacion(d) : d), asset_id: aid, unit_id: d.unit_id ? Number(d.unit_id) : null, zona: zona?.zona }));
     const n = await subirFotos(f, w.id, "averia");
     toast(`Orden de trabajo OT-${String(w.id).padStart(5, "0")} creada` + (n ? ` con ${n} foto(s)` : "") + (w.prioridad === "urgente" ? ". Se ha avisado por correo." : ""));
     resolve();
     await altaProveedorSiNuevo(d.proveedor, d.categoria);
-  })), "proveedor"));
+    if (w.asignacion && puedeEnviarOT()) setTimeout(() => enviarAsignado(w), 0);  // generada: se envía a quien la hace
+  }))), "proveedor"));
 }
 // Bloque de fotos: en el móvil «Hacer foto» abre directamente la cámara trasera
 function fotosHtml(titulo, pdf = false) {
@@ -2675,6 +2714,7 @@ function bindFotos(f) {
     const n = ficherosElegidos(f);
     $("[data-fotosmsg]", f).textContent = n.length ? `${n.length} fichero(s): ${n.map((x) => x.name).join(", ").slice(0, 80)}` : "Ninguna seleccionada";
   }));
+  return f;
 }
 async function subirFotos(f, wid, tipo, descripcion) {
   const files = ficherosElegidos(f);
@@ -2748,14 +2788,18 @@ V.ordenes = async (el) => {
       if (["cerrada", "cancelada"].includes(w.estado)) return comunes;
       const enTrabajo = !w.conf_mto_por;
       return [...comunes,
-        puedeEnviarOT() && enTrabajo && ["Enviar", () => enviarOT(w, load)],
-        can("mantenimiento.editar") && enTrabajo && ["Editar", () => sugerirProveedores(form(`OT ${w.id}: ${w.titulo}`, [
+        puedeEnviarOT() && enTrabajo && ["Enviar", () => enviarAsignado(w, load)],
+        puedeEnviarOT() && enTrabajo && w.asignacion && ["Enviar a otros", () => enviarOT(w, load)],
+        can("mantenimiento.editar") && enTrabajo && ["Editar", async () => { const gente = await personalMto(w.asset_id); sugerirProveedores(bindAsignacion(form(`OT ${w.id}: ${w.titulo}`, [
           { k: "titulo", t: "Título", req: true, wide: true }, { k: "estado", t: "Estado", type: "select", options: list(["abierta", "asignada", "en_curso", "pendiente_material"]) },
           { k: "prioridad", t: "Prioridad", type: "select", options: list(S.cat.prioridades) }, { k: "categoria", t: "Instalación", type: "select", options: list(S.cat.categorias_mto) },
           { k: "tipo", t: "Tipo", type: "select", options: list(["correctivo", "preventivo", "normativo", "mejora"]) },
-          { k: "asignado_a", t: "Asignado a" }, { k: "proveedor", t: "Proveedor" }, { k: "coste_estimado", t: "Coste estimado €", type: "number" },
+          ...camposAsignacion(gente), { k: "coste_estimado", t: "Coste estimado €", type: "number" },
           { k: "fecha_prevista", t: "Fecha prevista", type: "date" }, { k: "descripcion", t: "Descripción", type: "textarea", wide: true },
-        ], w, async (d) => { await put(`/api/mantenimiento/ordenes/${w.id}`, d); toast("OT actualizada"); load(); await altaProveedorSiNuevo(d.proveedor, d.categoria); }), "proveedor")],
+        ], w, async (d) => {
+          const x = await put(`/api/mantenimiento/ordenes/${w.id}`, datosAsignacion(d)); toast("OT actualizada"); load(); await altaProveedorSiNuevo(d.proveedor, d.categoria);
+          if (x.asignacion && (x.asignado_a !== w.asignado_a) && confirm(`¿Enviar ahora la ${otNum(x.id)} a ${x.asignado_a}?`)) enviarAsignado(x, load);
+        })), "proveedor"); }],
         can("mantenimiento.editar") && enTrabajo && ["Trabajo realizado", () => bindFotos(form(`OT ${w.id}: confirmar trabajo realizado`, [
           { k: "solucion", t: "Trabajo realizado / solución", type: "textarea", wide: true, req: true }, { k: "coste_real", t: "Coste real €", type: "number" },
           { html: fotosHtml("Fotos del trabajo terminado (opcional)") }],

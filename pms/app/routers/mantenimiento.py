@@ -1,15 +1,23 @@
 """Mantenimiento correctivo y preventivo (órdenes de trabajo y planes periódicos)."""
+import hashlib
+import hmac
+import time
 from datetime import date, datetime, timedelta
+from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
+from typing import Literal
+
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import adjuntos, avisos, documentos, parte_pdf, planos
+from .. import adjuntos, avisos, documentos, firma_contrato, parte_pdf, planos
 from . import personal
+from ..config import settings
 from ..database import get_db
-from ..models import Asset, PreventivePlan, Unit, User, WorkOrder, WorkOrderAttachment
+from ..models import (Asset, EmailLog, PreventivePlan, StaffMember, Supplier, Unit, User, WorkOrder,
+                      WorkOrderAttachment)
 from ..schemas import PlanIn, PlanUpdate, WorkOrderIn, WorkOrderUpdate
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
@@ -22,7 +30,8 @@ ESTADOS_TRABAJO = ("abierta", "asignada", "en_curso", "pendiente_material")
 ABIERTAS = ESTADOS_TRABAJO + ("trabajo_realizado", "pendiente_cierre")
 ESTADOS_OT = set(ABIERTAS) | {"cerrada", "cancelada"}
 # Datos de gestión que solo fija mantenimiento (quien solo abre el aviso no los rellena)
-CAMPOS_GESTION = ("asignado_a", "proveedor", "coste_estimado", "fecha_prevista", "tipo")
+CAMPOS_GESTION = ("asignado_a", "proveedor", "coste_estimado", "fecha_prevista", "tipo", "asignacion", "personal_id",
+                  "proveedor_id")
 
 # Plantilla de preventivo legal / buenas prácticas. Revisar y ajustar periodicidades a cada instalación
 # (potencia térmica, nº de ascensores, uso del edificio...) antes de darla por buena.
@@ -57,6 +66,10 @@ def _wo_out(w: WorkOrder, db: Session, n_adjuntos: int | None = None) -> dict:
     d["n_adjuntos"] = n_adjuntos if n_adjuntos is not None else db.scalar(
         select(func.count()).select_from(WorkOrderAttachment).where(WorkOrderAttachment.work_order_id == w.id))
     d["requiere_limpieza"] = requiere_limpieza(w)
+    quien = (db.get(StaffMember, w.personal_id) if w.asignacion == "propio" and w.personal_id
+             else _subcontrata(db, w) if w.asignacion == "subcontrata" else None)
+    d["contacto"] = {"nombre": quien.nombre, "email": quien.email,
+                     "whatsapp": bool(firma_contrato.movil_whatsapp(quien.telefono or ""))} if quien else None
     d["unidad"] = db.get(Unit, w.unit_id).codigo if w.unit_id else None
     d["zona_nombre"] = planos.zonas(db.get(Asset, w.asset_id).codigo).get(w.zona, w.zona) if w.zona else None
     for campo in ("abierta_por", "conf_mto_por", "conf_limpieza_por", "cerrada_por"):
@@ -94,6 +107,33 @@ def list_orders(asset_id: int | None = None, estado: str | None = None, abiertas
     return [_wo_out(w, db, n.get(w.id, 0)) for w in filas]
 
 
+def _subcontrata(db: Session, w: WorkOrder) -> Supplier | None:
+    """Ficha de Proveedores de la subcontrata (por su id o, si se dio de alta después, por su nombre)."""
+    s = db.get(Supplier, w.proveedor_id) if w.proveedor_id else None
+    if s is None and w.proveedor:
+        s = db.scalar(select(Supplier).where(func.lower(Supplier.nombre) == w.proveedor.strip().lower()))
+    return s
+
+
+def _asignar(db: Session, w: WorkOrder) -> None:
+    """Personal propio (ficha de Personal) o subcontrata (ficha de Proveedores, por su id o por su nombre)."""
+    if w.asignacion == "propio":
+        p = db.get(StaffMember, w.personal_id) if w.personal_id else None
+        if w.personal_id and (p is None or p.area != "mantenimiento" or p.asset_id not in (None, w.asset_id)):
+            bad_request("Elija una persona de mantenimiento de este activo (Mantenimiento → Personal)")
+        w.proveedor_id = None
+        if p:
+            w.asignado_a = p.nombre[:120]
+    elif w.asignacion == "subcontrata":
+        s = _subcontrata(db, w)
+        w.personal_id = None
+        w.proveedor_id = s.id if s else None
+        if s:
+            w.proveedor = s.nombre[:160]
+        if w.proveedor:
+            w.asignado_a = f"Subcontrata: {w.proveedor}"[:120]
+
+
 @router.post("/ordenes", status_code=201)
 def create_order(data: WorkOrderIn, tareas: BackgroundTasks, scope: Scope = Depends(get_scope),
                  db: Session = Depends(get_db)):
@@ -116,6 +156,7 @@ def create_order(data: WorkOrderIn, tareas: BackgroundTasks, scope: Scope = Depe
         for campo in CAMPOS_GESTION:
             valores.pop(campo, None)
     w = WorkOrder(**valores, abierta_por=scope.user.id)
+    _asignar(db, w)
     db.add(w)
     if unit and data.bloquea_unidad and unit.estado in ("disponible", "pendiente_limpieza"):
         unit.estado = "mantenimiento"
@@ -137,6 +178,8 @@ def update_order(wid: int, data: WorkOrderUpdate, tareas: BackgroundTasks, scope
     if data.estado is not None and data.estado not in ESTADOS_TRABAJO:
         bad_request(f"Estado no válido. Opciones: {', '.join(ESTADOS_TRABAJO)}")
     ch = apply(w, data)
+    if {"asignacion", "personal_id", "proveedor_id", "proveedor"} & set(ch):
+        _asignar(db, w)
     audit(db, scope.user, "editar", "orden_trabajo", wid, ch)
     db.commit()
     if "prioridad" in ch and w.prioridad == "urgente":
@@ -264,6 +307,120 @@ def send_order(wid: int, data: personal.SendIn, scope: Scope = Depends(get_scope
         if w.estado == "abierta":
             w.estado = "asignada"
     audit(db, scope.user, "enviar", "orden_trabajo", wid, {"canal": data.canal, "personal": [p.nombre for p in personas]})
+    db.commit()
+    return {"enviados": res, "orden": _wo_out(w, db)}
+
+
+# --------------------------------------------------------------------------- envío a quien la tiene asignada
+DIAS_ENLACE = 15
+
+
+def _firma(wid: int, caduca: int) -> str:
+    return hmac.new(settings.secret_key.encode(), f"ot:{wid}:{caduca}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def enlace_parte(wid: int) -> str | None:
+    """Enlace de descarga del parte en PDF para WhatsApp (firmado, caduca a los 15 días)."""
+    if not settings.url:
+        return None
+    caduca = int(time.time()) + DIAS_ENLACE * 86400
+    return f"{settings.url}/api/publico/ot/{wid}?c={caduca}&f={_firma(wid, caduca)}"
+
+
+publico = APIRouter(prefix="/api/publico", tags=["público"])
+
+
+@publico.get("/ot/{wid}")
+def public_sheet(wid: int, c: int, f: str, db: Session = Depends(get_db)):
+    if c < time.time() or not hmac.compare_digest(f, _firma(wid, c)):
+        raise HTTPException(404, "Enlace no válido o caducado. Pida la orden de trabajo de nuevo.")
+    w = get_or_404(db, WorkOrder, wid)
+    return Response(parte(db, w), media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="Parte_OT-{w.id:05d}.pdf"'})
+
+
+class EnvioAsignadoIn(BaseModel):
+    canales: list[Literal["email", "whatsapp"]] = Field(min_length=1)
+    copia_mantenimiento: bool = True  # copia al personal de mantenimiento propio
+    nota: str | None = Field(default=None, max_length=1000)
+
+
+def _destino(nombre: str, email: str | None, telefono: str | None, canales, asunto, texto, html, adj, db, clave,
+             obligatorio: bool) -> list[dict]:
+    out = []
+    for canal in canales:
+        if canal == "email":
+            if not email:
+                if obligatorio:
+                    bad_request(f"{nombre} no tiene correo electrónico en su ficha")
+                continue
+            if not avisos.configurado():
+                if obligatorio:
+                    bad_request("El correo no está configurado en el servidor: envíela por WhatsApp")
+                continue
+            r = {"nombre": nombre, "canal": "email", "destino": email}
+            try:
+                avisos.enviar(email, asunto, texto, html, adj)
+                r["ok"] = True
+            except Exception as e:  # noqa: BLE001
+                r["ok"], r["error"] = False, str(e)[:200]
+            db.add(EmailLog(clave=clave, tipo="ot_enviada", destinatario=email, asunto=asunto[:200], ok=r["ok"],
+                            error=r.get("error")))
+            out.append(r)
+        else:
+            movil = firma_contrato.movil_whatsapp(telefono or "")
+            if not movil:
+                if obligatorio:
+                    bad_request(f"{nombre} no tiene un móvil válido para WhatsApp en su ficha")
+                continue
+            out.append({"nombre": nombre, "canal": "whatsapp", "destino": movil, "ok": True,
+                        "whatsapp": f"https://wa.me/{movil}?text={quote(texto)}"})
+    return out
+
+
+@router.post("/ordenes/{wid}/enviar-asignado")
+def send_assigned(wid: int, data: EnvioAsignadoIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Envía la OT a quien la tiene asignada: personal propio (WhatsApp y/o correo) o la subcontrata (correo con el
+    parte en PDF y/o WhatsApp con enlace al PDF, según los datos de su ficha de proveedor). Con copia al personal de
+    mantenimiento propio para que sepa qué trabajos se van a hacer."""
+    w = _open_order(db, wid)
+    if not (scope.can_asset("mantenimiento.editar", w.asset_id) or scope.can_asset("mantenimiento.cerrar", w.asset_id)):
+        raise HTTPException(403, "Sin permiso para enviar órdenes de trabajo en este activo")
+    asunto, texto, html = mensaje_ot(db, w, data.nota)
+    url = enlace_parte(w.id)
+    texto_wa = texto + (f"\n\nParte en PDF: {url}" if url else "")
+    adj = [(f"Parte_OT-{w.id:05d}.pdf", parte(db, w), "application/pdf")]
+    clave = f"ot_enviada:{w.id}"
+    if w.asignacion == "propio":
+        p = db.get(StaffMember, w.personal_id) if w.personal_id else None
+        if p is None:
+            bad_request("Indique en la orden qué persona de mantenimiento la realiza")
+        res = _destino(p.nombre, p.email, p.telefono, data.canales, asunto, texto_wa, html, adj, db, clave, True)
+        asignado = p.id
+    elif w.asignacion == "subcontrata":
+        s = _subcontrata(db, w)
+        if s is None:
+            bad_request("La subcontrata no está en Proveedores: dela de alta con su correo o teléfono")
+        w.proveedor_id = s.id
+        res = _destino(s.nombre, s.email, s.telefono, data.canales, asunto, texto_wa, html, adj, db, clave, True)
+        asignado = None
+    else:
+        bad_request("Indique en la orden si la realiza personal propio o una subcontrata")
+    if data.copia_mantenimiento:
+        cab = f"COPIA para su conocimiento (la realiza {w.asignado_a}). "
+        for p in db.scalars(select(StaffMember).where(StaffMember.area == "mantenimiento", StaffMember.activo.is_(True),
+                                                      (StaffMember.asset_id.is_(None)) | (StaffMember.asset_id == w.asset_id))):
+            if p.id == asignado:
+                continue
+            canal = ["email"] if p.email and avisos.configurado() else ["whatsapp"]  # la copia, por donde se pueda
+            for r in _destino(p.nombre, p.email, p.telefono, canal, f"Copia · {asunto}"[:200], cab + texto_wa,
+                              html.replace("<h2", f"<p><b>{cab}</b></p><h2", 1), adj, db, clave, False):
+                res.append({**r, "copia": True})
+    personal.registrar_envio_ot(w, res, scope.user.nombre)
+    if any(r["ok"] and not r.get("copia") for r in res) and w.estado == "abierta":
+        w.estado = "asignada"
+    audit(db, scope.user, "enviar", "orden_trabajo", wid, {"asignado": w.asignado_a, "canales": data.canales,
+                                                           "destinos": [r["destino"] for r in res]})
     db.commit()
     return {"enviados": res, "orden": _wo_out(w, db)}
 
