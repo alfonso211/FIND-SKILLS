@@ -7,7 +7,7 @@
 ## Informes Excel
 - **Ocupación**, **Producción**, **Morosidad**, **Costes de mantenimiento** y **Facturas pendientes de cobro** (con días pendientes y quién comprobó cada cobro).
 - **Encuesta del INE** de apartamentos turísticos.
-- **Programa anterior (SYADE)**: importar los listados de facturación y ver el resumen mensual. Las facturas se enlazan solas por **DNI/NIF** con los clientes que ya están en el PMS, y sus importes (producción, total y fianzas) aparecen en la **ficha del cliente**. Es solo control de producción: la facturación válida para Hacienda empieza el 1 de enero de 2027.
+- **Programa anterior (SYADE)**: importar los listados de facturación y ver el resumen mensual. Las facturas se enlazan solas con los clientes que ya están en el PMS: por **DNI/NIF** y, si el cliente no lo tiene, por **nombre y apellidos** (solo si hay una única ficha con ese nombre; con dos fichas iguales no se enlaza), y sus importes (producción, total y fianzas) aparecen en la **ficha del cliente**. Es solo control de producción: la facturación válida para Hacienda empieza el 1 de enero de 2027.
 - **Exportar a INVERGESTION**: facturas emitidas y recibidas en **un solo ZIP** (CSV, manifest.json y los PDF en pdf/emitidas y pdf/recibidas). **Envío semanal** con «Semana pasada»; pulse **Comprobar** antes de descargar. Si a alguna factura le falta su PDF, el paquete **no se genera** y se indica cuál (vuelva a subir ese documento).
   - **Comprobar** avisa de las facturas recibidas cuya fecha coincide con el día en que se registraron: revise que sea la de la factura.
   - Todos los documentos van en **PDF** (las fotos se convierten) con el nombre exacto de la columna archivo_pdf.

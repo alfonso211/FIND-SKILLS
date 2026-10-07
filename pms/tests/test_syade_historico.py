@@ -81,6 +81,9 @@ def test_importacion_y_produccion(client, admin, ids):
     uno, dos = (client.post("/api/terceros", headers=admin, json={
         "company_id": comp, "asset_id": sae, "tipo": "huesped", "nombre": n, "documento_num": d}).json()["id"]
         for n, d in (("Histórico", "x-7700001a"), ("Histórico Dos", "81234567Q")))
+    # y otro sin documento: se enlaza por nombre y apellidos («CLIENTE TRES» en el listado)
+    alta_tres = {"company_id": comp, "asset_id": sae, "tipo": "huesped", "nombre": "Tres", "apellidos": "Cliénte"}
+    tres = client.post("/api/terceros", headers=admin, json=alta_tres).json()["id"]
 
     def subir(datos, confirmar):
         return client.post("/api/historico/importar", headers=admin,
@@ -88,7 +91,7 @@ def test_importacion_y_produccion(client, admin, ids):
                            data={"asset_id": str(sae), "confirmar": str(confirmar).lower(), "anio": "2030"})
     prev = subir(facturas(), False).json()
     assert prev["cuadra"] and prev["nuevas"] == 3 and client.get("/api/historico", headers=admin).json() == []
-    assert prev["con_cliente"] == 2 and prev["clientes"] == 2
+    assert prev["con_cliente"] == 3 and prev["clientes"] == 3 and prev["por_nombre"] == 1
     assert subir(facturas(), True).json()["importado"]
     again = subir(facturas(), True).json()  # volver a importar no duplica
     assert again["nuevas"] == 0 and again["actualizadas"] == 3
@@ -98,12 +101,19 @@ def test_importacion_y_produccion(client, admin, ids):
     meses = {m["mes"]: m for m in res[0]["meses"]}
     assert meses["2030-01"]["produccion"] == 300.0 and meses["2030-01"]["fianzas_cobradas"] == 300.0
     assert meses["2030-02"]["produccion"] == 1000.5
-    assert res[0]["clientes"] == {"facturas": 3, "con_cliente": 2, "clientes": 2}
+    assert res[0]["clientes"] == {"facturas": 3, "con_cliente": 3, "clientes": 3, "por_nombre": 1}
     # los importes se ven en la ficha de cada cliente
     h1 = client.get(f"/api/terceros/{uno}", headers=admin).json()["historico"]
     assert h1["facturas"] == 1 and h1["produccion"] == 100.0 and h1["total"] == 110.0
     h2 = client.get(f"/api/terceros/{dos}", headers=admin).json()["historico"]
     assert h2["produccion"] == 200.0 and h2["fianzas_cobradas"] == 300.0 and h2["detalle"][0]["factura"] == "AE 1"
+    assert h2["detalle"][0]["enlace"] == "documento"
+    h3 = client.get(f"/api/terceros/{tres}", headers=admin).json()["historico"]
+    assert h3["produccion"] == 1000.5 and h3["detalle"][0]["enlace"] == "nombre"
+    # dos fichas con el mismo nombre: no se sabe de quién es y no se enlaza con ninguna
+    otra = client.post("/api/terceros", headers=admin, json={**alta_tres, "telefono": "600000000"}).json()["id"]
+    assert client.get(f"/api/terceros/{tres}", headers=admin).json()["historico"] is None
+    assert client.get(f"/api/terceros/{otra}", headers=admin).json()["historico"] is None
 
     # el informe de producción lo suma y lo indica aparte
     r = client.get("/api/informes/produccion", headers=admin,
