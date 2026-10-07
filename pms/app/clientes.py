@@ -12,8 +12,8 @@ from .models import Asset, Contact
 from .utils import bad_request, get_or_404
 
 CAMPOS_COPIA = ("nombre", "apellidos", "documento_tipo", "documento_num", "nacionalidad", "fecha_nacimiento", "sexo",
-                "num_soporte", "fecha_caducidad_doc", "email", "telefono", "direccion", "cp", "municipio", "pais",
-                "municipio_ine", "iban")
+                "num_soporte", "fecha_caducidad_doc", "email", "telefono", "direccion", "cp", "municipio", "provincia",
+                "pais", "municipio_ine", "iban")
 
 
 def del_activo(db: Session, scope, cid: int, asset: Asset, tipo: str) -> Contact:

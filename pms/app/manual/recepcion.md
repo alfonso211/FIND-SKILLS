@@ -50,6 +50,9 @@
 
 ## Documentos recibidos
 - Las facturas y cartas que lleguen: **Documentos recibidos → Subir documento** (foto o PDF), con la **fecha de la factura** y su **vencimiento**.
+- **Lector automático**: al elegir el PDF o las fotos de una factura, el programa la lee y rellena fecha, vencimiento, proveedor, nº, total, IVA, retención y forma de pago. Lo que no ha podido leer o no cuadra sale **en amarillo**: revíselo siempre antes de guardar.
+- Indique si el gasto es **OPEX** (gasto corriente: mantenimiento, suministros, limpieza…) o **CAPEX** (inversión: obra, reforma, equipamiento que dura varios años). Es obligatorio.
+- **Duplicados**: si ese proveedor ya tiene registrada una factura con el mismo nº, **no se registra** y el programa le dice dónde está. Si solo se parece (mismo importe y fecha, o el mismo fichero), le pregunta si es otra factura antes de guardarla.
 - **Muy importante**: la fecha es la **impresa en la factura**, no la de hoy. De ella depende el trimestre del IVA. El programa ya no la rellena sola.
 - Indique siempre **cómo se paga**: **Transferencia** (la pagamos nosotros) o **Cargo en cuenta (domiciliación)** (el proveedor la carga en el banco). Es obligatorio.
 - **Retención de IRPF** (facturas de profesionales, alquileres…): elija el tipo en **Retención** y compruebe el **%** (15 % profesionales, 7 % inicio de actividad, 19 % arrendamientos, 1 % módulos, u «Otra» con su %). Ponga como total el **que figura en la factura** (ya con la retención descontada).

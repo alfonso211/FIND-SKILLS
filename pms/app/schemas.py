@@ -19,6 +19,7 @@ class CompanyIn(BaseModel):
     cp: str | None = None
     municipio: str | None = None
     provincia: str | None = None
+    pais: str | None = None
     parent_id: int | None = None
     activa: bool = True
     contratos: dict | None = None  # datos para los contratos de arrendamiento
@@ -34,6 +35,7 @@ class AssetIn(BaseModel):
     municipio: str | None = None
     provincia: str | None = None
     cp: str | None = None
+    pais: str | None = None
     ref_catastral: str | None = None
     num_registro_turistico: str | None = None
     serie_factura: str | None = Field(default=None, pattern=r"^[A-Z0-9]{1,8}$")
@@ -53,6 +55,7 @@ class AssetUpdate(BaseModel):
     municipio: str | None = None
     provincia: str | None = None
     cp: str | None = None
+    pais: str | None = None
     ref_catastral: str | None = None
     num_registro_turistico: str | None = None
     serie_factura: str | None = Field(default=None, pattern=r"^[A-Z0-9]{1,8}$")
@@ -136,6 +139,7 @@ class ContactIn(BaseModel):
     direccion: str | None = None
     cp: str | None = None
     municipio: str | None = None
+    provincia: str | None = None
     municipio_ine: str | None = None  # se calcula del municipio y el C.P. si no se indica
     pais: str | None = None
     iban: str | None = None
@@ -159,6 +163,7 @@ class ContactInline(BaseModel):
     direccion: str | None = None
     cp: str | None = None
     municipio: str | None = None
+    provincia: str | None = None
     municipio_ine: str | None = None  # se calcula del municipio y el C.P. si no se indica
     pais: str | None = None
 

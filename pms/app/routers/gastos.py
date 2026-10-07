@@ -6,8 +6,10 @@ apartamento concreto. Cada activo ve solo lo suyo; quien gestiona la sociedad o 
 mantenimiento no tienen acceso.
 """
 import json
+import re
+import unicodedata
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
 
@@ -19,8 +21,8 @@ from sqlalchemy.orm import Session
 from .. import adjuntos, avisos, documentos
 from ..database import get_db
 from ..facturacion import FORMAS_PAGO, dinero
-from ..models import (AMBITOS_GASTO, CATEGORIAS_GASTO, TIPOS_DOCUMENTO, Asset, Expense, ReceivedDocument, Supplier,
-                      Unit, User)
+from ..models import (AMBITOS_GASTO, CATEGORIAS_GASTO, TIPOS_DOCUMENTO, Asset, Company, Expense, ReceivedDocument,
+                      Supplier, Unit, User)
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request, get_or_404, scoped
 
@@ -28,6 +30,9 @@ router = APIRouter(prefix="/api", tags=["documentos y gastos"])
 
 IVAS = (0, 4, 5, 10, 21)
 # Cómo se paga la factura del proveedor (obligatorio): por transferencia nuestra o cargada en cuenta por él
+# Naturaleza del gasto: lo decide quien registra la factura
+NATURALEZAS = {"OPEX": "OPEX · gasto corriente (mantenimiento, suministros, limpieza…)",
+               "CAPEX": "CAPEX · inversión (obra, reforma, equipamiento que dura varios años)"}
 # Retenciones que se practican al proveedor: (nombre, % habitual). «otra»: el % lo indica quien registra
 RETENCIONES = {
     "irpf_profesional": ("IRPF profesionales", 15),
@@ -45,6 +50,7 @@ class ExpenseIn(BaseModel):
     documento_id: int | None = None
     fecha: date
     categoria: str
+    naturaleza: str | None = None  # OPEX o CAPEX (obligatorio)
     concepto: str = Field(min_length=2, max_length=300)
     ambito: str = "general"
     unit_id: int | None = None
@@ -66,6 +72,63 @@ class ExpenseIn(BaseModel):
     retener_pago: bool = False
     retener_motivo: str | None = Field(default=None, max_length=300)
     retener_revision: date | None = None
+    confirmar_duplicado: bool = False  # registrarla aunque se parezca a otra ya registrada
+
+
+# --------------------------------------------------------------------------- duplicados
+def _num(s: str | None) -> str:
+    """Nº de factura comparable: «F26/5594», «F26-5594» y «f26 5594» son el mismo."""
+    return re.sub(r"[^A-Z0-9]", "", (s or "").upper())
+
+
+def _prov(s: str | None) -> str:
+    s = unicodedata.normalize("NFKD", (s or "").lower()).encode("ascii", "ignore").decode()
+    s = re.sub(r"[^a-z0-9 ]", " ", s)
+    s = re.sub(r"\b(s ?l ?u?|s ?a ?u?|s ?coop|c ?b|s ?l ?l)\b", " ", s)  # forma jurídica
+    return re.sub(r"\s+", "", s)
+
+
+def _euros(x) -> str:
+    return f"{float(x):,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _describe(db: Session, g: Expense) -> str:
+    a = db.get(Asset, g.asset_id)
+    return (f"{g.proveedor or 'sin proveedor'} nº {g.numero_factura or 's/n'} de {g.fecha:%d/%m/%Y}, "
+            f"{_euros(float(g.total) - float(g.retencion or 0))} ({a.nombre}, apunte {g.id})")
+
+
+def comprobar_duplicado(db: Session, asset_id: int, proveedor: str | None, supplier_id: int | None,
+                        numero: str | None, liquido: Decimal, fecha: date, excluir: int | None = None,
+                        confirmado: bool = False) -> None:
+    """Mismo proveedor y mismo nº de factura (en la misma sociedad): no se registra (409).
+    Parecida (mismo proveedor, importe y fecha; o mismo nº e importe con otro nombre de proveedor): se avisa y
+    solo se registra si quien la sube lo confirma."""
+    company = db.get(Asset, asset_id).company_id
+    activos = set(db.scalars(select(Asset.id).where(Asset.company_id == company)))
+    q = select(Expense).where(Expense.asset_id.in_(activos), Expense.fecha >= fecha - timedelta(days=730),
+                              Expense.fecha <= fecha + timedelta(days=730))
+    if excluir:
+        q = q.where(Expense.id != excluir)
+    num, prov = _num(numero), _prov(proveedor)
+    posibles = []
+    for g in db.scalars(q):
+        mismo_prov = bool((supplier_id and g.supplier_id == supplier_id) or (prov and _prov(g.proveedor) == prov))
+        mismo_num = bool(num) and _num(g.numero_factura) == num
+        mismo_importe = dinero(float(g.total) - float(g.retencion or 0)) == liquido
+        if mismo_prov and mismo_num:
+            raise HTTPException(409, f"Factura duplicada: {_describe(db, g)} ya está registrada. No se registra "
+                                     "de nuevo; si es otra factura, revise el nº de factura o el proveedor.")
+        if (mismo_prov and mismo_importe and g.fecha == fecha) or (mismo_num and mismo_importe):
+            posibles.append(_describe(db, g))
+    if posibles and not confirmado:
+        raise HTTPException(409, "Posible duplicado: se parece a " + "; ".join(posibles[:3])
+                            + ". Compruébelo antes de registrarla.")
+
+
+def _comprobar(db: Session, asset_id: int, v: dict, excluir: int | None = None, confirmado: bool = False) -> None:
+    comprobar_duplicado(db, asset_id, v["proveedor"], v["supplier_id"], v["numero_factura"],
+                        v["total"] - v["retencion"], v["fecha"], excluir=excluir, confirmado=confirmado)
 
 
 class RetenerIn(BaseModel):
@@ -93,6 +156,8 @@ def _unidad(db: Session, asset_id: int, unit_id: int | None) -> Unit | None:
 def _valores_gasto(db: Session, asset_id: int, data: ExpenseIn) -> dict:
     if data.categoria not in CATEGORIAS_GASTO:
         bad_request(f"Categoría no válida. Opciones: {', '.join(CATEGORIAS_GASTO)}")
+    if data.naturaleza not in NATURALEZAS:
+        bad_request("Indique si el gasto es OPEX (gasto corriente) o CAPEX (inversión)")
     if data.ambito not in AMBITOS_GASTO:
         bad_request("Ámbito no válido: general, apartamento u otro")
     if data.ambito == "apartamento" and not data.unit_id:
@@ -125,7 +190,8 @@ def _valores_gasto(db: Session, asset_id: int, data: ExpenseIn) -> dict:
     total = liquido + retencion  # base + IVA
     prov = " ".join((data.proveedor or "").split()) or None
     supplier = db.scalar(select(Supplier).where(Supplier.nombre == prov)) if prov else None
-    return {"fecha": data.fecha, "categoria": data.categoria, "concepto": data.concepto.strip(),
+    return {"fecha": data.fecha, "categoria": data.categoria, "naturaleza": data.naturaleza,
+            "concepto": data.concepto.strip(),
             "ambito": data.ambito, "unit_id": data.unit_id if data.ambito == "apartamento" else None,
             "ambito_detalle": data.ambito_detalle if data.ambito == "otro" else None, "proveedor": prov,
             "supplier_id": supplier.id if supplier else None, "numero_factura": data.numero_factura,
@@ -218,7 +284,7 @@ def upload_document(tareas: BackgroundTasks, ficheros: list[UploadFile] = File(.
                     tipo: str = Form(...), fecha: date = Form(...), vencimiento: date | None = Form(None),
                     emisor: str | None = Form(None), referencia: str | None = Form(None),
                     descripcion: str | None = Form(None), unit_id: int | None = Form(None),
-                    gasto: str | None = Form(None),
+                    gasto: str | None = Form(None), confirmar_duplicado: bool = Form(False),
                     scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     """Sube un documento escaneado (foto o PDF) a la carpeta del activo. Con `gasto` (JSON con los datos del
     gasto) se anota además en la cuenta de gastos."""
@@ -236,16 +302,32 @@ def upload_document(tareas: BackgroundTasks, ficheros: list[UploadFile] = File(.
             gasto_in = ExpenseIn(**json.loads(gasto))
         except (ValueError, ValidationError) as e:
             bad_request(f"Datos del gasto no válidos: {str(e)[:300]}")
+    valores = _valores_gasto(db, asset_id, gasto_in) if gasto_in else None
+    confirmado = confirmar_duplicado or bool(gasto_in and gasto_in.confirmar_duplicado)
+    huella = documentos.huella(datos)
+    # duplicados, antes de guardar nada: la factura (proveedor + nº) y el propio fichero
+    if valores:
+        _comprobar(db, asset_id, valores, confirmado=confirmado)
+    elif tipo == "factura" and emisor and referencia:
+        for d in db.scalars(select(ReceivedDocument).where(ReceivedDocument.asset_id == asset_id,
+                                                           ReceivedDocument.tipo == "factura")):
+            if _prov(d.emisor) == _prov(emisor) and _num(d.referencia) == _num(referencia):
+                raise HTTPException(409, f"Factura duplicada: {d.emisor} nº {d.referencia} ya está en la carpeta "
+                                         f"(subida el {d.subido:%d/%m/%Y}). No se registra de nuevo.")
+    igual = db.scalar(select(ReceivedDocument).where(ReceivedDocument.asset_id == asset_id,
+                                                     ReceivedDocument.sha256 == huella).limit(1))
+    if igual and not confirmado:
+        raise HTTPException(409, f"Posible duplicado: ese mismo fichero ya se subió el {igual.subido:%d/%m/%Y} "
+                                 f"({igual.emisor or igual.nombre}). Compruébelo antes de registrarlo.")
     x = ReceivedDocument(asset_id=asset_id, unit_id=unit_id, tipo=tipo, fecha=fecha, vencimiento=vencimiento,
                          emisor=" ".join((emisor or "").split()) or None, referencia=referencia or None,
                          descripcion=descripcion or None, nombre=nombre, fichero=documentos.guardar(datos), mime=mime,
-                         tamano=len(datos), sha256=documentos.huella(datos), user_id=scope.user.id)
+                         tamano=len(datos), sha256=huella, user_id=scope.user.id)
     db.add(x)
     db.flush()
     g = None
     if gasto_in:
-        g = Expense(asset_id=asset_id, documento_id=x.id, user_id=scope.user.id,
-                    **_valores_gasto(db, asset_id, gasto_in))
+        g = Expense(asset_id=asset_id, documento_id=x.id, user_id=scope.user.id, **valores)
         if gasto_in.retener_pago:
             _retener(g, scope.user.id, gasto_in.retener_motivo, gasto_in.retener_revision)
         db.add(g)
@@ -257,6 +339,27 @@ def upload_document(tareas: BackgroundTasks, ficheros: list[UploadFile] = File(.
         tareas.add_task(avisos.pago_retenido, g.id, scope.user.id)
     unidades, usuarios = _nombres(db, {i for i in (x.unit_id, g.unit_id if g else None) if i}, {scope.user.id})
     return _doc_out(x, g, unidades, usuarios, _activos(db))
+
+
+@router.post("/documentos-recibidos/leer")
+def read_invoice(ficheros: list[UploadFile] = File(...), scope: Scope = Depends(get_scope),
+                 db: Session = Depends(get_db)):
+    """Lee la factura (PDF o fotos) y propone sus datos para el formulario. No guarda nada.
+    Los datos «dudosos» (no encontrados o que no cuadran) se marcan para revisarlos."""
+    scope.require_any("documentos.editar")
+    from .. import lector_facturas, nif
+    datos, _, _ = _fichero(ficheros)
+    propios = {nif.normalizar(c) for c in db.scalars(select(Company.cif)) if c}
+    proveedores = {nif.normalizar(s.nif): s.nombre
+                   for s in db.scalars(select(Supplier).where(Supplier.nif.is_not(None)))}
+    try:
+        r = lector_facturas.leer(datos, propios, proveedores)
+    except ValueError as e:
+        bad_request(str(e))
+    c = r["campos"]
+    if c.get("nif") and c["nif"] in proveedores:
+        r["proveedor_conocido"] = True
+    return r
 
 
 def _fichero(ficheros: list[UploadFile]) -> tuple[bytes, str, str]:
@@ -365,6 +468,9 @@ def list_expenses(asset_id: int | None = None, desde: date | None = None, hasta:
         "base": round(sum(g["base"] for g in filas), 2), "cuota": round(sum(g["cuota"] for g in filas), 2),
         "total": round(sum(g["total"] for g in filas), 2),
         "retencion": round(sum(g["retencion"] for g in filas), 2),
+        "opex": round(sum(g["base"] for g in filas if g["naturaleza"] == "OPEX"), 2),
+        "capex": round(sum(g["base"] for g in filas if g["naturaleza"] == "CAPEX"), 2),
+        "sin_naturaleza": sum(1 for g in filas if not g["naturaleza"]),
         "pendiente_pago": round(sum(g["liquido"] for g in filas if not g["pagado"]), 2),
         "retenidas": sum(1 for g in filas if g["pago_retenido"] and not g["pagado"]),
         "retenidas_importe": round(sum(g["liquido"] for g in filas if g["pago_retenido"] and not g["pagado"]), 2),
@@ -387,8 +493,9 @@ def create_expense(data: ExpenseIn, tareas: BackgroundTasks, scope: Scope = Depe
     else:
         bad_request("Indique el activo del gasto")
     scope.require_asset("documentos.editar", asset_id)
-    g = Expense(asset_id=asset_id, documento_id=data.documento_id, user_id=scope.user.id,
-                **_valores_gasto(db, asset_id, data))
+    valores = _valores_gasto(db, asset_id, data)
+    _comprobar(db, asset_id, valores, confirmado=data.confirmar_duplicado)
+    g = Expense(asset_id=asset_id, documento_id=data.documento_id, user_id=scope.user.id, **valores)
     if data.retener_pago:
         _retener(g, scope.user.id, data.retener_motivo, data.retener_revision)
     db.add(g)
@@ -415,7 +522,9 @@ def update_expense(gid: int, data: ExpenseIn, scope: Scope = Depends(get_scope),
     antes = {k: str(v) for k, v in g.to_dict().items()}
     if data.pagado and not g.pagado and g.pago_retenido:
         bad_request("El pago de esta factura está retenido: debe liberarlo quien se encarga de los pagos")
-    for k, v in _valores_gasto(db, g.asset_id, data).items():
+    valores = _valores_gasto(db, g.asset_id, data)
+    _comprobar(db, g.asset_id, valores, excluir=gid, confirmado=True)  # al editar: solo el duplicado exacto
+    for k, v in valores.items():
         setattr(g, k, v)
     audit(db, scope.user, "editar", "gasto", gid,
           {k: [antes.get(k), str(v)] for k, v in g.to_dict().items() if antes.get(k) != str(v)})
@@ -476,11 +585,13 @@ def expenses_excel(asset_id: int | None = None, desde: date | None = None, hasta
     wb = Workbook()
     wb.remove(wb.active)
     periodo = f"{desde:%d/%m/%Y} – {hasta:%d/%m/%Y}" if desde and hasta else "todo el periodo"
-    _hoja(wb, "Gastos", ["Fecha factura", "Activo", "Ámbito", "Categoría", "Concepto", "Proveedor", "Nº factura",
+    _hoja(wb, "Gastos", ["Fecha factura", "Activo", "Ámbito", "Categoría", "OPEX/CAPEX", "Concepto", "Proveedor",
+                         "Nº factura",
                          "Vencimiento", "Base", "IVA %", "Cuota IVA", "Total con IVA", "Tipo de retención",
                          "Retención %", "Importe retención", "A pagar", "Pagado", "Fecha pago", "Forma de pago", "Pago retenido", "Revisión",
                          "Documento", "Registrado por"],
-          [[date.fromisoformat(g["fecha"]), g["activo"], g["lugar"], g["categoria_nombre"], g["concepto"],
+          [[date.fromisoformat(g["fecha"]), g["activo"], g["lugar"], g["categoria_nombre"], g["naturaleza"] or "",
+            g["concepto"],
             g["proveedor"] or "", g["numero_factura"] or "",
             date.fromisoformat(g["vencimiento"]) if g["vencimiento"] else None, g["base"], g["tipo_iva"], g["cuota"],
             g["total"], g["retencion_nombre"] or "", g["retencion_pct"] or None, g["retencion"] or None, g["liquido"],
@@ -490,8 +601,8 @@ def expenses_excel(asset_id: int | None = None, desde: date | None = None, hasta
             date.fromisoformat(g["pago_retenido_revision"]) if g["pago_retenido_revision"] else None,
             g["documento_tipo"] or "SIN DOCUMENTO", g["usuario"] or ""]
            for g in sorted(filas, key=lambda x: (x["fecha"], x["id"]))],
-          {7: FECHA, 8: EUR, 9: ENTERO, 10: EUR, 11: EUR, 13: ENTERO, 14: EUR, 15: EUR, 17: FECHA, 20: FECHA},
-          totales=[8, 10, 11, 14, 15],
+          {8: FECHA, 9: EUR, 10: ENTERO, 11: EUR, 12: EUR, 14: ENTERO, 15: EUR, 16: EUR, 18: FECHA, 21: FECHA},
+          totales=[9, 11, 12, 15, 16],
           nota=f"Cuenta de gastos · {periodo}. Fecha y vencimiento tal como figuran en la factura recibida.")
     res = defaultdict(lambda: defaultdict(float))
     for g in filas:
@@ -522,4 +633,5 @@ def expenses_excel(asset_id: int | None = None, desde: date | None = None, hasta
 def catalogs(scope: Scope = Depends(get_scope)):
     return {"tipos_documento": TIPOS_DOCUMENTO, "categorias": CATEGORIAS_GASTO, "ambitos": AMBITOS_GASTO,
             "formas_pago": FORMAS_PAGO_GASTO, "ivas": IVAS,
-            "retenciones": {k: {"nombre": n, "pct": p} for k, (n, p) in RETENCIONES.items()}}
+            "retenciones": {k: {"nombre": n, "pct": p} for k, (n, p) in RETENCIONES.items()},
+            "naturalezas": NATURALEZAS}

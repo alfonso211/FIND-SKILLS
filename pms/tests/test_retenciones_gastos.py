@@ -16,7 +16,7 @@ HOY = date.today()
 def test_retencion_irpf(client, admin, ids):
     bab = ids["assets"]["BAB35"]["id"]
     base = {"asset_id": bab, "fecha": HOY.isoformat(), "categoria": "mantenimiento", "concepto": "Proyecto técnico",
-            "proveedor": "Ingeniero Retención", "numero_factura": "IR-1", "forma_pago": "transferencia"}
+            "proveedor": "Ingeniero Retención", "numero_factura": "IR-1", "forma_pago": "transferencia", "naturaleza": "CAPEX"}
     # factura de profesional: base 1.000 + IVA 210 − IRPF 15 % 150 = 1.060 (lo que figura y se paga)
     g = client.post("/api/gastos", headers=admin, json={**base, "total": 1060, "tipo_iva": 21,
                                                         "retencion_tipo": "irpf_profesional", "retencion_pct": 15})
@@ -25,8 +25,11 @@ def test_retencion_irpf(client, admin, ids):
     assert (g["base"], g["cuota"], g["retencion"], g["total"], g["liquido"]) == (1000, 210, 150, 1210, 1060)
     assert g["retencion_nombre"] == "IRPF profesionales"
     # con la base indicada (varios tipos de IVA) la cuota sale de total + retención − base
-    g2 = client.post("/api/gastos", headers=admin, json={**base, "numero_factura": "IR-2", "total": 1060, "base": 1000,
-                                                         "retencion_tipo": "irpf_profesional", "retencion_pct": 15}).json()
+    otra = {**base, "numero_factura": "IR-2", "total": 1060, "base": 1000, "retencion_tipo": "irpf_profesional",
+            "retencion_pct": 15}
+    parecida = client.post("/api/gastos", headers=admin, json=otra)  # mismo proveedor, importe y fecha
+    assert parecida.status_code == 409 and parecida.json()["detail"].startswith("Posible duplicado")
+    g2 = client.post("/api/gastos", headers=admin, json={**otra, "confirmar_duplicado": True}).json()
     assert (g2["cuota"], g2["retencion"], g2["liquido"]) == (210, 150, 1060)
     assert client.post("/api/gastos", headers=admin, json={**base, "total": 100, "retencion_tipo": "otra"}
                        ).status_code == 400  # sin %
@@ -59,7 +62,7 @@ def test_pago_retenido(client, admin, ids):
     rec = _usuario(client, admin, ids, "recepcion.retenida@inversiete.com", "Recepción", "SAE")
     otra = _usuario(client, admin, ids, "recepcion.retenida2@inversiete.com", "Recepción", "SAE")
     base = {"asset_id": sae, "fecha": HOY.isoformat(), "categoria": "mantenimiento", "concepto": "Reparación bomba",
-            "proveedor": "Bombas Retenidas SL", "numero_factura": "BR-9", "total": 242, "forma_pago": "transferencia"}
+            "proveedor": "Bombas Retenidas SL", "numero_factura": "BR-9", "total": 242, "forma_pago": "transferencia", "naturaleza": "OPEX"}
     assert client.post("/api/gastos", headers=rec, json={**base, "retener_pago": True}).status_code == 400
     assert client.post("/api/gastos", headers=rec, json={
         **base, "retener_pago": True, "retener_motivo": "Trabajo sin terminar",

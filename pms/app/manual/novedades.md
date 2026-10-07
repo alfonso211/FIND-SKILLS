@@ -1,5 +1,12 @@
 # Novedades
 
+## 2026-10-07 · Versión 1.4 · Lector de facturas y duplicados
+- **Todos**: los formularios ya no montan unas casillas sobre otras; todo queda legible.
+- **Todos**: clientes, proveedores, sociedades y activos tienen **código postal, población, provincia y país**.
+- **Recepción y dirección**: **lector de facturas**: al subir el PDF o la foto rellena los datos solo; lo dudoso sale **en amarillo** para revisarlo.
+- **Recepción y dirección**: cada gasto indica si es **OPEX** (gasto corriente) o **CAPEX** (inversión).
+- **Recepción y dirección**: **facturas duplicadas**: mismo proveedor y nº, no se registra; si solo se parece, el programa pregunta antes de guardar.
+
 ## 2026-10-06 · Versión 1.3 · Retenciones y pagos retenidos
 - **Recepción y dirección**: las facturas recibidas admiten **retención de IRPF** (profesionales 15 %, inicio de actividad 7 %, arrendamientos 19 %, módulos 1 %) u **otra retención** con su %. Se descuenta de lo que hay que pagar y se envía a INVERGESTION.
 - **Recepción y dirección**: nueva opción **«Retener el pago»** (no pagar de momento) con **motivo** y **fecha de revisión**.

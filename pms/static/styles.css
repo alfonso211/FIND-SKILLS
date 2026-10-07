@@ -77,6 +77,11 @@ input, select, textarea { font: inherit; padding: 8px 10px; border: 1px solid #d
 input:focus, select:focus, textarea:focus { border-color: var(--oro); box-shadow: 0 0 0 3px rgba(201, 164, 90, .15); }
 textarea { min-height: 70px; }
 label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+/* formularios: ningún campo se sale de su casilla ni se monta sobre el de al lado (selects con textos largos) */
+.grid > * { min-width: 0; }
+.grid label:not(.check) { grid-template-columns: minmax(0, 1fr); align-content: space-between; }
+.grid label > input:not([type=checkbox]):not([type=radio]), .grid label > select, .grid label > textarea { width: 100%; min-width: 0; max-width: 100%; }
+select { text-overflow: ellipsis; }
 .btn { font: inherit; border: 1px solid #ddd7ca; background: #fff; padding: 7px 14px; border-radius: 8px; cursor: pointer;
   white-space: nowrap; color: var(--ink); transition: border-color .12s, background .12s, box-shadow .12s; }
 .btn:hover { border-color: var(--oro); background: #fffdf7; }
@@ -453,3 +458,7 @@ table.inv input, table.inv select { width: 100%; min-width: 0; padding: 4px 6px;
 .manual li.sub { margin-left: 18px; list-style: disc; font-size: 13px; color: var(--muted, #555); }
 .manual blockquote { margin: 8px 0; padding: 6px 12px; border-left: 3px solid var(--brand-2); background: var(--bg, #f7f5f0); }
 .manual code { background: #f1f1f1; padding: 0 4px; border-radius: 4px; }
+
+/* lector de facturas: datos dudosos o no encontrados, para revisar */
+label.revisar { color: #8a6500; font-weight: 600; }
+label.revisar > input, label.revisar > select, label.revisar > textarea { background: #fff4bf; border-color: #e0b100; }

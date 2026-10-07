@@ -61,7 +61,8 @@ def datos_cliente(contact: Contact | None, facturar_a=None) -> dict:
         return {"nombre": facturar_a.nombre.strip(), "nif": facturar_a.nif.strip().upper(),
                 "domicilio": facturar_a.domicilio.strip()}
     return {"nombre": f"{contact.nombre} {contact.apellidos or ''}".strip(), "nif": contact.documento_num,
-            "domicilio": domicilio(contact.direccion, contact.cp, contact.municipio, contact.pais) or None}
+            "domicilio": domicilio(contact.direccion, contact.cp, contact.municipio, contact.provincia,
+                                   contact.pais) or None}
 
 
 def huella(emisor_nif: str, codigo: str, fecha: date, total: Decimal, cuota: Decimal, anterior: str | None) -> str:

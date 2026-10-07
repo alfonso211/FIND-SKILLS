@@ -630,8 +630,8 @@ V.activos = async (el) => {
     { k: "company_id", t: "Sociedad gestora (explotación y accesos)", type: "select", req: true, options: opts(S.companies) },
     { k: "propietaria_id", t: "Sociedad propietaria del inmueble", type: "select", options: opts(S.companies) },
     ...(isNew ? [{ k: "modalidad", t: "Modalidad", type: "select", req: true, options: kv(S.cat.modalidades) }] : []),
-    { k: "direccion", t: "Dirección", wide: true }, { k: "municipio", t: "Municipio" }, { k: "provincia", t: "Provincia" },
-    { k: "cp", t: "C.P." }, { k: "ref_catastral", t: "Ref. catastral" }, { k: "num_registro_turistico", t: "Nº registro turístico" },
+    { k: "direccion", t: "Dirección", wide: true }, { k: "cp", t: "Código postal" }, { k: "municipio", t: "Población" }, { k: "provincia", t: "Provincia" },
+    { k: "pais", t: "País", def: "España" }, { k: "ref_catastral", t: "Ref. catastral" }, { k: "num_registro_turistico", t: "Nº registro turístico" },
     { k: "ses_codigo_establecimiento", t: "Código de establecimiento SES.HOSPEDAJE" },
     { html: "<h4>Facturación</h4><p class='muted'>Factura la sociedad gestora. Cada activo tiene su serie y la numeración es correlativa por año (p.ej. SF/00001/2026). No cambie la serie de un activo que ya tiene facturas del año en curso.</p>" },
     { k: "serie_factura", t: "Serie de facturas (p.ej. B35, SF, SA)" },
@@ -888,7 +888,7 @@ const guestFields = [
   { k: "telefono", t: "Teléfono" },
   { html: "<h4>Domicilio habitual</h4>" },
   { k: "direccion", t: "Dirección (calle, número, piso, puerta)", wide: true },
-  { k: "cp", t: "Código postal" }, { k: "municipio", t: "Municipio" }, { k: "pais", t: "País" },
+  { k: "cp", t: "Código postal" }, { k: "municipio", t: "Población" }, { k: "provincia", t: "Provincia" }, { k: "pais", t: "País" },
 ];
 function unidadesHtml(c) {
   const u = c.unidades || [];
@@ -1300,7 +1300,7 @@ const clienteGarajeFields = [
   { k: "nombre", t: "Nombre o razón social", req: true }, { k: "apellidos", t: "Apellidos" },
   { k: "documento_tipo", t: "Tipo doc.", type: "select", options: list(["DNI", "NIE", "PAS", "CIF", "OTRO"]) },
   { k: "documento_num", t: "DNI / NIE / CIF" }, { k: "telefono", t: "Teléfono", req: true }, { k: "email", t: "Correo electrónico", type: "email" },
-  { k: "direccion", t: "Domicilio (para la factura)", wide: true }, { k: "cp", t: "Código postal" }, { k: "municipio", t: "Municipio" }, { k: "pais", t: "País", def: "España" },
+  { k: "direccion", t: "Domicilio (para la factura)", wide: true }, { k: "cp", t: "Código postal" }, { k: "municipio", t: "Población" }, { k: "provincia", t: "Provincia" }, { k: "pais", t: "País", def: "España" },
 ];
 async function alquilarGaraje(reload, fija, assetId) {
   const aid = fija ? fija.asset_id : assetId || await pickAsset("apartamentos_turisticos");
@@ -2268,7 +2268,7 @@ const CAMPOS_PROVEEDOR = [
   { k: "nombre", t: "Nombre o razón social", req: true, wide: true },
   { k: "tipo_persona", t: "Tipo", type: "select", req: true, options: TIPOS_PERSONA, def: "empresa" },
   { k: "nif", t: "CIF / DNI / NIE" },
-  { k: "direccion", t: "Domicilio", wide: true }, { k: "cp", t: "C.P." }, { k: "municipio", t: "Municipio" },
+  { k: "direccion", t: "Domicilio", wide: true }, { k: "cp", t: "Código postal" }, { k: "municipio", t: "Población" },
   { k: "provincia", t: "Provincia" }, { k: "pais", t: "País", def: "España" },
   { k: "email", t: "Correo electrónico", type: "email" }, { k: "telefono", t: "Teléfono" },
   { k: "persona_contacto", t: "Persona de contacto" }, { k: "actividad", t: "Actividad / gremio" },
@@ -2581,6 +2581,7 @@ async function catGastos() { S.catGastos = S.catGastos || await get("/api/gastos
 function camposGasto(C, unidades, alta = true) {
   return [
     { k: "categoria", t: "Categoría del gasto", type: "select", options: kv(C.categorias) },
+    { k: "naturaleza", t: "OPEX o CAPEX", type: "select", options: kv(C.naturalezas) },
     { k: "ambito", t: "Imputado a", type: "select", options: kv(C.ambitos), def: "general" },
     { k: "unit_id", t: "Apartamento", type: "select", options: unidades.map((u) => [u.id, `${u.codigo}${u.bloque ? " · " + u.bloque : ""}`]) },
     { k: "ambito_detalle", t: "Detalle (zona, varios apartamentos…)" },
@@ -2607,7 +2608,7 @@ function bindRetencion(f) {
   if (e.retener_pago) e.retener_pago.onchange = pinta;
   pinta();
 }
-const CAMPOS_GASTO = ["categoria", "ambito", "unit_id", "ambito_detalle", "concepto", "total", "tipo_iva", "base", "retencion_tipo", "retencion_pct", "forma_pago", "pagado", "fecha_pago", "retener_pago", "retener_motivo", "retener_revision"];
+const CAMPOS_GASTO = ["categoria", "naturaleza", "ambito", "unit_id", "ambito_detalle", "concepto", "total", "tipo_iva", "base", "retencion_tipo", "retencion_pct", "forma_pago", "pagado", "fecha_pago", "retener_pago", "retener_motivo", "retener_revision"];
 function verCampos(f, nombres, ver) { nombres.forEach((n) => { const el = f.elements[n]; if (el) (el.closest("label") || el).style.display = ver ? "" : "none"; }); }
 function bindAmbito(f) {
   const pinta = () => { const a = f.elements.ambito.value; verCampos(f, ["unit_id"], a === "apartamento"); verCampos(f, ["ambito_detalle"], a === "otro"); };
@@ -2615,18 +2616,50 @@ function bindAmbito(f) {
 }
 function datosGasto(d, extra = {}) {
   if (!d.categoria) throw new Error("Elija la categoría del gasto");
+  if (!d.naturaleza) throw new Error("Indique si el gasto es OPEX (gasto corriente) o CAPEX (inversión)");
   if (d.total == null) throw new Error("Indique el importe total del gasto");
   if (d.ambito === "apartamento" && !d.unit_id) throw new Error("Elija el apartamento del gasto");
   if (!d.forma_pago) throw new Error("Indique cómo se paga: transferencia o cargo en cuenta (domiciliación)");
   if (d.retencion_tipo && !(Number(d.retencion_pct) > 0)) throw new Error("Indique el % de la retención");
   if (d.retener_pago && (!d.retener_motivo || !d.retener_revision)) throw new Error("Para retener el pago indique el motivo y la fecha de revisión");
-  return clean({ categoria: d.categoria, ambito: d.ambito, unit_id: d.unit_id ? Number(d.unit_id) : null, ambito_detalle: d.ambito_detalle,
+  return clean({ categoria: d.categoria, naturaleza: d.naturaleza, ambito: d.ambito, unit_id: d.unit_id ? Number(d.unit_id) : null, ambito_detalle: d.ambito_detalle,
     concepto: d.concepto, total: d.total, tipo_iva: Number(d.tipo_iva ?? 21), base: d.base, forma_pago: d.forma_pago, pagado: !!d.pagado && !d.retener_pago, fecha_pago: d.fecha_pago,
     retencion_tipo: d.retencion_tipo || null, retencion_pct: d.retencion_tipo ? Number(d.retencion_pct) : 0,
     retener_pago: !!d.retener_pago, retener_motivo: d.retener_pago ? d.retener_motivo : null, retener_revision: d.retener_pago ? d.retener_revision : null, ...extra });
 }
+// Facturas: «Posible duplicado» se puede registrar si quien la sube lo confirma; «Factura duplicada» no se registra.
+async function conDuplicado(enviar) {
+  try { return await enviar(false); } catch (e) {
+    if (/^Posible duplicado/.test(e.message) && confirm(`${e.message}\n\n¿Es otra factura distinta y quiere registrarla igualmente?`)) return enviar(true);
+    throw e;
+  }
+}
 async function unidadesActivo(aid) { return (await get("/api/unidades", { asset_id: aid })).filter((u) => u.uso !== "garaje"); }
 
+// Lector de facturas: al elegir el PDF o las fotos, propone los datos. Lo dudoso o no encontrado, en amarillo.
+const CAMPOS_LECTOR = ["fecha", "vencimiento", "emisor", "referencia", "total", "tipo_iva", "base", "retencion_tipo", "retencion_pct", "forma_pago"];
+function marcarRevisar(f, k, si) {
+  const el = f.elements[k]; const lab = el && el.closest("label");
+  if (!lab) return;
+  lab.classList.toggle("revisar", si);
+  if (si && !el._quitaRevisar) { el._quitaRevisar = true; el.addEventListener("input", () => lab.classList.remove("revisar")); el.addEventListener("change", () => lab.classList.remove("revisar")); }
+}
+async function leerFactura(f) {
+  const files = ficherosElegidos(f), msg = $("[data-fotosmsg]", f);
+  if (!files.length || !["factura", "ticket"].includes(f.elements.tipo.value)) return;
+  const antes = msg.textContent;
+  msg.textContent = "📄 Leyendo la factura…";
+  try {
+    const fd = new FormData(); files.forEach((x) => fd.append("ficheros", x));
+    const r = await upload("/api/documentos-recibidos/leer", fd), c = r.campos, e = f.elements;
+    const pon = (k, v) => { if (v == null || !e[k]) return; e[k].value = String(v); };
+    ["fecha", "vencimiento", "emisor", "referencia", "total", "base", "forma_pago"].forEach((k) => pon(k, c[k]));
+    if (c.tipo_iva != null) pon("tipo_iva", c.tipo_iva);
+    if (c.retencion_tipo && e.retencion_tipo) { e.retencion_tipo.value = c.retencion_tipo; e.retencion_tipo.dispatchEvent(new Event("change")); pon("retencion_pct", c.retencion_pct); }
+    CAMPOS_LECTOR.forEach((k) => marcarRevisar(f, k, r.dudosos.includes(k)));
+    msg.innerHTML = `${esc(antes)} · <b>${r.aviso ? esc(r.aviso) : `Datos leídos${c.nif ? ` (NIF emisor ${esc(c.nif)}${r.proveedor_conocido ? ", proveedor conocido" : ""})` : ""}: revise lo marcado en amarillo`}</b>`;
+  } catch (err) { msg.textContent = `${antes} · no se pudo leer: ${err.message}`; }
+}
 async function subirDocumento(reload) {
   const aid = await pickAsset();
   const [C, unidades] = await Promise.all([catGastos(), unidadesActivo(aid)]);
@@ -2642,19 +2675,24 @@ async function subirDocumento(reload) {
   ], {}, async (d, fr) => {
     const ficheros = ficherosElegidos(fr);
     if (!ficheros.length) throw new Error("Adjunte el documento escaneado (foto o PDF)");
-    const fd = new FormData();
-    ficheros.forEach((x) => fd.append("ficheros", x));
-    fd.append("asset_id", aid); fd.append("tipo", d.tipo); fd.append("fecha", d.fecha);
-    ["vencimiento", "emisor", "referencia", "descripcion"].forEach((k) => d[k] && fd.append(k, d[k]));
-    if (d.ambito === "apartamento" && d.unit_id) fd.append("unit_id", d.unit_id);
-    if (d.es_gasto) fd.append("gasto", JSON.stringify(datosGasto(d, { fecha: d.fecha, vencimiento: d.vencimiento, concepto: d.concepto || d.descripcion || `${C.tipos_documento[d.tipo]} ${d.emisor || ""}`.trim(),
-      proveedor: d.emisor, numero_factura: d.referencia })));
-    const r = await upload("/api/documentos-recibidos", fd);
+    const gastoJson = d.es_gasto ? JSON.stringify(datosGasto(d, { fecha: d.fecha, vencimiento: d.vencimiento, concepto: d.concepto || d.descripcion || `${C.tipos_documento[d.tipo]} ${d.emisor || ""}`.trim(),
+      proveedor: d.emisor, numero_factura: d.referencia })) : null;
+    const r = await conDuplicado((confirmado) => {
+      const fd = new FormData();
+      ficheros.forEach((x) => fd.append("ficheros", x));
+      fd.append("asset_id", aid); fd.append("tipo", d.tipo); fd.append("fecha", d.fecha);
+      ["vencimiento", "emisor", "referencia", "descripcion"].forEach((k) => d[k] && fd.append(k, d[k]));
+      if (d.ambito === "apartamento" && d.unit_id) fd.append("unit_id", d.unit_id);
+      if (gastoJson) fd.append("gasto", gastoJson);
+      fd.append("confirmar_duplicado", confirmado ? "true" : "false");
+      return upload("/api/documentos-recibidos", fd);
+    });
     toast(`Documento guardado en la carpeta de ${assetName(aid)}${r.gasto ? ` · gasto de ${eur(r.gasto.total)} anotado` : ""}`);
     reload && reload();
     await altaProveedorSiNuevo(d.emisor, d.es_gasto ? C.categorias[d.categoria] : null);
   }, "Guardar documento");
   bindFotos(f); bindAmbito(f); sugerirProveedores(f, "emisor");
+  f.querySelectorAll("[data-fotos]").forEach((i) => { const antes = i.onchange; i.onchange = () => { antes(); leerFactura(f); }; });
   const gasto = () => { verCampos(f, CAMPOS_GASTO, f.elements.es_gasto.checked); if (f.elements.es_gasto.checked) { bindAmbito(f); bindRetencion(f); } };
   f.elements.es_gasto.onchange = gasto;
   f.elements.tipo.onchange = () => { f.elements.es_gasto.checked = ["factura", "ticket", "albaran"].includes(f.elements.tipo.value); gasto(); };
@@ -2671,7 +2709,7 @@ async function editarGasto(g, reload, aidNuevo) {
   ], g ? { ...g, total: g.liquido, base: null } : {}, async (d) => {
     const body = datosGasto(d, { fecha: d.fecha, vencimiento: d.vencimiento, concepto: d.concepto, proveedor: d.proveedor, numero_factura: d.numero_factura, notas: d.notas });
     if (!body.concepto) throw new Error("Indique el concepto del gasto");
-    await (g ? put(`/api/gastos/${g.id}`, body) : post("/api/gastos", { ...body, asset_id: aid }));
+    await (g ? put(`/api/gastos/${g.id}`, body) : conDuplicado((c) => post("/api/gastos", { ...body, asset_id: aid, confirmar_duplicado: c })));
     toast(g ? "Gasto actualizado" : "Gasto anotado"); reload && reload();
     await altaProveedorSiNuevo(d.proveedor, C.categorias[d.categoria]);
   });
@@ -2699,7 +2737,8 @@ V.docrecibidos = async (el) => {
         const [C2, unidades] = await Promise.all([catGastos(), unidadesActivo(x.asset_id)]);
         const f = form(`Gasto del documento · ${x.tipo_nombre} ${x.emisor || ""}`, [{ k: "fecha", t: "Fecha de la factura", type: "date", req: true }, { k: "vencimiento", t: "Vencimiento", type: "date" }, ...camposGasto(C2, unidades)],
           { fecha: x.fecha, vencimiento: x.vencimiento, concepto: x.descripcion || `${x.tipo_nombre} ${x.emisor || ""}`.trim(), unit_id: x.unit_id, ambito: x.unit_id ? "apartamento" : "general" },
-          async (d) => { await post("/api/gastos", datosGasto(d, { fecha: d.fecha, vencimiento: d.vencimiento, concepto: d.concepto, documento_id: x.id, proveedor: x.emisor, numero_factura: x.referencia })); toast("Gasto anotado"); load(); });
+          async (d) => { const body = datosGasto(d, { fecha: d.fecha, vencimiento: d.vencimiento, concepto: d.concepto, documento_id: x.id, proveedor: x.emisor, numero_factura: x.referencia });
+            await conDuplicado((c) => post("/api/gastos", { ...body, confirmar_duplicado: c })); toast("Gasto anotado"); load(); });
         bindAmbito(f); bindRetencion(f);
       }],
       x.gasto && editar && ["Gasto", () => editarGasto(x.gasto, load)],
@@ -2726,13 +2765,15 @@ V.gastos = async (el) => {
     const t = r.totales;
     $("#k", el).innerHTML = [[eur(t.base), "Gasto (base sin IVA)"], [eur(t.cuota), "IVA soportado"], [eur(t.total), "Total con IVA"],
       [eur(t.pendiente_pago), "Pendiente de pago", t.pendiente_pago > 0 ? "mal" : ""], [t.sin_documento, "Apuntes sin documento", t.sin_documento ? "mal" : ""],
+      [eur(t.opex), "OPEX (base)"], [eur(t.capex), "CAPEX (base)"],
+      ...(t.sin_naturaleza ? [[t.sin_naturaleza, "Sin OPEX/CAPEX indicado", "mal"]] : []),
       ...(t.retencion ? [[eur(t.retencion), "Retenciones IRPF practicadas"]] : []),
       ...(t.retenidas ? [[`${t.retenidas} · ${eur(t.retenidas_importe)}`, "Pagos retenidos (no pagar)", "mal"]] : []),
       ...Object.entries(t.por_categoria).slice(0, 4).map(([c, v]) => [eur(v), c])]
       .map(([v, l, cls]) => `<div class="kpi ${cls || ""}"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("");
     const FORMAS_GASTO = (await catGastos()).formas_pago;
     table($("#t", el), [
-      { k: "fecha", t: "Fecha", f: fdate }, { k: "activo", t: "Activo" }, { k: "lugar", t: "Imputado a" }, { k: "categoria_nombre", t: "Categoría" },
+      { k: "fecha", t: "Fecha", f: fdate }, { k: "activo", t: "Activo" }, { k: "lugar", t: "Imputado a" }, { k: "categoria_nombre", t: "Categoría", f: (v, g) => `${esc(v)}<div class="muted peq">${g.naturaleza ? esc(g.naturaleza) : '<span class="badge b-cancelada">falta OPEX/CAPEX</span>'}</div>` },
       { k: "concepto", t: "Concepto" }, { k: "proveedor", t: "Proveedor", f: (v, g) => `${esc(v || "")}${g.numero_factura ? `<div class="muted peq">${esc(g.numero_factura)}</div>` : ""}` },
       { k: "base", t: "Base", num: true, f: eur }, { k: "cuota", t: "IVA", num: true, f: (v, g) => `${eur(v)}<div class="muted peq">${g.tipo_iva} %</div>` },
       { k: "liquido", t: "A pagar", num: true, f: (v, g) => `${eur(v)}${g.retencion ? `<div class="muted peq">ret. ${g.retencion_pct} %: ${eur(g.retencion)}</div>` : ""}` },
@@ -2826,7 +2867,7 @@ V.sociedades = async (el) => {
   const fields = [{ k: "nombre", t: "Razón social", req: true }, { k: "cif", t: "CIF" },
     { k: "parent_id", t: "Sociedad matriz", type: "select", options: opts(S.companies) }, { k: "activa", t: "Activa", type: "checkbox", def: true },
     { html: "<h4>Domicilio fiscal</h4><p class='muted'>Obligatorio para emitir facturas. Se imprime en todas las facturas de la sociedad.</p>" },
-    { k: "direccion", t: "Dirección", wide: true }, { k: "cp", t: "C.P." }, { k: "municipio", t: "Municipio" }, { k: "provincia", t: "Provincia" },
+    { k: "direccion", t: "Dirección", wide: true }, { k: "cp", t: "Código postal" }, { k: "municipio", t: "Población" }, { k: "provincia", t: "Provincia" }, { k: "pais", t: "País", def: "España" },
     { html: "<h4>Datos para contratos de alquiler de vivienda</h4><p class='muted'>Se imprimen en el contrato (comparecencia, cláusulas 4, 21 y 23 y anexo de averías).</p>" },
     ...CONTRATO_SOC.map(([k, t, wide]) => ({ k: `ct_${k}`, t, wide }))];
   const save = (c) => form(c ? c.nombre : "Nueva sociedad", fields, c ? { ...c, ...Object.fromEntries(Object.entries(c.contratos || {}).map(([k, v]) => [`ct_${k}`, v])) } : {}, async (d) => {

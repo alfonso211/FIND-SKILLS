@@ -38,7 +38,7 @@ def test_paquete_emitidas_y_recibidas(client, admin, ids):
     r = client.post("/api/documentos-recibidos", headers=admin, data={
         "asset_id": str(bab), "tipo": "factura", "fecha": HOY.isoformat(), "vencimiento": (HOY + timedelta(days=30)).isoformat(),
         "emisor": "Lavandería Prueba Export SL", "referencia": "LAV-77",
-        "gasto": '{"categoria": "limpieza", "concepto": "Lavandería", "total": 121, "tipo_iva": 21, "forma_pago": "domiciliacion", '
+        "gasto": '{"categoria": "limpieza", "concepto": "Lavandería", "total": 121, "tipo_iva": 21, "forma_pago": "domiciliacion", "naturaleza": "OPEX", '
                  '"proveedor": "Lavandería Prueba Export SL", "numero_factura": "LAV-77", '
                  f'"fecha": "{HOY.isoformat()}", "vencimiento": "{(HOY + timedelta(days=30)).isoformat()}"}}'},
         files={"ficheros": ("f.pdf", b"%PDF-1.4\n%%EOF", "application/pdf")})
@@ -50,7 +50,7 @@ def test_paquete_emitidas_y_recibidas(client, admin, ids):
     Image.new("RGB", (60, 80), "white").save(foto, "JPEG")
     gasto = {"categoria": "mantenimiento", "concepto": "Reparación", "total": 3275.48, "tipo_iva": 21,
              "proveedor": "Lavandería Prueba Export SL", "numero_factura": "F26/5594", "fecha": agosto.isoformat(),
-             "forma_pago": "transferencia"}
+             "forma_pago": "transferencia", "naturaleza": "CAPEX"}
     r = client.post("/api/documentos-recibidos", headers=admin, data={
         "asset_id": str(bab), "tipo": "factura", "fecha": agosto.isoformat(), "emisor": "Lavandería Prueba Export SL",
         "referencia": "F26/5594", "gasto": json.dumps(gasto)},
