@@ -40,6 +40,7 @@ class Company(Base):
     cp: Mapped[str | None] = mapped_column(String(10))
     municipio: Mapped[str | None] = mapped_column(String(100))
     provincia: Mapped[str | None] = mapped_column(String(100))
+    pais: Mapped[str | None] = mapped_column(String(60))
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("sociedades.id"))
     activa: Mapped[bool] = mapped_column(Boolean, default=True)
     # Datos para los contratos de arrendamiento: Registro Mercantil (tomo, folio, hoja), representante y poder,
@@ -61,6 +62,7 @@ class Asset(Base):
     municipio: Mapped[str | None] = mapped_column(String(100))
     provincia: Mapped[str | None] = mapped_column(String(100))
     cp: Mapped[str | None] = mapped_column(String(10))
+    pais: Mapped[str | None] = mapped_column(String(60))
     ref_catastral: Mapped[str | None] = mapped_column(String(30))
     num_registro_turistico: Mapped[str | None] = mapped_column(String(60))
     # Serie de sus facturas (B35, SF, SA...). Factura la sociedad gestora.
@@ -128,6 +130,7 @@ class Contact(Base):
     direccion: Mapped[str | None] = mapped_column(String(300))
     cp: Mapped[str | None] = mapped_column(String(10))
     municipio: Mapped[str | None] = mapped_column(String(100))
+    provincia: Mapped[str | None] = mapped_column(String(100))
     pais: Mapped[str | None] = mapped_column(String(60))
     municipio_ine: Mapped[str | None] = mapped_column(String(5))  # código INE del municipio (residentes en España)
     iban: Mapped[str | None] = mapped_column(String(40))
@@ -481,6 +484,7 @@ class Expense(Base):
     creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
     # retención practicada al proveedor (IRPF de profesionales, arrendamientos…): se descuenta del pago.
     # total = base + cuota (IVA incluido); lo que se paga es total − retencion
+    naturaleza: Mapped[str | None] = mapped_column(String(10))  # OPEX (gasto corriente) o CAPEX (inversión)
     retencion_tipo: Mapped[str | None] = mapped_column(String(30))
     retencion_pct: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
     retencion: Mapped[float] = mapped_column(Numeric(12, 2), default=0)

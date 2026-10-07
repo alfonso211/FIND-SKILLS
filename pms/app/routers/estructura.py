@@ -352,7 +352,7 @@ def duplicate_contacts(tipo: str, scope: Scope = Depends(get_scope), db: Session
 
 CAMPOS_FUSION = ("apellidos", "documento_tipo", "documento_num", "nacionalidad", "fecha_nacimiento", "sexo",
                  "num_soporte", "fecha_caducidad_doc", "email", "telefono", "direccion", "cp", "municipio",
-                 "municipio_ine", "pais", "iban")
+                 "provincia", "municipio_ine", "pais", "iban")
 
 
 class MergeIn(BaseModel):

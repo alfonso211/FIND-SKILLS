@@ -25,7 +25,8 @@
 - **Recibos y cobros**: recibos mensuales de renta y su cobro.
 
 ## Gastos
-- **Documentos recibidos**: carpeta de facturas y cartas de cada activo.
+- **Documentos recibidos**: carpeta de facturas y cartas de cada activo. El **lector** rellena los datos de la factura y marca en amarillo lo dudoso; las facturas **duplicadas** (mismo proveedor y nº) no se registran.
+- **OPEX / CAPEX**: cada gasto lo indica; la cuenta de gastos muestra el total de cada uno y el Excel lo incluye.
 - **Cuenta de gastos**: con **fecha de factura, vencimiento y forma de pago** (transferencia o cargo en cuenta); las pendientes vencidas se marcan en rojo y las que no tienen forma de pago muestran «falta forma de pago». Exportable a Excel.
   - **Retención de IRPF**: cada factura guarda el tipo, el % y el importe retenido; la columna **A pagar** ya lo descuenta. Se exporta a INVERGESTION en la columna retencion.
   - **Pagos retenidos**: facturas que alguien ha marcado para **no pagar todavía**, con motivo y **fecha de revisión**. Le llega un correo al momento, salen en el **resumen diario** y en un aviso del **Panel**. No se pueden marcar pagadas hasta **Liberar pago** (lo hace quien paga o quien la retuvo); **Retener pago** permite cambiar la fecha de revisión.
