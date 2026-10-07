@@ -19,6 +19,9 @@
 - **Servicios**: catálogo de servicios facturables (limpieza extra, parking…).
 
 ## Alquiler residencial (Babilonia 35)
+- **Plano de apartamentos → C/ Babilonia 35**: una **carpeta por planta** (y por sótano de garaje) con el logotipo de Comercial del Campo. Al abrir una carpeta se ven sus viviendas, con un color por situación.
+- La **primera vez** que se abre una vivienda se pide su **situación**: alquilada, vacía, reservada, en reforma menor, en obra mayor, ocupada sin título, en venta, uso propio / cedida u otra (indicando cuál). Si no se indica, se vuelve a pedir cada vez. Se cambia después con el botón **Situación** de la vivienda.
+- Si está **alquilada**, se pide **crear o completar el contrato** con la lista de lo que falta. Con «Completar más tarde» no vuelve a salir ese día; al día siguiente, sí, hasta que el contrato esté completo. Mientras tanto se puede trabajar en la vivienda: **facturas recibidas**, **incidencias** y partes de trabajo.
 - **Contratos → Expediente**: checklist de la hoja de control, datos del contrato, **contrato Word** relleno, inventario, **cobros con recibo**, carpeta de documentos y tareas en la agenda.
 - **Unidades → Ficha alquiler**: certificado energético, registro, IBI y tasa, llaves, contadores e inventario.
 - **Sociedades → Datos para contratos**: registro mercantil, representante, IBAN y contactos.

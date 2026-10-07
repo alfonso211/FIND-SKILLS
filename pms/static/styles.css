@@ -597,3 +597,40 @@ nav .grupo.fijo { margin-top: 8px; border-top: 1px solid rgba(201, 164, 90, .16)
 .informe-pres #anual { overflow-x: auto; }
 .informe-pres #anual .tabla-inf { font-size: 11.5px; }
 .informe-pres #anual .tabla-inf th, .informe-pres #anual .tabla-inf td { padding: 3px 5px; }
+
+/* ---- Babilonia 35: carpetas por planta y viviendas con su situación ---- */
+.carpetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; margin-top: 10px; }
+.carpetas.mini { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; margin: 0; }
+.carpeta { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 6px; background: transparent; border: 1px solid transparent; border-radius: 10px; cursor: pointer; color: var(--text); font: inherit; }
+.carpeta:hover, .carpeta:focus-visible { background: var(--panel); border-color: var(--line); }
+.carpeta-icono { position: relative; display: block; width: 104px; height: 80px; }
+.carpetas.mini .carpeta-icono { width: 80px; height: 60px; }
+.carpeta-icono .pestana { position: absolute; left: 0; top: 0; width: 42%; height: 18%; background: #d9a93a; border-radius: 6px 6px 0 0; }
+.carpeta-icono .cuerpo { position: absolute; left: 0; right: 0; top: 13%; bottom: 0; background: linear-gradient(#f6d47a, #e9b949); border-radius: 0 6px 6px 6px; box-shadow: 0 2px 4px rgba(0,0,0,.18); display: flex; align-items: center; justify-content: center; }
+.carpeta.garaje .pestana { background: #8a96a3; } .carpeta.garaje .cuerpo { background: linear-gradient(#cfd8e1, #a9b6c3); }
+.carpeta-icono img { max-width: 78%; max-height: 62%; background: rgba(255,255,255,.88); border-radius: 4px; padding: 3px; }
+.carpeta b { font-size: 13px; } .carpeta small { color: var(--muted); font-size: 11px; }
+.carpeta-pend { background: #ffe58a; color: #6b4e00; border: 1px solid #e0b400; border-radius: 10px; font-size: 10.5px; padding: 0 7px; }
+.ruta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+.ruta .chip { margin: 0; } .carpeta-abierta { font-size: 14px; }
+.viviendas { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.vivienda { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 10px; border-radius: 10px; border: 1px solid var(--line); border-left: 6px solid #9aa4ae; background: var(--panel); color: var(--text); cursor: pointer; font: inherit; min-height: 96px; }
+.vivienda:hover, .vivienda:focus-visible { box-shadow: 0 2px 8px rgba(0,0,0,.15); }
+.vivienda .viv-icono { font-size: 20px; line-height: 1; } .vivienda b { font-size: 15px; }
+.vivienda small { color: var(--muted); font-size: 11px; } .vivienda .viv-sit { font-size: 12px; font-weight: 600; }
+.vivienda .viv-aviso { margin-top: 3px; background: #ffe58a; color: #6b4e00; border: 1px solid #e0b400; border-radius: 4px; font-size: 11px; padding: 0 5px; }
+.vivienda .m-ej { position: absolute; top: 8px; right: 8px; } .m-ej.urg { background: #c62828; color: #fff; border-color: #c62828; }
+.vivienda.pendiente { border-style: dashed; border-left-style: solid; }
+.sit-alquilada { --sit: #2e7d32; } .sit-vacia { --sit: #1e88e5; } .sit-reservada { --sit: #00897b; } .sit-reforma_menor { --sit: #f9a825; }
+.sit-obra_mayor { --sit: #ef6c00; } .sit-ocupada_sin_titulo { --sit: #c62828; } .sit-en_venta { --sit: #6a1b9a; } .sit-uso_propio { --sit: #5d4037; }
+.sit-otra { --sit: #546e7a; } .sit-sin { --sit: #9aa4ae; }
+.vivienda[class*="sit-"] { border-left-color: var(--sit); }
+.marcadores i[class*="sit-"] { background: var(--sit); }
+.estado-ap[class*="sit-"] { background: var(--sit); color: #fff; }
+.situaciones { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.situacion { display: flex !important; flex-direction: row !important; align-items: center; gap: 8px; padding: 9px 10px; border: 1px solid var(--line); border-left: 6px solid var(--sit); border-radius: 8px; cursor: pointer; }
+.situacion:has(input:checked) { background: color-mix(in srgb, var(--sit) 14%, transparent); border-color: var(--sit); font-weight: 600; }
+.situacion input { width: auto !important; margin: 0; }
+.aviso-amarillo { background: #fff6cc; color: #5c4600; border: 1px solid #e8c547; border-radius: 8px; padding: 8px 10px; }
+ul.faltan { columns: 2; margin: 4px 0 10px; font-size: 13px; }
+@media (max-width: 700px) { ul.faltan { columns: 1; } }

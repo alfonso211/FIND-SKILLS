@@ -492,6 +492,14 @@ const conPlanoActivo = (aid) => S.conPlano?.has(aid);
 async function pintarMinis(el) {
   for (const sec of el.querySelectorAll("[data-plano]")) {
     const pl = await get(`/api/plano/${sec.dataset.plano}`);
+    const ley = $(".leyenda", sec);
+    if (ley) ley.style.display = pl.tipo === "carpetas" ? "none" : "";  // la leyenda de colores es del croquis
+    if (pl.tipo === "carpetas") {  // Babilonia 35: carpetas por planta en vez de croquis
+      $(".minis", sec).style.gridTemplateColumns = "1fr";
+      $(".minis", sec).innerHTML = `<div class="carpetas mini">${pl.plantas.map((x) => carpetaHtml(pl, x)).join("")}</div>`;
+      sec.querySelectorAll("[data-carpeta]").forEach((b) => (b.onclick = () => { S.plano = { asset: pl.asset.id, planta: b.dataset.carpeta }; go("plano"); }));
+      continue;
+    }
     // panel: todas las plantas en una sola fila (si caben), para ver el edificio entero de un vistazo
     $(".minis", sec).style.gridTemplateColumns = sec.closest(".panel-main") && sec.clientWidth / pl.plantas.length >= 105
       ? `repeat(${pl.plantas.length}, minmax(0, 1fr))` : "";
@@ -525,6 +533,97 @@ function gridPlano(pl, planta, mini = false) {
   return `<div class="plano${mini ? " mini" : ""}${cols > 20 ? " denso" : ""}${cols > 36 ? " muy-denso" : ""}" style="grid-template-columns:repeat(${cols},minmax(0,1fr));grid-template-rows:repeat(${filas},minmax(0,1fr));aspect-ratio:${cols}/${filas}">${celdas}</div>`;
 }
 
+// ------------------------------------------------------------------ carpetas por planta (Babilonia 35)
+// Situación de cada vivienda: se pide la primera vez que se abre; si está alquilada, después el contrato.
+const SIT_ICONO = { alquilada: "🔑", vacia: "🟢", reservada: "📝", reforma_menor: "🛠️", obra_mayor: "🏗️", ocupada_sin_titulo: "⚠️", en_venta: "🏷️", uso_propio: "🏢", otra: "•" };
+function carpetaHtml(pl, x) {
+  const r = x.resumen;
+  const pend = r.pendientes ? `<span class="carpeta-pend" title="Viviendas con la situación o el contrato pendientes">${r.pendientes} pendiente${r.pendientes === 1 ? "" : "s"}</span>` : "";
+  return `<button type="button" class="carpeta${x.garaje ? " garaje" : ""}" data-carpeta="${esc(x.planta)}" title="Abrir ${esc(x.etiqueta)}">
+    <span class="carpeta-icono"><span class="pestana"></span><span class="cuerpo">${pl.logo ? `<img src="${esc(pl.logo)}" alt="${esc(pl.sociedad || "")}">` : ""}</span></span>
+    <b>${esc(x.etiqueta)}</b><small>${r.total} ${x.garaje ? (r.total === 1 ? "plaza" : "plazas") : r.total === 1 ? "vivienda" : "viviendas"}</small>${pend}</button>`;
+}
+function viviendaHtml(u) {
+  const garaje = u.uso === "garaje";
+  const sit = garaje ? (u.alquiler ? "alquilada" : "vacia") : u.situacion || "sin";
+  const txt = garaje ? (u.alquiler ? `Alquilada · ${u.alquiler.cliente}` : "Libre") : u.situacion ? (u.situacion === "otra" && u.situacion_texto ? u.situacion_texto : u.situacion_nombre) : "Situación sin indicar";
+  return `<button type="button" class="vivienda sit-${sit}${u.pendiente_situacion || u.pendiente_contrato ? " pendiente" : ""}" data-u="${u.unit_id}" title="Abrir ${esc(u.codigo)}">
+    <span class="viv-icono">${garaje ? "🚗" : SIT_ICONO[u.situacion] || "🏠"}</span>
+    <b>${esc(u.codigo)}</b><small>${esc([u.tipologia, u.superficie_m2 ? `${u.superficie_m2} m²` : ""].filter(Boolean).join(" · "))}</small>
+    <span class="viv-sit">${esc(txt)}</span>${u.inquilino ? `<small class="viv-inq">${esc(u.inquilino)}</small>` : ""}
+    ${u.pendiente_situacion ? '<span class="viv-aviso">Indicar situación</span>' : u.pendiente_contrato ? '<span class="viv-aviso">Contrato pendiente</span>' : ""}
+    ${u.ot ? `<span class="m-ej${u.urgente ? " urg" : ""}" title="${u.ot} incidencia(s) abierta(s)">M</span>` : ""}</button>`;
+}
+function vistaCarpetas(el, datos, recarga) {
+  const planta = datos.plantas.find((x) => x.planta === S.plano.planta);
+  $("#tabs", el).innerHTML = "";
+  if (!planta) {
+    S.plano.planta = null;
+    $("#grid", el).innerHTML = `<p class="muted">Pulse una carpeta para ver las viviendas o plazas de esa planta.</p><div class="carpetas">${datos.plantas.map((x) => carpetaHtml(datos, x)).join("")}</div>`;
+    $("#grid", el).querySelectorAll("[data-carpeta]").forEach((b) => (b.onclick = () => { S.plano.planta = b.dataset.carpeta; vistaCarpetas(el, datos, recarga); }));
+  } else {
+    $("#grid", el).innerHTML = `<div class="ruta"><button type="button" class="btn sm" data-volver>← Todas las plantas</button>
+      <span class="carpeta-abierta">📂 ${esc(datos.asset.nombre)} › <b>${esc(planta.etiqueta)}</b></span>
+      <span class="spacer"></span>${datos.plantas.map((x) => `<button type="button" class="chip${x.planta === planta.planta ? " on" : ""}" data-ir="${esc(x.planta)}">${esc(x.etiqueta)}</button>`).join("")}</div>
+      <div class="viviendas">${planta.unidades.map(viviendaHtml).join("")}</div>`;
+    $("[data-volver]", el).onclick = () => { S.plano.planta = null; vistaCarpetas(el, datos, recarga); };
+    $("#grid", el).querySelectorAll("[data-ir]").forEach((b) => (b.onclick = () => { S.plano.planta = b.dataset.ir; vistaCarpetas(el, datos, recarga); }));
+    $("#grid", el).querySelectorAll("[data-u]").forEach((c) => (c.onclick = () => abrirVivienda(Number(c.dataset.u), recarga)));
+  }
+  const viv = datos.plantas.filter((x) => !x.garaje && (!planta || x === planta));
+  const suma = (k) => viv.reduce((s, x) => s + (x.resumen[k] || 0), 0);
+  $("#lat", el).innerHTML = `<h4>${esc(datos.asset.nombre)}</h4><p class="muted">${planta ? esc(planta.etiqueta) : "Todas las plantas"}${datos.sociedad ? " · " + esc(datos.sociedad) : ""}</p>
+    ${planta?.garaje ? `<p class="muted">Plazas de garaje: pulse una para ver su ficha.</p>` : `<div class="marcadores">${Object.entries(datos.situaciones).map(([k, t]) => `<div><i class="sit-${k}"></i><span>${SIT_ICONO[k]} ${esc(t)}</span><b>${suma(k)}</b></div>`).join("")}
+      <div><i class="sit-sin"></i><span>Situación sin indicar</span><b>${suma("sin_situacion")}</b></div>
+      <div class="total"><span>Contratos pendientes de completar</span><b>${suma("contrato_pendiente")}</b></div></div>`}
+    <p class="muted">Al abrir una vivienda por primera vez se pide su situación. Si está alquilada, después se pide completar el contrato; ese aviso vuelve cada día hasta que el contrato está completo. Mientras tanto se puede trabajar en la vivienda (facturas, incidencias…).</p>`;
+}
+
+// Al abrir una vivienda: primero lo pendiente (situación y contrato), después su ficha
+async function abrirVivienda(uid, recarga) {
+  const d = await run(() => get(`/api/plano/unidades/${uid}/ficha`));
+  const p = d.pendientes || {};
+  if (p.situacion && d.puede.situacion) return pedirSituacion(d, recarga, true);
+  if (p.contrato?.mostrar && d.puede.contrato) return pedirContrato(d, recarga);
+  fichaApartamento(uid, recarga, d);
+}
+function pedirSituacion(d, recarga, primeraVez = false) {
+  const u = d.unidad, actual = d.situacion || {};
+  const f = form(`Vivienda ${u.codigo} · ¿En qué situación se encuentra?`, [
+    { html: `${primeraVez ? '<p class="aviso-amarillo">Es la primera vez que se abre esta vivienda: indique su situación. Si no lo hace ahora, se volverá a pedir cada vez que la abra.</p>' : ""}
+      <div class="situaciones">${Object.entries(d.situaciones).map(([k, t]) => `<label class="situacion sit-${k}"><input type="radio" name="sit" value="${k}" ${actual.clave === k ? "checked" : ""}><span>${SIT_ICONO[k]}</span>${esc(t)}</label>`).join("")}</div>
+      <label class="wide" data-otra style="display:none">Indique la situación *<input name="texto_sit" maxlength="200" value="${esc(actual.texto || "")}"></label>
+      ${actual.fecha ? `<p class="muted">Indicada el ${fdt(actual.fecha)}${actual.por ? " por " + esc(actual.por) : ""}.</p>` : ""}` },
+  ], {}, async () => {
+    const sit = f.querySelector("input[name=sit]:checked")?.value;
+    if (!sit) throw new Error("Elija la situación de la vivienda");
+    const texto = f.elements.texto_sit.value.trim();
+    if (sit === "otra" && !texto) throw new Error("Indique cuál es la situación");
+    const r = await put(`/api/plano/unidades/${u.id}/situacion`, { situacion: sit, texto: sit === "otra" ? texto : null });
+    toast(`Vivienda ${u.codigo}: ${d.situaciones[sit]}`);
+    recarga && recarga();
+    setTimeout(() => (r.pendientes.contrato && d.puede.contrato ? pedirContrato({ ...d, pendientes: r.pendientes, situacion: r.situacion }, recarga) : fichaApartamento(u.id, recarga)), 0);
+  }, "Guardar situación");
+  const otra = () => { $("[data-otra]", f).style.display = f.querySelector("input[name=sit]:checked")?.value === "otra" ? "" : "none"; };
+  f.querySelectorAll("input[name=sit]").forEach((r) => (r.onchange = otra)); otra();
+  $("#fCancel").textContent = primeraVez ? "Ahora no, abrir la vivienda" : "Cancelar";
+  if (primeraVez) $("#fCancel").onclick = () => { $("#modal").close(); fichaApartamento(u.id, recarga); };
+}
+function pedirContrato(d, recarga) {
+  const u = d.unidad, c = d.pendientes.contrato;
+  const f = cerrarSolo(form(`Vivienda ${u.codigo} alquilada · contrato pendiente`, [
+    { html: `<p class="aviso-amarillo">${c.lease_id ? "El contrato de alquiler está sin completar." : "La vivienda está alquilada pero aún no tiene contrato en el PMS."} Este aviso volverá a salir cada día hasta que el contrato esté completo. Mientras tanto puede trabajar en la vivienda.</p>
+      <p><b>Falta${c.faltan.length === 1 ? "" : "n"} ${c.faltan.length} dato${c.faltan.length === 1 ? "" : "s"}:</b></p><ul class="faltan">${c.faltan.slice(0, 12).map((x) => `<li>${esc(x)}</li>`).join("")}${c.faltan.length > 12 ? `<li>… y ${c.faltan.length - 12} más</li>` : ""}</ul>
+      <div class="acciones-ap"><button type="button" class="accion-ap" data-ahora><span class="caja">📝</span><b>${c.lease_id ? "Completar el contrato" : "Crear el contrato"}</b><small>${c.lease_id ? "Abrir el expediente en «Datos del contrato»" : "Inquilino, fechas, renta y fianza; después, el expediente"}</small></button>
+      <button type="button" class="accion-ap" data-luego><span class="caja">⏰</span><b>Completar más tarde</b><small>No volverá a salir hasta mañana. Se abre la vivienda.</small></button></div>` },
+  ], {}, async () => {}));
+  $("[data-ahora]", f).onclick = () => {
+    if (c.lease_id) expediente({ id: c.lease_id }, "datos");
+    else nuevoContrato(u.asset_id, { id: u.id, codigo: u.codigo }, (lease) => { recarga && recarga(); expediente(lease, "datos"); });
+  };
+  $("[data-luego]", f).onclick = async () => { await run(() => post(`/api/plano/unidades/${u.id}/contrato-mas-tarde`, {})); recarga && recarga(); fichaApartamento(u.id, recarga); };
+}
+
 V.plano = async (el) => {
   const activos = await get("/api/plano/activos");
   if (!activos.length) { el.innerHTML = '<div class="empty">Ningún activo de su ámbito tiene plano.</div>'; return; }
@@ -538,6 +637,7 @@ V.plano = async (el) => {
     <div class="plano-vista"><div id="grid" class="plano-wrap"><p class="muted">Cargando…</p></div><aside id="lat" class="plano-lat"></aside></div>`;
   let datos;
   const pinta = () => {
+    if (datos.tipo === "carpetas") return vistaCarpetas(el, datos, recarga);
     const planta = datos.plantas.find((x) => x.planta === S.plano.planta) || datos.plantas[0];
     S.plano.planta = planta.planta;
     $("#tabs", el).innerHTML = datos.plantas.map((x) => `<button class="btn ${x.planta === planta.planta ? "primary" : ""}" data-p="${esc(x.planta)}">${esc(x.etiqueta)}</button>`).join("");
@@ -571,11 +671,18 @@ V.plano = async (el) => {
 // Ficha del apartamento: estado, acciones y buscador sobre todo lo registrado
 const normaliza = (t) => String(t ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 function cerrarSolo(f) { const b = $("button[type=submit]", f); if (b) b.remove(); $("#fCancel", f).textContent = "Cerrar"; return f; }
-async function fichaApartamento(uid, recarga) {
-  const d = await run(() => get(`/api/plano/unidades/${uid}/ficha`));
+async function fichaApartamento(uid, recarga, cargada = null) {
+  const d = cargada || await run(() => get(`/api/plano/unidades/${uid}/ficha`));
   const u = d.unidad;
   const garaje = u.uso === "garaje";
+  const vivienda = !!d.situaciones;  // vivienda en alquiler residencial (Babilonia 35)
   const items = [];
+  (d.contratos || []).forEach((l) => items.push({ tipo: "contrato", fecha: l.fecha_inicio, texto: [l.inquilino, l.referencia, l.estado].join(" "),
+    html: `<b>Contrato de alquiler · ${esc(l.inquilino)}</b> · ${fdate(l.fecha_inicio)}${l.fecha_fin ? " → " + fdate(l.fecha_fin) : ""} · ${badge(l.estado)}<br><span class="muted">${eur(l.renta_mensual)}/mes${l.fianza ? " · fianza " + eur(l.fianza) : ""}</span>`,
+    acc: [["Expediente", () => expediente(l)]] }));
+  (d.gastos || []).forEach((g) => items.push({ tipo: "gasto", fecha: g.fecha, texto: [g.proveedor, g.numero_factura, g.concepto, g.naturaleza].join(" "),
+    html: `<b>Factura recibida · ${esc(g.proveedor || "sin proveedor")}</b>${g.numero_factura ? " · " + esc(g.numero_factura) : ""} · ${eur(g.total)} · ${g.pagado ? badge("pagado") : badge("pendiente")}<br><span class="muted">${fdate(g.fecha)} · ${esc(g.concepto)}${g.naturaleza ? " · " + esc(g.naturaleza) : ""}</span>`,
+    acc: g.documento_id ? [["Ver", () => abrirFichero(`/api/documentos-recibidos/${g.documento_id}/fichero`)]] : [] }));
   (d.reservas || []).forEach((r) => items.push({ tipo: "reserva", fecha: r.entrada, texto: [r.localizador, r.huesped, r.documento, r.canal, r.estado, r.notas].join(" "),
     html: `<b>Reserva ${esc(r.localizador || "R-" + r.id)}</b> · ${fdate(r.entrada)} → ${fdate(r.salida)} (${r.noches} noches) · ${esc(r.huesped)} · ${badge(r.estado)}${r.proxima ? ' <span class="badge b-pendiente">próxima</span>' : ""}<br><span class="muted">${esc(r.canal)} · ${r.adultos + r.ninos} pax · ${eur(r.importe_total)} (cobrado ${eur(r.importe_pagado)})${r.contrato ? " · contrato impreso" : ""}</span>`,
     acc: can("reservas.editar") ? [...(garaje ? [] : [["Contrato", () => accommodationContract({ id: r.id, unidad: u.codigo, huesped: r.huesped })]]),
@@ -597,20 +704,30 @@ async function fichaApartamento(uid, recarga) {
   (d.facturas || []).forEach((x) => items.push({ tipo: "factura", fecha: x.fecha, texto: [x.codigo, x.cliente].join(" "),
     html: `<b>Factura ${esc(x.codigo)}</b> · ${esc(x.cliente)} · ${eur(x.total)}${x.tipo === "rectificativa" ? " · rectificativa" : ""}`, acc: [["PDF", () => descargarFactura(x.id)]] }));
   items.sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
-  const TIPOS = [["", "Todo"], ["alquiler", "Alquileres"], ["reserva", "Reservas"], ["cliente", "Clientes"], ["incidencia", "Incidencias"], ["bloqueo", "Bloqueos"], ["factura", "Facturas"]].filter(([t]) => !t || items.some((i) => i.tipo === t));
+  const TIPOS = [["", "Todo"], ["contrato", "Contratos"], ["gasto", "Facturas recibidas"], ["alquiler", "Alquileres"], ["reserva", "Reservas"], ["cliente", "Clientes"], ["incidencia", "Incidencias"], ["bloqueo", "Bloqueos"], ["factura", "Facturas"]].filter(([t]) => !t || items.some((i) => i.tipo === t));
   const bloqueoVigente = (d.bloqueos || []).find((b) => !b.levantado);
   const actual = d.alquiler ? `<p><b>Alquilada por meses a:</b> ${esc(d.alquiler.cliente)} · desde ${fdate(d.alquiler.desde)}${d.alquiler.hasta ? " hasta " + fdate(d.alquiler.hasta) : ""}${d.alquiler.matricula ? " · " + esc(d.alquiler.matricula) : ""}</p>`
     : d.actual ? `<p><b>${d.estado === "alquilado" ? "Alojado" : d.actual.proxima ? "Próxima llegada" : "Llega hoy"}:</b> ${esc(d.actual.huesped)} · ${fdate(d.actual.entrada)} → ${fdate(d.actual.salida)}</p>` : "";
-  const acciones = [
+  const sit = d.situacion || {};
+  const pc = d.pendientes?.contrato;
+  const cabVivienda = vivienda ? `<p><span class="estado-ap sit-${sit.clave || "sin"}">${sit.clave ? `${SIT_ICONO[sit.clave]} ${esc(sit.clave === "otra" && sit.texto ? sit.texto : sit.nombre)}` : "Situación sin indicar"}</span>
+      ${esc(u.tipologia || "")}${u.superficie_m2 ? ` · ${u.superficie_m2} m²` : ""} · planta ${esc(u.planta || "")}${sit.fecha ? ` <span class="muted">· indicada el ${fdate(sit.fecha)}${sit.por ? " por " + esc(sit.por) : ""}</span>` : ""}</p>
+      ${pc ? `<p class="aviso-amarillo">Contrato pendiente: falta${pc.faltan.length === 1 ? "" : "n"} ${pc.faltan.length} dato${pc.faltan.length === 1 ? "" : "s"} (${esc(pc.faltan.slice(0, 3).join(", "))}${pc.faltan.length > 3 ? "…" : ""}).</p>` : ""}` : "";
+  const acciones = vivienda ? [
+    d.puede.situacion && ["situacion", "Situación", "Alquilada, vacía, en reforma, en obra…"],
+    d.puede.contrato && sit.clave === "alquilada" && ["contrato", pc && !pc.lease_id ? "Crear contrato" : "Contrato", pc ? "Completar los datos del contrato" : "Expediente del contrato de alquiler"],
+    d.puede.gasto && ["gasto", "Factura recibida", "Subir una factura o ticket imputado a esta vivienda"],
+    d.puede.incidencia && ["incidencia", "Incidencia", "Abrir una incidencia o parte de trabajo con fotos"],
+  ].filter(Boolean) : [
     d.puede.reservar && ["reserva", "Reserva", garaje ? "Por días o semanas (huésped o cliente)" : "Nueva reserva en este apartamento"],
     d.puede.alquilar && !d.alquiler && ["alquiler", "Alquiler mensual", "Cliente externo: recibo cada mes y factura al 21 %"],
     d.puede.bloquear && (d.estado === "bloqueado" ? ["desbloquear", "Bloqueado", bloqueoVigente ? `Motivo: ${bloqueoVigente.motivo}. Pulse para desbloquear` : "Pulse para desbloquear"] : ["bloqueo", "Bloqueado", "Sacarlo de venta indicando el motivo"]),
     d.puede.incidencia && ["incidencia", "Incidencia", "Abrir una incidencia (avería) con fotos"],
   ].filter(Boolean);
-  const f = cerrarSolo(form(garaje ? `Plaza de garaje ${u.codigo} · ${u.bloque || ""}` : `Apartamento ${u.codigo} · ${u.tipologia || ""}`, [
-    { html: `<p><span class="estado-ap pc-${d.estado}">${ESTADO_TXT[d.estado]}</span> ${u.bloque ? esc(u.bloque) + " · " : ""}planta ${esc(u.planta || "")}${u.capacidad ? ` · ${u.capacidad} plazas` : ""}${d.limpieza ? ' · <span class="badge b-pendiente_limpieza">pendiente de limpieza</span>' : ""}</p>${actual}
+  const f = cerrarSolo(form(garaje ? `Plaza de garaje ${u.codigo} · ${u.bloque || ""}` : vivienda ? `Vivienda ${u.codigo} · ${assetName(u.asset_id)}` : `Apartamento ${u.codigo} · ${u.tipologia || ""}`, [
+    { html: `${vivienda ? cabVivienda : `<p><span class="estado-ap pc-${d.estado}">${ESTADO_TXT[d.estado]}</span> ${u.bloque ? esc(u.bloque) + " · " : ""}planta ${esc(u.planta || "")}${u.capacidad ? ` · ${u.capacidad} plazas` : ""}${d.limpieza ? ' · <span class="badge b-pendiente_limpieza">pendiente de limpieza</span>' : ""}</p>${actual}`}
       <div class="acciones-ap">${acciones.map(([k, t, ayuda]) => `<button type="button" class="accion-ap ${k === "desbloquear" ? "marcada" : ""}" data-acc="${k}"><span class="caja">${k === "desbloquear" ? "☑" : "☐"}</span><b>${t}</b><small>${esc(ayuda)}</small></button>`).join("")}</div>
-      <div class="buscador"><input type="search" placeholder="Buscar en este apartamento: cliente, reserva, documento, incidencia, bloqueo, factura…" data-q>
+      <div class="buscador"><input type="search" placeholder="Buscar en ${vivienda ? "esta vivienda: contrato, inquilino, factura, proveedor, incidencia…" : "este apartamento: cliente, reserva, documento, incidencia, bloqueo, factura…"}" data-q>
       <div class="chips">${TIPOS.map(([t, n]) => `<button type="button" class="chip ${t ? "" : "on"}" data-t="${t}">${n}</button>`).join("")}</div></div>
       <div class="resultados" data-res></div>` },
   ], {}, async () => {}));
@@ -620,7 +737,7 @@ async function fichaApartamento(uid, recarga) {
     const q = normaliza($("[data-q]", f).value).split(/\s+/).filter(Boolean);
     const vis = items.filter((i) => (!filtroTipo || i.tipo === filtroTipo) && q.every((w) => normaliza(i.texto + " " + i.tipo).includes(w)));
     $("[data-res]", f).innerHTML = vis.length ? vis.slice(0, 200).map((i, n) => `<div class="res"><span class="tipo t-${i.tipo}">${i.tipo}</span><div>${i.html}</div><div class="res-acc">${i.acc.map(([l], j) => `<button type="button" class="btn sm" data-i="${items.indexOf(i)}" data-j="${j}">${esc(l)}</button>`).join("")}</div></div>`).join("")
-      : `<p class="muted">${items.length ? "Sin resultados para esa búsqueda." : "Este apartamento aún no tiene nada registrado."}</p>`;
+      : `<p class="muted">${items.length ? "Sin resultados para esa búsqueda." : `${vivienda ? "Esta vivienda" : garaje ? "Esta plaza" : "Este apartamento"} aún no tiene nada registrado.`}</p>`;
     $("[data-res]", f).querySelectorAll("button[data-i]").forEach((b) => (b.onclick = () => items[b.dataset.i].acc[b.dataset.j][1]()));
   };
   $("[data-q]", f).oninput = pintaRes;
@@ -632,6 +749,13 @@ async function fichaApartamento(uid, recarga) {
     if (acc === "reserva") newReservation(recarga, fija);
     if (acc === "alquiler") alquilarGaraje(recarga, fija);
     if (acc === "incidencia") newWorkOrder(u.asset_id, u.id).then(recarga);
+    if (acc === "situacion") pedirSituacion(d, recarga);
+    if (acc === "contrato") {
+      const l = (d.contratos || []).find((x) => ["vigente", "borrador"].includes(x.estado));
+      if (l) expediente(l, pc ? "datos" : "checklist");
+      else nuevoContrato(u.asset_id, { id: u.id, codigo: u.codigo }, (lease) => { recarga && recarga(); expediente(lease, "datos"); });
+    }
+    if (acc === "gasto") subirDocumento(recarga, { asset_id: u.asset_id, unit_id: u.id });
     if (acc === "bloqueo") form(`Bloquear apartamento ${u.codigo}`, [
       { html: '<p class="muted">El apartamento queda fuera de venta (no admite reservas) hasta que se desbloquee. Queda registrado quién lo bloquea y por qué.</p>' },
       { k: "motivo", t: "Motivo del bloqueo", type: "textarea", req: true, wide: true }, { k: "hasta", t: "Fin previsto (opcional)", type: "date" },
@@ -1681,14 +1805,6 @@ const ivaField = { k: "tipo_iva", t: "IVA (vacío = automático según el uso)",
 V.contratos = async (el) => {
   el.innerHTML = `<div class="toolbar"><select id="e"><option value="">Todos</option>${["borrador", "vigente", "finalizado", "rescindido"].map((x) => `<option ${x === "vigente" ? "selected" : ""}>${x}</option>`).join("")}</select>
     <span class="spacer"></span>${can("alquiler.editar") ? '<button class="btn primary" id="new">Nuevo contrato</button>' : ""}</div><div id="t"></div>`;
-  const leaseFields = [
-    { k: "referencia", t: "Referencia" }, { k: "fecha_inicio", t: "Fecha inicio", type: "date", req: true }, { k: "fecha_fin", t: "Fecha fin", type: "date" },
-    { k: "renta_mensual", t: "Renta mensual € (sin IVA)", type: "number", req: true }, { k: "fianza", t: "Fianza €", type: "number" },
-    ivaField,
-    { k: "garantia_adicional", t: "Garantía adicional €", type: "number" }, { k: "dia_pago", t: "Día de pago", type: "number", def: 5 },
-    { k: "indice_actualizacion", t: "Índice actualización", type: "select", options: list(["IRAV", "IPC", "NINGUNO"]), def: "IRAV" },
-    { k: "estado", t: "Estado", type: "select", options: list(["borrador", "vigente"]), def: "vigente" },
-  ];
   const load = async () => table($("#t", el), [
     { k: "referencia", t: "Ref." }, { k: "asset_id", t: "Activo", f: (v) => esc(assetName(v)) }, { k: "unidad", t: "Unidad" },
     { k: "inquilino", t: "Inquilino" }, { k: "fecha_inicio", t: "Inicio", f: fdate }, { k: "fecha_fin", t: "Fin", f: fdate },
@@ -1709,24 +1825,33 @@ V.contratos = async (el) => {
       async (d) => { const r = await post(`/api/alquiler/contratos/${l.id}/actualizar-renta`, d); toast(`Nueva renta ${eur(r.renta_mensual)}`); load(); })],
   ] : [["Expediente", () => expediente(l)]]);
   $("#e", el).onchange = load;
-  if ($("#new", el)) $("#new", el).onclick = async () => {
-    const aid = await pickAsset("alquiler_residencial");
-    const units = (await get("/api/unidades", { asset_id: aid })).filter((u) => u.estado !== "fuera_servicio");
-    if (!units.length) return toast("El activo no tiene unidades. Dé de alta las viviendas primero.", true);
-    conEscaner(form(`Nuevo contrato · ${assetName(aid)}`, [
-      { html: scanHtml("1. Escanee el documento del inquilino (DNI, NIE/TIE, pasaporte)") },
-      { html: "<h4>Inquilino</h4>" }, ...guestFields,
-      { html: "<h4>Contrato</h4>" },
-      { k: "unit_id", t: "Unidad", type: "select", req: true, options: units.map((u) => [u.id, `${u.codigo} · ${label(u.uso)} · ${label(u.estado)}`]) }, ...leaseFields,
-      { k: "notas", t: "Notas contrato", type: "textarea", wide: true },
-    ], {}, async (d, fr) => {
-      const t = {}; guestFields.filter((f) => f.k).forEach((f) => { t[f.k] = d[f.k]; delete d[f.k]; });
-      await post("/api/alquiler/contratos", { ...clean(d), unit_id: Number(d.unit_id), tenant: clean(t), documentos: fr._docs.map((x) => x.id) });
-      toast("Contrato creado"); load();
-    }));
-  };
+  if ($("#new", el)) $("#new", el).onclick = async () => nuevoContrato(await pickAsset("alquiler_residencial"), null, () => load());
   load();
 };
+const LEASE_FIELDS = [
+  { k: "referencia", t: "Referencia" }, { k: "fecha_inicio", t: "Fecha inicio", type: "date", req: true }, { k: "fecha_fin", t: "Fecha fin", type: "date" },
+  { k: "renta_mensual", t: "Renta mensual € (sin IVA)", type: "number", req: true }, { k: "fianza", t: "Fianza €", type: "number" },
+  ivaField,
+  { k: "garantia_adicional", t: "Garantía adicional €", type: "number" }, { k: "dia_pago", t: "Día de pago", type: "number", def: 5 },
+  { k: "indice_actualizacion", t: "Índice actualización", type: "select", options: list(["IRAV", "IPC", "NINGUNO"]), def: "IRAV" },
+  { k: "estado", t: "Estado", type: "select", options: list(["borrador", "vigente"]), def: "vigente" },
+];
+// Alta de un contrato de alquiler. fija = {id, codigo}: la vivienda ya elegida (desde su carpeta). despues(lease).
+async function nuevoContrato(aid, fija, despues) {
+  const units = fija ? [] : (await get("/api/unidades", { asset_id: aid })).filter((u) => u.estado !== "fuera_servicio");
+  if (!fija && !units.length) return toast("El activo no tiene unidades. Dé de alta las viviendas primero.", true);
+  conEscaner(form(fija ? `Nuevo contrato · vivienda ${fija.codigo} · ${assetName(aid)}` : `Nuevo contrato · ${assetName(aid)}`, [
+    { html: scanHtml("1. Escanee el documento del inquilino (DNI, NIE/TIE, pasaporte)") },
+    { html: "<h4>Inquilino</h4>" }, ...guestFields,
+    { html: "<h4>Contrato</h4>" },
+    ...(fija ? [] : [{ k: "unit_id", t: "Unidad", type: "select", req: true, options: units.map((u) => [u.id, `${u.codigo} · ${label(u.uso)} · ${label(u.estado)}`]) }]), ...LEASE_FIELDS,
+    { k: "notas", t: "Notas contrato", type: "textarea", wide: true },
+  ], {}, async (d, fr) => {
+    const t = {}; guestFields.filter((f) => f.k).forEach((f) => { t[f.k] = d[f.k]; delete d[f.k]; });
+    const lease = await post("/api/alquiler/contratos", { ...clean(d), unit_id: fija ? fija.id : Number(d.unit_id), tenant: clean(t), documentos: fr._docs.map((x) => x.id) });
+    toast("Contrato creado"); despues && setTimeout(() => despues(lease), 0);
+  }));
+}
 
 // ---- expediente del contrato de vivienda (LAU): checklist, datos, inventario, cobros, carpeta y agenda
 // Campos sueltos dentro de una ventana ya abierta (mismo formato que form()).
@@ -2711,8 +2836,8 @@ async function leerFactura(f) {
     msg.innerHTML = `${esc(antes)} · <b>${r.aviso ? esc(r.aviso) : `Datos leídos${c.nif ? ` (NIF emisor ${esc(c.nif)}${r.proveedor_conocido ? ", proveedor conocido" : ""})` : ""}: revise lo marcado en amarillo`}</b>`;
   } catch (err) { msg.textContent = `${antes} · no se pudo leer: ${err.message}`; }
 }
-async function subirDocumento(reload) {
-  const aid = await pickAsset();
+async function subirDocumento(reload, fija = null) {  // fija = {asset_id, unit_id}: imputado a esa vivienda
+  const aid = fija ? fija.asset_id : await pickAsset();
   const [C, unidades] = await Promise.all([catGastos(), unidadesActivo(aid)]);
   const f = form(`Subir documento recibido · ${assetName(aid)}`, [
     { k: "tipo", t: "Tipo de documento", type: "select", req: true, options: kv(C.tipos_documento), def: "factura" },
@@ -2723,7 +2848,7 @@ async function subirDocumento(reload) {
     { k: "descripcion", t: "Descripción", type: "textarea", wide: true },
     { k: "es_gasto", t: "Es un gasto: anotarlo en la cuenta de gastos del activo", type: "checkbox", wide: true, def: true },
     ...camposGasto(C, unidades),
-  ], {}, async (d, fr) => {
+  ], fija ? { ambito: "apartamento", unit_id: fija.unit_id } : {}, async (d, fr) => {
     const ficheros = ficherosElegidos(fr);
     if (!ficheros.length) throw new Error("Adjunte el documento escaneado (foto o PDF)");
     const gastoJson = d.es_gasto ? JSON.stringify(datosGasto(d, { fecha: d.fecha, vencimiento: d.vencimiento, concepto: d.concepto || d.descripcion || `${C.tipos_documento[d.tipo]} ${d.emisor || ""}`.trim(),

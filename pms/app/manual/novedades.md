@@ -1,5 +1,10 @@
 # Novedades
 
+## 2026-10-07 · Versión 1.10 · Babilonia 35 en carpetas
+- **Dirección**: en el **Plano de apartamentos** y en el panel, Babilonia 35 aparece como **carpetas por planta** (y por sótano) con el logotipo de Comercial del Campo; dentro, sus viviendas o plazas.
+- **Dirección**: la primera vez que se abre una vivienda se indica su **situación** (alquilada, vacía, en reforma, en obra…). Si está alquilada, se pide **completar el contrato** cada día hasta que esté completo, sin impedir trabajar en la vivienda.
+- **Dirección**: desde la vivienda se suben sus **facturas recibidas** (ya imputadas a ella) y se abren **incidencias**; en su ficha se ven contratos, facturas e incidencias.
+
 ## 2026-10-07 · Versión 1.9 · Mantenimiento diario automático
 - **Dirección**: cada día a las **06:00** el sistema revisa el servidor y el PMS (contenedores, acceso web, certificado, disco, copias de seguridad, base de datos, documentos, correo y seguridad) y **arregla solo** lo que puede.
 - **Dirección**: si hay un fallo grave que necesita intervención, llega un **correo URGENTE** con lo que falla y qué hacer; lo arreglado y los avisos nuevos llegan en un correo normal, y los lunes un resumen semanal.

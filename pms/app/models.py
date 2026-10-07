@@ -23,6 +23,18 @@ MODALIDADES_RESERVA = {"apartamentos_turisticos"}
 USOS_UNIDAD = ["vivienda", "apartamento", "garaje", "trastero", "local", "oficina"]
 
 ESTADOS_UNIDAD = ["disponible", "ocupada", "pendiente_limpieza", "mantenimiento", "bloqueada", "fuera_servicio"]
+# Situación de las viviendas en alquiler residencial (Babilonia 35): se pide la primera vez que se abre la vivienda
+SITUACIONES = {
+    "alquilada": "Alquilada",
+    "vacia": "Vacía (disponible para alquilar)",
+    "reservada": "Reservada (pendiente de firmar)",
+    "reforma_menor": "En reforma menor",
+    "obra_mayor": "En obra mayor",
+    "ocupada_sin_titulo": "Ocupada sin título",
+    "en_venta": "En venta",
+    "uso_propio": "Uso propio / cedida",
+    "otra": "Otra situación",
+}
 
 
 def _now() -> datetime:
@@ -108,6 +120,13 @@ class Unit(Base):
     # energético, IBI y tasa de residuos, contadores (CUPS) y llaves; inventario del mobiliario que se entrega
     ficha: Mapped[dict | None] = mapped_column(JSON)
     inventario: Mapped[list | None] = mapped_column(JSON)
+    # Situación de la vivienda (ver SITUACIONES): quién y cuándo la indicó; «otra» lleva su descripción.
+    situacion: Mapped[str | None] = mapped_column(String(30))
+    situacion_texto: Mapped[str | None] = mapped_column(String(200))
+    situacion_fecha: Mapped[datetime | None] = mapped_column(DateTime)
+    situacion_user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    # «Completar más tarde» el contrato: no se vuelve a pedir ese día
+    contrato_pospuesto: Mapped[date | None] = mapped_column(Date)
     asset: Mapped[Asset] = relationship()
 
 
