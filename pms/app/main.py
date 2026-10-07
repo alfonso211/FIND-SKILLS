@@ -42,6 +42,7 @@ for r in (auth, estructura, alquiler, garajes, gastos, turistico, plano, factura
     app.include_router(r.router)
 app.include_router(facturas.router_servicios)
 app.include_router(facturas.publico)
+app.include_router(mantenimiento.publico)
 app.include_router(turistico.publico)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 

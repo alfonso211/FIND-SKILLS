@@ -405,6 +405,10 @@ class WorkOrder(Base):
     descripcion: Mapped[str | None] = mapped_column(Text)
     asignado_a: Mapped[str | None] = mapped_column(String(120))
     proveedor: Mapped[str | None] = mapped_column(String(160))
+    # a quién se encarga: personal propio (ficha de Personal) o subcontrata (ficha de Proveedores)
+    asignacion: Mapped[str | None] = mapped_column(String(20))  # propio | subcontrata
+    personal_id: Mapped[int | None] = mapped_column(ForeignKey("personal_servicio.id"))
+    proveedor_id: Mapped[int | None] = mapped_column(ForeignKey("proveedores.id"))
     coste_estimado: Mapped[float | None] = mapped_column(Numeric(10, 2))
     coste_real: Mapped[float | None] = mapped_column(Numeric(10, 2))
     bloquea_unidad: Mapped[bool] = mapped_column(Boolean, default=False)
