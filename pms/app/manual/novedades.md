@@ -1,5 +1,8 @@
 # Novedades
 
+## 2026-10-07 · Versión 1.17 · Importes de SYADE en la ficha del cliente
+- **Dirección**: la facturación importada de SYADE se enlaza por **DNI/NIF** con los clientes del PMS. En la **ficha del cliente** se ven sus facturas, abonos, producción y fianzas del programa anterior. Solo es control de producción: no son facturas del PMS.
+
 ## 2026-10-07 · Versión 1.16 · Guía de emergencia
 - **Dirección**: nueva **guía de emergencia** para recuperar el sistema si se cae, se pierde el servidor o hay un virus (`deploy/RECUPERACION.md`, también en PDF). Incluye el **kit de emergencia** que hay que guardar fuera del servidor y un simulacro trimestral.
 

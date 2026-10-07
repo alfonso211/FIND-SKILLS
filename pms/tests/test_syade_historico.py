@@ -25,8 +25,8 @@ def _xlsx(hojas: list[list[list]]) -> bytes:
 
 def facturas() -> bytes:
     h1 = [CAB_AE,
-          ["AE/", None, datetime(2030, 1, 31), 900001, "X0000001A", "CLIENTE UNO", None, 100.0, 10.0, 10.0, 110.0, 0.0],
-          ["AE/", 1, datetime(2030, 1, 31), 900002, 12345678, "EMPRESA DOS", 200.0, None, 10.0, 20.0, 220.0, 300.0]]
+          ["AE/", None, datetime(2030, 1, 31), 900001, "X7700001A", "CLIENTE UNO", None, 100.0, 10.0, 10.0, 110.0, 0.0],
+          ["AE/", 1, datetime(2030, 1, 31), 900002, 81234567, "EMPRESA DOS", 200.0, None, 10.0, 20.0, 220.0, 300.0]]
     h2 = [CAB_AE[:7] + [None] + CAB_AE[7:],  # otra página: columnas desplazadas y cabecera repetida
           ["AE/", 2, datetime(2030, 2, 28), 900003, "Y0000003B", "CLIENTE TRES", None, None, 1000.5, 10.0, 100.05,
            1100.55, 0.0],
@@ -39,7 +39,7 @@ def test_lectura_facturas_con_rarezas():
     r = importacion_syade.leer(facturas(), 2030)
     assert r["tipo"] == "alojamiento" and r["cuadra"], r
     assert [f["numero"] for f in r["filas"]] == ["s/n 900001 31/01/2030", "1", "2"]
-    assert r["filas"][1]["nif"] == "12345678" and str(r["filas"][2]["base"]) == "1000.50"
+    assert r["filas"][1]["nif"] == "81234567" and str(r["filas"][2]["base"]) == "1000.50"
     assert any("sin número" in a for a in r["avisos"])
 
 
@@ -76,6 +76,11 @@ def test_lectura_abonos_servicios_y_fianzas():
 
 def test_importacion_y_produccion(client, admin, ids):
     sae = ids["assets"]["SAE"]["id"]
+    comp = ids["assets"]["SAE"]["company_id"]
+    # clientes que ya están en el PMS: uno con el mismo NIE y otro con el DNI con letra (el listado lo trae sin ella)
+    uno, dos = (client.post("/api/terceros", headers=admin, json={
+        "company_id": comp, "asset_id": sae, "tipo": "huesped", "nombre": n, "documento_num": d}).json()["id"]
+        for n, d in (("Histórico", "x-7700001a"), ("Histórico Dos", "81234567Q")))
 
     def subir(datos, confirmar):
         return client.post("/api/historico/importar", headers=admin,
@@ -83,6 +88,7 @@ def test_importacion_y_produccion(client, admin, ids):
                            data={"asset_id": str(sae), "confirmar": str(confirmar).lower(), "anio": "2030"})
     prev = subir(facturas(), False).json()
     assert prev["cuadra"] and prev["nuevas"] == 3 and client.get("/api/historico", headers=admin).json() == []
+    assert prev["con_cliente"] == 2 and prev["clientes"] == 2
     assert subir(facturas(), True).json()["importado"]
     again = subir(facturas(), True).json()  # volver a importar no duplica
     assert again["nuevas"] == 0 and again["actualizadas"] == 3
@@ -92,6 +98,12 @@ def test_importacion_y_produccion(client, admin, ids):
     meses = {m["mes"]: m for m in res[0]["meses"]}
     assert meses["2030-01"]["produccion"] == 300.0 and meses["2030-01"]["fianzas_cobradas"] == 300.0
     assert meses["2030-02"]["produccion"] == 1000.5
+    assert res[0]["clientes"] == {"facturas": 3, "con_cliente": 2, "clientes": 2}
+    # los importes se ven en la ficha de cada cliente
+    h1 = client.get(f"/api/terceros/{uno}", headers=admin).json()["historico"]
+    assert h1["facturas"] == 1 and h1["produccion"] == 100.0 and h1["total"] == 110.0
+    h2 = client.get(f"/api/terceros/{dos}", headers=admin).json()["historico"]
+    assert h2["produccion"] == 200.0 and h2["fianzas_cobradas"] == 300.0 and h2["detalle"][0]["factura"] == "AE 1"
 
     # el informe de producción lo suma y lo indica aparte
     r = client.get("/api/informes/produccion", headers=admin,
@@ -105,3 +117,4 @@ def test_importacion_y_produccion(client, admin, ids):
 
     assert client.delete(f"/api/historico?asset_id={sae}", headers=admin).json()["borrados"] == 3
     assert client.get("/api/historico", headers=admin).json() == []
+    assert client.get(f"/api/terceros/{uno}", headers=admin).json()["historico"] is None
