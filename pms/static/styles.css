@@ -634,3 +634,9 @@ nav .grupo.fijo { margin-top: 8px; border-top: 1px solid rgba(201, 164, 90, .16)
 .aviso-amarillo { background: #fff6cc; color: #5c4600; border: 1px solid #e8c547; border-radius: 8px; padding: 8px 10px; }
 ul.faltan { columns: 2; margin: 4px 0 10px; font-size: 13px; }
 @media (max-width: 700px) { ul.faltan { columns: 1; } }
+
+/* panel: cada casilla lleva a su listado; el plano, con su botón o en una zona en blanco */
+.kpi.ir { cursor: pointer; transition: border-color .12s, box-shadow .12s; }
+.kpi.ir:hover, .kpi.ir:focus-visible { border-color: var(--brand-2); box-shadow: 0 3px 10px rgba(156, 122, 51, .18); outline: none; }
+.kpi.ir span::after { content: " ›"; color: var(--brand-2); font-weight: 700; }
+.card .ver-plano { float: right; margin-left: 8px; font-size: 12px; }
