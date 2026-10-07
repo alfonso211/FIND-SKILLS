@@ -16,8 +16,7 @@ def _celda(plano, codigo):
 
 def test_plano_y_estados(client, admin, ids):
     sae = ids["assets"]["SAE"]["id"]
-    assert [a["codigo"] for a in client.get("/api/plano/activos", headers=admin).json()] == ["SAE", "SFL"]
-    assert client.get(f"/api/plano/{ids['assets']['BAB35']['id']}", headers=admin).status_code == 404  # sin plano
+    assert [a["codigo"] for a in client.get("/api/plano/activos", headers=admin).json()] == ["BAB35", "SAE", "SFL"]
 
     # tipologías de la ficha de apartamentos
     assert _unidad(client, admin, sae, "A-127")["dormitorios"] == 2

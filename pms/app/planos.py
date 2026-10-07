@@ -325,7 +325,27 @@ def unidades_sfl() -> list[dict]:
     return out
 
 
-PLANOS = {"SAE": _sae(), "SFL": _sfl()}
+# Babilonia 35: sin planos del edificio. Se muestra como carpetas, una por planta (y por sótano de garaje), con el
+# logotipo de la sociedad propietaria; dentro, las viviendas o plazas de esa planta (ver routers/plano.py).
+CARPETAS = {"tipo": "carpetas", "columnas": 0, "filas": 0, "plantas": []}
+ORDEN_PLANTAS = ["Bajo", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "ST-1", "ST-2", "ST-3", "ST-4"]
+
+
+def etiqueta_planta(p: str | None) -> str:
+    if not p:
+        return "Sin planta"
+    if p.lower() in ("bajo", "baja", "bj"):
+        return "Planta baja"
+    if p.upper().startswith("ST-"):
+        return f"Sótano -{p[3:]}"
+    return f"Planta {p}ª" if p.isdigit() else f"Planta {p}"
+
+
+def orden_planta(p: str | None) -> tuple[int, str]:
+    return (ORDEN_PLANTAS.index(p), "") if p in ORDEN_PLANTAS else (len(ORDEN_PLANTAS), p or "")
+
+
+PLANOS = {"SAE": _sae(), "SFL": _sfl(), "BAB35": CARPETAS}
 
 
 def plano(codigo_activo: str) -> dict | None:
@@ -337,7 +357,7 @@ def zonas(codigo_activo: str) -> dict[str, str]:
     p = plano(codigo_activo)
     if not p:
         return {}
-    return {c["zona"]: c["nombre"] for pl in p["plantas"] for c in pl["celdas"] if c["t"] == "zc"}
+    return {c["zona"]: c["nombre"] for pl in p["plantas"] for c in pl.get("celdas", []) if c["t"] == "zc"}
 
 
 def numero(codigo_unidad: str) -> str:

@@ -11,10 +11,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from .. import planos
+from .. import contrato_vivienda as cv
+from .. import marca, planos
 from ..database import get_db
-from ..models import (MODALIDADES_RESERVA, AccommodationContract, Asset, Charge, Contact, Invoice, Lease,
-                      Reservation, Unit, UnitBlock, User, WorkOrder)
+from ..models import (MODALIDADES_RESERVA, SITUACIONES, AccommodationContract, Asset, Charge, Contact, Expense,
+                      Invoice, Lease, Reservation, Unit, UnitBlock, User, WorkOrder)
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request, get_or_404
 from .mantenimiento import ABIERTAS
@@ -114,6 +115,96 @@ def assets_with_plan(scope: Scope = Depends(get_scope), db: Session = Depends(ge
     return [{"id": a.id, "codigo": a.codigo, "nombre": a.nombre} for a in db.scalars(stmt.order_by(Asset.codigo))]
 
 
+# --------------------------------------------------------------------------- viviendas en alquiler (carpetas)
+def con_situacion(u: Unit) -> bool:
+    """Viviendas de alquiler residencial: al abrirlas se pide su situación y, si está alquilada, el contrato."""
+    return u.uso == "vivienda" and u.asset.modalidad == "alquiler_residencial"
+
+
+def _contrato(db: Session, u: Unit) -> Lease | None:
+    return db.scalars(select(Lease).where(Lease.unit_id == u.id, Lease.estado.in_(("borrador", "vigente")))
+                      .order_by(Lease.fecha_inicio.desc(), Lease.id.desc())).first()
+
+
+def pendientes(db: Session, u: Unit, hoy: date | None = None) -> dict:
+    """Lo que falta registrar de la vivienda: su situación y, si está alquilada, el contrato completo.
+    El contrato pendiente se vuelve a pedir cada día (salvo el día en que se pulsó «Completar más tarde")."""
+    if not con_situacion(u):
+        return {}
+    hoy = hoy or date.today()
+    out = {"situacion": u.situacion is None, "contrato": None}
+    if u.situacion == "alquilada":
+        lease = _contrato(db, u)
+        faltan = cv.faltan(db, lease) if lease else ["Contrato de alquiler sin crear (inquilino, fechas y renta)"]
+        if faltan:
+            out["contrato"] = {"lease_id": lease.id if lease else None, "faltan": faltan,
+                               "mostrar": u.contrato_pospuesto != hoy}
+    return out
+
+
+def _situacion_out(db: Session, u: Unit) -> dict | None:
+    if not con_situacion(u):
+        return None
+    por = db.get(User, u.situacion_user_id) if u.situacion_user_id else None
+    return {"clave": u.situacion, "nombre": SITUACIONES.get(u.situacion) if u.situacion else None,
+            "texto": u.situacion_texto, "fecha": u.situacion_fecha.isoformat() if u.situacion_fecha else None,
+            "por": por.nombre if por else None}
+
+
+def _puede_situacion(scope: Scope, asset_id: int) -> bool:
+    return scope.can_asset("alquiler.editar", asset_id) or scope.can_asset("activos.editar", asset_id)
+
+
+def _carpetas(db: Session, scope: Scope, a: Asset, dia: date) -> dict:
+    units = sorted(db.scalars(select(Unit).where(Unit.asset_id == a.id)),
+                   key=lambda u: (planos.orden_planta(u.planta), u.codigo))
+    est = estados(db, units, dia)
+    ve_alq = scope.can_asset("alquiler.ver", a.id)
+    ots: dict[int, list] = {}
+    if scope.can_asset("mantenimiento.ver", a.id):
+        for uid, prio in db.execute(select(WorkOrder.unit_id, WorkOrder.prioridad).where(
+                WorkOrder.asset_id == a.id, WorkOrder.unit_id.is_not(None), WorkOrder.estado.in_(ABIERTAS))):
+            o = ots.setdefault(uid, [0, False])
+            o[0] += 1
+            o[1] = o[1] or prio == "urgente"
+    inquilinos = {}
+    if ve_alq:
+        for lease, t in db.execute(select(Lease, Contact).join(Contact, Contact.id == Lease.tenant_id).where(
+                Lease.unit_id.in_([u.id for u in units] or [-1]), Lease.estado == "vigente")):
+            inquilinos[lease.unit_id] = _nombre(t)
+    grupos: dict[str, list[Unit]] = {}
+    for u in units:
+        grupos.setdefault(u.planta or "", []).append(u)
+    plantas = []
+    for p, us in grupos.items():
+        garaje = all(u.uso == "garaje" for u in us)
+        filas, resumen = [], {"total": len(us), "pendientes": 0, "sin_situacion": 0, "contrato_pendiente": 0}
+        for u in us:
+            pend = pendientes(db, u)
+            sit = u.situacion if con_situacion(u) else None
+            if con_situacion(u):
+                resumen[sit or "sin_situacion"] = resumen.get(sit or "sin_situacion", 0) + 1
+                resumen["contrato_pendiente"] += 1 if pend.get("contrato") else 0
+                resumen["pendientes"] += 1 if (pend.get("situacion") or pend.get("contrato")) else 0
+            filas.append({"unit_id": u.id, "codigo": u.codigo, "uso": u.uso, "tipologia": u.tipologia,
+                          "superficie_m2": float(u.superficie_m2) if u.superficie_m2 else None,
+                          "situacion": sit, "situacion_nombre": SITUACIONES.get(sit) if sit else None,
+                          "situacion_texto": u.situacion_texto if sit == "otra" else None,
+                          "pendiente_situacion": bool(pend.get("situacion")),
+                          "pendiente_contrato": bool(pend.get("contrato")),
+                          "estado": est[u.id]["estado"], "inquilino": inquilinos.get(u.id),
+                          "alquiler": est[u.id]["alquiler"] if ve_alq and u.uso == "garaje" else None,
+                          "ot": ots.get(u.id, [0, False])[0], "urgente": ots.get(u.id, [0, False])[1]})
+        plantas.append({"planta": p, "etiqueta": planos.etiqueta_planta(p), "garaje": garaje,
+                        "unidades": filas, "resumen": resumen})
+    sociedad = db.get(type(a.company), a.propietaria_id) if a.propietaria_id else a.company
+    return {"tipo": "carpetas", "asset": {"id": a.id, "codigo": a.codigo, "nombre": a.nombre},
+            "sociedad": sociedad.nombre if sociedad else None,
+            "logo": marca.url(marca.clave_sociedad(sociedad.cif if sociedad else None), "claro"),
+            "fecha": dia.isoformat(), "plantas": plantas, "situaciones": SITUACIONES,
+            "puede": {"situacion": _puede_situacion(scope, a.id), "ver_alquiler": ve_alq}}
+
+
 @router.get("/{asset_id}")
 def floor_plan(asset_id: int, fecha: date | None = None, scope: Scope = Depends(get_scope),
                db: Session = Depends(get_db)):
@@ -123,6 +214,8 @@ def floor_plan(asset_id: int, fecha: date | None = None, scope: Scope = Depends(
     cerrar_renovadas(db)
     db.commit()
     dia = fecha or date.today()
+    if p.get("tipo") == "carpetas":
+        return _carpetas(db, scope, a, dia)
     units = list(db.scalars(select(Unit).where(Unit.asset_id == asset_id)))
     # los apartamentos se buscan por número; las plazas de garaje, por su código (sus números se repiten)
     por_num = {planos.numero(u.codigo): u for u in units if u.uso != "garaje"}
@@ -198,7 +291,8 @@ def unit_sheet(uid: int, scope: Scope = Depends(get_scope), db: Session = Depend
     hoy = date.today()
     e = estados(db, [u], hoy)[u.id]
     out = {"unidad": {**u.to_dict(), "tipo": _tipo_corto(u)}, "estado": e["estado"], "limpieza": e["limpieza"],
-           "puede": {"reservar": scope.can_asset("reservas.editar", u.asset_id),
+           "puede": {"reservar": u.asset.modalidad in MODALIDADES_RESERVA
+                     and scope.can_asset("reservas.editar", u.asset_id),
                      "alquilar": u.uso == "garaje" and u.asset.modalidad in MODALIDADES_RESERVA
                      and scope.can_asset("reservas.editar", u.asset_id),
                      "bloquear": _puede_bloquear(scope, u.asset_id),
@@ -226,6 +320,17 @@ def unit_sheet(uid: int, scope: Scope = Depends(get_scope), db: Session = Depend
              "renta_mensual": float(x.renta_mensual), "matricula": x.matricula}
             for x, t in db.execute(select(Lease, Contact).join(Contact, Contact.id == Lease.tenant_id)
                                    .where(Lease.unit_id == uid).order_by(Lease.fecha_inicio.desc()))]
+    if con_situacion(u):
+        out["situacion"] = _situacion_out(db, u)
+        out["pendientes"] = pendientes(db, u, hoy)
+        out["situaciones"] = SITUACIONES
+        out["puede"]["situacion"] = _puede_situacion(scope, u.asset_id)
+        out["puede"]["contrato"] = scope.can_asset("alquiler.editar", u.asset_id)
+        if scope.can_asset("alquiler.ver", u.asset_id):
+            from .alquiler import _lease_out  # import local: alquiler importa módulos que importan este
+            out["contratos"] = [_lease_out(x) for x in db.scalars(
+                select(Lease).where(Lease.unit_id == uid).order_by(Lease.fecha_inicio.desc()))]
+        out["puede"]["gasto"] = scope.can_asset("documentos.editar", u.asset_id)
     if scope.can_asset("mantenimiento.ver", u.asset_id):
         out["incidencias"] = _ots(db, WorkOrder.unit_id == uid)
     out["bloqueos"] = [{"id": b.id, "motivo": b.motivo, "desde": b.desde.isoformat(),
@@ -234,6 +339,12 @@ def unit_sheet(uid: int, scope: Scope = Depends(get_scope), db: Session = Depend
                         "nota_levantado": b.nota_levantado}
                        for b, n in db.execute(select(UnitBlock, User.nombre).outerjoin(User, User.id == UnitBlock.user_id)
                                               .where(UnitBlock.unit_id == uid).order_by(UnitBlock.id.desc()))]
+    if scope.can_asset("finanzas.ver", u.asset_id) or scope.can_asset("documentos.ver", u.asset_id):
+        out["gastos"] = [{"id": g.id, "fecha": g.fecha.isoformat(), "proveedor": g.proveedor,
+                          "numero_factura": g.numero_factura, "concepto": g.concepto, "total": float(g.total),
+                          "pagado": g.pagado, "documento_id": g.documento_id, "naturaleza": g.naturaleza}
+                         for g in db.scalars(select(Expense).where(Expense.unit_id == uid)
+                                             .order_by(Expense.fecha.desc()).limit(300))]
     if scope.can_asset("facturas.ver", u.asset_id):
         out["facturas"] = [{"id": f.id, "codigo": f.codigo, "fecha": f.fecha_expedicion.isoformat(),
                             "cliente": f.cliente.get("nombre"), "total": float(f.total), "tipo": f.tipo}
@@ -314,3 +425,41 @@ def unblock_unit(uid: int, data: UnblockIn, scope: Scope = Depends(get_scope), d
     audit(db, scope.user, "desbloquear", "unidad", uid, {"bloqueos": [b.id for b in abiertos], "nota": data.nota})
     db.commit()
     return {"estado": u.estado}
+
+
+# --------------------------------------------------------------------------- situación de la vivienda
+class SituacionIn(BaseModel):
+    situacion: str
+    texto: str | None = Field(default=None, max_length=200)
+
+
+@router.put("/unidades/{uid}/situacion")
+def set_situation(uid: int, data: SituacionIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Situación de la vivienda (alquilada, vacía, en reforma…). Queda registrado quién y cuándo la indicó."""
+    u = get_or_404(db, Unit, uid)
+    scope.require_asset("activos.ver", u.asset_id)
+    if not con_situacion(u):
+        bad_request("Solo las viviendas en alquiler residencial tienen situación")
+    if not _puede_situacion(scope, u.asset_id):
+        raise HTTPException(403, "Sin permiso para indicar la situación de la vivienda")
+    if data.situacion not in SITUACIONES:
+        bad_request("Situación no válida")
+    texto = (data.texto or "").strip() or None
+    if data.situacion == "otra" and not texto:
+        bad_request("Indique cuál es la situación")
+    antes = u.situacion
+    u.situacion, u.situacion_texto = data.situacion, texto
+    u.situacion_fecha, u.situacion_user_id = datetime.now(), scope.user.id
+    audit(db, scope.user, "situacion_vivienda", "unidad", uid, {"antes": antes, "ahora": data.situacion, "texto": texto})
+    db.commit()
+    return {"situacion": _situacion_out(db, u), "pendientes": pendientes(db, u)}
+
+
+@router.post("/unidades/{uid}/contrato-mas-tarde")
+def postpone_contract(uid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """«Completar más tarde»: el aviso del contrato pendiente no vuelve a salir hasta mañana."""
+    u = get_or_404(db, Unit, uid)
+    scope.require_asset("activos.ver", u.asset_id)
+    u.contrato_pospuesto = date.today()
+    db.commit()
+    return {"pendientes": pendientes(db, u)}
