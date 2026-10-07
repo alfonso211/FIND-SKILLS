@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from .. import avisos, marca, nif, registro_viajeros
+from .. import avisos, limpiezas, marca, nif, registro_viajeros
 from ..database import get_db
 from ..facturacion import FORMAS_PAGO
 from ..models import (ESTADOS_UNIDAD, MODALIDADES, USOS_UNIDAD, Asset, Company, Contact, ContactDocument, Invoice, Lease,
@@ -237,6 +237,7 @@ def mark_clean(uid: int, scope: Scope = Depends(get_scope), db: Session = Depend
     if u.estado != "pendiente_limpieza":
         bad_request("La unidad no está pendiente de limpieza")
     u.estado = "disponible"
+    limpiezas.limpieza_unidad_hecha(db, u, scope.user)  # sus limpiezas de salida pendientes quedan validadas
     audit(db, scope.user, "limpieza_ok", "unidad", uid)
     db.commit()
     return u.to_dict()

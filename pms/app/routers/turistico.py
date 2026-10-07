@@ -11,15 +11,14 @@ from sqlalchemy.orm import Session, aliased
 
 from ..config import settings
 from ..database import get_db
-from .. import (avisos, clientes, contratos, documentos, encuesta_ine, firma_contrato, importacion, importacion_ocupacion, nif,
-               planos, recibos,
-               registro_viajeros)
+from .. import (avisos, clientes, contratos, documentos, encuesta_ine, firma_contrato, importacion, importacion_ocupacion,
+               limpiezas, nif, planos, recibos, registro_viajeros)
 from ..facturacion import (IVA_ALOJAMIENTO, IVA_GENERAL, datos_cliente, dinero, emitir, estancia_facturada, linea,
                            lineas_servicios, serie_activo)
 from ..models import (MODALIDADES_RESERVA, AccommodationContract, Asset, Contact, Invoice, Lease, Reservation,
-                      ReservationGuest, Unit, User)
-from ..schemas import (AccommodationContractIn, OccupantIn, Payment, RenewalIn, ReservationIn, ReservationUpdate,
-                       SendContractIn, SignatureIn, UnpaidInvoiceIn)
+                      ReservationGuest, Unit, User, WorkOrder)
+from ..schemas import (AccommodationContractIn, ExtrasPaymentIn, LimpiezaPlanIn, OccupantIn, Payment, RenewalIn,
+                       ReservationIn, ReservationUpdate, SendContractIn, ServiceLine, SignatureIn, UnpaidInvoiceIn)
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
 from .documentos import adjuntar_pendientes
@@ -38,7 +37,64 @@ def _res_out(r: Reservation) -> dict:
     d["asset_id"] = r.unit.asset_id
     d["huesped"] = f"{r.guest.nombre} {r.guest.apellidos or ''}".strip()
     d["noches"] = (r.fecha_salida - r.fecha_entrada).days
+    pend = [e for e in r.extras or [] if not e.get("factura")]
+    d["extras_pendientes"] = float(sum(dinero(e["precio"]) * dinero(e["cantidad"]) for e in pend))
+    d["limpieza_texto"] = limpiezas.describir(r.limpieza)
+    d["limpieza_fechas"] = [x.isoformat() for x in limpiezas.fechas_plan(r.limpieza, r.fecha_entrada, r.fecha_salida)]
     return d
+
+
+def _guardar_extras(db: Session, r: Reservation, extras: list[ServiceLine] | None, plan: LimpiezaPlanIn | None,
+                    quitar_limpieza: bool = False) -> None:
+    """Servicios extra de la reserva. Los ya facturados no cambian; la limpieza contratada se cobra por limpieza
+    (tantas como salgan del día de inicio y la periodicidad dentro de la estancia)."""
+    a = r.unit.asset
+    previos = r.extras or []
+    facturados = [e for e in previos if e.get("factura")]
+    if extras is not None:
+        sueltos = [{"concepto": x["concepto"], "servicio_id": x.get("servicio_id"), "cantidad": x["cantidad"],
+                    "precio": x["precio"], "tipo_iva": x["tipo_iva"], "limpieza": False, "factura": None}
+                   for x in lineas_servicios(db, a.id, extras)]
+    else:
+        sueltos = [e for e in previos if not e.get("factura") and not e.get("limpieza")]
+    if quitar_limpieza:
+        r.limpieza = None
+    if plan is not None:
+        p = limpiezas.validar_plan(plan.model_dump(mode="json"), r.fecha_entrada, r.fecha_salida)
+        x = lineas_servicios(db, a.id, [ServiceLine(servicio_id=plan.servicio_id, concepto=plan.concepto or (
+            None if plan.servicio_id else "Limpieza"), precio=plan.precio, tipo_iva=plan.tipo_iva)])[0]
+        p.update(servicio_id=x.get("servicio_id"), concepto=x["concepto"], precio=x["precio"], tipo_iva=x["tipo_iva"])
+        r.limpieza = p
+    extra_limpieza = []
+    if r.limpieza and not any(e.get("limpieza") for e in facturados):
+        n = len(limpiezas.fechas_plan(r.limpieza, r.fecha_entrada, r.fecha_salida))
+        if n:
+            extra_limpieza = [{"concepto": f"{r.limpieza['concepto']} · {n} limpieza{'s' if n != 1 else ''} "
+                                          f"({limpiezas.describir(r.limpieza)})",
+                               "servicio_id": r.limpieza.get("servicio_id"), "cantidad": n,
+                               "precio": r.limpieza["precio"], "tipo_iva": r.limpieza["tipo_iva"], "limpieza": True,
+                               "factura": None}]
+    r.extras = (facturados + sueltos + extra_limpieza) or None
+
+
+def revision_salida(db: Session, r: Reservation, user: User | None) -> WorkOrder | None:
+    """Orden de trabajo a mantenimiento para revisar el apartamento tras la salida (una sola abierta a la vez)."""
+    from .mantenimiento import ABIERTAS  # import local: mantenimiento importa este módulo
+    u = r.unit
+    if u.uso == "garaje":
+        return None
+    titulo = f"Revisión de salida · Apartamento {u.codigo}"
+    if db.scalar(select(WorkOrder.id).where(WorkOrder.unit_id == u.id, WorkOrder.titulo == titulo,
+                                            WorkOrder.estado.in_(ABIERTAS))):
+        return None
+    w = WorkOrder(asset_id=u.asset_id, unit_id=u.id, tipo="preventivo", categoria="general", prioridad="media",
+                  titulo=titulo, fecha_prevista=date.today(), abierta_por=user.id if user else None,
+                  descripcion=(f"Salida del cliente (reserva {r.localizador or 'R-' + str(r.id)}) el "
+                               f"{date.today():%d/%m/%Y}. Revisar instalaciones, electrodomésticos, fontanería, "
+                               "climatización, iluminación, cerraduras y desperfectos; anotar lo que haya que reparar."))
+    db.add(w)
+    db.flush()
+    return w
 
 
 def _conflict(db: Session, unit_id: int, ent: date, sal: date, exclude_id: int | None = None) -> bool:
@@ -131,11 +187,15 @@ def create_reservation(data: ReservationIn, scope: Scope = Depends(get_scope), d
     if data.documentos:
         adjuntar_pendientes(db, scope.user, data.documentos, guest)
     r = Reservation(**data.model_dump(exclude={"guest", "guest_id", "documentos", "importe_pagado", "forma_pago",
-                                               "facturar_pendiente"}),
+                                               "facturar_pendiente", "extras", "limpieza"}),
                     guest_id=guest.id, importe_pagado=0)
     r.ocupantes.append(ReservationGuest(contact_id=guest.id, titular=True, orden=0))
     db.add(r)
     db.flush()
+    if data.extras or data.limpieza:
+        if unit.uso == "garaje":
+            bad_request("Los servicios extra se añaden a la reserva del apartamento")
+        _guardar_extras(db, r, data.extras, data.limpieza)
     audit(db, scope.user, "crear", "reserva", r.id,
           {"unidad": unit.codigo, "entrada": str(r.fecha_entrada), "salida": str(r.fecha_salida)})
     factura = None
@@ -183,11 +243,21 @@ def _cobrar(db: Session, scope: Scope, r: Reservation, data: Payment, cobrado: b
         lineas.append(linea("garaje", concepto, data.importe, IVA_GENERAL) if garaje
                       else linea("alojamiento", concepto, data.importe, IVA_ALOJAMIENTO))
     lineas += lineas_servicios(db, a.id, data.servicios)
+    extras = [dict(e) for e in r.extras or []]
+    pend = [e for e in extras if not e.get("factura")] if getattr(data, "incluir_extras", True) else []
+    lineas += [linea("servicio", e["concepto"], e["precio"], e["tipo_iva"], e["cantidad"], e.get("servicio_id"))
+               for e in pend]
+    if not lineas:
+        bad_request("No hay nada que facturar")
     f = emitir(db, scope.user, company=a.company, serie=serie_activo(a), asset_id=a.id,
                cliente=datos_cliente(r.guest, data.facturar_a), contact_id=r.guest_id, lineas=lineas,
                fecha_operacion=data.fecha_pago or date.today(),
                forma_pago=data.forma_pago or (None if cobrado else "transferencia"), reservation_id=r.id,
                cobro="cobrada" if cobrado else "pendiente")
+    if pend:
+        for e in pend:
+            e["factura"] = f.codigo
+        r.extras = extras  # nueva lista: SQLAlchemy detecta el cambio del JSON
     audit(db, scope.user, "cobro" if cobrado else "factura_pendiente", "reserva", r.id,
           {"importe": data.importe, "factura": f.codigo})
     return f
@@ -210,13 +280,29 @@ def invoice_unpaid(rid: int, data: UnpaidInvoiceIn, scope: Scope = Depends(get_s
     r = get_or_404(db, Reservation, rid)
     scope.require_asset("reservas.editar", r.unit.asset_id)
     importe = data.importe
+    hay_extras = data.incluir_extras and any(not e.get("factura") for e in r.extras or [])
     if not importe and not data.servicios:
-        importe = float(dinero(r.importe_total) - max(dinero(r.importe_pagado), estancia_facturada(db, r.id)))
-        if importe <= 0:
+        importe = max(0.0, float(dinero(r.importe_total) - max(dinero(r.importe_pagado), estancia_facturada(db, r.id))))
+        if importe <= 0 and not hay_extras:
             bad_request("No queda nada pendiente de facturar en esta reserva")
     pago = Payment.model_construct(importe=importe, servicios=data.servicios, fecha_pago=None,
-                                   forma_pago=data.forma_pago, facturar_a=data.facturar_a)
+                                   forma_pago=data.forma_pago, facturar_a=data.facturar_a,
+                                   incluir_extras=data.incluir_extras)
     f = _cobrar(db, scope, r, pago, cobrado=False)
+    db.commit()
+    return {**_res_out(r), "factura": {"id": f.id, "codigo": f.codigo, "cobro": f.cobro}}
+
+
+@router.post("/reservas/{rid}/extras/factura")
+def invoice_extras(rid: int, data: ExtrasPaymentIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Factura solo los servicios extra pendientes de la reserva (p.ej. pedidos cuando la estancia ya estaba pagada)."""
+    r = get_or_404(db, Reservation, rid)
+    scope.require_asset("reservas.editar", r.unit.asset_id)
+    if not any(not e.get("factura") for e in r.extras or []):
+        bad_request("La reserva no tiene servicios extra pendientes de facturar")
+    pago = Payment.model_construct(importe=0, servicios=[], fecha_pago=data.fecha_pago, forma_pago=data.forma_pago,
+                                   facturar_a=data.facturar_a, incluir_extras=True)
+    f = _cobrar(db, scope, r, pago, cobrado=data.cobrado)
     db.commit()
     return {**_res_out(r), "factura": {"id": f.id, "codigo": f.codigo, "cobro": f.cobro}}
 
@@ -249,7 +335,15 @@ def update_reservation(rid: int, data: ReservationUpdate, scope: Scope = Depends
     if data.importe_total is not None and dinero(data.importe_total) < dinero(r.importe_pagado):
         bad_request(f"El importe total no puede ser menor que lo ya cobrado ({dinero(r.importe_pagado)} €)")
     garajes = _garajes_asociados(db, r)
-    ch = apply(r, data)
+    # los extras y la limpieza no se copian tal cual: los resuelve _guardar_extras
+    ch = apply(r, ReservationUpdate(**data.model_dump(exclude_unset=True,
+                                                     exclude={"extras", "limpieza", "quitar_limpieza"})))
+    if data.extras is not None or data.limpieza is not None or data.quitar_limpieza or "fecha_entrada" in ch \
+            or "fecha_salida" in ch:
+        antes = r.extras
+        _guardar_extras(db, r, data.extras, data.limpieza, data.quitar_limpieza)
+        if r.extras != antes:
+            ch["extras"] = [None, "modificados"]
     for g in garajes:  # ampliar o acortar la estancia mueve también la plaza de garaje asociada
         if (g.fecha_entrada, g.fecha_salida) != (r.fecha_entrada, r.fecha_salida):
             if _conflict(db, g.unit_id, r.fecha_entrada, r.fecha_salida, exclude_id=g.id):
@@ -298,6 +392,7 @@ def checkout(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(
         bad_request("Solo se puede hacer check-out de una reserva con check-in")
     r.estado = "checkout"
     r.unit.estado = "pendiente_limpieza"
+    revision_salida(db, r, scope.user)  # orden de trabajo a mantenimiento para revisar el apartamento
     for g in _garajes_asociados(db, r):  # la plaza de garaje sale con el apartamento
         g.estado = "checkout"
         if g.unit.estado == "ocupada":

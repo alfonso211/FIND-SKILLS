@@ -290,6 +290,7 @@ class Payment(BaseModel):
     """Cobro: al registrarlo se emite la factura. Puede incluir servicios (limpieza, aparcamiento...)."""
     importe: float = Field(default=0, ge=0)
     servicios: list[ServiceLine] = []
+    incluir_extras: bool = True  # reservas: añade los servicios extra pedidos y aún sin facturar
     fecha_pago: date | None = None
     forma_pago: Literal["efectivo", "tarjeta", "transferencia", "domiciliacion", "bizum", "plataforma"] | None = None
     facturar_a: FacturarA | None = None
@@ -312,8 +313,29 @@ class UnpaidInvoiceIn(BaseModel):
     """Factura sin cobrar de una reserva. Sin importe ni servicios: todo lo pendiente de facturar."""
     importe: float = Field(default=0, ge=0)
     servicios: list[ServiceLine] = []
+    incluir_extras: bool = True
     forma_pago: Literal["efectivo", "tarjeta", "transferencia", "domiciliacion", "bizum", "plataforma"] | None = None
     facturar_a: FacturarA | None = None
+
+
+class ExtrasPaymentIn(BaseModel):
+    """Factura solo de los servicios extra de la reserva pendientes de facturar (cobrados o no)."""
+    cobrado: bool = True
+    fecha_pago: date | None = None
+    forma_pago: Literal["efectivo", "tarjeta", "transferencia", "domiciliacion", "bizum", "plataforma"] | None = None
+    facturar_a: FacturarA | None = None
+
+
+class LimpiezaPlanIn(BaseModel):
+    """Limpieza contratada en la reserva: servicio (del catálogo o escrito), día de inicio y periodicidad."""
+    periodicidad: str
+    inicio: date | None = None
+    texto: str | None = Field(default=None, max_length=120)  # periodicidad «otra»: cuál
+    fechas: list[date] = []  # periodicidad «otra»: días concretos
+    servicio_id: int | None = None
+    concepto: str | None = Field(default=None, max_length=200)
+    precio: float | None = Field(default=None, ge=0)  # por limpieza, IVA incluido
+    tipo_iva: float | None = Field(default=None, ge=0, le=21)
 
 
 class InvoiceRectify(BaseModel):
@@ -355,6 +377,8 @@ class ReservationIn(BaseModel):
     facturar_pendiente: bool = False  # sin cobro: se factura ya y queda pendiente de cobro (transferencia)
     notas: str | None = None
     documentos: list[int] = []  # copias del documento del cliente escaneadas en el alta
+    extras: list[ServiceLine] = []  # servicios extra pedidos (plaza extra, toallas…): a la factura de la estancia
+    limpieza: LimpiezaPlanIn | None = None  # limpieza contratada (día y periodicidad)
 
     @field_validator("fecha_salida")
     @classmethod
@@ -393,6 +417,9 @@ class ReservationUpdate(BaseModel):
     importe_total: float | None = Field(default=None, ge=0)  # lo cobrado solo cambia con "Cobro" (factura)
     estado: str | None = None
     notas: str | None = None
+    extras: list[ServiceLine] | None = None  # sustituye los extras aún sin facturar
+    limpieza: LimpiezaPlanIn | None = None
+    quitar_limpieza: bool = False
 
 
 class OccupantIn(BaseModel):
