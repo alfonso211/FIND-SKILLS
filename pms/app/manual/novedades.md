@@ -1,5 +1,8 @@
 # Novedades
 
+## 2026-10-07 · Versión 1.12 · Limpieza de salida solo tras el check-out
+- **Recepción y limpieza**: la limpieza por salida entra en el parte **cuando recepción hace el check-out**. Ya no se prevé por la fecha de salida, porque el cliente puede renovar.
+
 ## 2026-10-07 · Versión 1.11 · Parte de limpieza y revisión de salida
 - **Recepción**: en la reserva se añaden los **servicios extra** (plaza extra, toallas… del catálogo o escritos) y la **limpieza contratada** con su día y periodicidad; todo pasa a la **factura de la estancia** («Facturar extras» si se pide después).
 - **Recepción y limpieza**: nuevo **Parte de limpieza** diario con las salidas (y si hay llegada, «antes del…»), las limpiezas contratadas y las extra. Se imprime en PDF o se envía por WhatsApp o correo, y el Excel queda en Documentos recibidos. Recepción valida cada limpieza con **Hecha**; lo no validado pasa al día siguiente.

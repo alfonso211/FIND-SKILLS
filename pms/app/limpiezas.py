@@ -1,13 +1,14 @@
 """Parte diario de limpieza.
 
 Cada día salen en el parte, ordenadas por prioridad:
-1. Limpiezas por salida de un cliente. Si el apartamento tiene otra llegada, se indica «antes de la llegada del día…»
+1. Limpiezas por salida de un cliente: SOLO cuando recepción ha hecho el check-out (no se prevén por la fecha de
+   salida: el cliente puede renovar). Si el apartamento tiene otra llegada, se indica «antes de la llegada del día…»
    (y van primero las que tienen llegada ese mismo día).
 2. Limpiezas contratadas por el cliente en su reserva, según el día de inicio y la periodicidad elegidos.
 3. Limpiezas extra que añade recepción (no programadas).
 Lo que no valida recepción sigue pendiente y pasa al día siguiente («pendiente desde…»).
 
-Las limpiezas por salida y las contratadas se generan solas al consultar el parte (sin duplicarse: «clave» única);
+La limpieza de salida se crea al hacer el check-out; las contratadas se generan solas al consultar el parte (sin duplicarse: «clave» única);
 si la reserva se cancela o cambia de fechas, las pendientes que ya no corresponden se anulan.
 """
 from datetime import date, datetime, timedelta
@@ -113,14 +114,11 @@ def _asegura(db: Session, clave: str, **campos) -> CleaningTask:
 
 
 def sincronizar(db: Session, asset_id: int, dia: date) -> None:
-    """Crea las limpiezas de salida y las contratadas del día y anula las pendientes que ya no corresponden."""
+    """Crea las limpiezas contratadas del día y anula las pendientes que ya no corresponden. Las de salida no se
+    prevén: las crea el check-out (salida_realizada)."""
     uids = list(db.scalars(select(Unit.id).where(Unit.asset_id == asset_id, Unit.uso != "garaje")))
     if not uids:
         return
-    for r in db.scalars(select(Reservation).where(Reservation.unit_id.in_(uids), Reservation.fecha_salida == dia,
-                                                  Reservation.estado.in_(VIVAS))):
-        _asegura(db, f"salida:{r.id}", asset_id=asset_id, unit_id=r.unit_id, fecha=dia, tipo="salida",
-                 reservation_id=r.id)
     for r in db.scalars(select(Reservation).where(
             Reservation.unit_id.in_(uids), Reservation.limpieza.is_not(None), Reservation.fecha_entrada < dia,
             Reservation.fecha_salida > dia, Reservation.estado.in_(("confirmada", "checkin")))):
@@ -143,12 +141,20 @@ def sincronizar(db: Session, asset_id: int, dia: date) -> None:
         r = db.get(Reservation, t.reservation_id)
         if r is None or r.estado not in VIVAS or r.unit_id != t.unit_id:
             t.estado = "anulada"
-        elif t.tipo == "salida" and r.fecha_salida != t.fecha and r.fecha_salida > dia:
-            t.estado = "anulada"  # la salida se ha retrasado: se generará el día de la nueva salida
+        elif t.tipo == "salida" and r.estado != "checkout":
+            t.estado = "anulada"  # sin check-out no hay limpieza de salida
         elif t.tipo == "contratada" and (r.estado == "checkout"
                                          or t.fecha not in fechas_plan(r.limpieza, r.fecha_entrada, r.fecha_salida)):
             t.estado = "anulada"
     db.flush()
+
+
+def salida_realizada(db: Session, r: Reservation) -> CleaningTask | None:
+    """Check-out hecho por recepción: la limpieza de salida entra en el parte de ese día."""
+    if r.unit.uso == "garaje":
+        return None
+    return _asegura(db, f"salida:{r.id}", asset_id=r.unit.asset_id, unit_id=r.unit_id, fecha=date.today(),
+                    tipo="salida", reservation_id=r.id)
 
 
 def _proxima_llegada(db: Session, unit_id: int, desde: date) -> Reservation | None:
@@ -176,7 +182,7 @@ def parte(db: Session, asset_id: int, dia: date) -> list[dict]:
         antes = llegada.fecha_entrada if llegada else None
         r = db.get(Reservation, t.reservation_id) if t.reservation_id else None
         if t.tipo == "salida":
-            motivo = t.nota or ("Salida realizada" if r and r.estado == "checkout" else "Salida del cliente")
+            motivo = t.nota or "Salida realizada"
         elif t.tipo == "contratada":
             motivo = "Limpieza contratada" + (f" ({describir(r.limpieza)})" if r and r.limpieza else "")
         else:

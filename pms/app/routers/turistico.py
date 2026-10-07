@@ -393,6 +393,7 @@ def checkout(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(
     r.estado = "checkout"
     r.unit.estado = "pendiente_limpieza"
     revision_salida(db, r, scope.user)  # orden de trabajo a mantenimiento para revisar el apartamento
+    limpiezas.salida_realizada(db, r)  # la limpieza de salida entra en el parte de hoy
     for g in _garajes_asociados(db, r):  # la plaza de garaje sale con el apartamento
         g.estado = "checkout"
         if g.unit.estado == "ocupada":

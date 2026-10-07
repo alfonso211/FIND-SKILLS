@@ -70,12 +70,10 @@ def test_extras_y_parte(client, admin, ids):
     p = client.get("/api/limpieza/parte", headers=admin, params={"asset_id": sae, "fecha": "2031-03-06"}).json()
     x = next(x for x in p["limpiezas"] if x["unit_id"] == u1["id"])
     assert x["tipo"] == "contratada" and x["motivo"].startswith("Limpieza contratada")
-    # salida con llegada el mismo día en el apartamento: va primero y pide tenerlo antes
+    # la salida prevista NO entra en el parte: solo cuando recepción hace el check-out (el cliente puede renovar)
     assert _reserva(client, admin, u1["id"], date(2031, 3, 10), date(2031, 3, 12)).status_code == 201
     p = client.get("/api/limpieza/parte", headers=admin, params={"asset_id": sae, "fecha": "2031-03-10"}).json()
-    sal = next(x for x in p["limpiezas"] if x["unit_id"] == u1["id"])
-    assert sal["tipo"] == "salida" and sal["urgente"] and sal["antes_de"] == "2031-03-10"
-    assert p["limpiezas"][0]["urgente"]
+    assert not any(x["unit_id"] == u1["id"] and x["tipo"] == "salida" for x in p["limpiezas"])
     # extra de recepción; lo no validado pasa al día siguiente
     e = client.post("/api/limpieza/extra", headers=admin, json={"asset_id": sae, "unit_id": u2["id"],
                                                                 "fecha": "2031-03-10", "nota": "Repaso a fondo"})
@@ -113,9 +111,12 @@ def test_salida_revision_y_validacion(client, admin, ids):
     u = _aptos(client, admin, sae)[-52]
     r = _reserva(client, admin, u["id"], HOY - timedelta(days=3), HOY)
     assert r.status_code == 201, r.text
+    assert _reserva(client, admin, u["id"], HOY, HOY + timedelta(days=2)).status_code == 201  # llega otro hoy
     with SessionLocal() as db:
         db.get(Reservation, r.json()["id"]).estado = "checkin"
         db.commit()
+    p = client.get("/api/limpieza/parte", headers=admin, params={"asset_id": sae}).json()
+    assert not any(x["unit_id"] == u["id"] for x in p["limpiezas"])  # sale hoy, pero sin check-out no hay limpieza
     assert client.post(f"/api/turistico/reservas/{r.json()['id']}/checkout", headers=admin).status_code == 200
     titulo = f"Revisión de salida · Apartamento {u['codigo']}"
     with SessionLocal() as db:
@@ -126,6 +127,7 @@ def test_salida_revision_y_validacion(client, admin, ids):
     p = client.get("/api/limpieza/parte", headers=admin, params={"asset_id": sae}).json()
     sal = next(x for x in p["limpiezas"] if x["unit_id"] == u["id"])
     assert sal["tipo"] == "salida" and sal["motivo"] == "Salida realizada"
+    assert sal["urgente"] and sal["antes_de"] == HOY.isoformat() and p["limpiezas"][0]["urgente"]  # llegada hoy: primero
     assert client.post(f"/api/limpieza/{sal['id']}/hecha", headers=admin).json()["unidad_estado"] == "disponible"
     assert client.post(f"/api/limpieza/{sal['id']}/deshacer", headers=admin).status_code == 200
     assert client.delete(f"/api/limpieza/{sal['id']}", headers=admin).status_code == 400  # solo las extra

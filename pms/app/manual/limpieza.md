@@ -6,7 +6,7 @@
 
 ## Parte de limpieza
 - **Apartamentos turísticos → Parte de limpieza**: las limpiezas del día, ordenadas por prioridad:
-  - **Salidas**. Si el apartamento tiene otra llegada, verá «**LLEGADA HOY**» (en rojo, va primero) o «**Antes del dd/mm**».
+  - **Salidas**: solo cuando recepción ha hecho el **check-out** (las salidas previstas no salen, porque el cliente puede renovar). Si el apartamento tiene otra llegada, verá «**LLEGADA HOY**» (en rojo, va primero) o «**Antes del dd/mm**».
   - **Contratadas** por el cliente en su reserva (según el día y la periodicidad que eligió).
   - **Extra**: las que añade recepción (repaso, a fondo…).
   - **De días anteriores**: lo que no se validó sigue en el parte, con «pendiente desde…».

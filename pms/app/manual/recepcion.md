@@ -24,7 +24,7 @@
 ## Check-in y check-out
 - **Check-in** en la reserva cuando el cliente llega (exige el registro completo de ocupantes).
 - **Check-out** a la salida: el apartamento pasa a **pendiente de limpieza**, sale en el **parte de limpieza** y se abre sola una **OT de revisión de salida** para mantenimiento.
-- **Parte de limpieza**: cada mañana, **Imprimir PDF** o **Enviar** a limpieza (el Excel queda en Documentos recibidos). Añada las **limpiezas extra** del día. Cuando limpieza avise, pulse **Hecha** en cada una; lo no validado pasa al día siguiente.
+- **Parte de limpieza**: la limpieza de salida entra en el parte **al hacer el check-out**, no antes (el cliente puede renovar). Haga el check-out en cuanto el cliente entregue las llaves. Cada mañana, **Imprimir PDF** o **Enviar** a limpieza (el Excel queda en Documentos recibidos). Añada las **limpiezas extra** del día. Cuando limpieza avise, pulse **Hecha** en cada una; lo no validado pasa al día siguiente.
 - **Plano de apartamentos**: colores por estado. Pulse un apartamento para ver su ficha, reservar, bloquear o abrir una incidencia.
 
 ## Cobros y facturas
