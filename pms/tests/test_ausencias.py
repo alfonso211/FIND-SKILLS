@@ -119,3 +119,33 @@ def test_ausencias_flujo_por_colectivo(client, admin, ids):
 def test_dias():
     assert au.dias(date(2026, 10, 5), date(2026, 10, 11)) == (7, 5)
     assert au.dias(date(2026, 10, 10), date(2026, 10, 10)) == (1, 0)
+
+
+def test_direccion_aprueba_cualquiera_y_presidencia_no(client, admin, ids):
+    """Las ausencias que aprueba dirección se avisan a los directores (no a la presidencia) y basta con que
+    apruebe uno; la presidencia no aprueba."""
+    bab = ids["assets"]["BAB35"]["id"]
+    d1 = _user(client, admin, ids, "dg.aus@inversiete.com", "Directora General Pruebas", "Dirección Sociedad")
+    d2 = _user(client, admin, ids, "dt2.aus@inversiete.com", "Director Técnico 2 Pruebas", "Dirección Sociedad")
+    r = client.post("/api/admin/usuarios", headers=admin, json={
+        "email": "pres.aus@inversiete.com", "nombre": "Presidencia Pruebas", "password": "Provisional1",
+        "no_asignable": True, "asignaciones": [{"role_id": ids["roles"]["Dirección Sociedad"], "asset_id": bab}]})
+    assert r.status_code == 201
+    pres = login(client, "pres.aus@inversiete.com", "Provisional1")
+    client.post("/api/auth/password", headers=pres, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"})
+    of = _user(client, admin, ids, "oficina.aus@inversiete.com", "Oficina Pruebas", "Consulta")
+    avisos.BANDEJA.clear()
+    x = client.post("/api/ausencias", headers=of, json={
+        "asset_id": bab, "tipo": "permiso", "desde": _f(50), "hasta": _f(50), "motivo": "Médico"}).json()
+    assert x["colectivo"] == "direccion"
+    para = {m["para"] for m in avisos.BANDEJA}
+    assert {"dg.aus@inversiete.com", "dt2.aus@inversiete.com"} <= para and "pres.aus@inversiete.com" not in para
+    # aparece en el panel de los dos directores, no en el de la presidencia
+    assert any(a["id"] == x["id"] for a in client.get("/api/panel", headers=d1).json()["ausencias_pendientes"])
+    assert not any(a["id"] == x["id"] for a in client.get("/api/panel", headers=pres).json()["ausencias_pendientes"])
+    assert client.post(f"/api/ausencias/{x['id']}/aprobar", headers=pres).status_code == 403
+    assert client.post(f"/api/ausencias/{x['id']}/aprobar", headers=d2).json()["estado"] == "aprobada"
+    assert client.post(f"/api/ausencias/{x['id']}/aprobar", headers=d1).status_code == 403  # ya está aprobada
+    log = client.get("/api/admin/avisos-enviados", headers=admin)
+    if log.status_code == 200:
+        assert any(e.get("tipo") == "ausencia" for e in log.json())

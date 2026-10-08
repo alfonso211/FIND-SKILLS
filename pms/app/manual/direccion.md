@@ -58,7 +58,7 @@
 - **Informe quincenal**: trabajos totales de la quincena por área, tipo y persona; se puede descargar o archivar. Permiso nuevo: **partes.validar** (dirección y recepción).
 
 ## Vacaciones y ausencias del personal
-- **Personal → Vacaciones y ausencias**: dirección aprueba las de Recepción 1, Recepción 2 (después del visto bueno de Recepción 1) y oficinas. Las de limpieza y conserjería las aprueba Recepción 1 (dirección también puede).
+- **Personal → Vacaciones y ausencias**: dirección aprueba las de Recepción 1, Recepción 2 (después del visto bueno de Recepción 1) y oficinas. El aviso llega al Director General y al Director Técnico y **basta con que apruebe uno**; la presidencia no interviene. Las pendientes salen también en el **Panel de control**. Las de limpieza y conserjería las aprueba Recepción 1 (dirección también puede).
 - Las de **mantenimiento** solo las autoriza el **director técnico**: rol **Dirección Técnica** (permiso «personal.autorizar_mto»), que se suma a su rol de dirección. Se asigna en Administración → Usuarios.
 - **Resumen del año** y **Excel** con todas las ausencias y los días aprobados por persona.
 

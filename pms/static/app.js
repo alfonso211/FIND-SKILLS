@@ -276,6 +276,10 @@ V.panel = async (el) => {
   if (ip.length) avisos.push(`<div class="aviso-hito"><h4>📊 Informe a presidencia de ${esc(ip[0].periodo)}: pendiente</h4>
     <p>${ip.map((x) => `${esc(x.activo)} (lo envía ${esc(x.responsable)})`).join(" · ")}. Revíselo y envíelo por correo o WhatsApp.</p>
     <button class="btn sm primary" id="verPresidencia" data-a="${ip[0].asset_id}">Preparar informe</button></div>`);
+  const ap = (p.ausencias_pendientes || []).filter((x) => !S.asset || String(x.asset_id) === String(S.asset));
+  if (ap.length) avisos.push(`<div class="aviso-hito"><h4>🗓️ Ausencias que esperan su decisión: ${ap.length}</h4>
+    <p>${ap.map((x) => `${esc(x.persona)} (${fdate(x.desde)}${x.hasta !== x.desde ? ` a ${fdate(x.hasta)}` : ""})`).join(" · ")}.</p>
+    <button class="btn sm primary" id="verAusencias">Revisar</button></div>`);
   (p.hitos || []).forEach((h) => avisos.push(`<div class="aviso-hito"><h4>📅 ${esc(h.titulo)} · ${fdate(h.fecha)} (${h.dias > 0 ? `faltan ${h.dias} días` : h.dias === 0 ? "hoy" : `hace ${-h.dias} días`})</h4><p>${esc(h.detalle)}</p></div>`));
   el.innerHTML = `<div class="panel-grid"><div class="panel-main">
     <div class="buscador"><input id="busq" type="search" autocomplete="off" placeholder="🔍 Buscar: documento, apartamento, cliente, teléfono, localizador, factura, OT, proveedor…" aria-label="Buscar">
@@ -339,6 +343,7 @@ V.panel = async (el) => {
   if ($("#verCobros", el)) $("#verCobros", el).onclick = () => { S.filtroCobro = "pendiente"; go("facturas"); };
   if ($("#verRetenidas", el)) $("#verRetenidas", el).onclick = () => go("gastos");
   if ($("#verPresidencia", el)) $("#verPresidencia", el).onclick = (e) => { S.presidencia = { asset: e.currentTarget.dataset.a }; go("presidencia"); };
+  if ($("#verAusencias", el)) $("#verAusencias", el).onclick = () => go("ausencias");
   pintarMinis(el).catch((e) => el.querySelectorAll(".minis").forEach((m) => (m.innerHTML = `<p class="error">${esc(e.message)}</p>`)));
   bindBuscador($("#busq", el), $("#busqRes", el));
   agendaWidget($("#agp", el), false, true);

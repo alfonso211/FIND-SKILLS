@@ -1,5 +1,10 @@
 # Novedades
 
+## 2026-10-08 · Versión 1.29 · Ausencias: aprueba cualquiera de la dirección
+- **Dirección**: las ausencias que aprueba dirección se avisan por correo al **Director General y al Director Técnico**, y **basta con que apruebe uno**. La presidencia no recibe estos avisos ni aprueba.
+- **Todos**: en el **Panel de control** aparece «Ausencias que esperan su decisión» con el botón **Revisar**, aunque no llegue el correo.
+- **Recepción 2**: su solicitud se avisa también a dirección desde el primer momento; la pueden aprobar en cuanto Recepción 1 da el visto bueno.
+
 ## 2026-10-08 · Versión 1.28 · Población y provincia por el código postal
 - **Todos**: al escribir el **código postal** en una ficha, la **población** y la **provincia** se rellenan solas (datos del INE). Si el código es de varias poblaciones, se ofrecen para elegir; lo escrito a mano se respeta.
 

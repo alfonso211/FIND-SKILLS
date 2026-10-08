@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from .. import hitos
+from .. import ausencias, hitos
 from ..database import get_db
 from ..facturacion import bases_por_tipo, pendientes_cobro
 from ..models import MODALIDADES, MODALIDADES_RESERVA, Asset, Charge, Expense, Invoice, Lease, Reservation, Unit, WorkOrder
@@ -123,5 +123,8 @@ def panel(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
             k["ot_pendientes_cierre"] = db.scalar(wo.where(WorkOrder.estado == "pendiente_cierre"))
         out.append(k)
     from .presidencia import pendientes
+    aus = ausencias.pendientes_de(db, scope)
     return {"fecha": hoy.isoformat(), "activos": out, "hitos": hitos.para(scope, hoy),
-            "informes_pendientes": pendientes(db, scope, hoy)}
+            "informes_pendientes": pendientes(db, scope, hoy),
+            "ausencias_pendientes": [{"id": x.id, "asset_id": x.asset_id, "persona": x.persona, "desde": x.desde.isoformat(),
+                                      "hasta": x.hasta.isoformat(), "estado": x.estado} for x in aus]}
