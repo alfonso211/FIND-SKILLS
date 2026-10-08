@@ -1,5 +1,10 @@
 # Novedades
 
+## 2026-10-08 · Versión 1.27 · Portal del colaborador
+- **Subcontratas**: nuevo acceso **Colaborador**. Cada colaborador entra solo en su portal: sus OT, sus trabajos en los partes validados, los envíos a su personal y su personal. Sube facturas, albaranes y documentación de personal y legal / CAE.
+- **Recepción**: en **Documentos recibidos**, filtro **De colaboradores: por revisar** con **Aceptar** y **Rechazar**. La documentación de personal solo la ven Recepción 1 y dirección.
+- **Dirección**: el colaborador se da de alta en *Administración → Usuarios* (campo **Colaborador externo de** y rol **Colaborador**).
+
 ## 2026-10-08 · Versión 1.26 · Vacaciones y ausencias del personal
 - **Todos**: nuevo menú **Personal → Vacaciones y ausencias** para pedir vacaciones, días libres, bajas, permisos y faltas, con un **cuadrante del mes** de quién falta.
 - **Mantenimiento**: su solicitud se avisa a todos y solo la autoriza el **director técnico**.

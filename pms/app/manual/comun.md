@@ -33,3 +33,7 @@
 - **Personal → Vacaciones y ausencias**: pulse **Solicitar ausencia**, elija el tipo (vacaciones, día libre, baja médica, permiso, falta u otro) y las fechas. Debajo de la persona se ve quién la aprueba.
 - El **cuadrante del mes** muestra quién falta cada día (rayado = pendiente). Las bajas médicas solo las ven con detalle la persona, Recepción 1 y dirección; los demás ven «Ausencia».
 - Mientras está pendiente, la puede **anular** usted mismo.
+
+## Portal del colaborador (subcontratas)
+- Si su usuario es de una empresa colaboradora, al entrar verá solo el **Portal del colaborador**: sus órdenes de trabajo, sus trabajos en los partes, los envíos a su personal, sus documentos y su personal.
+- **Subir documento**: elija el activo, el tipo (factura, albarán, presupuesto, documentación de personal, legal / CAE u otro), la fecha y el fichero (PDF o fotos). Queda **pendiente de revisar**; si se rechaza, verá el motivo. Mientras esté pendiente lo puede borrar.

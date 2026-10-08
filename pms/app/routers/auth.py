@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from .. import avisos
 from ..database import get_db
-from ..models import Asset, Company, User
+from ..models import Asset, Company, User, Supplier
 from ..schemas import Login, PasswordChange
 from ..security import (PASSWORD_MIN, PERMISOS, Scope, audit, create_token, current_user, get_scope, hash_password,
                         limpiar_fallos, login_bloqueado, registrar_fallo, verify_password)
@@ -48,6 +48,9 @@ def me(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
         "permisos": {p: scope.has_any(p) for p in PERMISOS},
         "admin_grupo": scope.is_group_level("usuarios.gestionar"),
         "ambitos": ambitos,
+        # colaborador externo: solo su portal
+        "colaborador": {"supplier_id": u.supplier_id, "proveedor": db.get(Supplier, u.supplier_id).nombre}
+        if u.supplier_id else None,
     }
 
 

@@ -106,3 +106,8 @@
 - **Recepción 2** solicita las suyas; primero da el **visto bueno** Recepción 1 y después **aprueba dirección**. Recepción 1 también puede **denegar** con el motivo.
 - Las de Recepción 1 las aprueba dirección; las de mantenimiento, el director técnico.
 - **Resumen del año** (días aprobados por persona y tipo) y **Excel**.
+
+## Colaboradores (subcontratas)
+- En **Documentos recibidos**, el filtro **De colaboradores: por revisar** muestra lo que han subido las subcontratas desde su portal. **Aceptar** o **Rechazar** con el motivo (el colaborador lo ve). Una factura aceptada se anota como gasto con **Anotar gasto**, como siempre.
+- La **documentación de personal** (contratos, TC2, formación PRL…) solo la ven Recepción 1 y dirección.
+- Para que un colaborador vea a su personal, en **Personal → Fichas del personal** escriba en *Empresa* el mismo nombre que en Proveedores.

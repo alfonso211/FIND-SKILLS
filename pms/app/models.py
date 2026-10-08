@@ -458,6 +458,8 @@ class StaffMember(Base):
     avisar_urgentes: Mapped[bool] = mapped_column(Boolean, default=False)
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
     notas: Mapped[str | None] = mapped_column(Text)
+    # empresa (ficha de Proveedores) a la que pertenece: la ve su colaborador en el portal
+    supplier_id: Mapped[int | None] = mapped_column(ForeignKey("proveedores.id"), index=True)
 
 
 # --------------------------------------------------------------------------- documentos recibidos y gastos
@@ -466,6 +468,8 @@ TIPOS_DOCUMENTO = {
     "carta": "Carta", "notificacion": "Notificación / requerimiento", "contrato": "Contrato",
     "seguro": "Póliza / seguro", "informe": "Informe mensual (presidencia)", "limpieza": "Parte de limpieza",
     "parte_trabajo": "Parte de trabajo (mantenimiento / limpieza)",
+    "personal": "Documentación de personal (contratos, TC2, formación PRL, reconocimientos…)",
+    "legal": "Documentación legal / CAE (seguros, certificados AEAT y TGSS, REA…)",
     "otro": "Otro",
 }
 TIPOS_GASTO = ("factura", "ticket", "albaran")  # tipos que normalmente son un gasto
@@ -500,6 +504,18 @@ class ReceivedDocument(Base):
     sha256: Mapped[str] = mapped_column(String(64))
     subido: Mapped[datetime] = mapped_column(DateTime, default=_now)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    # subido por un colaborador desde su portal: queda pendiente hasta que recepción o dirección lo revisa
+    supplier_id: Mapped[int | None] = mapped_column(ForeignKey("proveedores.id"), index=True)
+    revision: Mapped[str | None] = mapped_column(String(20))  # pendiente | aceptado | rechazado
+    revision_nota: Mapped[str | None] = mapped_column(String(300))
+    revisado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    revisado_en: Mapped[datetime | None] = mapped_column(DateTime)
+    staff_id: Mapped[int | None] = mapped_column(ForeignKey("personal_servicio.id"))  # trabajador al que se refiere
+    work_order_id: Mapped[int | None] = mapped_column(ForeignKey("ordenes_trabajo.id"))  # OT a la que corresponde
+
+
+# solo dirección y Recepción 1 del activo ven la documentación del personal (datos personales de trabajadores)
+TIPOS_DOC_RESERVADOS = ("personal",)
 
 
 class Expense(Base):
@@ -587,6 +603,8 @@ class User(Base):
     avisos: Mapped[list | None] = mapped_column(JSON)
     # presidencia: los demás no pueden asignarle tareas, recordatorios ni convocarle (él sí a ellos)
     no_asignable: Mapped[bool] = mapped_column(Boolean, default=False)
+    # colaborador externo (subcontrata): solo entra en su portal y ve lo de este proveedor
+    supplier_id: Mapped[int | None] = mapped_column(ForeignKey("proveedores.id"), index=True)
     assignments: Mapped[list["Assignment"]] = relationship(cascade="all, delete-orphan", lazy="selectin")
 
 
@@ -921,3 +939,19 @@ class Absence(Base):
     nota: Mapped[str | None] = mapped_column(Text)  # motivo de la denegación o de la anulación
     creado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     creado_en: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+# --------------------------------------------------------------------------- envíos al personal
+class StaffDispatch(Base):
+    """Copia de lo enviado a cada persona del personal (OT, parte de limpieza…) por correo o WhatsApp. Su
+    colaborador lo ve en el portal."""
+    __tablename__ = "envios_personal"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    staff_id: Mapped[int] = mapped_column(ForeignKey("personal_servicio.id"), index=True)
+    fecha: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+    tipo: Mapped[str] = mapped_column(String(30))  # ot_enviada | parte_limpieza | limpieza_urgente…
+    clave: Mapped[str | None] = mapped_column(String(80))
+    canal: Mapped[str] = mapped_column(String(12))
+    asunto: Mapped[str] = mapped_column(String(200))
+    texto: Mapped[str | None] = mapped_column(Text)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))

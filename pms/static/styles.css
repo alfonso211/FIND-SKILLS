@@ -673,3 +673,4 @@ label.check.precio-pendiente { color: #c2410c; font-weight: 600; }
 .aus-leyenda { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 12px; }
 .aus-ley { font-size: 11px; padding: 2px 8px; border-radius: 6px; color: #1a1a1c; }
 .aus-ley.aus-pend { background-color: #a9a59b; }
+.texto-envio { white-space: pre-wrap; font-family: inherit; font-size: 13px; background: #f6f3ec; padding: 10px 12px; border-radius: 8px; max-height: 50vh; overflow: auto; }
