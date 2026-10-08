@@ -2955,7 +2955,7 @@ V.preventivo = async (el) => {
 };
 
 // ---- personal de mantenimiento y limpieza: fichas con correo y teléfono; envío de las OT y del parte de limpieza
-const AREAS = [["mantenimiento", "Mantenimiento"], ["limpieza", "Limpieza"]];
+const AREAS = [["mantenimiento", "Mantenimiento"], ["limpieza", "Limpieza"], ["conserjeria", "Conserjería"], ["otros", "Otros (por administración)"]];
 const puedeEnviarOT = () => can("mantenimiento.editar") || can("mantenimiento.cerrar");
 const otNum = (id) => `OT-${String(id).padStart(5, "0")}`;
 const personaTxt = (p) => `${p.nombre}${p.empresa ? ` (${p.empresa})` : ""}${p.email ? "" : " · sin correo"}${p.whatsapp ? "" : " · sin WhatsApp"}`;
@@ -2973,7 +2973,7 @@ function resultadoEnvio(titulo, res) {
 
 async function enviarOT(w, reload) {
   const gente = await get("/api/personal", { asset_id: w.asset_id, solo_activos: true });
-  if (!gente.length) return toast("No hay personal dado de alta para este activo (Mantenimiento → Personal)", true);
+  if (!gente.length) return toast("No hay personal dado de alta para este activo (Personal → Fichas del personal)", true);
   gente.sort((a, b) => (a.area !== "mantenimiento") - (b.area !== "mantenimiento"));
   const previos = [...new Set((w.envios || []).map((e) => e.nombre))];
   form(`Enviar ${otNum(w.id)} · ${w.titulo}`, [
@@ -3079,7 +3079,7 @@ V.limpieza = async (el) => {
     const gente = await get("/api/personal", { asset_id: cur.id, area: "limpieza", solo_activos: true }).catch(() => []);
     form(`Enviar parte de limpieza · ${fdate(fecha())}`, [
       { html: `<p class="muted">${p.limpiezas.filter((x) => x.estado === "pendiente").length} limpieza(s) pendiente(s). Por correo va el PDF adjunto; por WhatsApp, el parte escrito.</p>` },
-      ...(gente.length ? [{ k: "personal_ids", t: "Personal de limpieza", type: "checks", options: gente.map((x) => [String(x.id), personaTxt(x)]) }] : [{ html: '<p class="muted">No hay personal de limpieza dado de alta (Mantenimiento → Personal): indique un número o un correo.</p>' }]),
+      ...(gente.length ? [{ k: "personal_ids", t: "Personal de limpieza", type: "checks", options: gente.map((x) => [String(x.id), personaTxt(x)]) }] : [{ html: '<p class="muted">No hay personal de limpieza dado de alta (Personal → Fichas del personal): indique un número o un correo.</p>' }]),
       canalEnvio(" (con el PDF)"),
       { k: "telefono", t: "Otro número (WhatsApp)" }, { k: "email", t: "Otro correo", type: "email" },
       { k: "nota", t: "Nota (opcional)", type: "textarea", wide: true },
@@ -3091,11 +3091,14 @@ V.limpieza = async (el) => {
   await load();
 };
 V.personal = async (el) => {
-  const editar = (area) => can(area === "limpieza" ? "limpieza.editar" : "mantenimiento.editar");
+  // conserjería y otros por administración: los gestiona Recepción 1 del activo (o dirección)
+  const gest = can("personal.autorizar") || (await Promise.all((S.asset ? S.assets.filter((a) => a.id === S.asset) : S.assets)
+    .map((a) => get("/api/ausencias/personas", { asset_id: a.id }).then((r) => r.gestiona).catch(() => false)))).some(Boolean);
+  const editar = (area) => (area === "limpieza" ? can("limpieza.editar") : area === "mantenimiento" ? can("mantenimiento.editar") : gest);
   const areas = AREAS.filter(([a]) => editar(a));
-  el.innerHTML = `<div class="toolbar"><select id="ar"><option value="">Mantenimiento y limpieza</option>${AREAS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
+  el.innerHTML = `<div class="toolbar"><select id="ar"><option value="">Todas las áreas</option>${AREAS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
     <span class="spacer"></span>${can("limpieza.editar") ? '<button class="btn" id="pl">Enviar parte de limpieza</button>' : ""}${areas.length ? '<button class="btn primary" id="new">Nueva persona</button>' : ""}</div>
-    <p class="muted">Técnicos y personal de limpieza, propios o de subcontratas, a los que se envían las órdenes de trabajo («Enviar» en cada OT) y el parte de limpieza por correo o WhatsApp. No necesitan usuario en INVERPMS.</p><div id="t"></div>`;
+    <p class="muted">Técnicos, limpieza, conserjería y demás personal propio o de subcontratas por administración. A mantenimiento y limpieza se les envían las OT y el parte de limpieza por correo o WhatsApp; conserjería y otros los da de alta Recepción 1 para registrar sus ausencias. No necesitan usuario en INVERPMS.</p><div id="t"></div>`;
   const fields = [
     { k: "area", t: "Área", type: "select", req: true, options: areas },
     { k: "asset_id", t: "Activo (vacío = todos)", type: "select", options: opts(S.assets) },
@@ -3109,7 +3112,7 @@ V.personal = async (el) => {
     const body = { ...d, asset_id: d.asset_id ? Number(d.asset_id) : null };
     await (p ? put(`/api/personal/${p.id}`, body) : post("/api/personal", body));
     toast(p ? "Ficha guardada" : "Persona dada de alta"); load();
-    await altaProveedorSiNuevo(d.empresa, d.area === "limpieza" ? "Limpieza" : "Mantenimiento");
+    await altaProveedorSiNuevo(d.empresa, d.area === "limpieza" ? "Limpieza" : d.area === "mantenimiento" ? "Mantenimiento" : "Otros");
   };
   const load = async () => table($("#t", el), [
     { k: "area_nombre", t: "Área" }, { k: "nombre", t: "Nombre" }, { k: "empresa", t: "Empresa" },
@@ -3121,7 +3124,7 @@ V.personal = async (el) => {
     ["Borrar", async () => { if (confirm(`¿Borrar la ficha de ${p.nombre}?`)) { await run(() => api("DELETE", `/api/personal/${p.id}`), "Ficha borrada"); load(); } }, "danger"],
   ] : []);
   $("#ar", el).onchange = load;
-  if ($("#new", el)) $("#new", el).onclick = () => sugerirProveedores(form("Nueva persona", fields, { area: areas[0][0], asset_id: S.asset }, guardar(null)), "empresa");
+  if ($("#new", el)) $("#new", el).onclick = () => sugerirProveedores(form("Nueva persona", fields, { area: areas[0][0], asset_id: S.asset || (S.assets.length === 1 ? S.assets[0].id : "") }, guardar(null)), "empresa");
   if ($("#pl", el)) $("#pl", el).onclick = () => parteLimpieza(today());
   load();
 };
@@ -3901,6 +3904,87 @@ async function informeQuincenal(aid, sel) {
     .then(() => { if (b.dataset.q === "archivar") { toast("Informe archivado (PDF y Excel)"); informeQuincenal(aid, per); } })));
 }
 
+// ---- personal: vacaciones, días libres, bajas, permisos y faltas (quién aprueba según el colectivo)
+const COLOR_AUS = { vacaciones: "aus-vac", dia_libre: "aus-libre", baja_medica: "aus-baja", permiso: "aus-permiso", falta: "aus-falta", otro: "aus-otro", ausencia: "aus-otro" };
+V.ausencias = async (el) => {
+  const aid = await pickAsset();
+  const [cat, per] = await Promise.all([get("/api/ausencias/catalogos"), get("/api/ausencias/personas", { asset_id: aid })]);
+  el.innerHTML = `<div class="toolbar"><label>Mes<input type="month" id="m" value="${today().slice(0, 7)}"></label>
+    <select id="e"><option value="vigentes">Pendientes y aprobadas</option><option value="">Todas</option><option value="pendiente">Pendientes</option><option value="aprobada">Aprobadas</option><option value="denegada">Denegadas</option><option value="anulada">Anuladas</option></select>
+    <span class="spacer"></span><button class="btn" id="res">Resumen del año</button><button class="btn" id="xl">Excel</button><button class="btn primary" id="new">Solicitar ausencia</button></div>
+    <div id="pend"></div><div id="cuad" class="no-encajar"></div><div id="t"></div>`;
+  const leyenda = Object.entries(cat.tipos).map(([k, v]) => `<span class="aus-ley ${COLOR_AUS[k]}">${esc(v.split(" (")[0])}</span>`).join("") + '<span class="aus-ley aus-pend">Pendiente</span>';
+  const load = async () => {
+    const [y, m] = $("#m", el).value.split("-").map(Number), n = new Date(y, m, 0).getDate();
+    const ini = `${y}-${String(m).padStart(2, "0")}-01`, fin = `${y}-${String(m).padStart(2, "0")}-${n}`;
+    const filas = await get("/api/ausencias", { asset_id: aid, desde: ini, hasta: fin, estado: $("#e", el).value });
+    const mias = (await get("/api/ausencias", { asset_id: aid, estado: "vigentes" })).filter((x) => x.puede_aprobar || x.puede_visto_bueno);
+    $("#pend", el).innerHTML = mias.length ? `<div class="aviso-vencidas" style="margin:8px 0"><b>${mias.length} solicitud(es) esperan su decisión:</b> ${mias.map((x) => `${esc(x.persona)} (${fdate(x.desde)}${x.hasta !== x.desde ? ` a ${fdate(x.hasta)}` : ""})`).join(", ")}</div>` : "";
+    // cuadrante del mes: una fila por persona, una columna por día
+    const vis = filas.filter((x) => ["pendiente", "visto_bueno", "aprobada"].includes(x.estado));
+    const personas = [...new Map(vis.map((x) => [`${x.colectivo}|${x.persona}`, x])).values()].sort((a, b) => a.colectivo_nombre.localeCompare(b.colectivo_nombre) || a.persona.localeCompare(b.persona));
+    const dias = Array.from({ length: n }, (_, i) => i + 1);
+    const finde = (d) => [0, 6].includes(new Date(y, m - 1, d).getDay());
+    const celda = (p, d) => {
+      const f = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      const x = vis.find((z) => z.persona === p.persona && z.colectivo === p.colectivo && z.desde <= f && z.hasta >= f);
+      return `<td class="${finde(d) ? "aus-finde" : ""} ${x ? `${COLOR_AUS[x.tipo] || "aus-otro"} ${x.estado !== "aprobada" ? "aus-pend" : ""}` : ""}" title="${x ? esc(`${x.tipo_nombre} · ${x.estado_nombre}`) : ""}"></td>`;
+    };
+    $("#cuad", el).innerHTML = personas.length ? `<div class="table-wrap aus-cuadrante"><table><thead><tr><th>Persona</th>${dias.map((d) => `<th class="${finde(d) ? "aus-finde" : ""}">${d}</th>`).join("")}</tr></thead>
+      <tbody>${personas.map((p) => `<tr><td><b>${esc(p.persona)}</b><div class="muted peq">${esc(p.colectivo_nombre)}</div></td>${dias.map((d) => celda(p, d)).join("")}</tr>`).join("")}</tbody></table></div>
+      <div class="aus-leyenda">${leyenda}</div>` : `<p class="muted">Nadie tiene ausencias en ${MESES[m - 1]} de ${y}.</p>`;
+    table($("#t", el), [
+      { k: "persona", t: "Persona", f: (v, x) => `<b>${esc(v)}</b><div class="muted peq">${esc(x.colectivo_nombre)}</div>` },
+      { k: "tipo_nombre", t: "Tipo", f: (v, x) => `${esc(v)}${x.motivo ? `<div class="muted peq">${esc(x.motivo)}</div>` : ""}` },
+      { k: "desde", t: "Desde", f: fdate }, { k: "hasta", t: "Hasta", f: fdate },
+      { k: "dias_naturales", t: "Días", num: true, f: (v, x) => `${v}<div class="muted peq">${x.dias_laborables} lab.</div>` },
+      { k: "estado_nombre", t: "Estado", f: (v, x) => `<span class="badge ${x.estado === "aprobada" ? "b-vigente" : ["denegada", "anulada"].includes(x.estado) ? "b-anulado" : "b-pendiente"}">${esc(v)}</span>
+        ${x.visto_bueno_nombre ? `<div class="muted peq">V.º B.º ${esc(x.visto_bueno_nombre)}</div>` : ""}${x.resuelto_nombre && x.estado !== "anulada" ? `<div class="muted peq">${esc(x.resuelto_nombre)}</div>` : ""}${x.nota ? `<div class="muted peq">${esc(x.nota)}</div>` : ""}` },
+      { k: "aprueba", t: "La aprueba" },
+    ], filas, (x) => [
+      x.puede_visto_bueno && ["Visto bueno", () => run(() => post(`/api/ausencias/${x.id}/visto-bueno`), "Visto bueno dado: pasa a dirección").then(load), "primary"],
+      x.puede_aprobar && ["Aprobar", () => run(() => post(`/api/ausencias/${x.id}/aprobar`), "Ausencia aprobada").then(load), "primary"],
+      (x.puede_aprobar || x.puede_visto_bueno) && ["Denegar", () => form(`Denegar · ${x.persona}`, [{ k: "nota", t: "Motivo", type: "textarea", req: true, wide: true }], {},
+        async (d) => { await post(`/api/ausencias/${x.id}/denegar`, d); toast("Ausencia denegada"); load(); }, "Denegar")],
+      x.puede_anular && ["Anular", () => form(`Anular · ${x.persona}`, [{ k: "nota", t: "Motivo (opcional)", type: "textarea", wide: true }], {},
+        async (d) => { await post(`/api/ausencias/${x.id}/anular`, d); toast("Ausencia anulada"); load(); }, "Anular"), "danger"],
+    ]);
+  };
+  $("#new", el).onclick = () => {
+    const ops = per.personas.map((p) => [`${p.clave}:${p.id}`, `${p.nombre} · ${p.colectivo_nombre}`]);
+    const f = form("Solicitar ausencia", [
+      { k: "persona", t: "Persona", type: "select", req: true, options: ops, wide: true },
+      { html: '<p class="muted" id="aprueba"></p>' },
+      { k: "tipo", t: "Tipo", type: "select", req: true, options: Object.entries(cat.tipos) },
+      { k: "desde", t: "Desde", type: "date", req: true, def: today() }, { k: "hasta", t: "Hasta (incluido)", type: "date", req: true, def: today() },
+      { k: "motivo", t: "Motivo / observaciones", type: "textarea", wide: true },
+      { k: "aprobar", t: "Aprobarla ya (si le corresponde a usted aprobarla)", type: "checkbox", wide: true },
+    ], {}, async (d) => {
+      const [clave, id] = d.persona.split(":");
+      const r = await post("/api/ausencias", clean({ asset_id: aid, tipo: d.tipo, desde: d.desde, hasta: d.hasta, motivo: d.motivo, aprobar: d.aprobar,
+        ...(clave === "s" ? { staff_id: Number(id) } : Number(id) !== S.me.id ? { user_id: Number(id) } : {}) }));
+      toast(`${r.estado === "aprobada" ? "Ausencia registrada y aprobada" : `Solicitud enviada · la aprueba: ${r.aprueba}`}${r.coinciden.length ? ` · coincide con ${r.coinciden.join(", ")}` : ""}`);
+      load();
+    }, "Guardar");
+    const info = () => { const p = per.personas.find((q) => `${q.clave}:${q.id}` === f.elements.persona.value); $("#aprueba").textContent = p ? `La aprueba: ${p.aprueba}.` : ""; };
+    f.elements.persona.onchange = info; info();
+    f.elements.aprobar.closest("label").style.display = per.gestiona || can("personal.autorizar_mto") ? "" : "none";
+    f.elements.desde.onchange = () => { if (f.elements.hasta.value < f.elements.desde.value) f.elements.hasta.value = f.elements.desde.value; };
+  };
+  $("#res", el).onclick = async () => {
+    const anio = Number($("#m", el).value.slice(0, 4));
+    const r = await run(() => get("/api/ausencias/resumen", { asset_id: aid, anio }));
+    const tipos = Object.entries(r.tipos);
+    cerrarSolo(form(`Ausencias aprobadas ${anio} · ${assetName(aid)}`, [{ html: r.personas.length ? `<div class="table-wrap"><table><thead><tr><th>Persona</th>${tipos.map(([, v]) => `<th class="num">${esc(v.split(" (")[0])}</th>`).join("")}<th class="num">Total</th><th class="num">Laborables</th></tr></thead>
+      <tbody>${r.personas.map((p) => `<tr><td><b>${esc(p.persona)}</b><div class="muted peq">${esc(p.colectivo)}</div></td>${tipos.map(([k]) => `<td class="num">${p.tipos[k]?.naturales || ""}</td>`).join("")}<td class="num"><b>${p.naturales}</b></td><td class="num">${p.laborables}</td></tr>`).join("")}</tbody></table></div>
+      <p class="muted">Días naturales por tipo. Laborables = de lunes a viernes (sin descontar festivos).</p>` : "<p>No hay ausencias aprobadas este año.</p>", wide: true }], {}, async () => {}));
+    $("#modal").classList.add("ancho");
+  };
+  $("#xl", el).onclick = () => run(() => download("GET", "/api/ausencias/excel?" + new URLSearchParams({ asset_id: aid, anio: $("#m", el).value.slice(0, 4) })));
+  $("#m", el).onchange = load; $("#e", el).onchange = load;
+  load();
+};
+
 // ------------------------------------------------------------------ navegación
 const MENU = [
   ["General", [["panel", "Panel de control", null], ["agenda", "Agenda", null], ["manual", "Manual de uso", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
@@ -3908,7 +3992,8 @@ const MENU = [
   ["Alquiler residencial", [["contratos", "Contratos", "alquiler.ver"], ["recibos", "Recibos y cobros", "alquiler.ver"], ["inquilinos", "Inquilinos", "alquiler.ver"]]],
   ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["servicios", "Servicios", "activos.ver"], ["informes", "Informes Excel", "informes"], ["presidencia", "Informe a presidencia", "facturas.ver"]]],
   ["Documentos y gastos", [["docrecibidos", "Documentos recibidos", "documentos.ver"], ["gastos", "Cuenta de gastos", "documentos.ver"]]],
-  ["Mantenimiento", [["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["personal", "Personal mto. y limpieza", "personal"], ["partestrabajo", "Parte de trabajo diario", "partes"], ["pedidos", "Pedidos de material", "pedidos"], ["productos", "Catálogo de productos", "pedidos"], ["proveedores", "Proveedores", "proveedores"]]],
+  ["Mantenimiento", [["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["partestrabajo", "Parte de trabajo diario", "partes"], ["pedidos", "Pedidos de material", "pedidos"], ["productos", "Catálogo de productos", "pedidos"], ["proveedores", "Proveedores", "proveedores"]]],
+  ["Personal", [["ausencias", "Vacaciones y ausencias", "activos.ver"], ["personal", "Fichas del personal", "personal"]]],
   ["Administración", [["usuarios", "Usuarios", "admin"], ["roles", "Roles y permisos", "admin"], ["sociedades", "Sociedades", "admin"], ["avisos", "Avisos por correo", "admin"], ["auditoria", "Auditoría", "auditoria.ver"]]],
   ["", [["perfil", "Mi perfil", null]]],
 ];

@@ -8,7 +8,7 @@
   3. **Trabajo realizado**: al terminar, pulse **Trabajo realizado**, describa la solución, el **coste real** y añada **fotos** del resultado.
   4. Si el trabajo fue en un apartamento, **limpieza lo revisa** («Unidad OK») o lo devuelve si no está bien.
   5. **Pendiente de cierre**: recepción la cierra.
-- **Asignado a**: elija **Personal propio** (la persona de Mantenimiento → Personal) o **Subcontrata** (escriba y elija de **Proveedores**). Al guardar, se ofrece **enviar la orden**:
+- **Asignado a**: elija **Personal propio** (la persona de Personal → Fichas del personal) o **Subcontrata** (escriba y elija de **Proveedores**). Al guardar, se ofrece **enviar la orden**:
   - Personal propio: por **WhatsApp** (y por correo si se marca).
   - Subcontrata: por **correo** con el parte en PDF y/o por **WhatsApp** con enlace al PDF, según los datos de su ficha de proveedor (marque uno o ambos).
   - Con **copia al personal de mantenimiento propio**, para que sepa qué trabajos se van a hacer.
@@ -24,7 +24,7 @@
 - Las revisiones a 30 días o vencidas llegan en el **resumen diario por correo**.
 
 ## Personal y proveedores
-- **Personal mto. y limpieza**: técnicos y personal (propio o subcontratas) a los que se envían las OT. No necesitan usuario en el programa.
+- **Personal → Fichas del personal**: técnicos y personal (propio o subcontratas) a los que se envían las OT. No necesitan usuario en el programa.
 - **Proveedores**: fichas de empresas y autónomos (NIF, contacto, gremio).
 
 ## Consejos
@@ -42,3 +42,6 @@
 - Las **OT terminadas** ese día entran solas en el parte (OT-xxxxx).
 - Lo que se hizo **sin OT** se añade con **Anotar actuación**: lugar, trabajo, quién y horas (A-xxxxx). Se puede quitar mientras el parte esté abierto.
 - Recepción 1 o Recepción 2 lo **valida**; desde ese momento no se cambia (si hace falta, recepción lo **reabre**).
+
+## Vacaciones y ausencias
+- Se piden en **Personal → Vacaciones y ausencias**. Al pedirla se avisa por correo a todo el personal del activo y **solo la autoriza el director técnico**.

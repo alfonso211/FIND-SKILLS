@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from .. import avisos, firma_contrato, planos
+from .. import ausencias, avisos, firma_contrato, planos
 from ..database import get_db
 from ..models import AREAS_PERSONAL, Asset, EmailLog, Reservation, StaffMember, Unit
 from ..security import Scope, audit, get_scope
@@ -66,10 +66,16 @@ def _visibles(scope: Scope) -> set[int] | None:
     return ids
 
 
-def _puede_editar(scope: Scope, area: str, asset_id: int | None) -> None:
-    perm = PERMISO_AREA.get(area)
-    if not perm:
+def _puede_editar(scope: Scope, db: Session, area: str, asset_id: int | None) -> None:
+    if area not in AREAS_PERSONAL:
         bad_request(f"Área no válida. Opciones: {', '.join(AREAS_PERSONAL)}")
+    perm = PERMISO_AREA.get(area)
+    if perm is None:  # conserjería y otros por administración: los gestiona Recepción 1 (o dirección)
+        if asset_id is None and not scope.is_group_level("personal.autorizar"):
+            raise HTTPException(403, "Solo dirección del grupo puede dar de alta personal para todos los activos")
+        if asset_id is not None and not ausencias.gestiona(db, scope, get_or_404(db, Asset, asset_id)):
+            raise HTTPException(403, "Este personal lo gestiona Recepción 1 del activo")
+        return
     if asset_id is None and not scope.is_group_level(perm):
         raise HTTPException(403, "Solo quien gestiona todo el grupo puede dar de alta personal para todos los activos")
     if asset_id is not None and not scope.can_asset(perm, asset_id):
@@ -96,10 +102,10 @@ def list_staff(asset_id: int | None = None, area: str | None = None, solo_activo
 
 @router.post("", status_code=201)
 def create_staff(data: StaffIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    _puede_editar(scope, data.area, data.asset_id)
+    _puede_editar(scope, db, data.area, data.asset_id)
     if data.asset_id:
         get_or_404(db, Asset, data.asset_id)
-    if not (data.email or data.telefono):
+    if data.area in PERMISO_AREA and not (data.email or data.telefono):
         bad_request("Indique al menos un correo electrónico o un teléfono")
     p = StaffMember(**data.model_dump())
     db.add(p)
@@ -112,11 +118,11 @@ def create_staff(data: StaffIn, scope: Scope = Depends(get_scope), db: Session =
 @router.put("/{pid}")
 def update_staff(pid: int, data: StaffIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     p = get_or_404(db, StaffMember, pid)
-    _puede_editar(scope, p.area, p.asset_id)
-    _puede_editar(scope, data.area, data.asset_id)
+    _puede_editar(scope, db, p.area, p.asset_id)
+    _puede_editar(scope, db, data.area, data.asset_id)
     if data.asset_id:
         get_or_404(db, Asset, data.asset_id)
-    if not (data.email or data.telefono):
+    if data.area in PERMISO_AREA and not (data.email or data.telefono):
         bad_request("Indique al menos un correo electrónico o un teléfono")
     antes = p.to_dict()
     for k, v in data.model_dump().items():
@@ -129,7 +135,7 @@ def update_staff(pid: int, data: StaffIn, scope: Scope = Depends(get_scope), db:
 @router.delete("/{pid}")
 def delete_staff(pid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     p = get_or_404(db, StaffMember, pid)
-    _puede_editar(scope, p.area, p.asset_id)
+    _puede_editar(scope, db, p.area, p.asset_id)
     audit(db, scope.user, "borrar", "personal", pid, {"nombre": p.nombre, "area": p.area})
     db.delete(p)
     db.commit()

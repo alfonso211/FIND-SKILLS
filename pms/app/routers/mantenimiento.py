@@ -120,7 +120,7 @@ def _asignar(db: Session, w: WorkOrder) -> None:
     if w.asignacion == "propio":
         p = db.get(StaffMember, w.personal_id) if w.personal_id else None
         if w.personal_id and (p is None or p.area != "mantenimiento" or p.asset_id not in (None, w.asset_id)):
-            bad_request("Elija una persona de mantenimiento de este activo (Mantenimiento → Personal)")
+            bad_request("Elija una persona de mantenimiento de este activo (Personal → Fichas del personal)")
         w.proveedor_id = None
         if p:
             w.asignado_a = p.nombre[:120]

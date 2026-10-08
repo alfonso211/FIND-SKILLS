@@ -1,5 +1,10 @@
 # Novedades
 
+## 2026-10-08 · Versión 1.26 · Vacaciones y ausencias del personal
+- **Todos**: nuevo menú **Personal → Vacaciones y ausencias** para pedir vacaciones, días libres, bajas, permisos y faltas, con un **cuadrante del mes** de quién falta.
+- **Mantenimiento**: su solicitud se avisa a todos y solo la autoriza el **director técnico**.
+- **Recepción 1**: registra y aprueba las ausencias de limpieza, conserjería y personal de subcontratas por administración (nuevas áreas en **Personal → Fichas del personal**), y da el **visto bueno** a las de Recepción 2, que después aprueba **dirección**.
+
 ## 2026-10-08 · Versión 1.25 · Parte de trabajo diario
 - **Mantenimiento y limpieza**: nuevo **Mantenimiento → Parte de trabajo diario**. Las OT terminadas y las limpiezas hechas entran solas; lo que se hace sin parte (zonas comunes, trabajos sin OT) se añade con **Anotar actuación**.
 - **Recepción 1 y 2**: **validan** cada parte; solo entonces se descarga en **PDF** y **Excel** y queda archivado en Documentos. **Informe quincenal** con los trabajos totales, descargable y archivable.

@@ -34,19 +34,27 @@ PERMISOS: dict[str, str] = {
     "pedidos.crear": "Hacer pedidos de material (los autoriza Recepción 1 del activo)",
     "pedidos.autorizar": "Autorizar pedidos de material e intercambiar el catálogo con INVERGESTION",
     "partes.validar": "Validar los partes de trabajo diarios de mantenimiento y limpieza",
+    "personal.autorizar": "Aprobar las ausencias de recepción, limpieza, conserjería y oficinas",
+    "personal.autorizar_mto": "Director técnico: autorizar las ausencias del personal de mantenimiento",
     "usuarios.gestionar": "Gestionar usuarios, roles y sociedades",
     "auditoria.ver": "Consultar registro de auditoría",
 }
 
+# Solo los tiene el director técnico (rol «Dirección Técnica»), no toda la dirección
+SOLO_DIRECCION_TECNICA = ("personal.autorizar_mto",)
+
 # Roles iniciales; son editables desde Administración > Roles.
 ROLES_POR_DEFECTO: dict[str, tuple[str, list[str]]] = {
-    "Dirección Grupo": ("Acceso completo de consulta y gestión", [p for p in PERMISOS]),
+    "Dirección Grupo": ("Acceso completo de consulta y gestión",
+                        [p for p in PERMISOS if p not in SOLO_DIRECCION_TECNICA]),
+    "Dirección Técnica": ("Director técnico: autoriza las ausencias de mantenimiento (se suma a su otro rol)",
+                          ["activos.ver", "mantenimiento.ver", *SOLO_DIRECCION_TECNICA]),
     "Dirección Sociedad": ("Gestión completa de los activos de su ámbito", [
         "activos.ver", "activos.editar", "alquiler.ver", "alquiler.editar", "reservas.ver", "reservas.editar",
         "limpieza.editar", "limpieza.confirmar_ot", "mantenimiento.ver", "mantenimiento.abrir", "mantenimiento.editar",
         "mantenimiento.cerrar",
         "finanzas.ver", "facturas.ver", "facturas.rectificar", "auditoria.ver", "documentos.ver", "documentos.editar",
-        "pedidos.crear", "pedidos.autorizar", "partes.validar"]),
+        "pedidos.crear", "pedidos.autorizar", "partes.validar", "personal.autorizar"]),
     "Gestor Alquiler Residencial": ("Contratos, inquilinos y cobros", [
         "activos.ver", "alquiler.ver", "alquiler.editar", "mantenimiento.ver", "finanzas.ver", "facturas.ver",
         "documentos.ver", "documentos.editar"]),

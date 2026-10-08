@@ -56,3 +56,8 @@
 ## Partes de trabajo e informe quincenal
 - **Mantenimiento → Parte de trabajo diario**: parte de cada día de mantenimiento y limpieza (OT terminadas, limpiezas hechas y actuaciones anotadas). Recepción lo valida y queda archivado en PDF y Excel en **Documentos**.
 - **Informe quincenal**: trabajos totales de la quincena por área, tipo y persona; se puede descargar o archivar. Permiso nuevo: **partes.validar** (dirección y recepción).
+
+## Vacaciones y ausencias del personal
+- **Personal → Vacaciones y ausencias**: dirección aprueba las de Recepción 1, Recepción 2 (después del visto bueno de Recepción 1) y oficinas. Las de limpieza y conserjería las aprueba Recepción 1 (dirección también puede).
+- Las de **mantenimiento** solo las autoriza el **director técnico**: rol **Dirección Técnica** (permiso «personal.autorizar_mto»), que se suma a su rol de dirección. Se asigna en Administración → Usuarios.
+- **Resumen del año** y **Excel** con todas las ausencias y los días aprobados por persona.

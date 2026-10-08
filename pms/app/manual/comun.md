@@ -28,3 +28,8 @@
 - Si sale **«El servidor está muy ocupado, reintente»**, espere unos segundos y repita. El programa se recupera solo.
 - Si un dato no se guarda o ve algo raro, avise a la **Dirección Técnica** indicando qué estaba haciendo y la hora.
 - Cuando se actualiza el programa, la pantalla **se recarga sola** y le mostramos las **novedades**.
+
+## Vacaciones y ausencias
+- **Personal → Vacaciones y ausencias**: pulse **Solicitar ausencia**, elija el tipo (vacaciones, día libre, baja médica, permiso, falta u otro) y las fechas. Debajo de la persona se ve quién la aprueba.
+- El **cuadrante del mes** muestra quién falta cada día (rayado = pendiente). Las bajas médicas solo las ven con detalle la persona, Recepción 1 y dirección; los demás ven «Ausencia».
+- Mientras está pendiente, la puede **anular** usted mismo.

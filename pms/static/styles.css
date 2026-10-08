@@ -657,3 +657,19 @@ label.check.precio-pendiente { color: #c2410c; font-weight: 600; }
 /* parte de trabajo diario */
 .parte-dias { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
 .aviso-ok { border-left: 4px solid #2f8f4e; background: #eaf6ee; border-radius: 8px; padding: 8px 12px; }
+
+/* ausencias del personal: cuadrante del mes */
+.aus-cuadrante table { font-size: 11px; }
+.aus-cuadrante td, .aus-cuadrante th { padding: 3px 2px; text-align: center; min-width: 20px; border-right: 1px solid var(--line-2); }
+.aus-cuadrante td:first-child, .aus-cuadrante th:first-child { text-align: left; min-width: 150px; padding-left: 8px; }
+.aus-finde { background: #f4f1ea; }
+.aus-vac { background: #6dbb86 !important; }
+.aus-libre { background: #7fa8de !important; }
+.aus-baja { background: #e08a80 !important; }
+.aus-permiso { background: #b39ddb !important; }
+.aus-falta { background: #e6a85c !important; }
+.aus-otro { background: #a9a59b !important; }
+.aus-pend { background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.55) 0 4px, transparent 4px 8px) !important; }
+.aus-leyenda { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 12px; }
+.aus-ley { font-size: 11px; padding: 2px 8px; border-radius: 6px; color: #1a1a1c; }
+.aus-ley.aus-pend { background-color: #a9a59b; }
