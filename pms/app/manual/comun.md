@@ -37,3 +37,6 @@
 ## Portal del colaborador (subcontratas)
 - Si su usuario es de una empresa colaboradora, al entrar verá solo el **Portal del colaborador**: sus órdenes de trabajo, sus trabajos en los partes, los envíos a su personal, sus documentos y su personal.
 - **Subir documento**: elija el activo, el tipo (factura, albarán, presupuesto, documentación de personal, legal / CAE u otro), la fecha y el fichero (PDF o fotos). Queda **pendiente de revisar**; si se rechaza, verá el motivo. Mientras esté pendiente lo puede borrar.
+
+## Código postal
+- En cualquier ficha con domicilio (clientes, proveedores, sociedades, activos…), al escribir un **código postal** español se rellenan solos la **población** y la **provincia** (y el país, si está vacío). Si el código postal es de varias poblaciones, se ofrecen para elegir. Lo que se haya escrito a mano no se cambia.

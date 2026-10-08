@@ -41,6 +41,15 @@ def catalogos(scope: Scope = Depends(get_scope)):
     }
 
 
+@router.get("/codigos-postales/{cp}")
+def postal_code(cp: str, scope: Scope = Depends(get_scope)):
+    """Población y provincia de un código postal (para rellenarlas solas en los formularios)."""
+    r = registro_viajeros.por_cp(cp)
+    if r is None:
+        raise HTTPException(404, "Código postal no válido")
+    return r
+
+
 @router.get("/municipios")
 def municipios(q: str, cp: str | None = None, scope: Scope = Depends(get_scope)):
     """Búsqueda en el nomenclátor de municipios del INE (para el domicilio de los residentes en España)."""
