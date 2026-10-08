@@ -176,6 +176,10 @@ Tiempo: unas 2 horas. Necesita el **kit de emergencia** (apartado 0).
    ```
    Al terminar, el PMS funciona pero **vacío**. Ahora se recuperan los datos.
 
+   Si en el servidor había **otras webs** (por ejemplo INVERGESTION en `gestion.inversiete.es`), vuelva a crear su
+   fichero en `/opt/pms/deploy/sitios/` (ver `LEEME.md` de esa carpeta) y reinicie Caddy:
+   `cd /opt/pms/deploy && docker compose restart caddy`. La aplicación de INVERGESTION se recupera con su propia guía.
+
 ### 4.5 Recuperar las copias desde Google Drive
 
 8. Instale rclone y conéctelo a la cuenta de Google de las copias (dato 5). Hace falta un túnel desde **su ordenador**:

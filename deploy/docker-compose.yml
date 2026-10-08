@@ -69,6 +69,7 @@ services:
       PMS_DOMINIO: ${PMS_DOMINIO:?Defina PMS_DOMINIO en .env}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./sitios:/etc/caddy/sitios:ro
       - caddy_data:/data
       - caddy_config:/config
 

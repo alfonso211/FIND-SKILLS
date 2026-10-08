@@ -222,9 +222,9 @@ fi
 
 # ------------------------------------------------------------------------------------------------ versión y registros
 if git -C .. rev-parse > /dev/null 2>&1; then
-  # Ficheros del programa cambiados en el servidor: el próximo «git pull» fallaría. Si solo cambian los permisos o
-  # los finales de línea, se restauran. Si cambia el contenido, se guarda una copia (parche y «git stash») y se deja
-  # el fichero como en la versión publicada; se puede recuperar con los comandos que indica el aviso.
+  # Ficheros del programa cambiados en el servidor: el próximo «git pull» puede fallar. Si solo cambian los permisos
+  # o los finales de línea, se restauran. Si cambia el contenido NO se toca (puede ser un cambio necesario, como otra
+  # web en el Caddyfile): se guarda una copia del cambio y se avisa de qué ficheros son.
   CAMBIADOS=$(git -C .. status --porcelain --untracked-files=no | cut -c4-)
   if [ -n "$CAMBIADOS" ]; then
     LISTA=$(tr '\n' ' ' <<< "$CAMBIADOS" | sed 's/ $//')
@@ -234,12 +234,12 @@ if git -C .. rev-parse > /dev/null 2>&1; then
         anota ARREGLADO Versión "Ficheros con solo permisos o finales de línea cambiados ($LISTA): restaurados"
     else
       mkdir -p "$ESTADO_DIR"
-      PARCHE="$ESTADO_DIR/cambios_locales_$(date +%Y%m%d_%H%M).patch"
-      if git -C .. diff HEAD > "$PARCHE" && git -C .. -c user.name=mantenimiento -c user.email=mantenimiento@localhost stash push -q -m "mantenimiento $(date +%F): cambios locales"; then
-        anota ARREGLADO Versión "Ficheros modificados a mano en /opt/pms ($LISTA): copia en $PARCHE y en «git stash»; restaurada la versión publicada para que «git pull» no falle. Si el cambio era necesario: «cd /opt/pms && git stash pop»"
-      else
-        anota AVISO Versión "Hay ficheros modificados a mano en /opt/pms ($LISTA) y no se han podido apartar: el próximo «git pull» puede fallar («git -C /opt/pms status»)"
-      fi
+      PARCHE="$ESTADO_DIR/cambios_locales.patch"
+      git -C .. diff HEAD > "$PARCHE" 2>/dev/null
+      CONSEJO="pase el cambio al programa o, si sobra, deshágalo con «git -C /opt/pms checkout -- <fichero>»"
+      grep -q "deploy/Caddyfile" <<< "$CAMBIADOS" && \
+        CONSEJO="las webs adicionales van en un fichero propio en /opt/pms/deploy/sitios/ (ver LEEME.md de esa carpeta), no en el Caddyfile"
+      anota AVISO Versión "Ficheros modificados a mano en /opt/pms ($LISTA): el próximo «git pull» puede fallar. Copia del cambio en $PARCHE; $CONSEJO"
     fi
   fi
   timeout 60 git -C .. fetch -q origin 2>/dev/null
