@@ -955,3 +955,39 @@ class StaffDispatch(Base):
     asunto: Mapped[str] = mapped_column(String(200))
     texto: Mapped[str | None] = mapped_column(Text)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+
+
+# --------------------------------------------------------------------------- documentación legal de los activos
+class LegalItem(Base):
+    """Punto del checklist de documentación legal de un activo (ver app/documentacion_legal.py): fechas,
+    «no aplica» y notas. Los ficheros escaneados van en LegalFile. Los puntos propios del activo tienen clave
+    «extra-N» y su título."""
+    __tablename__ = "documentacion_legal"
+    __table_args__ = (UniqueConstraint("asset_id", "clave"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
+    clave: Mapped[str] = mapped_column(String(40))
+    titulo: Mapped[str | None] = mapped_column(String(200))  # solo los puntos propios
+    no_aplica: Mapped[bool] = mapped_column(Boolean, default=False)
+    motivo: Mapped[str | None] = mapped_column(String(300))  # por qué no aplica
+    fecha_documento: Mapped[date | None] = mapped_column(Date)
+    vencimiento: Mapped[date | None] = mapped_column(Date)
+    notas: Mapped[str | None] = mapped_column(Text)
+    actualizado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    ficheros: Mapped[list["LegalFile"]] = relationship(cascade="all, delete-orphan", order_by="LegalFile.id",
+                                                      lazy="selectin")
+
+
+class LegalFile(Base):
+    """Documento escaneado (PDF, cifrado) de un punto de la documentación legal."""
+    __tablename__ = "documentacion_legal_ficheros"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("documentacion_legal.id", ondelete="CASCADE"), index=True)
+    nombre: Mapped[str] = mapped_column(String(200))
+    fichero: Mapped[str] = mapped_column(String(64))
+    mime: Mapped[str] = mapped_column(String(100))
+    tamano: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    subido: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))

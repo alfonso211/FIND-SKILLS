@@ -111,3 +111,7 @@
 - En **Documentos recibidos**, el filtro **De colaboradores: por revisar** muestra lo que han subido las subcontratas desde su portal. **Aceptar** o **Rechazar** con el motivo (el colaborador lo ve). Una factura aceptada se anota como gasto con **Anotar gasto**, como siempre.
 - La **documentación de personal** (contratos, TC2, formación PRL…) solo la ven Recepción 1 y dirección.
 - Para que un colaborador vea a su personal, en **Personal → Fichas del personal** escriba en *Empresa* el mismo nombre que en Proveedores.
+
+## Documentación legal del activo
+- **Administración → Documentación legal**: abra su activo y, en cada punto, **Escanear / subir** el documento (PDF o fotos desde el móvil), con su fecha. Lo que no corresponde a su activo se marca en **Datos → No aplica** con el motivo.
+- Cada lunes le llega un correo con lo que falta o ha caducado en su activo, hasta completarlo.

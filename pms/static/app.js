@@ -4100,6 +4100,80 @@ V.colaborador = async (el) => {
   }
 };
 
+// ---- documentación legal de cada activo: checklist, escaneos en PDF, vencimientos, imprimir y enviar
+const ESTADO_LEGAL = { falta: "b-anulado", caducado: "b-anulado", por_vencer: "b-pendiente", aportado: "b-vigente", no_aplica: "", opcional: "" };
+V.legal = async (el) => {
+  const editar = can("legal.editar");
+  const verActivo = async (aid) => {
+    const c = await get("/api/documentacion-legal", { asset_id: aid });
+    const r = c.resumen;
+    el.innerHTML = `<div class="toolbar"><button class="btn" id="todos">← Todos los activos</button><b>${esc(c.activo)}</b>
+      <span class="spacer"></span><button class="btn" id="pdf">Imprimir checklist</button>${editar ? '<button class="btn" id="extra">＋ Documento propio</button>' : ""}</div>
+      <div class="${r.pendientes ? "aviso-vencidas" : "aviso-ok"}" style="margin:8px 0"><b>${r.completos} de ${r.exigibles} documentos (${r.porcentaje} %)</b>
+        · faltan ${r.falta} · caducados ${r.caducado} · por vencer ${r.por_vencer} · no aplican ${r.no_aplica}
+        <div class="barra-legal"><span style="width:${r.porcentaje}%"></span></div></div><div id="t" class="no-encajar"></div>`;
+    const grupos = [...new Set(c.items.map((x) => x.grupo_nombre))];
+    $("#t", el).innerHTML = grupos.map((g) => `<h3 class="legal-grupo">${esc(g)}</h3><div class="table-wrap"><table><tbody>
+      ${c.items.filter((x) => x.grupo_nombre === g).map((x) => `<tr>
+        <td style="width:110px"><span class="badge ${ESTADO_LEGAL[x.estado] || ""}">${esc(x.estado_nombre)}</span></td>
+        <td><b>${esc(x.titulo)}</b><div class="muted peq">${esc(x.norma)}</div>${x.no_aplica && x.motivo ? `<div class="muted peq"><i>No aplica: ${esc(x.motivo)}</i></div>` : ""}${x.notas ? `<div class="peq">${esc(x.notas)}</div>` : ""}
+          ${x.ficheros.map((f) => `<div class="peq">📄 <a href="#" data-ver="${f.id}">${esc(f.nombre)}</a>${editar ? ` <a href="#" class="danger" data-borrar="${f.id}">borrar</a>` : ""}</div>`).join("")}</td>
+        <td class="peq" style="width:120px">${x.fecha_documento ? `Fecha ${fdate(x.fecha_documento)}` : ""}${x.vencimiento ? `<br>Vence ${fdate(x.vencimiento)}` : ""}</td>
+        <td class="acc">${editar ? `<button class="btn sm primary" data-subir="${x.clave}">Escanear / subir</button> <button class="btn sm" data-datos="${x.clave}">Datos</button>` : ""}
+          ${x.ficheros.length ? ` <button class="btn sm" data-enviar="${x.clave}">Enviar</button>` : ""}${editar && x.grupo === "propios" && !x.ficheros.length ? ` <button class="btn sm danger" data-quitar="${x.clave}">Quitar</button>` : ""}</td></tr>`).join("")}
+      </tbody></table></div>`).join("");
+    const item = (k) => c.items.find((x) => x.clave === k);
+    const recargar = () => verActivo(aid);
+    $("#todos", el).onclick = () => resumenTodos();
+    $("#pdf", el).onclick = () => abrirFichero(`/api/documentacion-legal/${aid}/checklist.pdf`);
+    if ($("#extra", el)) $("#extra", el).onclick = () => form("Documento propio del activo", [{ k: "titulo", t: "Documento", req: true, wide: true }], {},
+      async (d) => { await post(`/api/documentacion-legal/${aid}/extra`, d); toast("Añadido al checklist"); recargar(); }, "Añadir");
+    el.querySelectorAll("[data-ver]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); abrirFichero(`/api/documentacion-legal/ficheros/${a.dataset.ver}`); }));
+    el.querySelectorAll("[data-borrar]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); if (confirm("¿Borrar este documento?")) run(() => api("DELETE", `/api/documentacion-legal/ficheros/${a.dataset.borrar}`), "Documento borrado").then(recargar); }));
+    el.querySelectorAll("[data-quitar]").forEach((b) => (b.onclick = () => confirm("¿Quitar este punto del checklist?") && run(() => api("DELETE", `/api/documentacion-legal/${aid}/extra/${b.dataset.quitar}`), "Quitado").then(recargar)));
+    el.querySelectorAll("[data-subir]").forEach((b) => (b.onclick = () => {
+      const x = item(b.dataset.subir);
+      form(`Escanear · ${x.titulo}`, [
+        { html: `<p class="muted">${esc(x.norma)}</p><label class="wide">PDF o fotos (desde el móvil se puede hacer la foto; varias fotos = varias páginas de un PDF) *<input type="file" name="ficheros" multiple accept="application/pdf,image/*" required></label>` },
+        { k: "fecha_documento", t: "Fecha del documento", type: "date", def: x.fecha_documento || "" },
+        { k: "vencimiento", t: x.meses ? `Vence (en blanco: ${x.meses >= 12 ? `${x.meses / 12} año(s)` : `${x.meses} meses`} desde la fecha)` : "Vence (si caduca)", type: "date" },
+      ], {}, async (d, fm) => {
+        const fd = new FormData();
+        [...fm.querySelector("input[type=file]").files].forEach((f) => fd.append("ficheros", f));
+        if (d.fecha_documento) fd.append("fecha_documento", d.fecha_documento);
+        if (d.vencimiento) fd.append("vencimiento", d.vencimiento);
+        await upload(`/api/documentacion-legal/${aid}/${x.clave}/ficheros`, fd); toast("Documento guardado en PDF"); recargar();
+      }, "Guardar");
+    }));
+    el.querySelectorAll("[data-datos]").forEach((b) => (b.onclick = () => {
+      const x = item(b.dataset.datos);
+      const f = form(`Datos · ${x.titulo}`, [
+        { k: "fecha_documento", t: "Fecha del documento", type: "date" }, { k: "vencimiento", t: "Vence", type: "date" },
+        { k: "no_aplica", t: "No aplica a este activo", type: "checkbox", wide: true }, { k: "motivo", t: "Por qué no aplica", wide: true },
+        { k: "notas", t: "Notas (nº de expediente, póliza, empresa…)", type: "textarea", wide: true },
+      ], x, async (d) => { await put(`/api/documentacion-legal/${aid}/${x.clave}`, d); toast("Guardado"); recargar(); });
+      const motivo = () => (f.elements.motivo.closest("label").style.display = f.elements.no_aplica.checked ? "" : "none");
+      f.elements.no_aplica.onchange = motivo; motivo();
+    }));
+    el.querySelectorAll("[data-enviar]").forEach((b) => (b.onclick = () => {
+      const x = item(b.dataset.enviar);
+      form(`Enviar por correo · ${x.titulo}`, [{ html: `<p class="muted">Se adjuntan ${x.ficheros.length} documento(s) en PDF.</p>` },
+        { k: "email", t: "Correo del destinatario", type: "email", req: true, wide: true }, { k: "nota", t: "Mensaje (opcional)", type: "textarea", wide: true }],
+      {}, async (d) => { await post(`/api/documentacion-legal/${aid}/${x.clave}/enviar`, clean(d)); toast("Enviado"); }, "Enviar");
+    }));
+  };
+  const resumenTodos = async () => {
+    const lista = await get("/api/documentacion-legal/resumen");
+    el.innerHTML = `<p class="muted">Documentación legal obligatoria de cada activo (Comunidad y Ayuntamiento de Madrid), según sea de apartamentos turísticos o de alquiler residencial. Cada lunes se avisa a Recepción 1 de lo que falta en su activo y a la dirección del total, hasta completarla.</p><div id="t"></div>`;
+    table($("#t", el), [
+      { k: "activo", t: "Activo" }, { k: "porcentaje", t: "Completo", f: (v) => `<div class="barra-legal"><span style="width:${v}%"></span></div>${v} %` },
+      { k: "falta", t: "Faltan", num: true }, { k: "caducado", t: "Caducados", num: true }, { k: "por_vencer", t: "Por vencer", num: true },
+      { k: "pendientes_lista", t: "Pendientes", f: (v) => `<span class="peq">${v.slice(0, 4).map(esc).join(" · ")}${v.length > 4 ? ` y ${v.length - 4} más` : ""}</span>` },
+    ], lista, (a) => [["Abrir", () => verActivo(a.asset_id), "primary"]]);
+  };
+  if (S.asset) verActivo(Number(S.asset)); else resumenTodos();
+};
+
 // ------------------------------------------------------------------ navegación
 const MENU = [
   ["General", [["panel", "Panel de control", null], ["agenda", "Agenda", null], ["manual", "Manual de uso", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
@@ -4109,7 +4183,7 @@ const MENU = [
   ["Documentos y gastos", [["docrecibidos", "Documentos recibidos", "documentos.ver"], ["gastos", "Cuenta de gastos", "documentos.ver"]]],
   ["Mantenimiento", [["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["partestrabajo", "Parte de trabajo diario", "partes"], ["pedidos", "Pedidos de material", "pedidos"], ["productos", "Catálogo de productos", "pedidos"], ["proveedores", "Proveedores", "proveedores"]]],
   ["Personal", [["ausencias", "Vacaciones y ausencias", "activos.ver"], ["personal", "Fichas del personal", "personal"]]],
-  ["Administración", [["usuarios", "Usuarios", "admin"], ["roles", "Roles y permisos", "admin"], ["sociedades", "Sociedades", "admin"], ["avisos", "Avisos por correo", "admin"], ["auditoria", "Auditoría", "auditoria.ver"]]],
+  ["Administración", [["legal", "Documentación legal", "legal.ver"], ["usuarios", "Usuarios", "admin"], ["roles", "Roles y permisos", "admin"], ["sociedades", "Sociedades", "admin"], ["avisos", "Avisos por correo", "admin"], ["auditoria", "Auditoría", "auditoria.ver"]]],
   ["", [["perfil", "Mi perfil", null]]],
 ];
 const allowed = (p) => !p || (p === "admin" ? S.me.admin_grupo : p === "informes" ? ["reservas.ver", "alquiler.ver", "finanzas.ver", "mantenimiento.ver"].some(can)

@@ -36,6 +36,8 @@ PERMISOS: dict[str, str] = {
     "partes.validar": "Validar los partes de trabajo diarios de mantenimiento y limpieza",
     "personal.autorizar": "Aprobar las ausencias de recepción, limpieza, conserjería y oficinas",
     "personal.autorizar_mto": "Director técnico: autorizar las ausencias del personal de mantenimiento",
+    "legal.ver": "Ver la documentación legal de los activos (licencias, certificados, seguros…)",
+    "legal.editar": "Aportar y actualizar la documentación legal de los activos",
     "colaborador.portal": "Colaborador externo: solo su portal (sus OT, partes y envíos, y subir sus documentos)",
     "usuarios.gestionar": "Gestionar usuarios, roles y sociedades",
     "auditoria.ver": "Consultar registro de auditoría",
@@ -57,14 +59,15 @@ ROLES_POR_DEFECTO: dict[str, tuple[str, list[str]]] = {
         "limpieza.editar", "limpieza.confirmar_ot", "mantenimiento.ver", "mantenimiento.abrir", "mantenimiento.editar",
         "mantenimiento.cerrar",
         "finanzas.ver", "facturas.ver", "facturas.rectificar", "auditoria.ver", "documentos.ver", "documentos.editar",
-        "pedidos.crear", "pedidos.autorizar", "partes.validar", "personal.autorizar"]),
+        "pedidos.crear", "pedidos.autorizar", "partes.validar", "personal.autorizar", "legal.ver",
+        "legal.editar"]),
     "Gestor Alquiler Residencial": ("Contratos, inquilinos y cobros", [
         "activos.ver", "alquiler.ver", "alquiler.editar", "mantenimiento.ver", "finanzas.ver", "facturas.ver",
-        "documentos.ver", "documentos.editar"]),
+        "documentos.ver", "documentos.editar", "legal.ver", "legal.editar"]),
     "Recepción": ("Reservas, llegadas y salidas. Abre y cierra órdenes de trabajo", [
         "activos.ver", "reservas.ver", "reservas.editar", "facturas.ver", "limpieza.editar", "mantenimiento.ver",
         "mantenimiento.abrir", "mantenimiento.cerrar", "documentos.ver", "documentos.editar", "pedidos.crear",
-        "partes.validar"]),
+        "partes.validar", "legal.ver", "legal.editar"]),
     "Gobernanta / Limpieza": ("Limpieza de unidades. Abre OT y confirma la unidad tras la reparación", [
         "activos.ver", "limpieza.editar", "limpieza.confirmar_ot", "mantenimiento.ver", "mantenimiento.abrir",
         "pedidos.crear"]),

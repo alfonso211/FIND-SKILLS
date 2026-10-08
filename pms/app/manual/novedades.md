@@ -1,5 +1,9 @@
 # Novedades
 
+## 2026-10-08 · Versión 1.30 · Documentación legal de los activos
+- **Dirección y recepción**: nuevo **Administración → Documentación legal**, con el checklist de lo obligatorio en cada activo (apartamentos turísticos o alquiler residencial), escaneo a PDF, vencimientos, **No aplica**, documentos propios, impresión del checklist y envío por correo.
+- **Cada lunes**: recordatorio por correo a Recepción 1 (su activo) y a la dirección (todos los activos) de lo que falta o ha caducado, hasta completarlo.
+
 ## 2026-10-08 · Versión 1.29 · Ausencias: aprueba cualquiera de la dirección
 - **Dirección**: las ausencias que aprueba dirección se avisan por correo al **Director General y al Director Técnico**, y **basta con que apruebe uno**. La presidencia no recibe estos avisos ni aprueba.
 - **Todos**: en el **Panel de control** aparece «Ausencias que esperan su decisión» con el botón **Revisar**, aunque no llegue el correo.

@@ -52,6 +52,8 @@ TIPOS = {
                             "facturas.ver"),
     "hitos_normativos": ("Hitos normativos (Verifactu, factura electrónica…) con antelación para adaptar el PMS "
                          "(resumen diario)", "finanzas.ver"),
+    "documentacion_legal": ("Documentación legal de los activos que falta o ha caducado (cada lunes): a Recepción 1 "
+                            "la de su activo y a la dirección la de todos", "legal.ver"),
     "agenda": ("Agenda: tareas, reuniones y recordatorios que le envían, aviso antes de cada cita y su agenda del "
                "día en el resumen", None),
 }
@@ -405,6 +407,8 @@ def resumen_diario(db, dia: date | None = None, forzar: bool = False) -> dict:
     """Envía a cada usuario su resumen. Sin `forzar`, no repite a quien ya lo recibió ese día."""
     dia = dia or hoy()
     informe_mensual(db, dia)
+    from .documentacion_legal import recordatorio_semanal
+    recordatorio_semanal(db, dia)
     from .recibos import garajes_al_dia
     garajes_al_dia(db, hoy=dia)  # emite los recibos de garaje del mes aunque nadie haya entrado en el PMS
     datos = _datos_resumen(db, dia)
