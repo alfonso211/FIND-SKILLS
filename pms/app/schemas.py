@@ -379,6 +379,9 @@ class ReservationIn(BaseModel):
     documentos: list[int] = []  # copias del documento del cliente escaneadas en el alta
     extras: list[ServiceLine] = []  # servicios extra pedidos (plaza extra, toallas…): a la factura de la estancia
     limpieza: LimpiezaPlanIn | None = None  # limpieza contratada (día y periodicidad)
+    # Desde la pantalla de reserva, recepción confirma el precio (propuesto por la tarifa estándar o cambiado).
+    # False = no lo ha aceptado: no se crea. None = otras vías (importación, API).
+    precio_aceptado: bool | None = None
 
     @field_validator("fecha_salida")
     @classmethod
@@ -398,6 +401,7 @@ class RenewalIn(BaseModel):
     forma_pago: Literal["efectivo", "tarjeta", "transferencia", "domiciliacion", "bizum", "plataforma"] | None = None
     facturar_pendiente: bool = False  # el resto se factura ya y queda pendiente de cobro
     notas: str | None = None
+    precio_aceptado: bool | None = None  # como en ReservationIn
 
     @model_validator(mode="after")
     def _pagado(self):

@@ -1461,6 +1461,34 @@ function editReservation(r, reload) {
   const f = $("#modalForm");
   if (r.uso !== "garaje") bindExtras(f, r.asset_id, r, () => ({ fecha_entrada: f.elements.fecha_entrada.value, fecha_salida: f.elements.fecha_salida.value })).catch((e) => toast(e.message, true));
 }
+// ---- precio a pagar: lo propone la tarifa estándar según las noches (ver app/tarifas.py). Sale en naranja; recepción
+// puede dejarlo o cambiarlo, pero para continuar tiene que marcar «Acepto el precio» (al cambiar algo se desmarca).
+const precioCampos = (titulo = "Precio a pagar € (IVA incluido)") => [
+  { k: "importe_total", t: titulo, type: "number", def: 0, req: true },
+  { k: "precio_aceptado", t: "Acepto el precio", type: "checkbox" },
+  { html: '<p class="muted tarifa-info" data-tarifa></p>', wide: true },
+];
+function bindPrecio(f, calc) {  // calc(): promesa con la tarifa estándar o null; devuelve la función para recalcular
+  const imp = f.elements.importe_total, ok = f.elements.precio_aceptado, info = $("[data-tarifa]", f);
+  let t = null;
+  imp.classList.add("precio-propuesto");
+  const pinta = () => {
+    const cambiado = t && Math.abs(Number(imp.value || 0) - t.total) > 0.004;
+    info.innerHTML = t ? `Tarifa estándar · <b>${esc(t.nombre)}</b> · ${t.noches} noche(s) · ${esc(t.tramo)} · ${eur(t.por_noche)}/noche = <b>${eur(t.total)}</b>${cambiado ? " · <b>precio cambiado por recepción</b>" : ""}`
+      : "Esta unidad no tiene tarifa estándar: indique el precio.";
+    ok.closest("label").classList.toggle("precio-pendiente", !ok.checked);
+  };
+  const recalcula = async () => {
+    t = await Promise.resolve(calc()).catch(() => null);
+    if (t) imp.value = t.total;
+    ok.checked = false; pinta();
+  };
+  imp.addEventListener("input", () => { ok.checked = false; pinta(); });
+  ok.addEventListener("change", pinta);
+  f._validaPrecio = () => { if (!ok.checked) throw new Error("Revise el precio a pagar y marque «Acepto el precio» para continuar"); };
+  recalcula();
+  return recalcula;
+}
 async function newReservation(reload, fija) {  // fija: {id, codigo, asset_id} para reservar un apartamento concreto
   const aid = fija ? fija.asset_id : await pickAsset("apartamentos_turisticos");
   form(fija ? `Nueva reserva · apartamento ${fija.codigo}` : `Nueva reserva · ${assetName(aid)}`, [
@@ -1479,15 +1507,16 @@ async function newReservation(reload, fija) {  // fija: {id, codigo, asset_id} p
       { html: scanHtml("1. Escanee el documento del huésped titular (DNI, NIE/TIE, pasaporte)") },
       { html: "<h4>Huésped titular</h4>" }, ...guestFields,
       { html: "<h4>Reserva</h4>" },
-      { k: "unit_id", t: "Unidad", type: "select", req: true, options: disp.unidades.map((u) => [u.id, `${u.codigo} ${u.bloque ? "· " + u.bloque : ""} ${u.tipologia ?? ""} ${u.tarifa_base_noche ? "· " + eur(u.tarifa_base_noche) : ""}`]) },
+      { k: "unit_id", t: "Unidad", type: "select", req: true, options: disp.unidades.map((u) => [u.id, `${u.codigo} ${u.bloque ? "· " + u.bloque : ""} ${u.tipologia ?? ""} ${u.tarifa ? "· " + eur(u.tarifa.total) : u.tarifa_base_noche ? "· " + eur(u.tarifa_base_noche) : ""}`]) },
       { k: "canal", t: "Canal", type: "select", req: true, options: list(S.cat.canales), def: "directo" }, { k: "localizador", t: "Localizador" },
-      { k: "importe_total", t: "Importe total € (IVA incluido)", type: "number", def: 0 },
+      ...precioCampos(),
       { k: "importe_pagado", t: "Cobrado ahora € (se emite factura)", type: "number", def: 0 },
       { k: "forma_pago", t: "Forma de pago", type: "select", options: kv(S.cat.formas_pago) },
       { k: "facturar_pendiente", t: "Si no se cobra ahora: facturar ya el importe total y dejarlo pendiente de cobro (pagará por transferencia)", type: "checkbox", wide: true },
       { k: "notas", t: "Notas", type: "textarea", wide: true },
       ...(fija?.uso === "garaje" ? [] : [{ html: extrasHtml() }]),
     ], {}, async (d, fr) => {
+      fr._validaPrecio();
       Object.assign(d, fr._extras ? fr._extras() : {});
       const g = {}; guestFields.filter((f) => f.k).forEach((f) => { g[f.k] = d[f.k]; delete d[f.k]; });
       let cliente = { guest: clean(g) };
@@ -1501,6 +1530,11 @@ async function newReservation(reload, fija) {  // fija: {id, codigo, asset_id} p
       const seguir = () => (nueva.adultos + nueva.ninos > 1 ? ocupantesReserva(nueva, reload, () => accommodationContract(nueva)) : accommodationContract(nueva));
       if (nueva.factura) setTimeout(() => facturasEmitidas(nueva, seguir), 0); else await seguir();
     }, "Crear reserva")), aid), 0);
+    setTimeout(() => {
+      const fr = $("#modalForm");
+      const recalcula = bindPrecio(fr, () => disp.unidades.find((u) => u.id === Number(fr.elements.unit_id.value))?.tarifa);
+      fr.elements.unit_id.addEventListener("change", recalcula);
+    }, 0);
     if (fija?.uso !== "garaje") setTimeout(() => bindExtras($("#modalForm"), aid, null, () => q).catch((e) => toast(e.message, true)), 0);
   }, "Buscar disponibilidad");
 }
@@ -1743,11 +1777,12 @@ async function renovarEstancia(r, reload) {
     { html: `<p>Renovación al <b>mismo cliente</b> en el mismo apartamento: nueva estancia desde el <b>${fdate(info.desde)}</b> (salida actual, ${info.noches_anteriores} noches la anterior).
       El cliente firma un <b>contrato nuevo</b> y la renovación se cobra y factura aparte. Los datos del cliente y sus ocupantes se mantienen.</p>` },
     { k: "fecha_salida", t: "Nueva fecha de salida", type: "date", req: true, def: info.hasta },
-    { k: "importe_total", t: "Importe de la renovación € (IVA incluido)", type: "number", def: 0 },
+    ...precioCampos("Precio de la renovación € (IVA incluido)"),
     { k: "factura", t: "Factura de la renovación", type: "select", req: true, def: "despues", options: [["despues", "Más tarde (al cobrar)"], ["cobro", "Cobrada ahora: registrar el cobro y facturar"], ["pendiente", "Facturar ya sin cobrar (pagará por transferencia)"]] },
     ...(info.garajes.length ? [{ k: "renovar_garaje", t: `Renovar también la plaza de garaje ${info.garajes.join(", ")}`, type: "checkbox", def: true, wide: true }] : []),
     { k: "notas", t: "Notas", type: "textarea", wide: true },
-  ], {}, async (d) => {
+  ], {}, async (d, fr) => {
+    fr._validaPrecio();
     const factura = d.factura; delete d.factura;
     const nueva = await post(`/api/turistico/reservas/${res.id}/renovar`, clean({ ...d, renovar_garaje: d.renovar_garaje !== false }));
     toast(`Renovación ${nueva.localizador} creada. Ahora el cliente firma el contrato.`);
@@ -1758,6 +1793,10 @@ async function renovarEstancia(r, reload) {
         `/api/turistico/reservas/${nueva.id}/cobro`, reload, nueva.asset_id, factura === "pendiente", contrato), 0);
     } else setTimeout(contrato, 0);
   }, "Renovar y pasar al contrato");
+  const fr = $("#modalForm");
+  const recalcula = bindPrecio(fr, () => fr.elements.fecha_salida.value > info.desde
+    ? get("/api/turistico/tarifa", { unit_id: res.unit_id, entrada: info.desde, salida: fr.elements.fecha_salida.value }) : null);
+  fr.elements.fecha_salida.addEventListener("change", recalcula);
 }
 // ---- cliente habitual: buscar su ficha (datos y documentos guardados) para no volver a pedirlos
 const buscaClienteHtml = () => `<fieldset class="busca-cliente"><legend>¿Ya ha estado alojado? Busque su ficha</legend>

@@ -640,3 +640,8 @@ ul.faltan { columns: 2; margin: 4px 0 10px; font-size: 13px; }
 .kpi.ir:hover, .kpi.ir:focus-visible { border-color: var(--brand-2); box-shadow: 0 3px 10px rgba(156, 122, 51, .18); outline: none; }
 .kpi.ir span::after { content: " ›"; color: var(--brand-2); font-weight: 700; }
 .card .ver-plano { float: right; margin-left: 8px; font-size: 12px; }
+
+/* precio propuesto por la tarifa estándar: recepción lo revisa y lo acepta */
+input.precio-propuesto { background: #ffd8a8; border-color: #e8590c; font-weight: 600; }
+label.check.precio-pendiente { color: #c2410c; font-weight: 600; }
+.tarifa-info { margin-top: -4px; }
