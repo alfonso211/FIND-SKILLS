@@ -31,6 +31,8 @@ PERMISOS: dict[str, str] = {
     "facturas.rectificar": "Emitir facturas rectificativas (anula el cobro facturado)",
     "documentos.ver": "Ver los documentos recibidos (carpeta) y la cuenta de gastos",
     "documentos.editar": "Subir documentos recibidos y registrar gastos",
+    "pedidos.crear": "Hacer pedidos de material (los autoriza Recepción 1 del activo)",
+    "pedidos.autorizar": "Autorizar pedidos de material e intercambiar el catálogo con INVERGESTION",
     "usuarios.gestionar": "Gestionar usuarios, roles y sociedades",
     "auditoria.ver": "Consultar registro de auditoría",
 }
@@ -42,17 +44,19 @@ ROLES_POR_DEFECTO: dict[str, tuple[str, list[str]]] = {
         "activos.ver", "activos.editar", "alquiler.ver", "alquiler.editar", "reservas.ver", "reservas.editar",
         "limpieza.editar", "limpieza.confirmar_ot", "mantenimiento.ver", "mantenimiento.abrir", "mantenimiento.editar",
         "mantenimiento.cerrar",
-        "finanzas.ver", "facturas.ver", "facturas.rectificar", "auditoria.ver", "documentos.ver", "documentos.editar"]),
+        "finanzas.ver", "facturas.ver", "facturas.rectificar", "auditoria.ver", "documentos.ver", "documentos.editar",
+        "pedidos.crear", "pedidos.autorizar"]),
     "Gestor Alquiler Residencial": ("Contratos, inquilinos y cobros", [
         "activos.ver", "alquiler.ver", "alquiler.editar", "mantenimiento.ver", "finanzas.ver", "facturas.ver",
         "documentos.ver", "documentos.editar"]),
     "Recepción": ("Reservas, llegadas y salidas. Abre y cierra órdenes de trabajo", [
         "activos.ver", "reservas.ver", "reservas.editar", "facturas.ver", "limpieza.editar", "mantenimiento.ver",
-        "mantenimiento.abrir", "mantenimiento.cerrar", "documentos.ver", "documentos.editar"]),
+        "mantenimiento.abrir", "mantenimiento.cerrar", "documentos.ver", "documentos.editar", "pedidos.crear"]),
     "Gobernanta / Limpieza": ("Limpieza de unidades. Abre OT y confirma la unidad tras la reparación", [
-        "activos.ver", "limpieza.editar", "limpieza.confirmar_ot", "mantenimiento.ver", "mantenimiento.abrir"]),
+        "activos.ver", "limpieza.editar", "limpieza.confirmar_ot", "mantenimiento.ver", "mantenimiento.abrir",
+        "pedidos.crear"]),
     "Técnico Mantenimiento": ("Ejecuta y confirma órdenes de trabajo; preventivo", [
-        "activos.ver", "mantenimiento.ver", "mantenimiento.abrir", "mantenimiento.editar"]),
+        "activos.ver", "mantenimiento.ver", "mantenimiento.abrir", "mantenimiento.editar", "pedidos.crear"]),
     "Administración / Finanzas": ("Consulta económica y cobros", [
         "activos.ver", "alquiler.ver", "alquiler.editar", "reservas.ver", "mantenimiento.ver", "finanzas.ver",
         "facturas.ver", "facturas.rectificar", "documentos.ver", "documentos.editar"]),

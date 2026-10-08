@@ -762,3 +762,79 @@ class CleaningTask(Base):
     hecha: Mapped[datetime | None] = mapped_column(DateTime)
     validada_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     unit: Mapped[Unit] = relationship()
+
+
+# --------------------------------------------------------------------------- pedidos de material
+FAMILIAS_PRODUCTO = [
+    "ELECTRICIDAD E ILUMINACIÓN", "FONTANERÍA", "CLIMATIZACIÓN", "PROTECCIÓN CONTRA INCENDIOS",
+    "FERRETERÍA Y CERRAJERÍA", "PINTURA", "ALBAÑILERÍA Y MATERIALES", "CARPINTERÍA", "PISCINA", "JARDINERÍA",
+    "ELECTRODOMÉSTICOS", "MOBILIARIO", "MENAJE", "LENCERÍA Y AMENITIES", "LIMPIEZA Y CONSUMIBLES", "MANO DE OBRA",
+    "RESIDUOS Y CONTENEDORES", "OTROS"]
+ESTADOS_PEDIDO = {"pendiente": "Pendiente de autorizar", "autorizado": "Autorizado", "enviado": "Enviado al proveedor",
+                  "recibido": "Recibido", "rechazado": "Rechazado", "anulado": "Anulado"}
+
+
+class Product(Base):
+    """Catálogo de material del grupo (compartido por los activos), intercambiado con INVERGESTION.
+    `referencia` es la clave con INVERGESTION: la suya (del proveedor o «INV-…») o la del PMS («PMS-000001»)."""
+    __tablename__ = "productos"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    referencia: Mapped[str] = mapped_column(String(60), unique=True)
+    articulo: Mapped[str] = mapped_column(String(250))
+    familia: Mapped[str] = mapped_column(String(60), default="OTROS")
+    unidad: Mapped[str] = mapped_column(String(20), default="ud")
+    precio: Mapped[float | None] = mapped_column(Numeric(12, 4))  # unitario sin IVA (último conocido)
+    tipo_iva: Mapped[float] = mapped_column(Numeric(5, 2), default=21)
+    marca: Mapped[str | None] = mapped_column(String(100))
+    ref_proveedor: Mapped[str | None] = mapped_column(String(60))
+    proveedor: Mapped[str | None] = mapped_column(String(200))
+    proveedor_nif: Mapped[str | None] = mapped_column(String(20))
+    supplier_id: Mapped[int | None] = mapped_column(ForeignKey("proveedores.id"))
+    origen: Mapped[str] = mapped_column(String(20), default="PMS")  # PMS | INVERGESTION
+    fecha_factura: Mapped[date | None] = mapped_column(Date)  # de INVERGESTION: última factura recibida
+    num_factura: Mapped[str | None] = mapped_column(String(60))
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("activos.id"))  # activo que lo dio de alta (PMS)
+    activo: Mapped[bool] = mapped_column(Boolean, default=True)
+    alta_exportada: Mapped[datetime | None] = mapped_column(DateTime)  # alta enviada a INVERGESTION
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    actualizado: Mapped[datetime | None] = mapped_column(DateTime)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+
+
+class PurchaseOrder(Base):
+    """Pedido de material de un activo a un proveedor. Lo autoriza Recepción 1 del activo (o dirección), salvo
+    que lo haga ella misma."""
+    __tablename__ = "pedidos"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    numero: Mapped[str] = mapped_column(String(30), unique=True)  # PED-SF-2026-0001
+    asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
+    supplier_id: Mapped[int | None] = mapped_column(ForeignKey("proveedores.id"))
+    proveedor: Mapped[str | None] = mapped_column(String(200))  # nombre si no está en Proveedores
+    estado: Mapped[str] = mapped_column(String(20), default="pendiente")
+    fecha: Mapped[date] = mapped_column(Date, index=True)
+    fecha_entrega: Mapped[date | None] = mapped_column(Date)  # deseada
+    notas: Mapped[str | None] = mapped_column(Text)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    autorizado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    autorizado_en: Mapped[datetime | None] = mapped_column(DateTime)
+    motivo_rechazo: Mapped[str | None] = mapped_column(String(300))
+    enviado_en: Mapped[datetime | None] = mapped_column(DateTime)
+    recibido_en: Mapped[datetime | None] = mapped_column(DateTime)
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    lineas: Mapped[list["PurchaseOrderLine"]] = relationship(order_by="PurchaseOrderLine.orden",
+                                                             cascade="all, delete-orphan")
+    asset: Mapped[Asset] = relationship()
+
+
+class PurchaseOrderLine(Base):
+    __tablename__ = "pedido_lineas"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pedido_id: Mapped[int] = mapped_column(ForeignKey("pedidos.id", ondelete="CASCADE"), index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("productos.id"))
+    orden: Mapped[int] = mapped_column(Integer, default=0)
+    cantidad: Mapped[float] = mapped_column(Numeric(12, 3))
+    precio: Mapped[float | None] = mapped_column(Numeric(12, 4))  # unitario sin IVA en el pedido (estimado)
+    tipo_iva: Mapped[float] = mapped_column(Numeric(5, 2), default=21)
+    nota: Mapped[str | None] = mapped_column(String(200))
+    exportado: Mapped[datetime | None] = mapped_column(DateTime)  # enviado a INVERGESTION
+    producto: Mapped[Product] = relationship()

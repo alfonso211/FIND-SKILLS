@@ -3605,6 +3605,222 @@ async function avisoNovedades() {
   cerrarSolo(form("Novedades de esta actualización", [{ html: `<div class="manual">${mdHtml(ultima)}</div><p class="muted">Tiene el detalle en <b>Manual de uso</b>.</p>` }], {}, async () => {}));
 }
 
+// ------------------------------------------------------------------ pedidos de material (Mantenimiento → Pedidos)
+// Catálogo de productos (compartido con INVERGESTION) y pedidos por activo. Los hace cualquiera con permiso; los
+// de recepción 2, mantenimiento o limpieza los autoriza Recepción 1. Autorizados, se envían al proveedor en PDF.
+const ESTADOS_PEDIDO = { pendiente: "Pendiente de autorizar", autorizado: "Autorizado", enviado: "Enviado", recibido: "Recibido", rechazado: "Rechazado", anulado: "Anulado" };
+const verPedidos = () => can("pedidos.crear") || can("pedidos.autorizar");
+const num = (v) => (v == null || v === "" ? null : Number(String(v).replace(",", ".")));
+let FAMILIAS = null;
+const familias = async () => (FAMILIAS ||= await get("/api/productos/familias"));
+const prodTxt = (p) => `<b>${esc(p.referencia)}</b> · ${esc(p.articulo)}${p.marca ? ` · ${esc(p.marca)}` : ""}${p.proveedor ? ` <span class="muted">· ${esc(p.proveedor)}</span>` : ""} · ${p.precio != null ? eur(p.precio) + "/" + esc(p.unidad) + " s/IVA" : '<span class="muted">sin precio</span>'}`;
+const camposProducto = async (conActivo) => [
+  { k: "articulo", t: "Artículo (descripción)", req: true, wide: true },
+  { k: "referencia", t: "Referencia (en blanco: automática PMS-…)" },
+  { k: "familia", t: "Familia", type: "select", req: true, options: (await familias()).map((f) => [f, f]), def: "OTROS" },
+  { k: "unidad", t: "Unidad (ud, m, kg, caja…)", def: "ud" },
+  { k: "precio", t: "Precio unitario € sin IVA", type: "number", step: "0.0001" },
+  { k: "tipo_iva", t: "IVA %", type: "select", options: [["21", "21 %"], ["10", "10 %"], ["4", "4 %"], ["0", "0 %"]], def: "21" },
+  { k: "marca", t: "Marca" }, { k: "ref_proveedor", t: "Referencia del proveedor" }, { k: "proveedor", t: "Proveedor habitual" },
+  ...(conActivo ? [{ k: "asset_id", t: "Activo que lo da de alta", type: "select", req: true, options: opts(S.assets), def: S.asset }] : []),
+];
+const productoDatos = (d) => clean({ ...d, precio: num(d.precio), tipo_iva: num(d.tipo_iva) ?? 21, asset_id: d.asset_id ? Number(d.asset_id) : undefined });
+
+V.pedidos = async (el) => {
+  el.innerHTML = `<div class="toolbar"><select id="e"><option value="">Todos los estados</option>${Object.entries(ESTADOS_PEDIDO).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select>
+    <span class="spacer"></span><button class="btn" id="cat">Catálogo de productos</button><button class="btn primary" id="new">Nuevo pedido</button></div><div id="pend"></div><div id="t"></div>`;
+  const load = async () => {
+    const rows = await get("/api/pedidos", { asset_id: S.asset, estado: $("#e", el).value });
+    const mios = rows.filter((p) => p.puede_autorizar);
+    $("#pend", el).innerHTML = mios.length ? `<div class="aviso-vencidas"><b>${mios.length} pedido(s) pendiente(s) de su autorización.</b> Ábralos para revisarlos y autorizarlos.</div>` : "";
+    table($("#t", el), [
+      { k: "numero", t: "Pedido", f: (v) => `<b>${esc(v)}</b>` }, { k: "fecha", t: "Fecha", f: fdate }, { k: "activo", t: "Activo" },
+      { k: "proveedor_nombre", t: "Proveedor", f: (v) => esc(v || "—") }, { k: "n_lineas", t: "Líneas", num: true },
+      { k: "total", t: "Total estimado", num: true, f: (v, p) => eur(v) + (p.sin_precio ? ` <span class="muted">(${p.sin_precio} sin precio)</span>` : "") },
+      { k: "estado", t: "Estado", f: (v) => `<span class="badge b-${v === "pendiente" ? "pendiente" : v === "rechazado" || v === "anulado" ? "cancelada" : "vigente"}">${esc(ESTADOS_PEDIDO[v] || v)}</span>` },
+      { k: "creado_por", t: "Hecho por", f: (v) => esc(v || "") },
+    ], rows, (p) => [["Abrir", () => fichaPedido(p.id, load), "primary"], p.puede_autorizar && ["Autorizar", () => run(() => post(`/api/pedidos/${p.id}/autorizar`), "Pedido autorizado").then(load)],
+      ["PDF", () => run(() => download("GET", `/api/pedidos/${p.id}/pdf`))]]);
+  };
+  $("#e", el).onchange = load;
+  $("#new", el).onclick = () => formPedido(null, load);
+  $("#cat", el).onclick = () => { location.hash = "#productos"; };
+  load();
+};
+
+async function formPedido(p, reload) {
+  const activos = S.assets;
+  const lineas = (p?.lineas || []).map((x) => ({ product_id: x.product_id, producto: x.producto, cantidad: x.cantidad, precio: x.precio, nota: x.nota }));
+  const f = form(p ? `Pedido ${p.numero}` : "Nuevo pedido de material", [
+    { k: "asset_id", t: "Activo", type: "select", req: true, options: opts(activos), def: p?.asset_id ?? S.asset },
+    { k: "proveedor", t: "Proveedor (escriba para buscar en Proveedores)" },
+    { k: "fecha_entrega", t: "Entrega deseada", type: "date" },
+    { k: "notas", t: "Observaciones para el proveedor", type: "textarea", wide: true },
+    { html: `<fieldset class="ped-lineas"><legend>Productos</legend>
+      <div class="ped-busca"><input type="search" data-pbusca placeholder="Escriba referencia, artículo, marca o proveedor…" autocomplete="off"><div data-psug class="cli-res"></div></div>
+      <div class="toolbar"><button type="button" class="btn sm" data-pnuevo>＋ Producto nuevo (no está en el catálogo)</button></div>
+      <div data-plineas></div><p data-ptot class="ped-tot"></p></fieldset>`, wide: true },
+  ], { proveedor: p?.proveedor_nombre || "", fecha_entrega: p?.fecha_entrega, notas: p?.notas }, async (d) => {
+    if (!lineas.length) throw new Error("Añada al menos un producto");
+    const sup = provs.find((s) => s.nombre.toLowerCase() === String(d.proveedor || "").trim().toLowerCase());
+    const body = { asset_id: Number(d.asset_id), supplier_id: sup?.id ?? null, proveedor: d.proveedor || null, fecha_entrega: d.fecha_entrega || null, notas: d.notas || null,
+      lineas: lineas.map((x) => clean({ product_id: x.product_id, nuevo: x.nuevo, cantidad: num(x.cantidad), precio: num(x.precio), nota: x.nota })) };
+    const r = p ? await put(`/api/pedidos/${p.id}`, body) : await post("/api/pedidos", body);
+    toast(`Pedido ${r.numero}: ${ESTADOS_PEDIDO[r.estado]}${r.estado === "pendiente" ? (r.r1 ? ` (lo autoriza ${r.r1})` : " (lo autoriza Recepción 1)") : ""}`);
+    reload && reload();
+    setTimeout(() => fichaPedido(r.id, reload), 0);
+  }, p ? "Guardar cambios" : "Hacer pedido");
+  $("#modal").classList.add("ancho");
+  let provs = [];
+  const inProv = f.elements.proveedor;
+  inProv.setAttribute("list", "provlista");
+  inProv.insertAdjacentHTML("afterend", '<datalist id="provlista"></datalist>');
+  const cargaProvs = async () => { provs = await get("/api/proveedores-pedido", { q: inProv.value }).catch(() => []); $("#provlista", f).innerHTML = provs.map((s) => `<option value="${esc(s.nombre)}">${esc(s.nif || "")}</option>`).join(""); };
+  inProv.oninput = debounce(cargaProvs); cargaProvs();
+  const pinta = () => {
+    $("[data-plineas]", f).innerHTML = lineas.length ? `<div class="table-wrap"><table><thead><tr><th>Referencia</th><th>Artículo</th><th class="num">Cantidad</th><th class="num">Precio s/IVA</th><th class="num">Importe</th><th></th></tr></thead><tbody>
+      ${lineas.map((x, i) => { const pr = x.producto; const imp = num(x.cantidad) && num(x.precio) != null ? num(x.cantidad) * num(x.precio) : null;
+        return `<tr><td>${esc(pr.referencia || "nueva (automática)")}</td><td>${esc(pr.articulo)}${x.nuevo ? ' <span class="badge b-pendiente">nuevo</span>' : ""}<div class="muted peq">${esc(pr.unidad || "ud")}${pr.marca ? " · " + esc(pr.marca) : ""}</div></td>
+        <td class="num"><input type="number" step="any" min="0" value="${x.cantidad ?? 1}" data-cant="${i}" style="width:80px"></td>
+        <td class="num"><input type="number" step="0.0001" min="0" value="${x.precio ?? ""}" data-prec="${i}" style="width:95px" placeholder="sin precio"></td>
+        <td class="num">${imp != null ? eur(imp) : "—"}</td><td><button type="button" class="btn sm danger" data-quita="${i}">✕</button></td></tr>`; }).join("")}</tbody></table></div>`
+      : '<p class="muted">Busque los productos arriba y púlselos para añadirlos al pedido.</p>';
+    let base = 0, iva = 0, sinp = 0;
+    lineas.forEach((x) => { const c = num(x.cantidad), pr = num(x.precio); if (pr == null || !c) { sinp += 1; return; } const b = Math.round(c * pr * 100) / 100; base += b; iva += Math.round(b * Number(x.producto.tipo_iva ?? 21)) / 100; });
+    $("[data-ptot]", f).innerHTML = lineas.length ? `Coste estimado: <b>${eur(base)}</b> sin IVA · IVA ${eur(iva)} · <b>${eur(base + iva)}</b> con IVA${sinp ? ` · <span class="muted">${sinp} línea(s) sin precio</span>` : ""}` : "";
+    f.querySelectorAll("[data-cant]").forEach((i) => (i.oninput = () => { lineas[i.dataset.cant].cantidad = i.value; repinta(); }));
+    f.querySelectorAll("[data-prec]").forEach((i) => (i.oninput = () => { lineas[i.dataset.prec].precio = i.value; repinta(); }));
+    f.querySelectorAll("[data-quita]").forEach((b) => (b.onclick = () => { lineas.splice(Number(b.dataset.quita), 1); pinta(); }));
+  };
+  const repinta = debounce(() => { const foco = document.activeElement?.dataset; pinta(); if (foco) { const k = Object.keys(foco)[0]; f.querySelector(`[data-${k}="${foco[k]}"]`)?.focus(); } }, 400);
+  const sug = $("[data-psug]", f), busca = $("[data-pbusca]", f);
+  busca.oninput = debounce(async () => {
+    const q = busca.value.trim();
+    if (q.length < 2) { sug.innerHTML = ""; return; }
+    const res = await get("/api/productos", { q, limit: 12 }).catch(() => []);
+    sug.innerHTML = res.length ? res.map((x, i) => `<button type="button" class="btn sm" data-s="${i}">${prodTxt(x)}</button>`).join("")
+      : `<span class="muted">No está en el catálogo.</span> <button type="button" class="btn sm primary" data-crear>＋ Crear «${esc(q)}» como producto nuevo</button>`;
+    sug.querySelectorAll("[data-s]").forEach((b) => (b.onclick = () => {
+      const x = res[b.dataset.s];
+      lineas.push({ product_id: x.id, producto: x, cantidad: 1, precio: x.precio });
+      if (!inProv.value && x.proveedor) inProv.value = x.proveedor;
+      busca.value = ""; sug.innerHTML = ""; pinta();
+    }));
+    if ($("[data-crear]", sug)) $("[data-crear]", sug).onclick = () => nuevo(q);
+  });
+  const nuevo = async (texto) => {  // mini-ficha del producto nuevo dentro del pedido (sin cerrar el pedido)
+    const caja = document.createElement("div");
+    caja.className = "ped-nuevo";
+    const campos = (await camposProducto(false)).filter((c) => c.k !== "proveedor");
+    caja.innerHTML = `<fieldset><legend>Producto nuevo (se añade al catálogo)</legend><div class="grid">${campos.map((c) => `<label class="${c.wide ? "wide" : ""}">${esc(c.t)}${c.req ? " *" : ""}
+      ${c.type === "select" ? `<select data-n="${c.k}">${c.options.map(([v, t]) => `<option value="${esc(v)}" ${String(v) === String(c.def) ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>`
+        : `<input data-n="${c.k}" ${c.type === "number" ? 'type="number" step="0.0001"' : ""} value="${esc(c.k === "articulo" ? texto || "" : c.def ?? "")}">`}</label>`).join("")}
+      <label>Cantidad<input data-n="cantidad" type="number" step="any" value="1"></label></div>
+      <div class="toolbar"><span class="spacer"></span><button type="button" class="btn sm" data-ncancel>Cancelar</button><button type="button" class="btn sm primary" data-nok>Añadir al pedido</button></div></fieldset>`;
+    $("[data-plineas]", f).before(caja);
+    caja.querySelector("[data-n=articulo]").focus();
+    $("[data-ncancel]", caja).onclick = () => caja.remove();
+    $("[data-nok]", caja).onclick = () => {
+      const v = Object.fromEntries([...caja.querySelectorAll("[data-n]")].map((i) => [i.dataset.n, i.value.trim()]));
+      if (v.articulo.length < 2) return toast("Escriba la descripción del artículo", true);
+      const { cantidad, ...prod } = v;
+      const nuevoP = productoDatos(prod);
+      lineas.push({ nuevo: nuevoP, producto: { ...nuevoP, referencia: nuevoP.referencia || "", tipo_iva: nuevoP.tipo_iva }, cantidad: num(cantidad) || 1, precio: nuevoP.precio ?? null });
+      caja.remove(); busca.value = ""; sug.innerHTML = ""; pinta();
+    };
+  };
+  $("[data-pnuevo]", f).onclick = () => nuevo(busca.value.trim());
+  pinta();
+}
+
+async function fichaPedido(id, reload) {
+  const p = await run(() => get(`/api/pedidos/${id}`));
+  const volver = () => { reload && reload(); fichaPedido(id, reload); };
+  const f = cerrarSolo(form(`Pedido ${p.numero} · ${p.activo}`, [
+    { html: `<p><span class="badge b-${p.estado === "pendiente" ? "pendiente" : ["rechazado", "anulado"].includes(p.estado) ? "cancelada" : "vigente"}">${esc(p.estado_nombre)}</span>
+      Proveedor: <b>${esc(p.proveedor_nombre || "sin indicar")}</b> · ${fdate(p.fecha)}${p.fecha_entrega ? ` · entrega ${fdate(p.fecha_entrega)}` : ""}<br>
+      <span class="muted">Hecho por ${esc(p.creado_por || "—")}${p.autorizado_por_nombre ? ` · autorizado por ${esc(p.autorizado_por_nombre)} (${fdt(p.autorizado_en)})` : p.estado === "pendiente" ? ` · lo autoriza ${esc(p.r1 || "Recepción 1")}` : ""}${p.enviado_en ? ` · enviado ${fdt(p.enviado_en)}` : ""}${p.motivo_rechazo ? ` · motivo: ${esc(p.motivo_rechazo)}` : ""}</span></p>
+      <div class="table-wrap"><table><thead><tr><th>Referencia</th><th>Artículo</th><th class="num">Cantidad</th><th class="num">Precio s/IVA</th><th class="num">Importe</th></tr></thead><tbody>
+      ${p.lineas.map((x) => `<tr><td>${esc(x.producto.referencia)}</td><td>${esc(x.producto.articulo)}<div class="muted peq">${esc(x.producto.familia)}${x.producto.marca ? " · " + esc(x.producto.marca) : ""}</div></td><td class="num">${x.cantidad} ${esc(x.producto.unidad)}</td><td class="num">${x.precio != null ? eur(x.precio) : "—"}</td><td class="num">${x.importe != null ? eur(x.importe) : "—"}</td></tr>`).join("")}
+      <tr class="total"><td colspan="4">Base · IVA · <b>Total estimado</b></td><td class="num">${eur(p.base)} · ${eur(p.iva)} · <b>${eur(p.total)}</b></td></tr></tbody></table></div>
+      ${p.notas ? `<p><b>Observaciones:</b> ${esc(p.notas)}</p>` : ""}
+      <div class="toolbar">
+        ${p.puede_autorizar ? '<button type="button" class="btn primary" data-a="autorizar">Autorizar</button><button type="button" class="btn danger" data-a="rechazar">Rechazar</button>' : ""}
+        ${p.puede_editar ? '<button type="button" class="btn" data-a="editar">Modificar</button>' : ""}
+        <button type="button" class="btn" data-a="pdf">PDF</button>
+        ${p.puede_enviar ? '<button type="button" class="btn primary" data-a="enviar">Enviar al proveedor</button>' : ""}
+        ${["autorizado", "enviado"].includes(p.estado) ? '<button type="button" class="btn" data-a="recibido">Recibido</button>' : ""}
+        ${["pendiente", "autorizado", "enviado"].includes(p.estado) ? '<button type="button" class="btn danger" data-a="anular">Anular</button>' : ""}
+      </div>`, wide: true },
+  ], {}, async () => {}));
+  $("#modal").classList.add("ancho");
+  const motivo = (titulo, url, ok) => form(titulo, [{ k: "motivo", t: "Motivo", req: true, wide: true }], {}, async (d) => { await post(url, d); toast(ok); volver(); });
+  const acc = {
+    autorizar: () => run(() => post(`/api/pedidos/${id}/autorizar`), "Pedido autorizado").then(volver),
+    rechazar: () => motivo(`Rechazar el pedido ${p.numero}`, `/api/pedidos/${id}/rechazar`, "Pedido rechazado"),
+    anular: () => motivo(`Anular el pedido ${p.numero}`, `/api/pedidos/${id}/anular`, "Pedido anulado"),
+    editar: () => formPedido(p, reload),
+    pdf: () => run(() => download("GET", `/api/pedidos/${id}/pdf`)),
+    recibido: () => run(() => post(`/api/pedidos/${id}/recibido`), "Pedido recibido").then(volver),
+    enviar: () => form(`Enviar ${p.numero} a ${p.proveedor_nombre || "proveedor"}`, [
+      { html: `<p class="muted">Correo: ${esc(p.proveedor_email || "no tiene")} · Teléfono: ${esc(p.proveedor_telefono || "no tiene")}. Por correo va el PDF; por WhatsApp, un enlace al PDF.</p>` },
+      { k: "canales", t: "Enviar por", type: "checks", req: true, options: [["email", "Correo electrónico (con el PDF)"], ["whatsapp", "WhatsApp (enlace al PDF)"]] },
+      { k: "nota", t: "Nota para el proveedor", type: "textarea", wide: true },
+    ], { canales: p.proveedor_email ? ["email"] : ["whatsapp"] }, async (d) => {
+      const r = await post(`/api/pedidos/${id}/enviar`, { canales: d.canales, nota: d.nota || null });
+      r.enviados.filter((x) => x.whatsapp).forEach((x) => window.open(x.whatsapp, "_blank"));
+      toast(r.enviados.map((x) => `${x.canal === "email" ? "Correo" : "WhatsApp"}: ${x.ok ? "enviado" : "error " + (x.error || "")}`).join(" · "));
+      volver();
+    }, "Enviar"),
+  };
+  f.querySelectorAll("[data-a]").forEach((b) => (b.onclick = () => acc[b.dataset.a]()));
+}
+
+V.productos = async (el) => {
+  const dir = can("pedidos.autorizar");
+  el.innerHTML = `<div class="toolbar"><input id="q" placeholder="Referencia, artículo, marca o proveedor"><select id="fa"><option value="">Todas las familias</option>${(await familias()).map((x) => `<option>${esc(x)}</option>`).join("")}</select>
+    <span class="spacer"></span>${dir ? '<button class="btn" id="imp">Importar de INVERGESTION</button><button class="btn" id="exp">Enviar a INVERGESTION</button>' : ""}<button class="btn primary" id="new">Nuevo producto</button></div><div id="t"></div>`;
+  const load = async () => table($("#t", el), [
+    { k: "referencia", t: "Referencia", f: (v) => `<b>${esc(v)}</b>` }, { k: "articulo", t: "Artículo" }, { k: "familia", t: "Familia" },
+    { k: "marca", t: "Marca" }, { k: "proveedor", t: "Proveedor" }, { k: "unidad", t: "Ud." },
+    { k: "precio", t: "Precio s/IVA", num: true, f: (v) => (v != null ? eur(v) : "—") }, { k: "origen", t: "Origen" },
+  ], await get("/api/productos", { q: $("#q", el).value, familia: $("#fa", el).value, limit: 500 }), (x) => (dir ? [["Editar", async () => {
+    form(`Producto ${x.referencia}`, (await camposProducto(false)).filter((c) => c.k !== "referencia"), { ...x, tipo_iva: String(Math.round(x.tipo_iva)) },
+      async (d) => { await put(`/api/productos/${x.id}`, productoDatos(d)); toast("Producto actualizado"); load(); });
+  }]] : []));
+  $("#q", el).oninput = debounce(load); $("#fa", el).onchange = load;
+  $("#new", el).onclick = async () => form("Nuevo producto", await camposProducto(true), {}, async (d) => {
+    const p = await post("/api/productos", productoDatos(d)); toast(`Producto ${p.referencia} creado`); load();
+  });
+  if (dir) {
+    $("#imp", el).onclick = () => form("Importar el catálogo de INVERGESTION", [
+      { html: '<p>Fichero <b>INVERGESTION_PRODUCTOS_….zip</b> (productos.csv y manifest.json). Si la referencia no existe se da de alta; si existe, se actualizan el precio y los datos. No se borra nada y volver a cargarlo no duplica.</p>' },
+      { html: '<label>Fichero *<input type="file" accept=".zip,.csv" data-fich required></label>' },
+    ], {}, async (_, fr) => {
+      const fich = $("[data-fich]", fr).files[0];
+      const enviar = (c) => { const fd = new FormData(); fd.append("fichero", fich); fd.append("confirmar", c); return upload("/api/productos/importar", fd); };
+      const r = await enviar(false);
+      setTimeout(() => form(`Comprobación · ${fich.name}`, [{ html: `<p>${r.tipo ? `Envío <b>${esc(r.tipo)}</b>${r.fecha ? " del " + esc(r.fecha) : ""} · ` : ""}${r.filas} fila(s): <b>${r.altas}</b> alta(s), <b>${r.modificaciones}</b> modificación(es), ${r.sin_cambios} sin cambios${r.errores.length ? `, <b class="error">${r.errores.length} con error</b>` : ""}.</p>
+        ${r.errores.length ? `<ul class="error">${r.errores.slice(0, 20).map((e) => `<li>Fila ${e.fila} (${esc(e.referencia || "sin referencia")}): ${esc(e.motivo)}</li>`).join("")}</ul>` : ""}
+        ${r.avisos.length ? `<ul class="muted">${r.avisos.map((a) => `<li>${esc(a)}</li>`).join("")}</ul>` : ""}` }], {}, async () => {
+        const c = await enviar(true); toast(`Catálogo importado: ${c.altas} alta(s), ${c.modificaciones} modificación(es)`); load();
+      }, "Importar"), 0);
+    }, "Comprobar");
+    $("#exp", el).onclick = () => form("Enviar productos a INVERGESTION", [
+      { k: "activo", t: "Activo", type: "select", req: true, options: S.assets.map((a) => [a.codigo, a.nombre]), def: S.assets.find((a) => a.id === S.asset)?.codigo },
+      { html: '<p class="muted">Se genera PRODUCTOS_PMS_&lt;ACTIVO&gt;_&lt;fecha&gt;.zip con los productos dados de alta en el PMS y los pedidos con precio, <b>solo lo nuevo desde el último envío</b>. «Fichero de prueba» lo descarga sin marcarlo como enviado.</p>' },
+      { k: "prueba", t: "Fichero de prueba (no lo marca como enviado)", type: "checkbox" },
+    ], {}, async (d) => {
+      const cod = { SFL: "SFLORIDA", SAE: "SAEROPUERTO", BAB35: "BABILONIA35" }[d.activo] || d.activo;
+      const r = await get("/api/productos/exportar/resumen", { activo: cod });
+      if (!r.filas && !confirm("No hay nada nuevo desde el último envío. ¿Descargar el fichero vacío?")) return;
+      await download("GET", `/api/productos/exportar?activo=${cod}&prueba=${!!d.prueba}`);
+      toast(`${r.fichero}: ${r.altas} alta(s) y ${r.pedidos} línea(s) de pedido${d.prueba ? " (prueba)" : ""}`);
+    }, "Descargar");
+  }
+  load();
+};
+
 // ------------------------------------------------------------------ navegación
 const MENU = [
   ["General", [["panel", "Panel de control", null], ["agenda", "Agenda", null], ["manual", "Manual de uso", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
@@ -3612,13 +3828,13 @@ const MENU = [
   ["Alquiler residencial", [["contratos", "Contratos", "alquiler.ver"], ["recibos", "Recibos y cobros", "alquiler.ver"], ["inquilinos", "Inquilinos", "alquiler.ver"]]],
   ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["servicios", "Servicios", "activos.ver"], ["informes", "Informes Excel", "informes"], ["presidencia", "Informe a presidencia", "facturas.ver"]]],
   ["Documentos y gastos", [["docrecibidos", "Documentos recibidos", "documentos.ver"], ["gastos", "Cuenta de gastos", "documentos.ver"]]],
-  ["Mantenimiento", [["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["personal", "Personal mto. y limpieza", "personal"], ["proveedores", "Proveedores", "proveedores"]]],
+  ["Mantenimiento", [["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["personal", "Personal mto. y limpieza", "personal"], ["pedidos", "Pedidos de material", "pedidos"], ["productos", "Catálogo de productos", "pedidos"], ["proveedores", "Proveedores", "proveedores"]]],
   ["Administración", [["usuarios", "Usuarios", "admin"], ["roles", "Roles y permisos", "admin"], ["sociedades", "Sociedades", "admin"], ["avisos", "Avisos por correo", "admin"], ["auditoria", "Auditoría", "auditoria.ver"]]],
   ["", [["perfil", "Mi perfil", null]]],
 ];
 const allowed = (p) => !p || (p === "admin" ? S.me.admin_grupo : p === "informes" ? ["reservas.ver", "alquiler.ver", "finanzas.ver", "mantenimiento.ver"].some(can)
   : p === "personal" ? ["mantenimiento.ver", "limpieza.editar", "limpieza.confirmar_ot"].some(can)
-  : p === "proveedores" ? verProveedores() : can(p));
+  : p === "proveedores" ? verProveedores() : p === "pedidos" ? verPedidos() : can(p));
 const TITLES = Object.fromEntries(MENU.flatMap(([, items]) => items.map(([id, t]) => [id, t])));
 const PERMISO_VISTA = Object.fromEntries(MENU.flatMap(([, items]) => items.map(([id, , p]) => [id, p])));
 const puedeIr = (vista) => vista in PERMISO_VISTA && allowed(PERMISO_VISTA[vista]);  // pantalla del menú visible

@@ -30,3 +30,9 @@
 ## Consejos
 - Ponga siempre **fotos antes y después**: sirven a recepción, a limpieza y a Dirección.
 - Anote el **coste real**: sale en el informe de costes de mantenimiento.
+
+## Pedidos de material
+- **Mantenimiento → Pedidos de material → Nuevo pedido**: elija el activo y el proveedor. En «Productos» escriba parte de la referencia, el artículo, la marca o el proveedor: salen las sugerencias del catálogo; púlsela para añadirla. Indique la **cantidad** (el precio sale del catálogo y se puede cambiar).
+- Si no está en el catálogo, **Producto nuevo**: descripción, familia, unidad, precio y, si la sabe, la referencia. **Si no pone referencia, el PMS le asigna una automática (PMS-000001…)**, que ya no cambia.
+- Abajo verá el **coste estimado** (sin IVA, IVA y total).
+- **Quién autoriza**: los pedidos de Dirección y de **Recepción 1** quedan autorizados. Los de Recepción 2, mantenimiento, limpieza y cualquier otra persona quedan **pendientes de que los autorice Recepción 1** (le llega un aviso).

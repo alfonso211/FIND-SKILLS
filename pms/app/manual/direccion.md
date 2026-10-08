@@ -29,6 +29,12 @@
 
 - **Anular un contrato** hecho por error o que no sigue adelante: **Anular** en el contrato (o en **Editar** → **Anular contrato**), con su motivo. Con recibos cobrados no se anula: se rescinde o se da por finalizado. Con facturas, primero la rectificativa.
 
+## Pedidos de material y catálogo
+- **Mantenimiento → Pedidos de material**: los de Dirección y Recepción 1 quedan autorizados; los demás los autoriza Recepción 1 (Dirección también puede). Se envían al proveedor en PDF y se marcan como recibidos.
+- **Catálogo de productos**: referencia, artículo, familia, unidad, precio sin IVA, marca, referencia y nombre del proveedor.
+  - **Importar de INVERGESTION**: el fichero INVERGESTION_PRODUCTOS_….zip. Da de alta lo nuevo y actualiza precio y datos de lo que ya existe; no borra nada y volver a cargarlo no duplica.
+  - **Enviar a INVERGESTION**: descarga PRODUCTOS_PMS_<ACTIVO>_<fecha>.zip con las altas hechas en el PMS y los pedidos con precio, solo lo nuevo desde el último envío. «Fichero de prueba» lo descarga sin marcarlo como enviado.
+
 ## Gastos
 - **Informe a presidencia** (mensual, por activo): producción por tipo de estancia y servicios, gastos por proveedor con CAPEX/OPEX, resultado con semáforo y resumen mensual del año anterior y del actual. Lo revisa y envía «Recepción 1» de cada activo (o quien se indique en la ficha del activo, junto con los correos y el WhatsApp de envío; si no se indican correos, va a la presidencia).
 - **Documentos recibidos**: carpeta de facturas y cartas de cada activo. El **lector** rellena los datos de la factura y marca en amarillo lo dudoso; las facturas **duplicadas** (mismo proveedor y nº) no se registran.

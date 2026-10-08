@@ -86,3 +86,10 @@
 - Si algo no cuadra, corríjalo antes (facturas, gastos, reservas) y vuelva a abrir el informe.
 - Marque **«He revisado el informe y todos los datos son correctos»** y pulse **Enviar por correo** o **Enviar por WhatsApp**. Siempre se envía en **PDF**; el **Excel** queda guardado en **Documentos recibidos** (tipo «Informe mensual»).
 - Por WhatsApp: en el móvil se adjunta el PDF directamente; en el ordenador se descarga el PDF y se abre WhatsApp con el mensaje: adjunte el PDF.
+
+## Pedidos de material
+- **Mantenimiento → Pedidos de material → Nuevo pedido**: elija el activo y el proveedor. En «Productos» escriba parte de la referencia, el artículo, la marca o el proveedor: salen las sugerencias del catálogo; púlsela para añadirla. Indique la **cantidad** (el precio sale del catálogo y se puede cambiar).
+- Si no está en el catálogo, **Producto nuevo**: descripción, familia, unidad, precio y, si la sabe, la referencia. **Si no pone referencia, el PMS le asigna una automática (PMS-000001…)**, que ya no cambia.
+- Abajo verá el **coste estimado** (sin IVA, IVA y total).
+- **Quién autoriza**: los pedidos de Dirección y de **Recepción 1** quedan autorizados. Los de Recepción 2, mantenimiento, limpieza y cualquier otra persona quedan **pendientes de que los autorice Recepción 1** (le llega un aviso).
+- **Recepción 1**: en Pedidos de material verá el aviso de los pedidos pendientes de su autorización. Ábralos y pulse **Autorizar** (o **Rechazar**, con el motivo). Autorizado, pulse **Enviar al proveedor**: por correo con el PDF y/o por WhatsApp con un enlace al PDF. Cuando llegue el material, **Recibido**.
