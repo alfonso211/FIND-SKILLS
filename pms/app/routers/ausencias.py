@@ -13,7 +13,8 @@ from sqlalchemy.orm import Session
 from .. import ausencias as au
 from .. import avisos
 from ..database import get_db
-from ..models import (COLECTIVOS_AUSENCIA, ESTADOS_AUSENCIA, TIPOS_AUSENCIA, Absence, Asset, StaffMember, User)
+from ..models import (COLECTIVOS_AUSENCIA, ESTADOS_AUSENCIA, TIPOS_AUSENCIA, Absence, Asset, EmailLog, StaffMember,
+                      User)
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request, get_or_404
 
@@ -74,10 +75,15 @@ def _avisar(db: Session, usuarios: list[User], asunto: str, texto: str, excluir:
     for u in {u.id: u for u in usuarios}.values():
         if u.id == excluir or not u.email:
             continue
+        ok, error = True, None
         try:
             avisos.enviar(u.email, asunto, texto, avisos._html(asunto, f"<p>{escape(texto)}</p>"))
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as e:  # noqa: BLE001
+            ok, error = False, str(e)[:300]
+        # queda en Administración → Avisos por correo (para comprobar a quién llegó)
+        db.add(EmailLog(clave="ausencia", tipo="ausencia", user_id=u.id, destinatario=u.email, asunto=asunto[:200],
+                        ok=ok, error=error))
+    db.commit()
 
 
 def _texto(x: Absence, a: Asset, tipo_visible: bool = True) -> str:
@@ -101,12 +107,16 @@ def _avisos_nueva(db: Session, x: Absence, a: Asset, autor: int) -> None:
         _avisar(db, [r1] if r1 else [], "Ausencia de Recepción 2: falta su visto bueno",
                 _texto(x, a) + " Dé su visto bueno en Personal → Vacaciones y ausencias; después la aprueba dirección.",
                 autor)
+        _avisar(db, au.aprobadores_direccion(db, a.id), "Ausencia de Recepción 2 (pendiente del visto bueno de R1)",
+                _texto(x, a) + " Cuando Recepción 1 dé su visto bueno podrá aprobarla cualquiera de la dirección.",
+                autor)
     elif x.colectivo in au.PERSONAL_R1:
         r1 = au.recepcion_1(db, a)
-        _avisar(db, [r1] if r1 else [], "Ausencia por aprobar", _texto(x, a) + pend, autor)
-    else:
-        _avisar(db, au.usuarios_con(db, a.id, "personal.autorizar"), "Ausencia por aprobar", _texto(x, a) + pend,
+        _avisar(db, [r1] if r1 else au.aprobadores_direccion(db, a.id), "Ausencia por aprobar", _texto(x, a) + pend,
                 autor)
+    else:
+        _avisar(db, au.aprobadores_direccion(db, a.id), "Ausencia por aprobar",
+                _texto(x, a) + pend + " Basta con que la apruebe uno de la dirección.", autor)
 
 
 # --------------------------------------------------------------------------- consultas
@@ -228,7 +238,7 @@ def give_consent(xid: int, scope: Scope = Depends(get_scope), db: Session = Depe
     x.estado, x.visto_bueno_por, x.visto_bueno_en = "visto_bueno", scope.user.id, datetime.now()
     audit(db, scope.user, "visto_bueno", "ausencia", x.id, {"persona": x.persona})
     db.commit()
-    _avisar(db, au.usuarios_con(db, a.id, "personal.autorizar"), "Ausencia de Recepción 2 por aprobar",
+    _avisar(db, au.aprobadores_direccion(db, a.id), "Ausencia de Recepción 2 por aprobar",
             _texto(x, a) + " Recepción 1 ha dado su visto bueno. Apruébela en Personal → Vacaciones y ausencias.",
             scope.user.id)
     return _uno(db, scope, x)

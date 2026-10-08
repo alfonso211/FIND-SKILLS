@@ -32,9 +32,15 @@ def es_r1(db: Session, scope, a: Asset) -> bool:
     return r1 is not None and r1.id == scope.user.id
 
 
+def direccion(scope, asset_id: int) -> bool:
+    """Dirección que aprueba ausencias (Director General, Director Técnico…). La presidencia (usuario «no
+    asignable») no interviene: ni recibe los avisos ni aprueba."""
+    return scope.can_asset("personal.autorizar", asset_id) and (not scope.user.no_asignable or scope.user.is_superadmin)
+
+
 def gestiona(db: Session, scope, a: Asset) -> bool:
     """Recepción 1 o dirección: dan de alta al personal de subcontratas y registran ausencias de otros."""
-    return es_r1(db, scope, a) or scope.can_asset("personal.autorizar", a.id)
+    return es_r1(db, scope, a) or direccion(scope, a.id)
 
 
 def colectivo_usuario(db: Session, u: User, a: Asset) -> str:
@@ -70,8 +76,8 @@ def puede_aprobar(db: Session, scope, x: Absence) -> bool:
     if x.colectivo in PERSONAL_R1:
         return gestiona(db, scope, db.get(Asset, x.asset_id))
     if x.colectivo == "recepcion2":  # dirección, una vez que Recepción 1 da el visto bueno
-        return x.estado == "visto_bueno" and scope.can_asset("personal.autorizar", x.asset_id)
-    return scope.can_asset("personal.autorizar", x.asset_id)
+        return x.estado == "visto_bueno" and direccion(scope, x.asset_id)
+    return direccion(scope, x.asset_id)  # cualquiera de la dirección: basta con que apruebe uno
 
 
 def puede_visto_bueno(db: Session, scope, x: Absence) -> bool:
@@ -105,6 +111,21 @@ def dias(desde: date, hasta: date) -> tuple[int, int]:
     naturales = (hasta - desde).days + 1
     laborables = sum(1 for i in range(naturales) if (desde + timedelta(days=i)).weekday() < 5)
     return naturales, laborables
+
+
+def aprobadores_direccion(db: Session, asset_id: int) -> list[User]:
+    """A quién se avisa para que apruebe dirección (cualquiera de ellos puede aprobar)."""
+    return [u for u in usuarios_con(db, asset_id, "personal.autorizar") if not u.no_asignable]
+
+
+def pendientes_de(db: Session, scope) -> list[Absence]:
+    """Ausencias que esperan una decisión de este usuario (aprobar o dar el visto bueno)."""
+    ids = scope.asset_ids("activos.ver")
+    stmt = select(Absence).where(Absence.estado.in_(("pendiente", "visto_bueno")))
+    if ids is not None:
+        stmt = stmt.where(Absence.asset_id.in_(ids or {-1}))
+    return [x for x in db.scalars(stmt.order_by(Absence.desde))
+            if puede_aprobar(db, scope, x) or puede_visto_bueno(db, scope, x)]
 
 
 def usuarios_con(db: Session, asset_id: int, perm: str | None = None) -> list[User]:
