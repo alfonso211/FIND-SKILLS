@@ -17,6 +17,7 @@ from ..models import MODALIDADES_RESERVA, Charge, Contact, Lease, Reservation, U
 from ..schemas import GarageLeaseEnd, GarageLeaseIn, GarageLeaseUpdate, Payment
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
+from .alquiler import AnularIn
 from .documentos import adjuntar_pendientes
 
 router = APIRouter(prefix="/api/garajes", tags=["alquiler de garajes"])
@@ -175,6 +176,15 @@ def end_garage_lease(lid: int, data: GarageLeaseEnd, scope: Scope = Depends(get_
         if l.unit.estado == "ocupada":
             l.unit.estado = "disponible"
     audit(db, scope.user, "baja_garaje", "contrato", lid, {"fecha_fin": str(data.fecha_fin), "motivo": data.motivo})
+    db.commit()
+    return _contrato_out(db, l, date.today())
+
+
+@router.post("/contratos/{lid}/anular")
+def void_garage_lease(lid: int, data: AnularIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Anula el alquiler de la plaza (sin cobros ni facturas): ver recibos.anular_contrato."""
+    l = _contrato(db, scope, lid)
+    recibos.anular_contrato(db, scope.user, l, data.motivo)
     db.commit()
     return _contrato_out(db, l, date.today())
 

@@ -115,7 +115,7 @@ def _ocupacion(db, scope, wb, desde, hasta, asset_id):
             aloj = {i for i, x in unidades.items() if x != "garaje"}
             plazas = {i for i, x in unidades.items() if x == "garaje"}
             leases = db.execute(select(Lease.unit_id, Lease.fecha_inicio, Lease.fecha_fin).where(
-                Lease.unit_id.in_(plazas or {-1}), Lease.estado != "borrador")).all()
+                Lease.unit_id.in_(plazas or {-1}), Lease.estado.not_in(("borrador", "anulado")))).all()
             for mes, ini, fin in _meses(desde, hasta):
                 dias = (fin - ini).days + 1
                 propias = [r for r, aid in res if aid == a.id and r.unit_id in aloj]
@@ -150,7 +150,7 @@ def _ocupacion(db, scope, wb, desde, hasta, asset_id):
             for uid, uso in unidades:
                 usos[uso].add(uid)
             contratos = db.execute(select(Lease.unit_id, Lease.fecha_inicio, Lease.fecha_fin).join(Unit).where(
-                Unit.asset_id == a.id, Lease.estado != "borrador")).all()
+                Unit.asset_id == a.id, Lease.estado.not_in(("borrador", "anulado")))).all()
             for mes, ini, fin in _meses(desde, hasta):
                 alquiladas = {u for u, fi, ff in contratos if fi <= fin and (ff is None or ff >= ini)}
                 for uso, ids in sorted(usos.items()):
