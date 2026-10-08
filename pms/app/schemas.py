@@ -568,6 +568,7 @@ class UserIn(BaseModel):
     is_superadmin: bool = False
     activo: bool = True
     no_asignable: bool = False
+    supplier_id: int | None = None  # colaborador externo de este proveedor: solo entra en su portal
     asignaciones: list[AssignmentIn] = []
 
 
@@ -578,6 +579,7 @@ class UserUpdate(BaseModel):
     is_superadmin: bool | None = None
     activo: bool | None = None
     no_asignable: bool | None = None
+    supplier_id: int | None = None  # 0 = deja de ser colaborador
     asignaciones: list[AssignmentIn] | None = None
 
 

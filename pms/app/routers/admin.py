@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from .. import avisos
 from ..config import settings
 from ..database import get_db
-from ..models import Asset, Assignment, AuditLog, Company, EmailLog, Role, User
+from ..models import Asset, Assignment, AuditLog, Company, EmailLog, Role, Supplier, User
 from ..schemas import AssignmentIn, RoleIn, UserIn, UserUpdate
 from ..security import PERMISOS, Scope, audit, get_scope, hash_password
 from ..utils import bad_request, get_or_404
@@ -34,6 +34,13 @@ def _validate_assignments(db: Session, items: list[AssignmentIn]):
             get_or_404(db, Company, a.company_id)
 
 
+def _validar_colaborador(db: Session, supplier_id: int | None, superadmin: bool) -> None:
+    if supplier_id:
+        get_or_404(db, Supplier, supplier_id)
+        if superadmin:
+            bad_request("Un colaborador externo no puede ser superadministrador")
+
+
 @router.get("/usuarios")
 def list_users(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     scope.require_group("usuarios.gestionar")
@@ -49,9 +56,10 @@ def create_user(data: UserIn, scope: Scope = Depends(get_scope), db: Session = D
     if db.scalar(select(User).where(User.email == email)):
         bad_request("Ya existe un usuario con ese email")
     _validate_assignments(db, data.asignaciones)
+    _validar_colaborador(db, data.supplier_id, data.is_superadmin)
     u = User(email=email, nombre=data.nombre, password_hash=hash_password(data.password),
              is_superadmin=data.is_superadmin, activo=data.activo, debe_cambiar_password=True,
-             no_asignable=data.no_asignable,
+             no_asignable=data.no_asignable, supplier_id=data.supplier_id,
              assignments=[Assignment(**a.model_dump()) for a in data.asignaciones])
     db.add(u)
     db.flush()
@@ -84,6 +92,9 @@ def update_user(uid: int, data: UserUpdate, scope: Scope = Depends(get_scope), d
         u.is_superadmin = data.is_superadmin
     if data.no_asignable is not None:
         u.no_asignable = data.no_asignable
+    if "supplier_id" in data.model_fields_set:
+        u.supplier_id = data.supplier_id or None
+    _validar_colaborador(db, u.supplier_id, u.is_superadmin)
     if data.password:
         u.password_hash = hash_password(data.password)
         u.debe_cambiar_password = True

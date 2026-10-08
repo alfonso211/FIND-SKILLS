@@ -18,10 +18,10 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from .. import adjuntos, avisos, documentos
+from .. import adjuntos, ausencias, avisos, documentos
 from ..database import get_db
 from ..facturacion import FORMAS_PAGO, dinero
-from ..models import (AMBITOS_GASTO, CATEGORIAS_GASTO, TIPOS_DOCUMENTO, Asset, Company, Expense,
+from ..models import (TIPOS_DOC_RESERVADOS, AMBITOS_GASTO, CATEGORIAS_GASTO, TIPOS_DOCUMENTO, Asset, Company, Expense,
                       PresidencyReport, ReceivedDocument, Supplier, Unit, User)
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request, get_or_404, scoped
@@ -243,6 +243,7 @@ def _doc_out(x: ReceivedDocument, gasto: Expense | None, unidades: dict, usuario
     d["unidad"] = unidades.get(x.unit_id)
     d["usuario"] = usuarios.get(x.user_id)
     d["gasto"] = _gasto_out(gasto, unidades, usuarios, activos) if gasto else None
+    d["de_colaborador"] = x.revision is not None
     return d
 
 
@@ -253,8 +254,8 @@ def _activos(db: Session) -> dict:
 # --------------------------------------------------------------------------- documentos recibidos (carpeta)
 @router.get("/documentos-recibidos")
 def list_documents(asset_id: int | None = None, tipo: str | None = None, desde: date | None = None,
-                   hasta: date | None = None, q: str | None = None, scope: Scope = Depends(get_scope),
-                   db: Session = Depends(get_db)):
+                   hasta: date | None = None, q: str | None = None, revision: str | None = None,
+                   scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     scope.require_any("documentos.ver")
     stmt = scoped(select(ReceivedDocument), ReceivedDocument.asset_id, scope.asset_ids("documentos.ver"))
     if asset_id:
@@ -269,7 +270,13 @@ def list_documents(asset_id: int | None = None, tipo: str | None = None, desde: 
         like = f"%{q}%"
         stmt = stmt.where(or_(ReceivedDocument.emisor.ilike(like), ReceivedDocument.referencia.ilike(like),
                               ReceivedDocument.descripcion.ilike(like), ReceivedDocument.nombre.ilike(like)))
+    if revision:
+        stmt = stmt.where(ReceivedDocument.revision == revision)
     docs = list(db.scalars(stmt.order_by(ReceivedDocument.fecha.desc(), ReceivedDocument.id.desc()).limit(3000)))
+    # la documentación del personal de las subcontratas solo la ven dirección y Recepción 1 del activo
+    reservado: dict[int, bool] = {}
+    docs = [x for x in docs if x.tipo not in TIPOS_DOC_RESERVADOS or reservado.setdefault(
+        x.asset_id, ausencias.gestiona(db, scope, db.get(Asset, x.asset_id)))]
     gastos = {g.documento_id: g for g in db.scalars(select(Expense).where(
         Expense.documento_id.in_([x.id for x in docs] or [-1])))}
     unidades, usuarios = _nombres(db, {x.unit_id for x in docs if x.unit_id} | {g.unit_id for g in gastos.values()
@@ -390,6 +397,8 @@ def _fichero(ficheros: list[UploadFile]) -> tuple[bytes, str, str]:
 def view_document(did: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     x = get_or_404(db, ReceivedDocument, did)
     _ver(scope, x.asset_id)
+    if x.tipo in TIPOS_DOC_RESERVADOS and not ausencias.gestiona(db, scope, db.get(Asset, x.asset_id)):
+        raise HTTPException(403, "La documentación del personal solo la ven Recepción 1 y dirección")
     audit(db, scope.user, "ver", "documento_recibido", did)
     db.commit()
     return Response(documentos.leer(x.fichero), media_type=x.mime, headers={

@@ -3276,17 +3276,21 @@ V.docrecibidos = async (el) => {
   const ini = `${today().slice(0, 4)}-01-01`;
   el.innerHTML = `<div class="toolbar"><select id="tp"><option value="">Todos los tipos</option>${Object.entries(C.tipos_documento).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select>
     <label>Desde<input type="date" id="d" value="${ini}"></label><label>Hasta<input type="date" id="h" value="${today()}"></label>
-    <input id="q" placeholder="Emisor, referencia, descripción"><span class="spacer"></span>${editar ? '<button class="btn primary" id="new">Subir documento</button>' : ""}</div>
+    <input id="q" placeholder="Emisor, referencia, descripción"><select id="rv"><option value="">Todos</option><option value="pendiente">De colaboradores: por revisar</option><option value="aceptado">De colaboradores: aceptados</option><option value="rechazado">De colaboradores: rechazados</option></select>
+    <span class="spacer"></span>${editar ? '<button class="btn primary" id="new">Subir documento</button>' : ""}</div>
     <p class="muted">Carpeta de documentos recibidos del activo (facturas, tickets, cartas, notificaciones…), guardados cifrados. Cada activo ve solo los suyos.</p><div id="t"></div>`;
   const load = async () => {
-    const docs = await get("/api/documentos-recibidos", { asset_id: S.asset, tipo: $("#tp", el).value, desde: $("#d", el).value, hasta: $("#h", el).value, q: $("#q", el).value });
+    const docs = await get("/api/documentos-recibidos", { asset_id: S.asset, tipo: $("#tp", el).value, desde: $("#d", el).value, hasta: $("#h", el).value, q: $("#q", el).value, revision: $("#rv", el).value });
     table($("#t", el), [
       { k: "fecha", t: "Fecha", f: (v, x) => fdate(v) + (x.vencimiento ? `<div class="muted peq">vence ${fdate(x.vencimiento)}</div>` : "") }, { k: "activo", t: "Activo" }, { k: "tipo_nombre", t: "Tipo" }, { k: "emisor", t: "Emisor" },
       { k: "referencia", t: "Referencia" }, { k: "descripcion", t: "Descripción" }, { k: "unidad", t: "Apartamento" },
       { k: "gasto", t: "Gasto", f: (v) => (v ? `${eur(v.total)} <span class="muted">${esc(v.categoria_nombre)}${v.pagado ? " · pagado" : " · pendiente"}</span>` : '<span class="muted">—</span>') },
-      { k: "usuario", t: "Subido por", f: (v, x) => `${esc(v || "")}<div class="muted peq">${fdt(x.subido)}</div>` },
+      { k: "usuario", t: "Subido por", f: (v, x) => `${esc(v || "")}<div class="muted peq">${fdt(x.subido)}</div>${x.de_colaborador ? `<span class="badge ${{ pendiente: "b-pendiente", aceptado: "b-vigente", rechazado: "b-anulado" }[x.revision]}">Colaborador · ${esc(x.revision)}</span>${x.revision_nota ? `<div class="muted peq">${esc(x.revision_nota)}</div>` : ""}` : ""}` },
     ], docs, (x) => [
       ["Ver", () => abrirFichero(`/api/documentos-recibidos/${x.id}/fichero`)],
+      editar && x.revision === "pendiente" && ["Aceptar", () => run(() => post(`/api/documentos-recibidos/${x.id}/revisar`, { aceptar: true }), "Documento aceptado").then(load), "primary"],
+      editar && x.revision === "pendiente" && ["Rechazar", () => form(`Rechazar · ${x.nombre}`, [{ k: "nota", t: "Motivo (lo verá el colaborador)", type: "textarea", req: true, wide: true }], {},
+        async (d) => { await post(`/api/documentos-recibidos/${x.id}/revisar`, { aceptar: false, nota: d.nota }); toast("Documento rechazado"); load(); }, "Rechazar")],
       editar && !x.gasto && ["Anotar gasto", async () => {
         const [C2, unidades] = await Promise.all([catGastos(), unidadesActivo(x.asset_id)]);
         const f = form(`Gasto del documento · ${x.tipo_nombre} ${x.emisor || ""}`, [{ k: "fecha", t: "Fecha de la factura", type: "date", req: true }, { k: "vencimiento", t: "Vencimiento", type: "date" }, ...camposGasto(C2, unidades)],
@@ -3299,7 +3303,7 @@ V.docrecibidos = async (el) => {
       editar && ["Borrar", async () => { if (confirm(`¿Borrar el documento «${x.nombre}»? El apunte del gasto, si lo tiene, se conserva.`)) { await run(() => api("DELETE", `/api/documentos-recibidos/${x.id}`), "Documento borrado"); load(); } }, "danger"],
     ]);
   };
-  ["#tp", "#d", "#h"].forEach((s) => ($(s, el).onchange = load)); $("#q", el).oninput = debounce(load);
+  ["#tp", "#d", "#h", "#rv"].forEach((s) => ($(s, el).onchange = load)); $("#q", el).oninput = debounce(load);
   if ($("#new", el)) $("#new", el).onclick = () => subirDocumento(load);
   load();
 };
@@ -3358,7 +3362,8 @@ V.gastos = async (el) => {
 
 // ---- administración
 V.usuarios = async (el) => {
-  const [users, roles] = await Promise.all([get("/api/admin/usuarios"), get("/api/admin/roles")]);
+  const [users, roles, provs] = await Promise.all([get("/api/admin/usuarios"), get("/api/admin/roles"), get("/api/proveedores").catch(() => [])]);
+  const provNombre = Object.fromEntries(provs.map((p) => [p.id, p.nombre]));
   el.innerHTML = `<div class="toolbar"><span class="spacer"></span><button class="btn primary" id="new">Nuevo usuario</button></div><div id="t"></div>`;
   const scopeTxt = (a) => a.asset_id ? `Activo: ${assetName(a.asset_id)}` : a.company_id ? `Sociedad: ${S.companies.find((c) => c.id === a.company_id)?.nombre}` : "Todo el grupo";
   const assignRow = (a = {}) => `<div class="assign-row">
@@ -3373,6 +3378,8 @@ V.usuarios = async (el) => {
       { k: "activo", t: "Usuario activo", type: "checkbox", def: true },
       ...(S.me.is_superadmin ? [{ k: "is_superadmin", t: "Superadministrador (acceso total)", type: "checkbox" }] : []),
       { k: "no_asignable", t: "Presidencia: los demás no pueden enviarle tareas, recordatorios ni convocatorias", type: "checkbox" },
+      { k: "supplier_id", t: "Colaborador externo de (subcontrata): solo verá su portal", type: "select", wide: true, options: provs.map((p) => [p.id, p.nombre]) },
+      { html: '<p class="muted peq">Para un colaborador: elija su empresa y dele el rol <b>Colaborador</b> en los activos donde trabaja. No podrá entrar en ninguna otra pantalla.</p>' },
       { html: `<fieldset><legend>Roles y ámbito de acceso (rol · sociedad · activo)</legend><div id="asg">${(u?.asignaciones || []).map(assignRow).join("")}</div>
         <button type="button" class="btn sm" id="addA">+ Añadir rol</button></fieldset>` },
     ], u || {}, async (d) => {
@@ -3380,7 +3387,7 @@ V.usuarios = async (el) => {
         const v = (k) => row.querySelector(`[data-f=${k}]`).value;
         return { role_id: Number(v("role_id")), company_id: v("company_id") ? Number(v("company_id")) : null, asset_id: v("asset_id") ? Number(v("asset_id")) : null };
       });
-      const body = { ...d, asignaciones }; if (!body.password) delete body.password;
+      const body = { ...d, asignaciones, supplier_id: d.supplier_id ? Number(d.supplier_id) : (u ? 0 : null) }; if (!body.password) delete body.password;
       if (u) await put(`/api/admin/usuarios/${u.id}`, body); else await post("/api/admin/usuarios", body);
       toast("Usuario guardado"); go("usuarios");
     });
@@ -3391,7 +3398,7 @@ V.usuarios = async (el) => {
   $("#new", el).onclick = () => edit(null);
   table($("#t", el), [
     { k: "nombre", t: "Nombre", f: (v) => `<span class="persona">${avatar(v, "sm")}${esc(v)}</span>` }, { k: "email", t: "Email" },
-    { k: "asignaciones", t: "Roles / ámbito", f: (v, u) => u.is_superadmin ? "<b>Superadministrador</b>" : v.map((a) => `${esc(a.rol)} <span class="muted">(${esc(scopeTxt(a))})</span>`).join("<br>") || '<span class="muted">Sin acceso</span>' },
+    { k: "asignaciones", t: "Roles / ámbito", f: (v, u) => (u.supplier_id ? `<span class="badge b-asignada">Colaborador · ${esc(provNombre[u.supplier_id] || "")}</span><br>` : "") + (u.is_superadmin ? "<b>Superadministrador</b>" : v.map((a) => `${esc(a.rol)} <span class="muted">(${esc(scopeTxt(a))})</span>`).join("<br>") || '<span class="muted">Sin acceso</span>') },
     { k: "activo", t: "Estado", f: (v, u) => (v ? badge("vigente") : badge("baja")) + (u.debe_cambiar_password ? ' <span class="badge b-pendiente">contraseña provisional</span>' : "") },
   ], users, (u) => [["Editar", () => edit(u)]]);
 };
@@ -3985,6 +3992,84 @@ V.ausencias = async (el) => {
   load();
 };
 
+// ---- portal del colaborador (subcontrata): sus OT, partes, envíos, documentos y personal
+const TIPO_ENVIO = { ot_enviada: "Orden de trabajo", parte_limpieza: "Parte de limpieza", limpieza_urgente: "Limpieza urgente" };
+V.colaborador = async (el) => {
+  const R = S.colab = await get("/api/colaborador/resumen");
+  const pestanas = [["ot", "Órdenes de trabajo"], ["partes", "Partes de trabajo"], ["envios", "Envíos recibidos"], ["docs", "Mis documentos"], ["personal", "Mi personal"]];
+  el.innerHTML = `<div class="aviso-ok" style="margin-bottom:10px"><b>${esc(R.proveedor.nombre)}</b>${R.proveedor.nif ? ` · ${esc(R.proveedor.nif)}` : ""} · ${R.activos.map((a) => esc(a.nombre)).join(", ")}
+      · ${R.ot_abiertas} OT abierta(s) · ${R.personal} persona(s)</div>
+    <div class="toolbar">${pestanas.map(([k, t]) => `<button type="button" class="btn sm" data-tab="${k}">${t}</button>`).join("")}<span class="spacer"></span><span id="acc"></span></div><div id="t"></div>`;
+  const T = {
+    ot: async () => {
+      $("#acc", el).innerHTML = '<label class="check"><input type="checkbox" id="ab" checked> Solo abiertas</label>';
+      const load = async () => table($("#t", el), [
+        { k: "ref", t: "OT", f: (v) => `<b>${esc(v)}</b>` }, { k: "activo", t: "Activo" }, { k: "lugar", t: "Lugar" },
+        { k: "titulo", t: "Trabajo", f: (v, w) => `${esc(v)}${w.descripcion ? `<div class="muted peq">${esc(w.descripcion)}</div>` : ""}` },
+        { k: "prioridad", t: "Prioridad", f: badge }, { k: "estado", t: "Estado", f: badge },
+        { k: "fecha_apertura", t: "Abierta", f: (v, w) => fdate(v) + (w.fecha_prevista ? `<div class="muted peq">prevista ${fdate(w.fecha_prevista)}</div>` : "") },
+        { k: "solucion", t: "Realizado", f: (v, w) => (w.terminada ? `${fdate(w.terminada)}<div class="muted peq">${esc(v || "")}</div>` : "") },
+        { k: "persona", t: "Persona" },
+      ], await get("/api/colaborador/ordenes", { abiertas: $("#ab", el).checked }), (w) => [["Subir factura / albarán", () => subirColab({ work_order_id: w.id, tipo: "factura" })]]);
+      $("#ab", el).onchange = load; load();
+    },
+    partes: async () => {
+      $("#acc", el).innerHTML = "";
+      const partes = await get("/api/colaborador/partes");
+      const filas = partes.flatMap((p) => p.lineas.map((x) => ({ ...x, fecha: p.fecha, activo: p.activo, area: p.area })));
+      table($("#t", el), [{ k: "fecha", t: "Fecha", f: fdate }, { k: "activo", t: "Activo" }, { k: "ref", t: "Ref.", f: (v) => `<b>${esc(v)}</b>` },
+        { k: "ubicacion", t: "Ubicación" }, { k: "trabajo", t: "Trabajo", f: (v, x) => `${esc(v)}${x.detalle ? `<div class="muted peq">${esc(x.detalle)}</div>` : ""}` },
+        { k: "persona", t: "Persona" }, { k: "horas", t: "Horas", num: true }], filas);
+      $("#t", el).insertAdjacentHTML("afterbegin", '<p class="muted">Sus trabajos en los partes diarios ya validados por recepción (último mes).</p>');
+    },
+    envios: async () => {
+      $("#acc", el).innerHTML = "";
+      table($("#t", el), [{ k: "fecha", t: "Fecha", f: fdt }, { k: "persona", t: "Enviado a" }, { k: "tipo", t: "Tipo", f: (v) => esc(TIPO_ENVIO[v] || v) },
+        { k: "canal", t: "Canal", f: (v) => (v === "email" ? "Correo" : "WhatsApp") }, { k: "asunto", t: "Asunto" }],
+        await get("/api/colaborador/envios"), (e) => [["Ver", () => cerrarSolo(form(e.asunto, [{ html: `<pre class="texto-envio">${esc(e.texto || "")}</pre>` }], {}, async () => {}))]]);
+    },
+    docs: async () => {
+      $("#acc", el).innerHTML = '<button class="btn primary" id="sub">Subir documento</button>';
+      $("#sub", el).onclick = () => subirColab({});
+      table($("#t", el), [{ k: "subido", t: "Subido", f: fdt }, { k: "activo", t: "Activo" }, { k: "tipo_nombre", t: "Tipo" },
+        { k: "referencia", t: "Referencia", f: (v, x) => `${esc(v || x.nombre)}${x.descripcion ? `<div class="muted peq">${esc(x.descripcion)}</div>` : ""}` },
+        { k: "persona", t: "Trabajador" }, { k: "ot", t: "OT" },
+        { k: "revision_nombre", t: "Estado", f: (v, x) => `<span class="badge ${{ pendiente: "b-pendiente", aceptado: "b-vigente", rechazado: "b-anulado" }[x.revision]}">${esc(v)}</span>${x.revision_nota ? `<div class="muted peq">${esc(x.revision_nota)}</div>` : ""}` }],
+        await get("/api/colaborador/documentos"), (x) => [["Ver", () => abrirFichero(`/api/colaborador/documentos/${x.id}/fichero`)],
+          x.revision === "pendiente" && ["Borrar", () => confirm("¿Borrar este documento?") && run(() => api("DELETE", `/api/colaborador/documentos/${x.id}`), "Documento borrado").then(() => T.docs()), "danger"]]);
+    },
+    personal: async () => {
+      $("#acc", el).innerHTML = "";
+      table($("#t", el), [{ k: "nombre", t: "Nombre" }, { k: "area", t: "Área" }, { k: "activo_nombre", t: "Activo" }, { k: "telefono", t: "Móvil" }, { k: "email", t: "Correo" },
+        { k: "activo", t: "Estado", f: (v) => (v ? "En activo" : '<span class="muted">Baja</span>') }], await get("/api/colaborador/personal"),
+        (p) => [["Subir documentación", () => subirColab({ staff_id: p.id, tipo: "personal" })]]);
+      $("#t", el).insertAdjacentHTML("afterbegin", '<p class="muted">Su personal dado de alta por Recepción 1. Si falta alguien o hay un dato mal, avise a Recepción 1.</p>');
+    },
+  };
+  const abrir = (k) => { el.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("primary", b.dataset.tab === k)); T[k]().catch((e) => toast(e.message, true)); };
+  el.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => abrir(b.dataset.tab)));
+  abrir("ot");
+  async function subirColab(ini) {
+    const [ots, gente] = await Promise.all([get("/api/colaborador/ordenes"), get("/api/colaborador/personal")]);
+    const f = form("Subir documento", [
+      { k: "asset_id", t: "Activo", type: "select", req: true, options: R.activos.map((a) => [a.id, a.nombre]) },
+      { k: "tipo", t: "Tipo", type: "select", req: true, options: Object.entries(R.tipos_documento) },
+      { k: "fecha", t: "Fecha del documento", type: "date", req: true, def: today() }, { k: "referencia", t: "Nº de factura / albarán / referencia" },
+      { k: "work_order_id", t: "Orden de trabajo (si corresponde)", type: "select", options: ots.map((w) => [w.id, `${w.ref} · ${w.titulo}`]) },
+      { k: "staff_id", t: "Trabajador (documentación de personal)", type: "select", options: gente.map((p) => [p.id, p.nombre]) },
+      { k: "descripcion", t: "Descripción", type: "textarea", wide: true },
+      { html: '<label class="wide">Fichero (PDF o fotos; varias fotos = varias páginas) *<input type="file" name="ficheros" multiple accept="application/pdf,image/jpeg,image/png" required></label><p class="muted peq">Lo revisará Recepción 1 o dirección. La documentación de personal solo la ven Recepción 1 y dirección.</p>' },
+    ], { asset_id: R.activos.length === 1 ? R.activos[0].id : "", ...ini }, async (d, fm) => {
+      const fd = new FormData();
+      Object.entries(d).forEach(([k, v]) => v !== null && v !== "" && fd.append(k, v));
+      [...fm.querySelector("input[type=file]").files].forEach((x) => fd.append("ficheros", x));
+      await upload("/api/colaborador/documentos", fd);
+      toast("Documento enviado: pendiente de revisar"); abrir("docs");
+    }, "Enviar");
+    return f;
+  }
+};
+
 // ------------------------------------------------------------------ navegación
 const MENU = [
   ["General", [["panel", "Panel de control", null], ["agenda", "Agenda", null], ["manual", "Manual de uso", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
@@ -4007,8 +4092,10 @@ const tituloVista = (vista) => TITLES[vista] || vista;
 
 // Menú lateral sin desplazamiento: grupos plegables. Si todo cabe en la altura de la pantalla se ven abiertos;
 // si no, solo «General» y el grupo de la pantalla actual (pulsando un título se abre ese y se cierran los demás).
+const MENU_COLAB = [["", [["colaborador", "Portal del colaborador", null]]], ["", [["perfil", "Mi perfil", null]]]];
+TITLES.colaborador = "Portal del colaborador";
 function renderNav() {
-  $("#nav").innerHTML = MENU.map(([g, items], i) => {
+  $("#nav").innerHTML = (S.me.colaborador ? MENU_COLAB : MENU).map(([g, items], i) => {
     const vis = items.filter(([, , p]) => allowed(p));
     if (!vis.length) return "";
     const links = vis.map(([id, t]) => `<a href="#${id}" data-v="${id}">${t}</a>`).join("");
@@ -4041,7 +4128,8 @@ function ajustarNav(prioritario) {
 }
 window.addEventListener("resize", () => { clearTimeout(S._navT); S._navT = setTimeout(() => $("#nav") && $("#nav").children.length && ajustarNav(), 150); });
 async function go(view) {
-  view = TITLES[view] && allowed(MENU.flatMap(([, i]) => i).find(([id]) => id === view)[2]) ? view : "panel";
+  if (S.me.colaborador) view = ["colaborador", "perfil"].includes(view) ? view : "colaborador";
+  else view = TITLES[view] && view !== "colaborador" && allowed(MENU.flatMap(([, i]) => i).find(([id]) => id === view)[2]) ? view : "panel";
   if (location.hash !== "#" + view) history.replaceState(null, "", "#" + view);
   document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.v === view));
   ajustarNav();
@@ -4083,6 +4171,7 @@ function forcePasswordChange() {
 async function start() {
   try { S.me = await get("/api/auth/me"); } catch { return showLogin(); }
   if (S.me.debe_cambiar_password) return forcePasswordChange();
+  if (S.me.colaborador) return startColaborador();
   $("#modal").oncancel = null; $("#assetFilter").hidden = false;
   S.cat = await get("/api/catalogos");
   S.asset = localStorage.getItem("pms_asset") || "";
@@ -4093,9 +4182,20 @@ async function start() {
   go(location.hash.slice(1) || "panel");
   avisoNovedades();
 }
+// Colaborador externo (subcontrata): solo su portal; el resto de la API le está cerrada
+async function startColaborador() {
+  $("#modal").oncancel = null; $("#assetFilter").hidden = true;
+  S.cat = { permisos: {} }; S.companies = [];
+  S.colab = await get("/api/colaborador/resumen");
+  S.assets = S.colab.activos; S.asset = "";
+  $("#login").classList.add("hidden"); $("#app").classList.remove("hidden");
+  pintarUsuario();
+  renderNav();
+  go(location.hash.slice(1) || "colaborador");
+}
 function pintarUsuario() {
   $("#userAvatar").textContent = iniciales(S.me.nombre); $("#userAvatar").title = S.me.nombre;
-  $("#userName").innerHTML = `${esc(S.me.nombre)}<small>${esc(rolDe(S.me))}</small>`;
+  $("#userName").innerHTML = `${esc(S.me.nombre)}<small>${esc(S.me.colaborador ? S.me.colaborador.proveedor : rolDe(S.me))}</small>`;
 }
 function showLogin() { $("#app").classList.add("hidden"); $("#login").classList.remove("hidden"); }
 function logout() { S.token = null; localStorage.removeItem("pms_token"); showLogin(); }

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from .. import ausencias, avisos, firma_contrato, planos
 from ..database import get_db
-from ..models import AREAS_PERSONAL, Asset, EmailLog, Reservation, StaffMember, Unit
+from ..models import AREAS_PERSONAL, Asset, EmailLog, Reservation, StaffDispatch, StaffMember, Supplier, Unit
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request, get_or_404
 
@@ -108,6 +108,7 @@ def create_staff(data: StaffIn, scope: Scope = Depends(get_scope), db: Session =
     if data.area in PERMISO_AREA and not (data.email or data.telefono):
         bad_request("Indique al menos un correo electrónico o un teléfono")
     p = StaffMember(**data.model_dump())
+    enlazar_empresa(db, p)
     db.add(p)
     db.flush()
     audit(db, scope.user, "crear", "personal", p.id, {"nombre": p.nombre, "area": p.area})
@@ -127,6 +128,7 @@ def update_staff(pid: int, data: StaffIn, scope: Scope = Depends(get_scope), db:
     antes = p.to_dict()
     for k, v in data.model_dump().items():
         setattr(p, k, v)
+    enlazar_empresa(db, p)
     audit(db, scope.user, "editar", "personal", pid, {k: v for k, v in p.to_dict().items() if antes.get(k) != v})
     db.commit()
     return _out(p, db)
@@ -137,6 +139,8 @@ def delete_staff(pid: int, scope: Scope = Depends(get_scope), db: Session = Depe
     p = get_or_404(db, StaffMember, pid)
     _puede_editar(scope, db, p.area, p.asset_id)
     audit(db, scope.user, "borrar", "personal", pid, {"nombre": p.nombre, "area": p.area})
+    for e in db.scalars(select(StaffDispatch).where(StaffDispatch.staff_id == pid)):
+        db.delete(e)
     db.delete(p)
     db.commit()
     return {"ok": True}
@@ -161,6 +165,20 @@ def destinatarios(db: Session, ids: list[int], asset_id: int, canal: str) -> lis
     return out
 
 
+def norm_empresa(s: str | None) -> str:
+    return "".join(ch for ch in (s or "").casefold() if ch.isalnum())  # «S.L.», «SL» y «s. l.» son iguales
+
+
+def enlazar_empresa(db: Session, p: StaffMember) -> None:
+    """Enlaza la persona con su empresa de Proveedores por el nombre (si hay una sola con ese nombre)."""
+    if not p.empresa:
+        p.supplier_id = None
+        return
+    k = norm_empresa(p.empresa)
+    ids = [i for i, n in db.execute(select(Supplier.id, Supplier.nombre)) if norm_empresa(n) == k]
+    p.supplier_id = ids[0] if len(ids) == 1 else None
+
+
 def despachar(db: Session, personas: list[StaffMember], canal: str, clave: str, asunto: str, texto: str, html: str,
               adjuntos: list[tuple[str, bytes, str]] | None = None) -> list[dict]:
     """Envía a cada persona. Correo: se envía ya (un fallo con una persona no impide el resto). WhatsApp: devuelve
@@ -180,6 +198,9 @@ def despachar(db: Session, personas: list[StaffMember], canal: str, clave: str, 
         else:
             movil = firma_contrato.movil_whatsapp(p.telefono)
             r.update(destino=movil, ok=True, whatsapp=f"https://wa.me/{movil}?text={quote(texto)}")
+        if r["ok"]:  # copia para el portal de su colaborador
+            db.add(StaffDispatch(staff_id=p.id, tipo=clave.split(":")[0][:30], clave=clave[:80], canal=canal,
+                                 asunto=asunto[:200], texto=texto))
         out.append(r)
     return out
 

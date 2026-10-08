@@ -36,17 +36,20 @@ PERMISOS: dict[str, str] = {
     "partes.validar": "Validar los partes de trabajo diarios de mantenimiento y limpieza",
     "personal.autorizar": "Aprobar las ausencias de recepción, limpieza, conserjería y oficinas",
     "personal.autorizar_mto": "Director técnico: autorizar las ausencias del personal de mantenimiento",
+    "colaborador.portal": "Colaborador externo: solo su portal (sus OT, partes y envíos, y subir sus documentos)",
     "usuarios.gestionar": "Gestionar usuarios, roles y sociedades",
     "auditoria.ver": "Consultar registro de auditoría",
 }
 
 # Solo los tiene el director técnico (rol «Dirección Técnica»), no toda la dirección
 SOLO_DIRECCION_TECNICA = ("personal.autorizar_mto",)
+# Permisos que no tiene la dirección del grupo (no son de gestión)
+NO_DIRECCION = (*SOLO_DIRECCION_TECNICA, "colaborador.portal")
 
 # Roles iniciales; son editables desde Administración > Roles.
 ROLES_POR_DEFECTO: dict[str, tuple[str, list[str]]] = {
     "Dirección Grupo": ("Acceso completo de consulta y gestión",
-                        [p for p in PERMISOS if p not in SOLO_DIRECCION_TECNICA]),
+                        [p for p in PERMISOS if p not in NO_DIRECCION]),
     "Dirección Técnica": ("Director técnico: autoriza las ausencias de mantenimiento (se suma a su otro rol)",
                           ["activos.ver", "mantenimiento.ver", *SOLO_DIRECCION_TECNICA]),
     "Dirección Sociedad": ("Gestión completa de los activos de su ámbito", [
@@ -70,6 +73,8 @@ ROLES_POR_DEFECTO: dict[str, tuple[str, list[str]]] = {
     "Administración / Finanzas": ("Consulta económica y cobros", [
         "activos.ver", "alquiler.ver", "alquiler.editar", "reservas.ver", "mantenimiento.ver", "finanzas.ver",
         "facturas.ver", "facturas.rectificar", "documentos.ver", "documentos.editar"]),
+    "Colaborador": ("Subcontrata: solo su portal (sus OT, partes y envíos; sube facturas y documentación)",
+                    ["colaborador.portal"]),
     "Consulta": ("Solo lectura", ["activos.ver", "alquiler.ver", "reservas.ver", "mantenimiento.ver",
                                   "documentos.ver"]),
 }
@@ -98,6 +103,8 @@ _bearer = HTTPBearer(auto_error=False)
 # Rutas permitidas mientras el usuario tiene una contraseña provisional
 RUTAS_PASSWORD_PROVISIONAL = {"/api/auth/me", "/api/auth/password"}
 PASSWORD_MIN = 10
+# Las únicas rutas que puede usar un colaborador externo (usuario ligado a un proveedor)
+RUTAS_COLABORADOR = ("/api/auth/", "/api/colaborador/")
 
 
 def current_user(request: Request, cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
@@ -113,6 +120,9 @@ def current_user(request: Request, cred: HTTPAuthorizationCredentials | None = D
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuario inactivo")
     if user.debe_cambiar_password and request.url.path not in RUTAS_PASSWORD_PROVISIONAL:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Debe cambiar la contraseña provisional antes de continuar")
+    if user.supplier_id is not None and not request.url.path.startswith(RUTAS_COLABORADOR):
+        # un colaborador externo solo entra en su portal, tenga los roles que tenga
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Acceso de colaborador: solo puede usar su portal")
     return user
 
 
