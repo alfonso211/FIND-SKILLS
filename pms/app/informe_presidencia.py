@@ -110,7 +110,7 @@ def produccion_mes(db: Session, a: Asset, anio: int, mes: int) -> dict:
         alquileres.append({"clave": "otros", "concepto": "Otros alojamientos facturados", "contratos": None,
                            "pernoctaciones": None, "importe": _r(otros_aloj)})
     if ext.get("alojamiento"):
-        alquileres.append({"clave": "syade", "concepto": "Alojamiento facturado en el programa anterior (SYADE)",
+        alquileres.append({"clave": "syade", "concepto": "Facturado en el programa anterior (SYADE / cobros de otro programa)",
                            "contratos": None, "pernoctaciones": None, "importe": _r(ext["alojamiento"])})
     if rentas:
         alquileres.append({"clave": "rentas", "concepto": "Rentas de contratos de alquiler", "contratos": None,

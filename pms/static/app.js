@@ -4174,11 +4174,57 @@ V.legal = async (el) => {
   if (S.asset) verActivo(Number(S.asset)); else resumenTodos();
 };
 
+// ---- alquiler residencial: cobros de otro programa (facturas en PDF/ZIP) como ingresos por arrendamiento
+V.cobrosext = async (el) => {
+  const aid = await pickAsset("alquiler_residencial");
+  const anio = new Date().getFullYear();
+  el.innerHTML = `<div class="toolbar"><label>Año<select id="y">${[anio, anio - 1, anio - 2].map((y) => `<option>${y}</option>`).join("")}</select></label>
+    <span class="spacer"></span><button class="btn" id="xl">Excel de ingresos</button>${can("alquiler.editar") ? '<button class="btn primary" id="imp">Importar facturas (PDF o ZIP)</button>' : ""}</div>
+    <p class="muted">Rentas cobradas con otro programa: cada mensualidad cuenta como ingreso del activo (producción). Al importar se abre la ficha del inquilino; el piso y el contrato se completan después en <b>Contratos</b>.</p><div id="k"></div><div id="t"></div>`;
+  const load = async () => {
+    const r = await get("/api/cobros-alquiler", { asset_id: aid, anio: $("#y", el).value });
+    $("#k", el).innerHTML = `<div class="kpis"><div class="kpi"><b>${r.inquilinos.length}</b><span>Inquilinos</span></div><div class="kpi"><b>${eur(r.renta_mensual)}</b><span>Renta mensual</span></div><div class="kpi"><b>${eur(r.total)}</b><span>Cobrado en ${$("#y", el).value}</span></div></div>`;
+    table($("#t", el), [
+      { k: "cliente", t: "Inquilino", f: (v, x) => `${esc(v)}${x.contact_id ? "" : ' <span class="badge b-pendiente">sin ficha</span>'}` },
+      { k: "renta", t: "Renta", num: true, f: eur }, { k: "desde", t: "Desde" }, { k: "hasta", t: "Hasta" },
+      { k: "meses", t: "Meses", num: true }, { k: "total", t: "Cobrado", num: true, f: eur },
+    ], r.inquilinos, (x) => [["Documento", () => abrirFichero(`/api/cobros-alquiler/${x.clave}/pdf?asset_id=${aid}`)],
+      can("alquiler.editar") && ["Borrar cobros", () => confirm(`¿Borrar los ${x.meses} cobros importados de ${x.cliente}? La ficha se conserva.`) && run(() => api("DELETE", `/api/cobros-alquiler/${x.clave}?asset_id=${aid}`), "Cobros borrados").then(load), "danger"]]);
+  };
+  $("#y", el).onchange = load;
+  $("#xl", el).onclick = () => run(() => download("GET", `/api/cobros-alquiler/excel/ingresos?asset_id=${aid}&anio=${$("#y", el).value}`));
+  if ($("#imp", el)) $("#imp", el).onclick = () => form("Importar facturas de alquiler", [
+    { html: '<label class="wide">Facturas en PDF o un ZIP con todas *<input type="file" name="ficheros" multiple accept="application/pdf,application/zip,.zip" required></label><p class="muted peq">Se leen el inquilino, el importe y el mes. En el paso siguiente indica de qué mes a qué mes se repite la renta.</p>' },
+  ], {}, async (d, fm) => {
+    const fd = new FormData(); fd.append("asset_id", aid);
+    [...fm.querySelector("input[type=file]").files].forEach((f) => fd.append("ficheros", f));
+    const r = await upload("/api/cobros-alquiler/leer", fd);
+    setTimeout(() => revisar(r), 0);
+  }, "Leer facturas");
+  const revisar = (r) => {
+    const f = form(`Revisar ${r.facturas.length} factura(s)`, [{ html: `${r.avisos.length ? `<div class="aviso-vencidas"><b>Revise:</b><ul>${r.avisos.map((a) => `<li>${esc(a)}</li>`).join("")}</ul></div>` : ""}
+      <p class="muted">Cada inquilino genera un cobro por mes, del mes «Desde» al «Hasta», con su importe. Quite la marca de los que no quiera importar.</p>
+      <div class="table-wrap"><table><thead><tr><th></th><th>Inquilino</th><th>Factura</th><th>Mes factura</th><th class="num">Renta</th><th>Desde</th><th>Hasta</th></tr></thead><tbody>
+      ${r.facturas.map((x, i) => `<tr><td><input type="checkbox" data-i="${i}" checked></td><td>${esc(x.cliente || "?")}${x.ficha ? ' <span class="muted peq">(ya tiene ficha)</span>' : ""}</td><td>${esc(x.numero)}<div class="muted peq">${fdate(x.fecha)}</div></td>
+        <td>${esc(x.mes || "—")}</td><td class="num">${eur(x.total)}</td><td><input type="month" data-d="${i}" value="${x.desde}"></td><td><input type="month" data-h="${i}" value="${x.hasta}"></td></tr>`).join("")}</tbody></table></div>`, wide: true }], {},
+    async (_, fm) => {
+      const filas = r.facturas.map((x, i) => ({ ...x, desde: fm.querySelector(`[data-d="${i}"]`).value, hasta: fm.querySelector(`[data-h="${i}"]`).value }))
+        .filter((_, i) => fm.querySelector(`[data-i="${i}"]`).checked).map(({ numero, fecha, cliente, nif, direccion, total, desde, hasta }) => ({ numero, fecha, cliente, nif, direccion, total, desde, hasta }));
+      if (!filas.length) throw new Error("No hay ninguna marcada");
+      const res = await post("/api/cobros-alquiler/importar", { asset_id: aid, filas });
+      toast(`${res.cobros} cobros de ${res.inquilinos} inquilinos · ${res.fichas_nuevas} ficha(s) nueva(s)`); load();
+    }, "Importar");
+    $("#modal").classList.add("ancho");
+    return f;
+  };
+  load();
+};
+
 // ------------------------------------------------------------------ navegación
 const MENU = [
   ["General", [["panel", "Panel de control", null], ["agenda", "Agenda", null], ["manual", "Manual de uso", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
   ["Apartamentos turísticos", [["plano", "Plano de apartamentos", "activos.ver"], ["hoy", "Llegadas / salidas", "reservas.ver"], ["limpieza", "Parte de limpieza", "limpieza.editar"], ["reservas", "Reservas", "reservas.ver"], ["planning", "Planning", "reservas.ver"], ["huespedes", "Huéspedes", "reservas.ver"], ["ses", "Parte de viajeros (SES)", "reservas.ver"], ["garajes", "Alquiler de garajes", "reservas.ver"]]],
-  ["Alquiler residencial", [["contratos", "Contratos", "alquiler.ver"], ["recibos", "Recibos y cobros", "alquiler.ver"], ["inquilinos", "Inquilinos", "alquiler.ver"]]],
+  ["Alquiler residencial", [["contratos", "Contratos", "alquiler.ver"], ["recibos", "Recibos y cobros", "alquiler.ver"], ["inquilinos", "Inquilinos", "alquiler.ver"], ["cobrosext", "Cobros de otro programa", "alquiler.ver"]]],
   ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["servicios", "Servicios", "activos.ver"], ["informes", "Informes Excel", "informes"], ["presidencia", "Informe a presidencia", "facturas.ver"]]],
   ["Documentos y gastos", [["docrecibidos", "Documentos recibidos", "documentos.ver"], ["gastos", "Cuenta de gastos", "documentos.ver"]]],
   ["Mantenimiento", [["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["partestrabajo", "Parte de trabajo diario", "partes"], ["pedidos", "Pedidos de material", "pedidos"], ["productos", "Catálogo de productos", "pedidos"], ["proveedores", "Proveedores", "proveedores"]]],
