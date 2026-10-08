@@ -222,8 +222,26 @@ fi
 
 # ------------------------------------------------------------------------------------------------ versión y registros
 if git -C .. rev-parse > /dev/null 2>&1; then
-  [ -n "$(git -C .. status --porcelain --untracked-files=no)" ] && \
-    anota AVISO Versión "Hay ficheros modificados a mano en /opt/pms: el próximo «git pull» puede fallar («git -C /opt/pms status»)"
+  # Ficheros del programa cambiados en el servidor: el próximo «git pull» fallaría. Si solo cambian los permisos o
+  # los finales de línea, se restauran. Si cambia el contenido, se guarda una copia (parche y «git stash») y se deja
+  # el fichero como en la versión publicada; se puede recuperar con los comandos que indica el aviso.
+  CAMBIADOS=$(git -C .. status --porcelain --untracked-files=no | cut -c4-)
+  if [ -n "$CAMBIADOS" ]; then
+    LISTA=$(tr '\n' ' ' <<< "$CAMBIADOS" | sed 's/ $//')
+    if git -C .. -c core.fileMode=false diff --quiet --ignore-cr-at-eol HEAD 2>/dev/null; then
+      git -C .. config core.fileMode false
+      git -C .. checkout -q -- . && \
+        anota ARREGLADO Versión "Ficheros con solo permisos o finales de línea cambiados ($LISTA): restaurados"
+    else
+      mkdir -p "$ESTADO_DIR"
+      PARCHE="$ESTADO_DIR/cambios_locales_$(date +%Y%m%d_%H%M).patch"
+      if git -C .. diff HEAD > "$PARCHE" && git -C .. -c user.name=mantenimiento -c user.email=mantenimiento@localhost stash push -q -m "mantenimiento $(date +%F): cambios locales"; then
+        anota ARREGLADO Versión "Ficheros modificados a mano en /opt/pms ($LISTA): copia en $PARCHE y en «git stash»; restaurada la versión publicada para que «git pull» no falle. Si el cambio era necesario: «cd /opt/pms && git stash pop»"
+      else
+        anota AVISO Versión "Hay ficheros modificados a mano en /opt/pms ($LISTA) y no se han podido apartar: el próximo «git pull» puede fallar («git -C /opt/pms status»)"
+      fi
+    fi
+  fi
   timeout 60 git -C .. fetch -q origin 2>/dev/null
   ACTUAL=$(git -C .. log --oneline -1 | cut -c1-7)
   NUEVOS=$(git -C .. rev-list --count HEAD..origin/main 2>/dev/null || echo 0)

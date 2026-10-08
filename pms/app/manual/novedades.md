@@ -1,5 +1,8 @@
 # Novedades
 
+## 2026-10-08 · Versión 1.19 · Mantenimiento: ficheros cambiados a mano
+- **Dirección**: si en el servidor hay ficheros del programa cambiados a mano, el mantenimiento diario guarda una copia del cambio y deja la versión publicada, para que la siguiente actualización no falle. El correo indica qué ficheros eran y cómo recuperar el cambio si hacía falta.
+
 ## 2026-10-07 · Versión 1.18 · SYADE: enlace también por nombre del cliente
 - **Dirección**: si el cliente no tiene DNI/NIF en el PMS, la facturación de SYADE se enlaza por su **nombre y apellidos** (sin importar tildes, mayúsculas ni el orden; en empresas, «S.L.» o «SL» da igual). Si hay dos fichas con el mismo nombre, no se enlaza con ninguna. En la ficha se indica cómo se enlazó cada línea.
 
