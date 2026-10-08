@@ -28,6 +28,7 @@ ESPERA_TURNO = 45  # s esperando turno antes de responder «ocupado»
 LENTA = 15  # s: se anota en el registro como petición lenta
 SIN_LATIDO = 60  # s sin que el bucle de peticiones responda -> colgado
 ATASCO = 150  # s con todos los turnos ocupados y ninguna petición terminada -> colgado
+INTERVALO = 5  # s entre comprobaciones
 PESADOS_A_LA_VEZ = 2
 ESPERA_PESADO = 90
 ACTIVO = (os.environ.get("PMS_VIGILANTE") or "1") != "0"
@@ -85,6 +86,9 @@ class Vigilante:
         if self.turno is None:  # se crea dentro del bucle de eventos que atiende las peticiones
             self.turno = asyncio.Semaphore(MAX_EN_CURSO)
             self.bucle = asyncio.get_running_loop()
+            # la vigilancia empieza ahora (con la primera petición), no al arrancar el proceso: si no, el tiempo
+            # sin peticiones desde el arranque se tomaba por un bucle colgado y se reiniciaba el PMS sin motivo
+            self.latido = self.ultima_fin = time.monotonic()
             if ACTIVO:
                 threading.Thread(target=self._vigilar, name="vigilante", daemon=True).start()
         self.esperando += 1
@@ -142,11 +146,11 @@ class Vigilante:
 
     def _vigilar(self) -> None:
         while True:
-            time.sleep(5)
-            try:
+            try:  # se pide el latido y se comprueba después de dar tiempo a que el bucle lo atienda
                 self.bucle.call_soon_threadsafe(self._latir)
             except RuntimeError:  # el bucle se ha cerrado: el proceso está terminando
                 return
+            time.sleep(INTERVALO)
             motivo = self.colgado()
             if not motivo:
                 continue

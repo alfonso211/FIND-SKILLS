@@ -28,6 +28,28 @@ def test_deteccion_de_cuelgue():
     assert "/api/x/0" in texto and "--- hilo" in texto
 
 
+def test_sin_peticiones_desde_el_arranque_no_es_un_cuelgue(monkeypatch):
+    """Tras un reinicio, la primera petición llega minutos después: la vigilancia no debe tomar ese tiempo sin
+    peticiones por un bucle colgado (reiniciaba el PMS a los 5 s de volver a usarlo)."""
+    monkeypatch.setattr(vigilante, "INTERVALO", 0.05)
+    monkeypatch.setattr(vigilante, "ACTIVO", True)
+    salidas = []
+    monkeypatch.setattr(vigilante.os, "_exit", lambda c: salidas.append(c))
+
+    async def app(scope, receive, send):
+        pass
+
+    async def prueba():
+        v = vigilante.Vigilante(app)
+        v.latido -= 1800  # arrancó hace media hora y nadie lo ha usado
+        v.ultima_fin -= 1800
+        await v({"type": "http", "path": "/api/primera", "method": "GET"}, None, None)
+        await asyncio.sleep(0.4)  # varias vueltas del vigilante
+        return v
+    v = asyncio.run(prueba())
+    assert salidas == [] and v.colgado(v.latido + 1) is None
+
+
 def test_sin_turno_responde_ocupado(monkeypatch):
     monkeypatch.setattr(vigilante, "ESPERA_TURNO", 0.2)
     monkeypatch.setattr(vigilante, "ACTIVO", False)

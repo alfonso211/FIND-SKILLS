@@ -1,5 +1,8 @@
 # Novedades
 
+## 2026-10-08 · Versión 1.20 · Sin reinicios falsos
+- **Todos**: corregido un fallo del vigilante que reiniciaba el PMS unos segundos después de volver a usarlo tras un rato sin uso (salía como «cuelgue» en el mantenimiento). Podía notarse como un corte breve al entrar.
+
 ## 2026-10-08 · Versión 1.19 · Otras webs del servidor y ficheros cambiados a mano
 - **Dirección**: las webs que comparten servidor con el PMS (como INVERGESTION) se configuran en su propio fichero de `deploy/sitios/`, que las actualizaciones no tocan. Ya no hay que modificar el `Caddyfile`.
 - **Dirección**: si hay ficheros del programa cambiados a mano en el servidor, el mantenimiento diario restaura solos los cambios de permisos; si el contenido cambió, guarda una copia y avisa de qué ficheros son, sin tocarlos.
