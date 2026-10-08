@@ -13,7 +13,14 @@
    - El documento **recto, nítido, sin reflejos** y ocupando el marco. Verá «Leyendo… N s»; en 2-3 segundos rellena los datos.
    - Revise siempre lo leído (los nombres de la zona «<<<» no llevan tildes).
 3. Si el cliente **ya estuvo alojado**, búsquelo en «¿Ya ha estado alojado?» y se reutiliza su ficha.
-4. Indique **apartamento, canal, importe** y, si paga ahora, lo **cobrado** y la **forma de pago**: se emite la factura.
+4. Indique **apartamento y canal**. El **precio a pagar** sale solo, en **naranja**, con la tarifa estándar según las noches:
+   - 1 a 6 noches: estudio 50 €, 1 dormitorio 55 €, 2 dormitorios 75 € por noche.
+   - 7 a 13 noches: 10 % de descuento (45 / 49,50 / 67,50 € por noche).
+   - 14 a 29 noches: 19 % de descuento (40,50 / 44,55 / 60,75 € por noche).
+   - 30 noches: precio de la estancia (950 / 1.100 / 1.400 €); más de 30, en proporción.
+
+   Puede dejarlo o cambiarlo, pero para continuar **marque «Acepto el precio»**. Si cambia el precio o el apartamento, la casilla se desmarca y hay que volver a aceptarlo.
+   Si paga ahora, indique lo **cobrado** y la **forma de pago**: se emite la factura.
 5. Si **no paga ahora** (empresa o transferencia), marque **«facturar ya el importe total y dejarlo pendiente de cobro»**.
 6. **Servicios extra** (plaza extra, toallas…): elíjalos del catálogo o escríbalos, con cantidad y precio. **Limpieza contratada**: marque la casilla, el precio por limpieza, la **periodicidad** (un día, diaria, cada 2 o 3 días, semanal, quincenal u otra, indicando los días) y el primer día. Verá cuántas limpiezas salen y en qué días. Los servicios se facturan **en una factura aparte de la estancia** (control de la gestoría); si se piden después, **Editar** la reserva y **Facturar extras**.
 7. Al emitir, aparecen **las dos facturas** (estancia y servicios): **Imprimir** cada una o las dos, o **Enviar** al cliente por **correo** (con los PDF) o **WhatsApp** (enlace de descarga, caduca a los 7 días).
@@ -38,7 +45,7 @@
 
 ## Renovar una estancia
 - Las **estancias vencidas** (siguen alojados tras su fecha de salida) salen en el panel y en el correo.
-- En la reserva pulse **Renovar**: nueva fecha de salida e importe, y elija la factura: **más tarde**, **cobrada ahora** o **facturar ya sin cobrar**. Después se firma el nuevo contrato.
+- En la reserva pulse **Renovar**: nueva fecha de salida; el precio sale con la tarifa estándar de las noches renovadas (revíselo y marque **«Acepto el precio»**), y elija la factura: **más tarde**, **cobrada ahora** o **facturar ya sin cobrar**. Después se firma el nuevo contrato.
 
 ## Parte de viajeros (SES.HOSPEDAJE)
 - **Parte de viajeros (SES)**: marque las llegadas con el registro completo y **genere el fichero**.

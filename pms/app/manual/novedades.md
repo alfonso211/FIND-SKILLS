@@ -1,5 +1,8 @@
 # Novedades
 
+## 2026-10-08 · Versión 1.21 · Tarifas estándar en la reserva
+- **Recepción**: al reservar o renovar, el **precio a pagar** sale solo según el tipo de apartamento y las noches (1-6, 7-13 con -10 %, 14-29 con -19 % y 30 noches a precio cerrado), **en naranja**. Se puede cambiar, pero siempre hay que marcar **«Acepto el precio»** para continuar.
+
 ## 2026-10-08 · Versión 1.20 · Sin reinicios falsos
 - **Todos**: corregido un fallo del vigilante que reiniciaba el PMS unos segundos después de volver a usarlo tras un rato sin uso (salía como «cuelgue» en el mantenimiento). Podía notarse como un corte breve al entrar.
 

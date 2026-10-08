@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, aliased
 from ..config import settings
 from ..database import get_db
 from .. import (avisos, clientes, contratos, documentos, encuesta_ine, firma_contrato, importacion, importacion_ocupacion,
-               limpiezas, nif, planos, recibos, registro_viajeros)
+               limpiezas, nif, planos, recibos, registro_viajeros, tarifas)
 from ..facturacion import (IVA_ALOJAMIENTO, IVA_GENERAL, datos_cliente, dinero, emitir, estancia_facturada, linea,
                            lineas_servicios, serie_activo)
 from ..models import (MODALIDADES_RESERVA, AccommodationContract, Asset, Contact, Invoice, Lease, Reservation,
@@ -162,6 +162,8 @@ def list_reservations(asset_id: int | None = None, desde: date | None = None, ha
 def create_reservation(data: ReservationIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     unit = _tourist_unit(db, data.unit_id)
     scope.require_asset("reservas.editar", unit.asset_id)
+    if data.precio_aceptado is False:
+        bad_request("Revise el precio a pagar y marque «Acepto el precio» para continuar")
     if unit.capacidad and data.adultos > unit.capacidad:  # los menores de 16 no ocupan plaza
         bad_request(f"Se supera la capacidad de la unidad ({unit.capacidad} plazas; los menores de 16 años no cuentan)")
     if _conflict(db, unit.id, data.fecha_entrada, data.fecha_salida):
@@ -187,7 +189,7 @@ def create_reservation(data: ReservationIn, scope: Scope = Depends(get_scope), d
     if data.documentos:
         adjuntar_pendientes(db, scope.user, data.documentos, guest)
     r = Reservation(**data.model_dump(exclude={"guest", "guest_id", "documentos", "importe_pagado", "forma_pago",
-                                               "facturar_pendiente", "extras", "limpieza"}),
+                                               "facturar_pendiente", "extras", "limpieza", "precio_aceptado"}),
                     guest_id=guest.id, importe_pagado=0)
     r.ocupantes.append(ReservationGuest(contact_id=guest.id, titular=True, orden=0))
     db.add(r)
@@ -196,8 +198,11 @@ def create_reservation(data: ReservationIn, scope: Scope = Depends(get_scope), d
         if unit.uso == "garaje":
             bad_request("Los servicios extra se añaden a la reserva del apartamento")
         _guardar_extras(db, r, data.extras, data.limpieza)
+    estandar = tarifas.de_unidad(unit, r.fecha_entrada, r.fecha_salida)
     audit(db, scope.user, "crear", "reserva", r.id,
-          {"unidad": unit.codigo, "entrada": str(r.fecha_entrada), "salida": str(r.fecha_salida)})
+          {"unidad": unit.codigo, "entrada": str(r.fecha_entrada), "salida": str(r.fecha_salida),
+           "importe": float(data.importe_total), "tarifa_estandar": estandar["total"] if estandar else None,
+           "precio_aceptado": data.precio_aceptado})
     facturas = []
     if data.importe_pagado:  # pagado al reservar: se registra el cobro y se factura (estancia y servicios aparte)
         facturas = _cobrar(db, scope, r, Payment(importe=data.importe_pagado, forma_pago=data.forma_pago))
@@ -460,8 +465,18 @@ def availability(asset_id: int, desde: date, hasta: date, capacidad: int = 1, us
                               Unit.id.not_in(busy), Unit.id.not_in(alquiladas),
                               or_(Unit.capacidad.is_(None), Unit.capacidad >= capacidad),
                               Unit.uso == uso if uso else Unit.uso != "garaje")
-    units = [u.to_dict() for u in db.scalars(stmt.order_by(Unit.bloque, Unit.codigo))]
+    units = [{**u.to_dict(), "tarifa": tarifas.de_unidad(u, desde, hasta)}
+             for u in db.scalars(stmt.order_by(Unit.bloque, Unit.codigo))]
     return {"libres": len(units), "unidades": units}
+
+
+@router.get("/tarifa")
+def standard_rate(unit_id: int, entrada: date, salida: date, scope: Scope = Depends(get_scope),
+                  db: Session = Depends(get_db)):
+    """Tarifa estándar de la unidad para esas fechas (ver app/tarifas.py); null si no tiene."""
+    u = get_or_404(db, Unit, unit_id)
+    scope.require_asset("reservas.ver", u.asset_id)
+    return tarifas.de_unidad(u, entrada, salida)
 
 
 @router.get("/planning")
@@ -987,6 +1002,7 @@ def renewal_info(rid: int, scope: Scope = Depends(get_scope), db: Session = Depe
     noches = max(1, (r.fecha_salida - r.fecha_entrada).days)
     return {"reserva": _res_out(r), "desde": r.fecha_salida.isoformat(),
             "hasta": (r.fecha_salida + timedelta(days=noches)).isoformat(), "noches_anteriores": noches,
+            "tarifa": tarifas.de_unidad(r.unit, r.fecha_salida, r.fecha_salida + timedelta(days=noches)),
             "pendiente": _registro_incompleto(r) if r.unit.uso != "garaje" else [],
             "garajes": [g.unit.codigo for g in _garajes_asociados(db, r)]}
 
@@ -1002,6 +1018,8 @@ def renew_stay(rid: int, data: RenewalIn, scope: Scope = Depends(get_scope), db:
         bad_request("Esta estancia ya está renovada: renueve la última renovación")
     if data.fecha_salida <= r.fecha_salida:
         bad_request(f"La nueva salida debe ser posterior a la actual ({r.fecha_salida:%d/%m/%Y})")
+    if data.precio_aceptado is False:
+        bad_request("Revise el precio de la renovación y marque «Acepto el precio» para continuar")
     if r.unit.uso != "garaje":
         pendiente = _registro_incompleto(r)
         if pendiente:
