@@ -9,3 +9,7 @@
 	}
 	reverse_proxy app:8000
 }
+
+# Otras webs del mismo servidor (p. ej. INVERGESTION): un fichero «*.caddy» por web en deploy/sitios/.
+# Esa carpeta es propia del servidor (no está en el programa): las actualizaciones no la tocan.
+import /etc/caddy/sitios/*.caddy

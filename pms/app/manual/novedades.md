@@ -1,5 +1,9 @@
 # Novedades
 
+## 2026-10-08 · Versión 1.19 · Otras webs del servidor y ficheros cambiados a mano
+- **Dirección**: las webs que comparten servidor con el PMS (como INVERGESTION) se configuran en su propio fichero de `deploy/sitios/`, que las actualizaciones no tocan. Ya no hay que modificar el `Caddyfile`.
+- **Dirección**: si hay ficheros del programa cambiados a mano en el servidor, el mantenimiento diario restaura solos los cambios de permisos; si el contenido cambió, guarda una copia y avisa de qué ficheros son, sin tocarlos.
+
 ## 2026-10-07 · Versión 1.18 · SYADE: enlace también por nombre del cliente
 - **Dirección**: si el cliente no tiene DNI/NIF en el PMS, la facturación de SYADE se enlaza por su **nombre y apellidos** (sin importar tildes, mayúsculas ni el orden; en empresas, «S.L.» o «SL» da igual). Si hay dos fichas con el mismo nombre, no se enlaza con ninguna. En la ficha se indica cómo se enlazó cada línea.
 
