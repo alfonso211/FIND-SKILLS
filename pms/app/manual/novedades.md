@@ -1,5 +1,8 @@
 # Novedades
 
+## 2026-10-08 · Versión 1.28 · Población y provincia por el código postal
+- **Todos**: al escribir el **código postal** en una ficha, la **población** y la **provincia** se rellenan solas (datos del INE). Si el código es de varias poblaciones, se ofrecen para elegir; lo escrito a mano se respeta.
+
 ## 2026-10-08 · Versión 1.27 · Portal del colaborador
 - **Subcontratas**: nuevo acceso **Colaborador**. Cada colaborador entra solo en su portal: sus OT, sus trabajos en los partes validados, los envíos a su personal y su personal. Sube facturas, albaranes y documentación de personal y legal / CAE.
 - **Recepción**: en **Documentos recibidos**, filtro **De colaboradores: por revisar** con **Aceptar** y **Rechazar**. La documentación de personal solo la ven Recepción 1 y dirección.

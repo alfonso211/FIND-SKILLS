@@ -203,6 +203,31 @@ function ayudasDomicilio(f) {
       f.querySelector("#" + id).innerHTML = r.map((m) => `<option value="${esc(m.nombre)}">`).join("");
     }, 250));
   });
+  // Código postal español: rellena solo la población y la provincia (y el país, si está vacío). Solo cambia lo
+  // que está vacío o lo que puso él mismo antes; lo escrito a mano se respeta.
+  campos(/^(cliente_)?cp$/).forEach((cp) => {
+    const campo = (k) => f.elements[cp.name.replace(/cp$/, k)];
+    const poner = (el, v) => { if (el && v && (!el.value.trim() || el.dataset.auto === "1")) { el.value = v; el.dataset.auto = "1"; } };
+    ["municipio", "provincia", "pais"].forEach((k) => campo(k)?.addEventListener("input", (e) => { if (e.isTrusted) delete e.target.dataset.auto; }));
+    const buscar = async () => {
+      const v = cp.value.trim(), pais = campo("pais");
+      if (!/^\d{5}$/.test(v) || (pais && pais.value.trim() && !/^espa/i.test(pais.value.trim()))) return;
+      const r = await get(`/api/codigos-postales/${v}`).catch(() => null);
+      if (!r || cp.value.trim() !== v) return;
+      const mun = campo("municipio"), dl = mun?.list;
+      if (r.municipios.length === 1) poner(mun, r.municipios[0].nombre);
+      else if (mun) {
+        if (mun.dataset.auto === "1") { mun.value = ""; delete mun.dataset.auto; }
+        if (dl) dl.innerHTML = r.municipios.map((m) => `<option value="${esc(m.nombre)}">`).join("");
+        if (r.municipios.length) mun.placeholder = `C.P. compartido: ${r.municipios.map((m) => m.nombre).join(", ")}`;
+      }
+      const elegido = r.municipios.find((m) => m.nombre === mun?.value);
+      poner(campo("provincia"), elegido ? elegido.provincia : r.provincia);
+      poner(pais, "España");
+    };
+    cp.addEventListener("input", debounce(buscar, 300));
+    cp.addEventListener("change", buscar);
+  });
 }
 const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null && v !== ""));
 const opts = (arr, v = "id", l = "nombre") => arr.map((x) => [x[v], typeof l === "function" ? l(x) : x[l]]);

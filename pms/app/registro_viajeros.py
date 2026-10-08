@@ -145,6 +145,55 @@ def buscar_municipios(q: str, cp: str | None = None, limite: int = 20) -> list[d
     return out[:limite]
 
 
+# Provincias por su código INE (las dos primeras cifras del código postal)
+PROVINCIAS = {
+    "01": "Álava", "02": "Albacete", "03": "Alicante", "04": "Almería", "05": "Ávila", "06": "Badajoz",
+    "07": "Illes Balears", "08": "Barcelona", "09": "Burgos", "10": "Cáceres", "11": "Cádiz", "12": "Castellón",
+    "13": "Ciudad Real", "14": "Córdoba", "15": "A Coruña", "16": "Cuenca", "17": "Girona", "18": "Granada",
+    "19": "Guadalajara", "20": "Gipuzkoa", "21": "Huelva", "22": "Huesca", "23": "Jaén", "24": "León",
+    "25": "Lleida", "26": "La Rioja", "27": "Lugo", "28": "Madrid", "29": "Málaga", "30": "Murcia", "31": "Navarra",
+    "32": "Ourense", "33": "Asturias", "34": "Palencia", "35": "Las Palmas", "36": "Pontevedra", "37": "Salamanca",
+    "38": "Santa Cruz de Tenerife", "39": "Cantabria", "40": "Segovia", "41": "Sevilla", "42": "Soria",
+    "43": "Tarragona", "44": "Teruel", "45": "Toledo", "46": "Valencia", "47": "Valladolid", "48": "Bizkaia",
+    "49": "Zamora", "50": "Zaragoza", "51": "Ceuta", "52": "Melilla",
+}
+
+
+@lru_cache
+def _cp_municipios() -> dict[str, list[str]]:
+    """Código postal -> códigos INE de sus municipios (Callejero del Censo Electoral del INE)."""
+    out: dict[str, list[str]] = {}
+    with open(DATOS / "cp_municipios.csv", encoding="utf-8") as fh:
+        for r in csv.DictReader(fh):
+            out.setdefault(r["codigo_postal"], []).append(r["municipio_id"])
+    return out
+
+
+def nombre_natural(nombre: str) -> str:
+    """«Rozas de Madrid, Las» -> «Las Rozas de Madrid» (como se escribe en una dirección)."""
+    partes = []
+    for p in nombre.split("/"):
+        p = p.strip()
+        if ", " in p:
+            base, art = p.rsplit(", ", 1)
+            p = f"{art}{base}" if art.endswith("'") else f"{art} {base}"
+        partes.append(p)
+    return "/".join(partes)
+
+
+def por_cp(cp: str | None) -> dict | None:
+    """Población(es) y provincia de un código postal español. Varias poblaciones si el C.P. es compartido."""
+    cp = (cp or "").strip()
+    if not (len(cp) == 5 and cp.isdigit() and cp[:2] in PROVINCIAS):
+        return None
+    nombres = {c: n for c, n, _ in _municipios()}
+    muns = [{"codigo": c, "nombre": nombre_natural(nombres[c]), "provincia": PROVINCIAS.get(c[:2])}
+            for c in _cp_municipios().get(cp, []) if c in nombres]
+    provs = {m["provincia"] for m in muns}
+    return {"cp": cp, "municipios": sorted(muns, key=lambda m: _norm(m["nombre"])),
+            "provincia": provs.pop() if len(provs) == 1 else PROVINCIAS[cp[:2]]}
+
+
 def comunidad(cp: str | None = None, cod_municipio: str | None = None) -> str | None:
     prov = (cod_municipio or cp or "")[:2]
     return CCAA_DE_PROVINCIA.get(prov)
