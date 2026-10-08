@@ -674,3 +674,7 @@ label.check.precio-pendiente { color: #c2410c; font-weight: 600; }
 .aus-ley { font-size: 11px; padding: 2px 8px; border-radius: 6px; color: #1a1a1c; }
 .aus-ley.aus-pend { background-color: #a9a59b; }
 .texto-envio { white-space: pre-wrap; font-family: inherit; font-size: 13px; background: #f6f3ec; padding: 10px 12px; border-radius: 8px; max-height: 50vh; overflow: auto; }
+/* documentación legal */
+.legal-grupo { margin: 14px 0 6px; font-size: 14px; }
+.barra-legal { height: 6px; background: #ece6da; border-radius: 4px; overflow: hidden; margin-top: 6px; min-width: 80px; }
+.barra-legal span { display: block; height: 100%; background: #2f8f4e; }

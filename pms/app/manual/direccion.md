@@ -67,3 +67,11 @@
 - El colaborador **solo entra en su portal**: el programa le bloquea cualquier otra pantalla. Ve las OT encargadas a su empresa o a su personal, sus líneas de los partes validados, lo que se ha enviado a su personal (OT, partes de limpieza) y la ficha de su personal.
 - **Sube** facturas, albaranes, presupuestos, documentación de personal y legal / CAE. Quedan **pendientes de revisar** en Documentos recibidos y se avisa por correo a Recepción 1.
 - Antes de dar acceso: contrato de **encargado del tratamiento** (art. 28 RGPD) con la subcontrata.
+
+## Documentación legal de los activos
+- **Administración → Documentación legal**: checklist de lo obligatorio en cada activo según sea de **apartamentos turísticos** (declaración responsable y Registro de Empresas Turísticas, licencias municipales, SES.HOSPEDAJES, hojas de reclamaciones, placa, seguros, PCI, RITE, ascensores, legionela, DDD, PRL…) o de **alquiler residencial** (CEE, depósito de fianzas, licencia de primera ocupación, IEE, instalaciones, seguros, contratos…).
+- **Escanear / subir**: PDF o fotos (varias fotos se unen en un PDF). Con la fecha del documento, el vencimiento sale solo en los que caducan (seguros, revisiones, CEE…). Se avisa **60 días antes** («por vencer») y al caducar.
+- **Datos**: fechas, notas y **No aplica** (con el motivo). **Documento propio**: añade un punto que no está en el catálogo.
+- **Imprimir checklist** (PDF) y **Enviar** cada documento por correo.
+- **Cada lunes**: correo a **Recepción 1** con lo que falta o ha caducado en su activo y a la **dirección** con el total de todos los activos, hasta que esté completo.
+- El catálogo es orientativo (normativa de la Comunidad y del Ayuntamiento de Madrid a octubre de 2026): conviene revisarlo con la gestoría.
