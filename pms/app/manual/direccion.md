@@ -52,3 +52,7 @@
 - **Mantenimiento diario a las 06:00**: revisa servidor, copias, base de datos, documentos, correo y seguridad; arregla solo lo que puede y, si hay un fallo grave, envía un **correo URGENTE** al director técnico. Los lunes, resumen semanal.
 - **Guía de emergencia** (`deploy/RECUPERACION.md`): qué hacer si el PMS no responde, si se borran datos, si se pierde el servidor o si hay un virus. Guarde impresa la guía y el **kit de emergencia** (contraseña del cifrado de las copias y `PMS_DOCS_KEY`) **fuera del servidor**.
 - Si el programa se bloquea, **se reinicia solo** en 1-3 minutos y deja un informe con la causa.
+
+## Partes de trabajo e informe quincenal
+- **Mantenimiento → Parte de trabajo diario**: parte de cada día de mantenimiento y limpieza (OT terminadas, limpiezas hechas y actuaciones anotadas). Recepción lo valida y queda archivado en PDF y Excel en **Documentos**.
+- **Informe quincenal**: trabajos totales de la quincena por área, tipo y persona; se puede descargar o archivar. Permiso nuevo: **partes.validar** (dirección y recepción).

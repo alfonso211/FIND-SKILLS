@@ -3821,6 +3821,86 @@ V.productos = async (el) => {
   load();
 };
 
+// ------------------------------------------------------------------ parte de trabajo diario (mantenimiento y limpieza)
+// Entran solas las OT terminadas y las limpiezas hechas del día; se anotan las actuaciones sin parte. Recepción lo
+// valida y entonces se imprime (PDF / Excel) y queda archivado. Informe quincenal con los totales.
+const verPartes = () => ["mantenimiento.ver", "limpieza.editar", "partes.validar"].some(can);
+const ORIGEN_PARTE = { ot: "Orden de trabajo", limpieza: "Limpieza del parte", actuacion: "Actuación anotada" };
+V.partestrabajo = async (el) => {
+  const aid = await pickAsset();
+  const areaDef = can("mantenimiento.editar") || !can("limpieza.editar") ? "mantenimiento" : "limpieza";
+  el.innerHTML = `<div class="toolbar"><select id="ar"><option value="mantenimiento">Mantenimiento</option><option value="limpieza">Limpieza</option></select>
+    <input type="date" id="f" value="${today()}" max="${today()}"><span class="spacer"></span>
+    <button class="btn" id="quin">Informe quincenal</button></div>
+    <div class="parte-dias" id="dias"></div><div id="cab"></div><div id="t"></div>`;
+  $("#ar", el).value = areaDef;
+  const q = () => ({ asset_id: aid, area: $("#ar", el).value, fecha: $("#f", el).value });
+  const load = async () => {
+    const [p, dias] = await Promise.all([get("/api/partes-trabajo", q()), get("/api/partes-trabajo/dias", { asset_id: aid, area: $("#ar", el).value })]);
+    $("#dias", el).innerHTML = dias.map((d) => `<button type="button" class="btn sm ${d.fecha === p.fecha ? "primary" : ""}" data-dia="${d.fecha}" title="${d.trabajos} trabajo(s)">${Number(d.fecha.slice(8))}/${Number(d.fecha.slice(5, 7))} ${d.validado ? "✔" : d.trabajos ? `<span class="badge b-pendiente">${d.trabajos}</span>` : ""}</button>`).join("");
+    $("#dias", el).querySelectorAll("[data-dia]").forEach((b) => (b.onclick = () => { $("#f", el).value = b.dataset.dia; load(); }));
+    const val = p.estado === "validado";
+    $("#cab", el).innerHTML = `<div class="${val ? "aviso-ok" : "aviso-vencidas"}" style="margin:8px 0"><b>Parte de ${esc(p.area_nombre.toLowerCase())} · ${fdate(p.fecha)}</b> ·
+      ${val ? `validado por ${esc(p.validado_por)} (${fdt(p.validado_en)})` : "pendiente de validar por recepción (hasta entonces no se imprime)"} · ${p.lineas.length} trabajo(s)
+      ${p.observaciones ? `<br>Observaciones: ${esc(p.observaciones)}` : ""}
+      <div class="toolbar">${p.puede_anotar ? '<button class="btn sm" data-x="anotar">＋ Anotar actuación (sin parte)</button>' : ""}
+      ${!val && p.puede_validar ? '<button class="btn sm primary" data-x="validar">Validar parte</button>' : ""}
+      ${val && p.puede_validar ? '<button class="btn sm" data-x="reabrir">Reabrir</button>' : ""}
+      ${val ? '<button class="btn sm" data-x="pdf">PDF</button><button class="btn sm" data-x="xlsx">Excel</button>' : ""}</div></div>`;
+    table($("#t", el), [
+      { k: "hora", t: "Hora" }, { k: "ref", t: "Ref.", f: (v) => `<b>${esc(v)}</b>` }, { k: "origen", t: "Origen", f: (v) => esc(ORIGEN_PARTE[v] || v) },
+      { k: "ubicacion", t: "Ubicación" }, { k: "trabajo", t: "Trabajo realizado", f: (v, x) => `${esc(v)}${x.detalle ? `<div class="muted peq">${esc(x.detalle)}</div>` : ""}` },
+      { k: "persona", t: "Persona" }, { k: "horas", t: "Horas", num: true, f: (v) => (v ? String(v).replace(".", ",") : "") },
+    ], p.lineas, (x) => (x.origen === "actuacion" && !val ? [["Quitar", () => confirm("¿Quitar esta actuación del parte?") && run(() => api("DELETE", `/api/partes-trabajo/actuaciones/${x.id}`), "Actuación quitada").then(load), "danger"]] : []));
+    const acc = {
+      anotar: async () => {
+        const uds = await get("/api/unidades", { asset_id: aid }).catch(() => []);
+        form(`Anotar actuación · ${p.area_nombre} · ${fdate(p.fecha)}`, [
+          { html: `<p class="muted">Trabajos que no estaban en ningún parte: ${p.area === "limpieza" ? "limpieza de zonas comunes según el programa, repasos…" : "tareas de mantenimiento sin orden de trabajo, revisiones…"} Las OT terminadas y las limpiezas hechas ya entran solas.</p>` },
+          { k: "descripcion", t: "Trabajo realizado", type: "textarea", req: true, wide: true },
+          { k: "unit_id", t: "Apartamento / unidad (si es en una)", type: "select", options: [["", "—"], ...uds.filter((u) => u.uso !== "garaje").map((u) => [u.id, u.codigo])] },
+          { k: "ubicacion", t: "Zona / ubicación (zonas comunes, sala de máquinas…)" },
+          { k: "persona", t: "Quién lo hizo (en blanco: usted)" }, { k: "horas", t: "Horas", type: "number", step: "0.25" },
+        ], {}, async (d) => { await post("/api/partes-trabajo/actuaciones", clean({ ...q(), ...d, unit_id: d.unit_id ? Number(d.unit_id) : null, horas: d.horas ? Number(d.horas) : null })); toast("Actuación anotada en el parte"); load(); }, "Anotar");
+      },
+      validar: () => form(`Validar el parte de ${p.area_nombre.toLowerCase()} · ${fdate(p.fecha)}`, [
+        { html: `<p>Se validan <b>${p.lineas.length} trabajo(s)</b>. El parte queda cerrado, se puede imprimir y su PDF y Excel se archivan en los documentos del activo.</p>` },
+        { k: "observaciones", t: "Observaciones (opcional)", type: "textarea", wide: true },
+      ], {}, async (d) => { await post("/api/partes-trabajo/validar", { ...q(), observaciones: d.observaciones || null }); toast("Parte validado y archivado"); load(); }, "Validar"),
+      reabrir: () => confirm("¿Reabrir el parte para corregirlo? Se quitarán sus documentos archivados hasta validarlo de nuevo.") && run(() => post("/api/partes-trabajo/reabrir", q()), "Parte reabierto").then(load),
+      pdf: () => run(() => download("GET", "/api/partes-trabajo/descargar?" + new URLSearchParams({ ...q(), formato: "pdf" }))),
+      xlsx: () => run(() => download("GET", "/api/partes-trabajo/descargar?" + new URLSearchParams({ ...q(), formato: "xlsx" }))),
+    };
+    $("#cab", el).querySelectorAll("[data-x]").forEach((b) => (b.onclick = acc[b.dataset.x]));
+  };
+  $("#ar", el).onchange = load; $("#f", el).onchange = load;
+  $("#quin", el).onclick = () => informeQuincenal(aid);
+  load();
+};
+async function informeQuincenal(aid, sel) {
+  const inf = await run(() => get("/api/partes-trabajo/quincenal", { asset_id: aid, ...(sel || {}) }));
+  const per = { asset_id: aid, anio: inf.anio, mes: inf.mes, quincena: inf.quincena };
+  const opciones = [];
+  for (let i = 0, d = new Date(); i < 12; i++) {  // las últimas 12 quincenas
+    const y = d.getFullYear(), m = d.getMonth() + 1, qn = d.getDate() > 15 ? 2 : 1;
+    opciones.push([`${y}-${m}-${qn}`, `${qn === 1 ? "1ª" : "2ª"} quincena de ${MESES[m - 1]} ${y}`]);
+    if (qn === 2) d.setDate(1); else d.setDate(0);
+  }
+  const f = cerrarSolo(form(`Informe quincenal · ${assetName(aid)} · ${fdate(inf.desde)} a ${fdate(inf.hasta)}`, [
+    { k: "periodo", t: "Quincena", type: "select", options: opciones, def: `${inf.anio}-${inf.mes}-${inf.quincena}` },
+    { html: `<div class="table-wrap"><table><thead><tr><th>Área</th><th class="num">Trabajos</th><th class="num">OT</th><th class="num">Limpiezas</th><th class="num">Actuaciones</th><th class="num">Horas anotadas</th><th>Días sin validar</th></tr></thead><tbody>
+      ${Object.values(inf.areas).map((a) => `<tr><td><b>${esc(a.nombre)}</b><div class="muted peq">${Object.entries(a.por_persona).map(([k, v]) => `${esc(k)} (${v})`).join(", ")}</div></td><td class="num"><b>${a.total}</b></td><td class="num">${a.por_origen.ot || 0}</td><td class="num">${a.por_origen.limpieza || 0}</td><td class="num">${a.por_origen.actuacion || 0}</td><td class="num">${String(a.horas_anotadas).replace(".", ",")}</td>
+        <td>${a.sin_validar.length ? `<span class="badge b-pendiente">${a.sin_validar.map((x) => `${Number(x.slice(8))}/${Number(x.slice(5, 7))}`).join(", ")}</span>` : "✔"}</td></tr>`).join("")}</tbody></table></div>
+      <p class="muted">${inf.archivado ? "✔ Ya archivado en los documentos del activo." : "Aún no archivado."} Los días sin validar cuentan sus trabajos, pero conviene validarlos antes de archivar.</p>
+      <div class="toolbar"><button type="button" class="btn" data-q="pdf">PDF</button><button type="button" class="btn" data-q="xlsx">Excel</button>${can("partes.validar") ? '<button type="button" class="btn primary" data-q="archivar">Archivar en documentos</button>' : ""}</div>`, wide: true },
+  ], {}, async () => {}));
+  $("#modal").classList.add("ancho");
+  f.elements.periodo.onchange = () => { const [anio, mes, quincena] = f.elements.periodo.value.split("-").map(Number); informeQuincenal(aid, { anio, mes, quincena }); };
+  const url = (x) => "/api/partes-trabajo/quincenal/descargar?" + new URLSearchParams({ ...per, ...x });
+  f.querySelectorAll("[data-q]").forEach((b) => (b.onclick = () => run(() => download("GET", url(b.dataset.q === "archivar" ? { formato: "pdf", archivar: true } : { formato: b.dataset.q })))
+    .then(() => { if (b.dataset.q === "archivar") { toast("Informe archivado (PDF y Excel)"); informeQuincenal(aid, per); } })));
+}
+
 // ------------------------------------------------------------------ navegación
 const MENU = [
   ["General", [["panel", "Panel de control", null], ["agenda", "Agenda", null], ["manual", "Manual de uso", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
@@ -3828,13 +3908,13 @@ const MENU = [
   ["Alquiler residencial", [["contratos", "Contratos", "alquiler.ver"], ["recibos", "Recibos y cobros", "alquiler.ver"], ["inquilinos", "Inquilinos", "alquiler.ver"]]],
   ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["servicios", "Servicios", "activos.ver"], ["informes", "Informes Excel", "informes"], ["presidencia", "Informe a presidencia", "facturas.ver"]]],
   ["Documentos y gastos", [["docrecibidos", "Documentos recibidos", "documentos.ver"], ["gastos", "Cuenta de gastos", "documentos.ver"]]],
-  ["Mantenimiento", [["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["personal", "Personal mto. y limpieza", "personal"], ["pedidos", "Pedidos de material", "pedidos"], ["productos", "Catálogo de productos", "pedidos"], ["proveedores", "Proveedores", "proveedores"]]],
+  ["Mantenimiento", [["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["personal", "Personal mto. y limpieza", "personal"], ["partestrabajo", "Parte de trabajo diario", "partes"], ["pedidos", "Pedidos de material", "pedidos"], ["productos", "Catálogo de productos", "pedidos"], ["proveedores", "Proveedores", "proveedores"]]],
   ["Administración", [["usuarios", "Usuarios", "admin"], ["roles", "Roles y permisos", "admin"], ["sociedades", "Sociedades", "admin"], ["avisos", "Avisos por correo", "admin"], ["auditoria", "Auditoría", "auditoria.ver"]]],
   ["", [["perfil", "Mi perfil", null]]],
 ];
 const allowed = (p) => !p || (p === "admin" ? S.me.admin_grupo : p === "informes" ? ["reservas.ver", "alquiler.ver", "finanzas.ver", "mantenimiento.ver"].some(can)
   : p === "personal" ? ["mantenimiento.ver", "limpieza.editar", "limpieza.confirmar_ot"].some(can)
-  : p === "proveedores" ? verProveedores() : p === "pedidos" ? verPedidos() : can(p));
+  : p === "proveedores" ? verProveedores() : p === "pedidos" ? verPedidos() : p === "partes" ? verPartes() : can(p));
 const TITLES = Object.fromEntries(MENU.flatMap(([, items]) => items.map(([id, t]) => [id, t])));
 const PERMISO_VISTA = Object.fromEntries(MENU.flatMap(([, items]) => items.map(([id, , p]) => [id, p])));
 const puedeIr = (vista) => vista in PERMISO_VISTA && allowed(PERMISO_VISTA[vista]);  // pantalla del menú visible

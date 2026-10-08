@@ -33,6 +33,7 @@ PERMISOS: dict[str, str] = {
     "documentos.editar": "Subir documentos recibidos y registrar gastos",
     "pedidos.crear": "Hacer pedidos de material (los autoriza Recepción 1 del activo)",
     "pedidos.autorizar": "Autorizar pedidos de material e intercambiar el catálogo con INVERGESTION",
+    "partes.validar": "Validar los partes de trabajo diarios de mantenimiento y limpieza",
     "usuarios.gestionar": "Gestionar usuarios, roles y sociedades",
     "auditoria.ver": "Consultar registro de auditoría",
 }
@@ -45,13 +46,14 @@ ROLES_POR_DEFECTO: dict[str, tuple[str, list[str]]] = {
         "limpieza.editar", "limpieza.confirmar_ot", "mantenimiento.ver", "mantenimiento.abrir", "mantenimiento.editar",
         "mantenimiento.cerrar",
         "finanzas.ver", "facturas.ver", "facturas.rectificar", "auditoria.ver", "documentos.ver", "documentos.editar",
-        "pedidos.crear", "pedidos.autorizar"]),
+        "pedidos.crear", "pedidos.autorizar", "partes.validar"]),
     "Gestor Alquiler Residencial": ("Contratos, inquilinos y cobros", [
         "activos.ver", "alquiler.ver", "alquiler.editar", "mantenimiento.ver", "finanzas.ver", "facturas.ver",
         "documentos.ver", "documentos.editar"]),
     "Recepción": ("Reservas, llegadas y salidas. Abre y cierra órdenes de trabajo", [
         "activos.ver", "reservas.ver", "reservas.editar", "facturas.ver", "limpieza.editar", "mantenimiento.ver",
-        "mantenimiento.abrir", "mantenimiento.cerrar", "documentos.ver", "documentos.editar", "pedidos.crear"]),
+        "mantenimiento.abrir", "mantenimiento.cerrar", "documentos.ver", "documentos.editar", "pedidos.crear",
+        "partes.validar"]),
     "Gobernanta / Limpieza": ("Limpieza de unidades. Abre OT y confirma la unidad tras la reparación", [
         "activos.ver", "limpieza.editar", "limpieza.confirmar_ot", "mantenimiento.ver", "mantenimiento.abrir",
         "pedidos.crear"]),

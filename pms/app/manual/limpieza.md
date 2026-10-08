@@ -27,3 +27,9 @@
 - Si no está en el catálogo, **Producto nuevo**: descripción, familia, unidad, precio y, si la sabe, la referencia. **Si no pone referencia, el PMS le asigna una automática (PMS-000001…)**, que ya no cambia.
 - Abajo verá el **coste estimado** (sin IVA, IVA y total).
 - **Quién autoriza**: los pedidos de Dirección y de **Recepción 1** quedan autorizados. Los de Recepción 2, mantenimiento, limpieza y cualquier otra persona quedan **pendientes de que los autorice Recepción 1** (le llega un aviso).
+
+## Parte de trabajo diario
+- **Mantenimiento → Parte de trabajo diario**, área *Limpieza*, y el día.
+- Las **limpiezas marcadas como hechas** ese día entran solas (L-xxxxx).
+- Lo que no es un apartamento (zonas comunes según el programa de limpieza, cristales, garaje…) se añade con **Anotar actuación** (A-xxxxx).
+- Recepción lo **valida**; después ya no se cambia.
