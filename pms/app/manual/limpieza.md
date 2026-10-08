@@ -33,3 +33,6 @@
 - Las **limpiezas marcadas como hechas** ese día entran solas (L-xxxxx).
 - Lo que no es un apartamento (zonas comunes según el programa de limpieza, cristales, garaje…) se añade con **Anotar actuación** (A-xxxxx).
 - Recepción lo **valida**; después ya no se cambia.
+
+## Vacaciones y ausencias
+- Las ausencias de limpieza y conserjería se comunican **de palabra a Recepción 1**, que las registra en **Personal → Vacaciones y ausencias** y las aprueba.

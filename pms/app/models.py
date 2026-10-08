@@ -439,7 +439,8 @@ class WorkOrder(Base):
     envios: Mapped[list | None] = mapped_column(JSON)
 
 
-AREAS_PERSONAL = {"mantenimiento": "Mantenimiento", "limpieza": "Limpieza"}
+AREAS_PERSONAL = {"mantenimiento": "Mantenimiento", "limpieza": "Limpieza", "conserjeria": "Conserjería",
+                  "otros": "Otros (por administración)"}
 
 
 class StaffMember(Base):
@@ -448,7 +449,7 @@ class StaffMember(Base):
     __tablename__ = "personal_servicio"
     id: Mapped[int] = mapped_column(primary_key=True)
     asset_id: Mapped[int | None] = mapped_column(ForeignKey("activos.id"), index=True)
-    area: Mapped[str] = mapped_column(String(20))  # mantenimiento | limpieza
+    area: Mapped[str] = mapped_column(String(20))  # mantenimiento | limpieza | conserjeria | otros
     nombre: Mapped[str] = mapped_column(String(160))
     empresa: Mapped[str | None] = mapped_column(String(160))
     email: Mapped[str | None] = mapped_column(String(160))
@@ -879,3 +880,44 @@ class WorkReport(Base):
     validado_en: Mapped[datetime | None] = mapped_column(DateTime)
     pdf_id: Mapped[int | None] = mapped_column(ForeignKey("documentos_recibidos.id"))
     xlsx_id: Mapped[int | None] = mapped_column(ForeignKey("documentos_recibidos.id"))
+
+
+# --------------------------------------------------------------------------- ausencias del personal
+TIPOS_AUSENCIA = {
+    "vacaciones": "Vacaciones", "dia_libre": "Día libre / asuntos propios", "baja_medica": "Baja médica",
+    "permiso": "Permiso (boda, fallecimiento, mudanza, médico…)", "falta": "Falta (ausencia no prevista)",
+    "otro": "Otro",
+}
+COLECTIVOS_AUSENCIA = {
+    "mantenimiento": "Mantenimiento", "limpieza": "Limpieza", "conserjeria": "Conserjería",
+    "otros": "Otros (por administración)", "recepcion1": "Recepción 1", "recepcion2": "Recepción 2",
+    "direccion": "Dirección y oficinas",
+}
+ESTADOS_AUSENCIA = {
+    "pendiente": "Pendiente", "visto_bueno": "Visto bueno de Recepción 1 (falta dirección)",
+    "aprobada": "Aprobada", "denegada": "Denegada", "anulada": "Anulada",
+}
+
+
+class Absence(Base):
+    """Vacaciones, días libres, bajas, permisos y faltas del personal: usuarios del PMS o personal de subcontratas
+    (ficha de Personal). Quién la aprueba depende del colectivo (ver app/ausencias.py)."""
+    __tablename__ = "ausencias"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), index=True)
+    staff_id: Mapped[int | None] = mapped_column(ForeignKey("personal_servicio.id"), index=True)
+    persona: Mapped[str] = mapped_column(String(160))
+    colectivo: Mapped[str] = mapped_column(String(20))
+    tipo: Mapped[str] = mapped_column(String(20))
+    desde: Mapped[date] = mapped_column(Date, index=True)
+    hasta: Mapped[date] = mapped_column(Date, index=True)
+    motivo: Mapped[str | None] = mapped_column(Text)
+    estado: Mapped[str] = mapped_column(String(20), default="pendiente")
+    visto_bueno_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    visto_bueno_en: Mapped[datetime | None] = mapped_column(DateTime)
+    resuelto_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    resuelto_en: Mapped[datetime | None] = mapped_column(DateTime)
+    nota: Mapped[str | None] = mapped_column(Text)  # motivo de la denegación o de la anulación
+    creado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    creado_en: Mapped[datetime] = mapped_column(DateTime, default=_now)
