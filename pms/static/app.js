@@ -1541,7 +1541,7 @@ async function newReservation(reload, fija) {  // fija: {id, codigo, asset_id} p
       { html: "<h4>Huésped titular</h4>" }, ...guestFields,
       { html: "<h4>Reserva</h4>" },
       { k: "unit_id", t: "Unidad", type: "select", req: true, options: disp.unidades.map((u) => [u.id, `${u.codigo} ${u.bloque ? "· " + u.bloque : ""} ${u.tipologia ?? ""} ${u.tarifa ? "· " + eur(u.tarifa.total) : u.tarifa_base_noche ? "· " + eur(u.tarifa_base_noche) : ""}`]) },
-      { k: "canal", t: "Canal", type: "select", req: true, options: list(S.cat.canales), def: "directo" }, { k: "localizador", t: "Localizador" },
+      { k: "canal", t: "Canal", type: "select", req: true, options: list(S.cat.canales), def: "directo" }, { k: "localizador", t: "Localizador (en blanco: automático)" },
       ...precioCampos(),
       { k: "importe_pagado", t: "Cobrado ahora € (se emite factura)", type: "number", def: 0 },
       { k: "forma_pago", t: "Forma de pago", type: "select", options: kv(S.cat.formas_pago) },

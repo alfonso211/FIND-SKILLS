@@ -1,5 +1,8 @@
 # Novedades
 
+## 2026-10-08 · Versión 1.23 · Localizador automático
+- **Recepción**: cada reserva tiene su **localizador** aunque no se escriba: **SF0000000001**, SF0000000002… en Suite Florida y **SA0000000001**… en Suite Aeropuerto. Las reservas que no lo tenían ya lo tienen. El de un canal (Booking…) se respeta si se escribe.
+
 ## 2026-10-08 · Versión 1.22 · Anular con un botón y fichas que solo coinciden en el nombre
 - **Recepción y dirección**: **Anular** reservas, contratos y alquileres de garaje desde su ficha, con el motivo. Si hay facturas, primero la rectificativa; si hay cobros, se da de baja.
 - **Recepción**: en las fichas repetidas (mismo nombre), **No es la misma persona** quita el aviso sin unirlas. También desde la propia ficha del cliente.

@@ -1,5 +1,6 @@
 """Apartamentos turísticos: reservas, llegadas/salidas, disponibilidad y planning."""
 import base64
+import re
 import secrets
 from html import escape
 from urllib.parse import quote
@@ -193,6 +194,8 @@ def create_reservation(data: ReservationIn, scope: Scope = Depends(get_scope), d
     r = Reservation(**data.model_dump(exclude={"guest", "guest_id", "documentos", "importe_pagado", "forma_pago",
                                                "facturar_pendiente", "extras", "limpieza", "precio_aceptado"}),
                     guest_id=guest.id, importe_pagado=0)
+    if not (r.localizador or "").strip():
+        r.localizador = nuevo_localizador(db, asset)
     r.ocupantes.append(ReservationGuest(contact_id=guest.id, titular=True, orden=0))
     db.add(r)
     db.flush()
@@ -354,6 +357,8 @@ def update_reservation(rid: int, data: ReservationUpdate, scope: Scope = Depends
     # los extras y la limpieza no se copian tal cual: los resuelve _guardar_extras
     ch = apply(r, ReservationUpdate(**data.model_dump(exclude_unset=True,
                                                      exclude={"extras", "limpieza", "quitar_limpieza"})))
+    if not (r.localizador or "").strip():  # sin localizador no se queda: se genera el automático
+        r.localizador = nuevo_localizador(db, r.unit.asset)
     if data.extras is not None or data.limpieza is not None or data.quitar_limpieza or "fecha_entrada" in ch \
             or "fecha_salida" in ch:
         antes = r.extras
@@ -875,7 +880,7 @@ def import_reservations(fichero: UploadFile = File(...), asset_id: int = Form(..
                                 telefono=(str(f.get("telefono") or "").strip() or None))
                     db.add(g)
                     db.flush()
-                nueva = Reservation(unit_id=u.id, guest_id=g.id, localizador=r["localizador"],
+                nueva = Reservation(unit_id=u.id, guest_id=g.id, localizador=r["localizador"] or nuevo_localizador(db, asset),
                                     canal=importacion.canal(f.get("canal")), fecha_entrada=ent, fecha_salida=sal,
                                     adultos=adultos, ninos=ninos, importe_total=total,
                                     notas=(str(f.get("notas") or "").strip() or None))
@@ -1005,6 +1010,25 @@ DATOS_CLIENTE_CONTRATO = ("cliente_nombre", "cliente_nacionalidad", "cliente_doc
                           "tarjeta_terminacion", "tarjeta_caducidad")
 DATOS_RENOVACION = DATOS_CLIENTE_CONTRATO + ("fianza", "sin_garaje", "garaje_sotano", "garaje_plaza", "capacidad",
                                             "dormitorios")
+
+
+DIGITOS_LOCALIZADOR = 10
+
+
+def prefijo_localizador(asset: Asset) -> str:
+    """Prefijo de los localizadores del activo: su serie de facturación (SF, SA…) o, si no tiene, su código."""
+    return (asset.serie_factura or asset.codigo or "R")[:4].upper()
+
+
+def nuevo_localizador(db: Session, asset: Asset) -> str:
+    """Localizador automático y correlativo por activo: SF0000000001, SF0000000002… (Suite Florida), SA… (Suite
+    Aeropuerto). Sigue al mayor de ese formato ya usado; los localizadores de canales o importados no cuentan."""
+    pre = prefijo_localizador(asset)
+    patron = re.compile(rf"{re.escape(pre)}(\d{{{DIGITOS_LOCALIZADOR}}})")
+    usados = db.scalars(select(Reservation.localizador).join(Unit).where(
+        Unit.asset_id == asset.id, Reservation.localizador.like(f"{pre}%")))
+    ultimo = max((int(m.group(1)) for x in usados if x and (m := patron.fullmatch(x))), default=0)
+    return f"{pre}{ultimo + 1:0{DIGITOS_LOCALIZADOR}d}"
 
 
 def _localizador_renovacion(db: Session, r: Reservation) -> str:

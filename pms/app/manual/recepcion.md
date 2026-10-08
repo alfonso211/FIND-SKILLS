@@ -13,7 +13,7 @@
    - El documento **recto, nítido, sin reflejos** y ocupando el marco. Verá «Leyendo… N s»; en 2-3 segundos rellena los datos.
    - Revise siempre lo leído (los nombres de la zona «<<<» no llevan tildes).
 3. Si el cliente **ya estuvo alojado**, búsquelo en «¿Ya ha estado alojado?» y se reutiliza su ficha.
-4. Indique **apartamento y canal**. El **precio a pagar** sale solo, en **naranja**, con la tarifa estándar según las noches:
+4. Indique **apartamento y canal**. El **localizador** se pone solo si lo deja en blanco: **SF** + número en Suite Florida y **SA** + número en Suite Aeropuerto (p. ej. SF0000000001); si la reserva viene de un canal, escriba el suyo. El **precio a pagar** sale solo, en **naranja**, con la tarifa estándar según las noches:
    - 1 a 6 noches: estudio 50 €, 1 dormitorio 55 €, 2 dormitorios 75 € por noche.
    - 7 a 13 noches: 10 % de descuento (45 / 49,50 / 67,50 € por noche).
    - 14 a 29 noches: 19 % de descuento (40,50 / 44,55 / 60,75 € por noche).
