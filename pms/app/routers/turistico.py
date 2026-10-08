@@ -4,8 +4,10 @@ import secrets
 from html import escape
 from urllib.parse import quote
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
+from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, aliased
 
@@ -425,6 +427,37 @@ def cancel(rid: int, no_show: bool = False, scope: Scope = Depends(get_scope), d
         bad_request("Solo se pueden cancelar reservas confirmadas")
     r.estado = "no_show" if no_show else "cancelada"
     audit(db, scope.user, r.estado, "reserva", rid)
+    db.commit()
+    return _res_out(r)
+
+
+class AnularIn(BaseModel):
+    motivo: str = Field(min_length=3, max_length=300)
+
+
+@router.post("/reservas/{rid}/anular")
+def void_reservation(rid: int, data: AnularIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Anula una reserva confirmada o con el cliente alojado (errores, duplicadas, cliente que no viene…) con su
+    motivo. Si tiene facturas sin rectificar no se anula: primero la rectificativa (las facturas no se borran).
+    Sus plazas de garaje asociadas se anulan con ella y las limpiezas pendientes se quitan del parte."""
+    r = get_or_404(db, Reservation, rid)
+    scope.require_asset("reservas.editar", r.unit.asset_id)
+    if r.estado not in ACTIVAS:
+        bad_request("Solo se anulan reservas confirmadas o con el cliente alojado")
+    afectadas = [r, *[g for g in _garajes_asociados(db, r) if g.estado in ACTIVAS]]
+    for x in afectadas:
+        facturado = sum((dinero(f.total) for f in db.scalars(select(Invoice).where(Invoice.reservation_id == x.id))),
+                        Decimal(0))
+        if facturado:
+            bad_request(f"La reserva {x.localizador or x.id} tiene facturas por {facturado:.2f} €. Emita antes la "
+                        "factura rectificativa (Facturas emitidas → Rectificar) y vuelva a anularla.")
+    for x in afectadas:
+        if x.estado == "checkin" and x.unit.estado == "ocupada":
+            x.unit.estado = "disponible"
+        x.estado = "cancelada"
+        x.notas = f"{x.notas + chr(10) if x.notas else ''}Anulada el {date.today():%d/%m/%Y}: {data.motivo}"
+        audit(db, scope.user, "anular", "reserva", x.id, {"motivo": data.motivo})
+    db.flush()
     db.commit()
     return _res_out(r)
 

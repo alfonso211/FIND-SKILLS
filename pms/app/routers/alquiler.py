@@ -4,6 +4,7 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -106,6 +107,8 @@ def create_lease(data: LeaseIn, scope: Scope = Depends(get_scope), db: Session =
 def update_lease(lid: int, data: LeaseUpdate, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     lease = get_or_404(db, Lease, lid)
     scope.require_asset("alquiler.editar", lease.unit.asset_id)
+    if lease.estado == "anulado":
+        bad_request("El contrato está anulado: no se puede modificar")
     if data.estado is not None and data.estado not in ESTADOS_CONTRATO:
         bad_request("Estado de contrato no válido")
     if "fecha_fin" in data.model_fields_set and data.fecha_fin is not None:
@@ -120,6 +123,20 @@ def update_lease(lid: int, data: LeaseUpdate, scope: Scope = Depends(get_scope),
         elif lease.estado == "vigente" and lease.fecha_inicio <= date.today():
             lease.unit.estado = "ocupada"
     audit(db, scope.user, "editar", "contrato", lid, ch)
+    db.commit()
+    return _lease_out(lease)
+
+
+class AnularIn(BaseModel):
+    motivo: str = Field(min_length=3, max_length=300)
+
+
+@router.post("/contratos/{lid}/anular")
+def void_lease(lid: int, data: AnularIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Anula el contrato (sin cobros ni facturas): ver recibos.anular_contrato."""
+    lease = get_or_404(db, Lease, lid)
+    scope.require_asset("alquiler.editar", lease.unit.asset_id)
+    recibos.anular_contrato(db, scope.user, lease, data.motivo)
     db.commit()
     return _lease_out(lease)
 

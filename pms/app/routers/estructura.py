@@ -1,14 +1,14 @@
 """Sociedades, activos, unidades y terceros."""
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from .. import avisos, limpiezas, marca, nif, registro_viajeros
 from ..database import get_db
 from ..facturacion import FORMAS_PAGO
-from ..models import (ESTADOS_UNIDAD, MODALIDADES, USOS_UNIDAD, Asset, Company, Contact, ContactDocument, Invoice, Lease,
-                      Reservation, ReservationGuest, Unit)
+from ..models import (ESTADOS_UNIDAD, MODALIDADES, USOS_UNIDAD, Asset, Company, Contact, ContactDistinct,
+                      ContactDocument, Invoice, Lease, Reservation, ReservationGuest, Unit)
 from ..schemas import AssetIn, AssetUpdate, CompanyIn, ContactIn, UnitBulk, UnitIn, UnitUpdate
 from ..security import PERMISOS, Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
@@ -335,7 +335,7 @@ def duplicate_contacts(tipo: str, scope: Scope = Depends(get_scope), db: Session
     grupos: dict[tuple, list[Contact]] = {}
     for c in db.scalars(stmt.order_by(Contact.id)):
         grupos.setdefault((c.company_id, c.asset_id, nif.nombre_clave(c.nombre, c.apellidos)), []).append(c)
-    repetidos = [g for g in grupos.values() if len(g) > 1]
+    repetidos = _sin_distintos(db, [g for g in grupos.values() if len(g) > 1])
     uds = unidades_de(db, [c.id for g in repetidos for c in g])
     n_res = dict(db.execute(select(Reservation.guest_id, func.count()).where(
         Reservation.guest_id.in_([c.id for g in repetidos for c in g] or [-1])).group_by(Reservation.guest_id)).all())
@@ -349,6 +349,54 @@ def duplicate_contacts(tipo: str, scope: Scope = Depends(get_scope), db: Session
                     "activo": db.get(Asset, g[0].asset_id).nombre if g[0].asset_id else None,
                     "principal": principal["id"], "documentos_distintos": len(docs) > 1})
     return out
+
+
+def _sin_distintos(db: Session, grupos: list[list[Contact]]) -> list[list[Contact]]:
+    """Quita de cada grupo las parejas que recepción ya revisó como personas distintas: quedan juntas solo las fichas
+    que pueden ser la misma persona (componentes conexos de las parejas sin revisar)."""
+    ids = [c.id for g in grupos for c in g]
+    distintas = set(db.execute(select(ContactDistinct.a_id, ContactDistinct.b_id).where(
+        ContactDistinct.a_id.in_(ids or [-1]))).all())
+    out = []
+    for g in grupos:
+        pendientes = list(g)
+        while pendientes:
+            comp = [pendientes.pop(0)]
+            cola = [comp[0]]
+            while cola:
+                x = cola.pop()
+                for y in [y for y in pendientes if (min(x.id, y.id), max(x.id, y.id)) not in distintas]:
+                    pendientes.remove(y)
+                    comp.append(y)
+                    cola.append(y)
+            if len(comp) > 1:
+                out.append(sorted(comp, key=lambda c: c.id))
+    return out
+
+
+class DistinctIn(BaseModel):
+    ids: list[int] = Field(min_length=2, max_length=50)
+
+
+@router.post("/terceros/distintos")
+def mark_distinct(data: DistinctIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """«No son la misma persona»: las fichas indicadas (mismo nombre) dejan de salir como repetidas entre sí."""
+    fichas = [get_or_404(db, Contact, i) for i in sorted(set(data.ids))]
+    for c in fichas:
+        _visible(db, scope, c, "editar")
+    if len({(c.company_id, c.asset_id, c.tipo) for c in fichas}) > 1:
+        bad_request("Solo se revisan fichas del mismo activo y tipo")
+    ya = set(db.execute(select(ContactDistinct.a_id, ContactDistinct.b_id).where(
+        ContactDistinct.a_id.in_([c.id for c in fichas]))).all())
+    nuevas = 0
+    for i, a in enumerate(fichas):
+        for b in fichas[i + 1:]:
+            if (a.id, b.id) not in ya:
+                db.add(ContactDistinct(a_id=a.id, b_id=b.id, user_id=scope.user.id))
+                nuevas += 1
+    audit(db, scope.user, "no_duplicado", "tercero", fichas[0].id, {"fichas": [c.id for c in fichas]})
+    db.commit()
+    return {"parejas": nuevas}
 
 
 CAMPOS_FUSION = ("apellidos", "documento_tipo", "documento_num", "nacionalidad", "fecha_nacimiento", "sexo",
@@ -405,6 +453,7 @@ def merge_contacts(cid: int, data: MergeIn, scope: Scope = Depends(get_scope), d
         for f in filas:
             setattr(f, col.key, cid)
         movidas[modelo.__tablename__] = len(filas)
+    db.execute(delete(ContactDistinct).where(or_(ContactDistinct.a_id.in_(ids), ContactDistinct.b_id.in_(ids))))
     db.flush()
     for o in otros:
         db.delete(o)
@@ -423,6 +472,15 @@ def contact_detail(cid: int, scope: Scope = Depends(get_scope), db: Session = De
     d["unidades"] = unidades_de(db, [cid]).get(cid, [])
     d["n_apartamentos"] = sum(1 for x in d["unidades"] if x["uso"] != "garaje")
     d["n_estancias"] = db.scalar(select(func.count()).select_from(Reservation).where(Reservation.guest_id == cid))
+    # otras fichas del mismo activo con el mismo nombre que aún no se han revisado (aviso de ficha repetida)
+    clave = nif.nombre_clave(c.nombre, c.apellidos)
+    mismas = [o for o in db.scalars(select(Contact).where(
+        Contact.company_id == c.company_id, Contact.tipo == c.tipo, Contact.id != c.id,
+        Contact.asset_id.is_(None) if c.asset_id is None else Contact.asset_id == c.asset_id))
+        if nif.nombre_clave(o.nombre, o.apellidos) == clave]
+    grupo = next((g for g in _sin_distintos(db, [[c, *mismas]]) if any(x.id == c.id for x in g)), []) if mismas else []
+    d["repetidas"] = [{"id": o.id, "documento_num": o.documento_num, "telefono": o.telefono, "email": o.email}
+                      for o in grupo if o.id != c.id]
     fin = scope.asset_ids("finanzas.ver")  # importes del programa anterior: solo quien ve las finanzas del activo
     if fin is None or (c.asset_id and c.asset_id in fin):
         from .historico import del_cliente  # import local: historico no depende de este módulo

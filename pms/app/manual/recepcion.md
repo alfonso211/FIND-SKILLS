@@ -35,6 +35,13 @@
 - **Parte de limpieza**: la limpieza de salida entra en el parte **al hacer el check-out**, no antes (el cliente puede renovar). Haga el check-out en cuanto el cliente entregue las llaves. Cada mañana, **Imprimir PDF** o **Enviar** a limpieza (el Excel queda en Documentos recibidos). Antes de imprimir o enviar puede **ordenarlo** (↑ ↓), marcar algo como **urgente**, añadir una **nota** o **pasarlo a otro día** («Cambiar»). Añada las **limpiezas extra** del día. Para algo que no puede esperar: **⚡ Limpieza urgente** (va la primera y se imprime o envía al momento). Cuando limpieza avise, pulse **Hecha** en cada una; lo no validado pasa al día siguiente.
 - **Plano de apartamentos**: colores por estado. Pulse un apartamento para ver su ficha, reservar, bloquear o abrir una incidencia.
 
+## Anular una reserva o un alquiler de garaje
+- En la reserva (o en el alquiler de la plaza) pulse **Anular**, o ábrala con **Editar** y pulse **Anular reserva** / **Anular alquiler**. Escriba el **motivo**: queda en el historial como anulada y el apartamento o la plaza quedan libres.
+- Si ya tiene **factura**, primero se emite la **rectificativa** (Facturas emitidas → Rectificar). Si el alquiler tiene **recibos cobrados**, no se anula: se da de **Baja** con su fecha.
+
+## Fichas de cliente repetidas
+- Si hay dos fichas con el **mismo nombre**, sale un aviso en Huéspedes y dentro de la ficha. Si es la misma persona, pulse **Unir fichas**. Si solo coincide el nombre, pulse **No es la misma persona**: no se unen y el aviso desaparece.
+
 ## Cobros y facturas
 - **Cobro** en la reserva: registra el pago y **emite la factura** (se descarga en PDF).
 - **Facturar sin cobrar**: emite la factura y queda **pendiente de cobro**.

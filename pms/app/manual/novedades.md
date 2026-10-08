@@ -1,5 +1,9 @@
 # Novedades
 
+## 2026-10-08 · Versión 1.22 · Anular con un botón y fichas que solo coinciden en el nombre
+- **Recepción y dirección**: **Anular** reservas, contratos y alquileres de garaje desde su ficha, con el motivo. Si hay facturas, primero la rectificativa; si hay cobros, se da de baja.
+- **Recepción**: en las fichas repetidas (mismo nombre), **No es la misma persona** quita el aviso sin unirlas. También desde la propia ficha del cliente.
+
 ## 2026-10-08 · Versión 1.21 · Tarifas estándar en la reserva
 - **Recepción**: al reservar o renovar, el **precio a pagar** sale solo según el tipo de apartamento y las noches (1-6, 7-13 con -10 %, 14-29 con -19 % y 30 noches a precio cerrado), **en naranja**. Se puede cambiar, pero siempre hay que marcar **«Acepto el precio»** para continuar.
 

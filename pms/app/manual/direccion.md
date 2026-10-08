@@ -27,6 +27,8 @@
 - **Sociedades → Datos para contratos**: registro mercantil, representante, IBAN y contactos.
 - **Recibos y cobros**: recibos mensuales de renta y su cobro.
 
+- **Anular un contrato** hecho por error o que no sigue adelante: **Anular** en el contrato (o en **Editar** → **Anular contrato**), con su motivo. Con recibos cobrados no se anula: se rescinde o se da por finalizado. Con facturas, primero la rectificativa.
+
 ## Gastos
 - **Informe a presidencia** (mensual, por activo): producción por tipo de estancia y servicios, gastos por proveedor con CAPEX/OPEX, resultado con semáforo y resumen mensual del año anterior y del actual. Lo revisa y envía «Recepción 1» de cada activo (o quien se indique en la ficha del activo, junto con los correos y el WhatsApp de envío; si no se indican correos, va a la presidencia).
 - **Documentos recibidos**: carpeta de facturas y cartas de cada activo. El **lector** rellena los datos de la factura y marca en amarillo lo dudoso; las facturas **duplicadas** (mismo proveedor y nº) no se registran.

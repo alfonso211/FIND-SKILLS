@@ -160,6 +160,17 @@ class Contact(Base):
     notas: Mapped[str | None] = mapped_column(Text)
 
 
+class ContactDistinct(Base):
+    """Dos fichas con el mismo nombre que recepción ha revisado: no son la misma persona. Ya no salen como repetidas."""
+    __tablename__ = "terceros_distintos"
+    __table_args__ = (UniqueConstraint("a_id", "b_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    a_id: Mapped[int] = mapped_column(ForeignKey("terceros.id", ondelete="CASCADE"), index=True)  # a_id < b_id
+    b_id: Mapped[int] = mapped_column(ForeignKey("terceros.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    fecha: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
 TIPOS_PERSONA = {"empresa": "Empresa (CIF)", "autonomo": "Autónomo (DNI/NIE)", "particular": "Persona física (DNI/NIE)"}
 
 
@@ -198,7 +209,7 @@ class Lease(Base):
     garantia_adicional: Mapped[float | None] = mapped_column(Numeric(10, 2))
     dia_pago: Mapped[int] = mapped_column(Integer, default=5)
     indice_actualizacion: Mapped[str] = mapped_column(String(20), default="IRAV")  # IRAV | IPC | NINGUNO
-    estado: Mapped[str] = mapped_column(String(20), default="vigente")  # borrador | vigente | finalizado | rescindido
+    estado: Mapped[str] = mapped_column(String(20), default="vigente")  # borrador | vigente | finalizado | rescindido | anulado
     # % de IVA. Vacío = según el uso de la unidad (vivienda exenta, resto 21 %)
     tipo_iva: Mapped[float | None] = mapped_column(Numeric(5, 2))
     notas: Mapped[str | None] = mapped_column(Text)

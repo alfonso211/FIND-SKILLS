@@ -150,7 +150,7 @@ function form(title, fields, init = {}, onSubmit, submitLabel = "Guardar") {
     }
     return `<input name="${fd.k}" type="${fd.type || "text"}" value="${esc(v)}" ${req} ${fd.step ? `step="${fd.step}"` : fd.type === "number" ? 'step="any"' : ""}>`;
   };
-  f.innerHTML = `<h3>${esc(title)}</h3><div class="grid">${fields.map((fd) => fd.html ? `<div class="wide">${fd.html}</div>` :
+  f.innerHTML = `<h3>${esc(title)}</h3><div class="grid">${fields.map((fd) => "html" in fd ? (fd.html ? `<div class="wide">${fd.html}</div>` : "") :
     fd.type === "checkbox" ? `<label class="check ${fd.wide ? "wide" : ""}">${input(fd)} ${esc(fd.t)}</label>` :
     fd.type === "checks" ? `<fieldset class="wide"><legend>${esc(fd.t)}</legend>${input(fd)}</fieldset>` :
     `<label class="${fd.wide ? "wide" : ""}">${esc(fd.t)}${fd.req ? " *" : ""}${input(fd)}</label>`).join("")}</div>
@@ -171,7 +171,7 @@ function form(title, fields, init = {}, onSubmit, submitLabel = "Guardar") {
     ev.preventDefault();
     const data = {};
     for (const fd of fields) {
-      if (!fd.k || fd.html) continue;
+      if (!fd.k || "html" in fd) continue;
       const el = f.elements[fd.k];
       if (fd.type === "checks") { data[fd.k] = [...f.querySelectorAll(`input[name="${fd.k}"]:checked`)].map((x) => x.value); continue; }
       if (fd.type === "checkbox") data[fd.k] = el.checked;
@@ -1109,7 +1109,7 @@ function resActions(reload) {
     r.estado === "checkin" && ["Check-out", () => run(() => post(`/api/turistico/reservas/${r.id}/checkout`), "Check-out realizado").then(reload)],
     ["Huésped", () => editGuest(r.guest_id)],
     ["Editar", () => editReservation(r, reload)],
-    r.estado === "confirmada" && ["Cancelar", () => confirm("¿Cancelar la reserva?") && run(() => post(`/api/turistico/reservas/${r.id}/cancelar`), "Reserva cancelada").then(reload), "danger"],
+    ["confirmada", "checkin"].includes(r.estado) && ["Anular", () => anular("la reserva", "anulada", `/api/turistico/reservas/${r.id}/anular`, reload), "danger"],
   ] : [];
 }
 async function accommodationContract(r) {
@@ -1224,12 +1224,33 @@ function historicoHtml(c) {
     </tbody></table></div></details>
     <p class="muted">Datos del programa anterior, enlazados por el DNI/NIF del cliente o, si no lo tiene, por su nombre y apellidos. No son facturas del PMS: la facturación válida para Hacienda empieza el 1 de enero de 2027.</p></fieldset>`;
 }
+// aviso en la ficha: otra ficha del mismo activo con el mismo nombre. Se unen, o se indica que no es la misma persona
+function repetidasHtml(c) {
+  if (!c.repetidas || !c.repetidas.length) return "";
+  return `<div class="aviso-vencidas"><b>Hay ${c.repetidas.length} ficha(s) más con el mismo nombre.</b>
+    <ul>${c.repetidas.map((o) => `<li>Ficha ${o.id}: ${esc(o.documento_num || "sin documento")} · ${esc(o.telefono || "sin teléfono")} · ${esc(o.email || "sin correo")}</li>`).join("")}</ul>
+    Si es la misma persona, únalas. Si solo coincide el nombre, pulse «No es la misma persona» y el aviso desaparece.
+    <div class="toolbar"><button type="button" class="btn sm" data-distinta>No es la misma persona</button><button type="button" class="btn sm primary" data-unir>Unir fichas</button></div></div>`;
+}
+function bindRepetidas(f, c, tipo, onSaved) {
+  if (!$("[data-distinta]", f)) return;
+  const volver = () => { onSaved && onSaved(); editGuest(c.id, tipo, onSaved); };
+  $("[data-distinta]", f).onclick = async () => {
+    await run(() => post("/api/terceros/distintos", { ids: [c.id, ...c.repetidas.map((o) => o.id)] }), "Hecho: ya no se avisará de estas fichas");
+    volver();
+  };
+  $("[data-unir]", f).onclick = async () => {
+    const g = (await run(() => get("/api/terceros/duplicados", { tipo }))).filter((x) => x.fichas.some((o) => o.id === c.id));
+    unirFichas(g, () => onSaved && onSaved());
+  };
+}
 async function editGuest(id, tipo = "huesped", onSaved) {
   const c = await get(`/api/terceros/${id}`).catch(() => null);
   if (!c) return toast("Cliente no encontrado", true);
-  const f = form(`${{ huesped: "Huésped", cliente_garaje: "Cliente de garaje" }[tipo] || "Inquilino"}: ${c.nombre} ${c.apellidos || ""}${c.activo ? ` · ${c.activo}` : ""}`.trim(), [{ html: unidadesHtml(c) }, { html: historicoHtml(c) }, { html: scanHtml() }, ...guestFields, { k: "iban", t: "IBAN" }, { k: "notas", t: "Notas", type: "textarea", wide: true }], c,
+  const f = form(`${{ huesped: "Huésped", cliente_garaje: "Cliente de garaje" }[tipo] || "Inquilino"}: ${c.nombre} ${c.apellidos || ""}${c.activo ? ` · ${c.activo}` : ""}`.trim(), [{ html: repetidasHtml(c) }, { html: unidadesHtml(c) }, { html: historicoHtml(c) }, { html: scanHtml() }, ...guestFields, { k: "iban", t: "IBAN" }, { k: "notas", t: "Notas", type: "textarea", wide: true }], c,
     async (d) => { await put(`/api/terceros/${id}`, { ...d, company_id: c.company_id, tipo: c.tipo }); toast("Datos guardados"); onSaved && onSaved(); });
   bindScan(f, id, (lec) => rellenaFicha(f, lec));
+  bindRepetidas(f, c, c.tipo, onSaved);
 }
 
 // ---- escaneo de documentos de identidad
@@ -1445,6 +1466,16 @@ async function verDocumento(did) {
     w.location = URL.createObjectURL(await res.blob());
   } catch (e) { w && w.close(); toast(e.message, true); }
 }
+// ---- anular una reserva, un contrato o un alquiler hecho por error o que no sigue adelante (queda en el historial
+// como anulado, con su motivo). Con facturas hay que rectificarlas antes; con cobros se da de baja en vez de anular.
+function anular(que, hecho, url, reload) {
+  form(`Anular ${que}`, [
+    { html: `<p>Anule ${que} si se hizo por error o no sigue adelante. Queda en el historial como <b>${hecho}</b>, con el motivo, y la unidad queda libre.</p>
+      <p class="muted">Si tiene facturas, antes hay que emitir la factura rectificativa. Si tiene cobros, no se anula: se da de baja con su fecha.</p>` },
+    { k: "motivo", t: "Motivo de la anulación", req: true, wide: true },
+  ], {}, async (d) => { await post(url, d); toast(`${que[0].toUpperCase()}${que.slice(1)}: ${hecho}`); reload && reload(); }, "Anular");
+}
+const botonAnular = (texto) => ({ html: `<div class="toolbar"><span class="spacer"></span><button type="button" class="btn sm danger" data-anular>${texto}</button></div>`, wide: true });
 function editReservation(r, reload) {
   form(`Reserva ${r.localizador || r.id} · ${r.unidad}`, [
     { k: "localizador", t: "Localizador" }, { k: "canal", t: "Canal", type: "select", options: list(S.cat.canales) },
@@ -1454,11 +1485,13 @@ function editReservation(r, reload) {
     { html: `<p class="muted">Cobrado: ${eur(r.importe_pagado)}. Los cobros se registran con el botón <b>Cobro</b>, que emite la factura.</p>` },
     { k: "notas", t: "Notas", type: "textarea", wide: true },
     ...(r.uso !== "garaje" ? [{ html: extrasHtml(r) }] : []),
+    ...(["confirmada", "checkin"].includes(r.estado) ? [botonAnular("Anular reserva")] : []),
   ], r, async (d, fr) => {
     const ex = fr._extras ? fr._extras() : {};
     await put(`/api/turistico/reservas/${r.id}`, { ...d, ...ex }); toast("Reserva actualizada"); reload();
   });
   const f = $("#modalForm");
+  if ($("[data-anular]", f)) $("[data-anular]", f).onclick = () => anular("la reserva", "anulada", `/api/turistico/reservas/${r.id}/anular`, reload);
   if (r.uso !== "garaje") bindExtras(f, r.asset_id, r, () => ({ fecha_entrada: f.elements.fecha_entrada.value, fecha_salida: f.elements.fecha_salida.value })).catch((e) => toast(e.message, true));
 }
 // ---- precio a pagar: lo propone la tarifa estándar según las noches (ver app/tarifas.py). Sale en naranja; recepción
@@ -1736,6 +1769,7 @@ V.garajes = async (el) => {
         { html: '<p class="muted">Se anulan los recibos posteriores a la baja que no tengan cobros. Si hay deuda pendiente, sigue en «Recibos».</p>' },
         { k: "fecha_fin", t: "Fecha de baja (último día)", type: "date", req: true, def: today() }, { k: "motivo", t: "Motivo", wide: true },
       ], {}, async (x) => { await post(`/api/garajes/contratos/${c.id}/finalizar`, clean(x)); toast("Alquiler dado de baja"); load(); }, "Dar de baja"), "danger"],
+      c.estado === "vigente" && ["Anular", () => anular(`el alquiler de la plaza ${c.unidad}`, "anulado", `/api/garajes/contratos/${c.id}/anular`, load), "danger"],
     ] : []);
     else {
       const q = normaliza($("#q", el).value);
@@ -1758,7 +1792,9 @@ function editarAlquilerGaraje(c, reload) {
     { k: "renta_mensual", t: "Renta mensual € SIN IVA (desde el próximo recibo)", type: "number", req: true }, { k: "dia_pago", t: "Día de pago", type: "number", step: 1 },
     { k: "fecha_fin", t: "Fecha de fin prevista", type: "date" }, { k: "fianza", t: "Fianza €", type: "number" }, { k: "referencia", t: "Referencia" },
     { k: "matricula", t: "Matrícula" }, { k: "vehiculo", t: "Vehículo" }, { k: "mandos", t: "Mandos / tarjetas", wide: true }, { k: "notas", t: "Notas", type: "textarea", wide: true },
+    botonAnular("Anular alquiler"),
   ], c, async (d) => { await put(`/api/garajes/contratos/${c.id}`, d); toast("Alquiler actualizado"); reload(); });
+  $("[data-anular]", $("#modalForm")).onclick = () => anular(`el alquiler de la plaza ${c.unidad}`, "anulado", `/api/garajes/contratos/${c.id}/anular`, reload);
 }
 
 // ---- renovación de la estancia al mismo cliente: reserva nueva, datos completos y contrato nuevo firmado
@@ -2015,13 +2051,16 @@ V.contratos = async (el) => {
   ], await get("/api/alquiler/contratos", { asset_id: S.asset, estado: $("#e", el).value }), (l) => can("alquiler.editar") ? [
     ["Expediente", () => expediente(l), "primary"],
     ["Inquilino", () => editGuest(l.tenant_id, "inquilino")],
-    ["Editar", () => form(`Contrato ${l.unidad}`, [
+    l.estado !== "anulado" && ["Editar", () => form(`Contrato ${l.unidad}`, [
       { k: "referencia", t: "Referencia" }, { k: "fecha_fin", t: "Fecha fin", type: "date" }, { k: "fianza", t: "Fianza €", type: "number" },
       { k: "garantia_adicional", t: "Garantía adicional €", type: "number" }, { k: "dia_pago", t: "Día de pago", type: "number" },
       { k: "indice_actualizacion", t: "Índice", type: "select", options: list(["IRAV", "IPC", "NINGUNO"]) },
       ivaField,
       { k: "estado", t: "Estado", type: "select", options: list(["borrador", "vigente", "finalizado", "rescindido"]) },
-      { k: "notas", t: "Notas", type: "textarea", wide: true }], l, async (d) => { await put(`/api/alquiler/contratos/${l.id}`, d); toast("Contrato actualizado"); load(); })],
+      { k: "notas", t: "Notas", type: "textarea", wide: true },
+      ...(["borrador", "vigente"].includes(l.estado) ? [botonAnular("Anular contrato")] : [])], l, async (d) => { await put(`/api/alquiler/contratos/${l.id}`, d); toast("Contrato actualizado"); load(); })
+      && $("[data-anular]", $("#modalForm")) && ($("[data-anular]", $("#modalForm")).onclick = () => anular(`el contrato ${l.referencia || l.unidad}`, "anulado", `/api/alquiler/contratos/${l.id}/anular`, load))],
+    ["borrador", "vigente"].includes(l.estado) && ["Anular", () => anular(`el contrato ${l.referencia || l.unidad}`, "anulado", `/api/alquiler/contratos/${l.id}/anular`, load), "danger"],
     l.estado === "vigente" && ["Actualizar renta", () => form(`Actualizar renta (${eur(l.renta_mensual)}) · índice ${l.indice_actualizacion}`, [
       { k: "porcentaje", t: "Variación %", type: "number", req: true }, { k: "motivo", t: "Motivo / referencia índice", wide: true }], {},
       async (d) => { const r = await post(`/api/alquiler/contratos/${l.id}/actualizar-renta`, d); toast(`Nueva renta ${eur(r.renta_mensual)}`); load(); })],
@@ -2631,6 +2670,9 @@ function unirFichas(grupos, done) {
       : '<p class="muted">Se conserva la ficha elegida; las demás se unen a ella: pasan sus reservas, contratos, documentos escaneados y facturas, y se completan los datos que falten.</p>' },
     { k: "conservar", t: "Conservar la ficha", type: "select", req: true, options: g.fichas.map((c) => [String(c.id), desc(c)]), def: String(g.principal), wide: true },
     { k: "unir", t: "Unir a ella", type: "checks", options: g.fichas.map((c) => [String(c.id), desc(c)]) },
+    { html: `<div class="toolbar">${g.fichas.map((c) => `<button type="button" class="btn sm" data-verficha="${c.id}">Abrir ficha ${c.id}</button>`).join("")}
+      <span class="spacer"></span><button type="button" class="btn sm" data-distintas>No son la misma persona</button></div>
+      <p class="muted">Si solo coincide el nombre, pulse «No son la misma persona»: no se unen y el aviso desaparece.</p>`, wide: true },
   ], { unir: g.documentos_distintos ? [] : g.fichas.map((c) => String(c.id)) }, async (d) => {
     const ids = d.unir.map(Number).filter((x) => x !== Number(d.conservar));
     if (ids.length) {
@@ -2639,6 +2681,12 @@ function unirFichas(grupos, done) {
     }
     unirFichas(grupos.slice(1), done);
   }, "Unir y seguir");
+  const f = $("#modalForm");
+  f.querySelectorAll("[data-verficha]").forEach((b) => (b.onclick = () => editGuest(Number(b.dataset.verficha), g.fichas[0].tipo, done)));
+  $("[data-distintas]", f).onclick = async () => {
+    await run(() => post("/api/terceros/distintos", { ids: g.fichas.map((c) => c.id) }), `${g.nombre}: no son la misma persona`);
+    unirFichas(grupos.slice(1), done);
+  };
 }
 
 // ---- proveedores del grupo (no dependen de ninguna sociedad)

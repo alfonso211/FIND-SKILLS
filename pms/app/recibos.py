@@ -116,3 +116,28 @@ def solapa_contrato(db: Session, unit_id: int, inicio: date, fin: date | None, e
     if excluir:
         stmt = stmt.where(Lease.id != excluir)
     return db.scalar(stmt) is not None
+
+
+def anular_contrato(db: Session, user, lease: Lease, motivo: str) -> None:
+    """Anula un contrato de alquiler (vivienda, local o plaza de garaje) hecho por error o que no sigue adelante.
+    No se anula si tiene cobros o facturas sin rectificar: entonces se da de baja o se rescinde. Los recibos
+    pendientes se anulan y la unidad queda disponible."""
+    from .models import Invoice
+    from .utils import bad_request
+    if lease.estado not in ("borrador", "vigente"):
+        bad_request("Solo se anulan contratos en borrador o vigentes")
+    recibos = list(db.scalars(select(Charge).where(Charge.lease_id == lease.id)))
+    if any(dinero(c.importe_pagado) > 0 for c in recibos):
+        bad_request("El contrato tiene recibos cobrados: no se puede anular. Dele de baja (o rescíndalo) con su fecha.")
+    facturado = sum((dinero(f.total) for f in db.scalars(select(Invoice).where(
+        Invoice.charge_id.in_([c.id for c in recibos] or [-1])))), Decimal(0))
+    if facturado:
+        bad_request(f"El contrato tiene facturas por {facturado:.2f} €: emita antes la rectificativa y vuelva a anularlo.")
+    for c in recibos:
+        if c.estado in ("pendiente", "parcial"):
+            c.estado = "anulado"
+    lease.estado = "anulado"
+    if lease.unit.estado == "ocupada":
+        lease.unit.estado = "disponible"
+    lease.notas = f"{lease.notas + chr(10) if lease.notas else ''}Anulado el {date.today():%d/%m/%Y}: {motivo}"
+    audit(db, user, "anular", "contrato", lease.id, {"motivo": motivo})
