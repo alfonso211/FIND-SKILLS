@@ -1,5 +1,10 @@
 # Novedades
 
+## 2026-10-08 · Versión 1.24 · Pedidos de material
+- **Todos (recepción, mantenimiento, limpieza)**: nuevo apartado **Mantenimiento → Pedidos de material**. El buscador sugiere los productos del catálogo según se escribe; si un producto no está, se crea en el momento y, si no se indica referencia, el PMS pone una automática (PMS-000001…). Se ve el **coste estimado** con los últimos precios.
+- **Recepción 1**: autoriza los pedidos de recepción 2, mantenimiento y limpieza; los suyos y los de dirección no necesitan autorización. Se envían al proveedor en **PDF** por correo o WhatsApp.
+- **Dirección**: **catálogo de productos** compartido con **INVERGESTION** en los dos sentidos (importar su fichero y enviarle las altas y los pedidos con precio).
+
 ## 2026-10-08 · Versión 1.23 · Localizador automático
 - **Recepción**: cada reserva tiene su **localizador** aunque no se escriba: **SF0000000001**, SF0000000002… en Suite Florida y **SA0000000001**… en Suite Aeropuerto. Las reservas que no lo tenían ya lo tienen. El de un canal (Booking…) se respeta si se escribe.
 

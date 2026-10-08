@@ -645,3 +645,11 @@ ul.faltan { columns: 2; margin: 4px 0 10px; font-size: 13px; }
 input.precio-propuesto { background: #ffd8a8; border-color: #e8590c; font-weight: 600; }
 label.check.precio-pendiente { color: #c2410c; font-weight: 600; }
 .tarifa-info { margin-top: -4px; }
+
+/* pedidos de material */
+.ped-lineas { margin-top: 6px; }
+.ped-busca input { width: 100%; }
+.ped-busca .cli-res { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin-top: 4px; }
+.ped-busca .cli-res .btn { text-align: left; white-space: normal; }
+.ped-tot { margin-top: 6px; }
+.ped-nuevo fieldset { border: 1px solid #e8590c; border-radius: 8px; margin: 6px 0; }
