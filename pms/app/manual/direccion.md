@@ -75,3 +75,8 @@
 - **Imprimir checklist** (PDF) y **Enviar** cada documento por correo.
 - **Cada lunes**: correo a **Recepción 1** con lo que falta o ha caducado en su activo y a la **dirección** con el total de todos los activos, hasta que esté completo.
 - El catálogo es orientativo (normativa de la Comunidad y del Ayuntamiento de Madrid a octubre de 2026): conviene revisarlo con la gestoría.
+
+## Cobros de alquiler de otro programa
+- **Alquiler residencial → Cobros de otro programa**: **Importar facturas (PDF o ZIP)** lee cada factura simplificada (inquilino, importe y mes). En la revisión se indica de qué mes a qué mes se repite la renta (por defecto, de enero al mes actual); avisa si alguna factura es de un mes distinto (inquilino nuevo).
+- Al importar: se abre la **ficha del inquilino** si no existe (el piso y el contrato se completan después en **Contratos**) y se guarda **un ingreso cobrado por mes**, que cuenta en la producción del activo (panel, informes e informe a presidencia). Repetir la importación actualiza, no duplica.
+- **Documento** de cada inquilino (PDF con sus mensualidades) y **Excel de ingresos** con todos los cobros para la contabilidad. **Borrar cobros** de un inquilino para corregirlo.

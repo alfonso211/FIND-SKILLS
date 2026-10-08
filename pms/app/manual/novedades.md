@@ -1,5 +1,8 @@
 # Novedades
 
+## 2026-10-08 · Versión 1.31 · Cobros de alquiler de otro programa
+- **Alquiler residencial**: nuevo **Cobros de otro programa**. Se suben las facturas en PDF (o un ZIP), se indica de qué mes a qué mes se repite la renta y el PMS abre las fichas de los inquilinos y registra cada mensualidad como ingreso cobrado (producción del activo). Documento por inquilino y Excel de ingresos.
+
 ## 2026-10-08 · Versión 1.30 · Documentación legal de los activos
 - **Dirección y recepción**: nuevo **Administración → Documentación legal**, con el checklist de lo obligatorio en cada activo (apartamentos turísticos o alquiler residencial), escaneo a PDF, vencimientos, **No aplica**, documentos propios, impresión del checklist y envío por correo.
 - **Cada lunes**: recordatorio por correo a Recepción 1 (su activo) y a la dirección (todos los activos) de lo que falta o ha caducado, hasta completarlo.
