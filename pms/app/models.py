@@ -464,6 +464,7 @@ TIPOS_DOCUMENTO = {
     "factura": "Factura", "ticket": "Ticket / recibo", "albaran": "Albarán", "presupuesto": "Presupuesto",
     "carta": "Carta", "notificacion": "Notificación / requerimiento", "contrato": "Contrato",
     "seguro": "Póliza / seguro", "informe": "Informe mensual (presidencia)", "limpieza": "Parte de limpieza",
+    "parte_trabajo": "Parte de trabajo (mantenimiento / limpieza)",
     "otro": "Otro",
 }
 TIPOS_GASTO = ("factura", "ticket", "albaran")  # tipos que normalmente son un gasto
@@ -838,3 +839,43 @@ class PurchaseOrderLine(Base):
     nota: Mapped[str | None] = mapped_column(String(200))
     exportado: Mapped[datetime | None] = mapped_column(DateTime)  # enviado a INVERGESTION
     producto: Mapped[Product] = relationship()
+
+
+# --------------------------------------------------------------------------- parte de trabajo diario
+AREAS_PARTE = {"mantenimiento": "Mantenimiento", "limpieza": "Limpieza"}
+
+
+class WorkEntry(Base):
+    """Actuación que no estaba en ningún parte (p.ej. limpieza de una zona común según el programa, o una tarea de
+    mantenimiento sin OT). Se anota en el parte de trabajo del día de su área."""
+    __tablename__ = "parte_actuaciones"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
+    area: Mapped[str] = mapped_column(String(20))  # mantenimiento | limpieza
+    fecha: Mapped[date] = mapped_column(Date, index=True)
+    descripcion: Mapped[str] = mapped_column(Text)
+    unit_id: Mapped[int | None] = mapped_column(ForeignKey("unidades.id"))
+    ubicacion: Mapped[str | None] = mapped_column(String(160))  # zona común u otro lugar
+    persona: Mapped[str | None] = mapped_column(String(160))
+    horas: Mapped[float | None] = mapped_column(Numeric(5, 2))
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    creada: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class WorkReport(Base):
+    """Parte de trabajo diario de un área de un activo. Lo forman las OT terminadas y las limpiezas hechas ese
+    día, más las actuaciones anotadas a mano. Recepción lo valida: se congela (`lineas`) y se archivan su PDF y
+    su Excel en los documentos del activo. Hasta entonces no se imprime."""
+    __tablename__ = "partes_trabajo"
+    __table_args__ = (UniqueConstraint("asset_id", "area", "fecha"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
+    area: Mapped[str] = mapped_column(String(20))
+    fecha: Mapped[date] = mapped_column(Date, index=True)
+    estado: Mapped[str] = mapped_column(String(20), default="abierto")  # abierto | validado
+    observaciones: Mapped[str | None] = mapped_column(Text)
+    lineas: Mapped[list | None] = mapped_column(JSON)  # copia congelada al validar
+    validado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    validado_en: Mapped[datetime | None] = mapped_column(DateTime)
+    pdf_id: Mapped[int | None] = mapped_column(ForeignKey("documentos_recibidos.id"))
+    xlsx_id: Mapped[int | None] = mapped_column(ForeignKey("documentos_recibidos.id"))

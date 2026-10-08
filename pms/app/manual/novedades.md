@@ -1,5 +1,9 @@
 # Novedades
 
+## 2026-10-08 · Versión 1.25 · Parte de trabajo diario
+- **Mantenimiento y limpieza**: nuevo **Mantenimiento → Parte de trabajo diario**. Las OT terminadas y las limpiezas hechas entran solas; lo que se hace sin parte (zonas comunes, trabajos sin OT) se añade con **Anotar actuación**.
+- **Recepción 1 y 2**: **validan** cada parte; solo entonces se descarga en **PDF** y **Excel** y queda archivado en Documentos. **Informe quincenal** con los trabajos totales, descargable y archivable.
+
 ## 2026-10-08 · Versión 1.24 · Pedidos de material
 - **Todos (recepción, mantenimiento, limpieza)**: nuevo apartado **Mantenimiento → Pedidos de material**. El buscador sugiere los productos del catálogo según se escribe; si un producto no está, se crea en el momento y, si no se indica referencia, el PMS pone una automática (PMS-000001…). Se ve el **coste estimado** con los últimos precios.
 - **Recepción 1**: autoriza los pedidos de recepción 2, mantenimiento y limpieza; los suyos y los de dirección no necesitan autorización. Se envían al proveedor en **PDF** por correo o WhatsApp.

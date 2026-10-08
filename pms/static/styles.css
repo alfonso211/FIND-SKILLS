@@ -653,3 +653,7 @@ label.check.precio-pendiente { color: #c2410c; font-weight: 600; }
 .ped-busca .cli-res .btn { text-align: left; white-space: normal; }
 .ped-tot { margin-top: 6px; }
 .ped-nuevo fieldset { border: 1px solid #e8590c; border-radius: 8px; margin: 6px 0; }
+
+/* parte de trabajo diario */
+.parte-dias { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.aviso-ok { border-left: 4px solid #2f8f4e; background: #eaf6ee; border-radius: 8px; padding: 8px 12px; }

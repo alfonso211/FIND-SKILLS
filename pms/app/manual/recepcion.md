@@ -93,3 +93,9 @@
 - Abajo verá el **coste estimado** (sin IVA, IVA y total).
 - **Quién autoriza**: los pedidos de Dirección y de **Recepción 1** quedan autorizados. Los de Recepción 2, mantenimiento, limpieza y cualquier otra persona quedan **pendientes de que los autorice Recepción 1** (le llega un aviso).
 - **Recepción 1**: en Pedidos de material verá el aviso de los pedidos pendientes de su autorización. Ábralos y pulse **Autorizar** (o **Rechazar**, con el motivo). Autorizado, pulse **Enviar al proveedor**: por correo con el PDF y/o por WhatsApp con un enlace al PDF. Cuando llegue el material, **Recibido**.
+
+## Validar los partes de trabajo diarios
+- **Mantenimiento → Parte de trabajo diario**: elegir área (mantenimiento o limpieza) y día. Los botones de los últimos 15 días muestran ✔ si están validados o cuántos trabajos faltan por validar.
+- Revisar las líneas (OT, limpiezas y actuaciones anotadas), escribir las observaciones y pulsar **Validar**. Se archivan solos en **Documentos** el **PDF** y el **Excel** («Parte de trabajo»). Antes de validar no se pueden descargar.
+- **Reabrir** deshace la validación y borra los archivados, para corregir.
+- **Informe quincenal** (1-15 y 16-fin de mes): totales por área, origen, tipo y persona, horas anotadas y días sin validar. **Archivar** lo guarda en Documentos en PDF y Excel.
