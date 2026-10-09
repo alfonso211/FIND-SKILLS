@@ -115,3 +115,6 @@
 ## Documentación legal del activo
 - **Administración → Documentación legal**: abra su activo y, en cada punto, **Escanear / subir** el documento (PDF o fotos desde el móvil), con su fecha. Lo que no corresponde a su activo se marca en **Datos → No aplica** con el motivo.
 - Cada lunes le llega un correo con lo que falta o ha caducado en su activo, hasta completarlo.
+
+## Facturas pagadas: justificante obligatorio
+- En la **Cuenta de gastos**, una factura solo se marca como pagada con el botón **Pagado**, que pide **adjuntar el justificante de pago** (transferencia, cargo en cuenta…) y la fecha. Sin justificante no se puede marcar. El justificante queda en **Documentos recibidos** («Justificante de pago») y se abre con el botón **Justificante**.

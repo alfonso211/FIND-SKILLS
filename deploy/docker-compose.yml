@@ -45,6 +45,7 @@ services:
       PMS_SMTP_SEGURIDAD: ${PMS_SMTP_SEGURIDAD:-starttls}
       PMS_AVISOS_HORA: ${PMS_AVISOS_HORA:-07:30}
       PMS_MANTENIMIENTO_EMAIL: ${PMS_MANTENIMIENTO_EMAIL:-alfonso@inversiete.es}
+      PMS_BORRAR_USUARIOS: ${PMS_BORRAR_USUARIOS:-alfonso@inversiete.es,admin@inversiete.es}
       TZ: Europe/Madrid
     volumes:
       - documentos:/data/documentos

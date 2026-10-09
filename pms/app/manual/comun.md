@@ -13,6 +13,7 @@
 - Las **listas** (reservas, facturas, gastos…) se desplazan dentro de su recuadro: la cabecera y los **botones de cada fila** quedan siempre a la vista.
 - El **menú de la izquierda** cabe siempre en la pantalla: si no caben todos los grupos, algunos se muestran plegados (▸). Pulse el título del grupo para abrirlo. El grupo de la pantalla en la que está queda siempre abierto.
 - En tableta o pantalla estrecha, el menú se abre con el botón **☰** de arriba a la izquierda.
+- **← Volver** (arriba, junto al título): vuelve a la pantalla anterior. Si hay una ventana abierta, la cierra. En el Panel de control no aparece porque es la pantalla de inicio.
 
 ## Agenda
 - Pulse **+ Nueva** para crear una reunión, tarea, recordatorio o evento.

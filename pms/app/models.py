@@ -468,6 +468,7 @@ TIPOS_DOCUMENTO = {
     "carta": "Carta", "notificacion": "Notificación / requerimiento", "contrato": "Contrato",
     "seguro": "Póliza / seguro", "informe": "Informe mensual (presidencia)", "limpieza": "Parte de limpieza",
     "parte_trabajo": "Parte de trabajo (mantenimiento / limpieza)",
+    "justificante": "Justificante de pago",
     "personal": "Documentación de personal (contratos, TC2, formación PRL, reconocimientos…)",
     "legal": "Documentación legal / CAE (seguros, certificados AEAT y TGSS, REA…)",
     "otro": "Otro",
@@ -556,6 +557,8 @@ class Expense(Base):
     pago_retenido_revision: Mapped[date | None] = mapped_column(Date)
     pago_retenido_user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     pago_retenido_fecha: Mapped[datetime | None] = mapped_column(DateTime)
+    # justificante del pago (transferencia, cargo en cuenta…): obligatorio para marcarla como pagada
+    justificante_id: Mapped[int | None] = mapped_column(ForeignKey("documentos_recibidos.id"))
 
 
 class WorkOrderAttachment(Base):

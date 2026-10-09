@@ -108,7 +108,8 @@ def test_pago_retenido(client, admin, ids):
     lib = client.post(f"/api/gastos/{g['id']}/liberar-pago", headers=admin, json={"nota": "Prueba superada"})
     assert lib.status_code == 200 and lib.json()["pago_retenido"] is False
     assert client.post(f"/api/gastos/{g['id']}/liberar-pago", headers=admin, json={}).status_code == 400
-    ok = client.put(f"/api/gastos/{g['id']}", headers=rec, json={**lib.json(), "total": 242, "pagado": True})
+    pdf = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
+    ok = client.post(f"/api/gastos/{g['id']}/pagar", headers=rec, files=[("ficheros", ("transferencia.pdf", pdf, "application/pdf"))])
     assert ok.status_code == 200 and ok.json()["pagado"]
     assert client.post(f"/api/gastos/{g['id']}/retener-pago", headers=rec,
                        json={"motivo": "tarde", "revision": HOY.isoformat()}).status_code == 400  # ya pagada

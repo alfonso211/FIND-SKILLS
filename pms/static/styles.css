@@ -68,6 +68,8 @@ main { min-width: 0; }
 .usuario .user { color: var(--ink); font-weight: 600; font-size: 13px; line-height: 1.15; }
 .usuario .user small { display: block; color: var(--muted); font-weight: 400; font-size: 11.5px; }
 .menu-btn { display: none; }
+.back-btn { white-space: nowrap; }
+.back-btn[hidden] { display: none; }
 .view { padding: 24px 28px 40px; }
 
 /* ---------- controles ---------- */

@@ -9,6 +9,7 @@ from ..models import Asset, Company, User, Supplier
 from ..schemas import Login, PasswordChange
 from ..security import (PASSWORD_MIN, PERMISOS, Scope, audit, create_token, current_user, get_scope, hash_password,
                         limpiar_fallos, login_bloqueado, registrar_fallo, verify_password)
+from .admin import puede_borrar
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -47,6 +48,7 @@ def me(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
         "debe_cambiar_password": u.debe_cambiar_password,
         "permisos": {p: scope.has_any(p) for p in PERMISOS},
         "admin_grupo": scope.is_group_level("usuarios.gestionar"),
+        "borrar_usuarios": puede_borrar(u),
         "ambitos": ambitos,
         # colaborador externo: solo su portal
         "colaborador": {"supplier_id": u.supplier_id, "proveedor": db.get(Supplier, u.supplier_id).nombre}

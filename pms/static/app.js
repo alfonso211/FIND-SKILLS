@@ -3176,7 +3176,7 @@ function camposGasto(C, unidades, alta = true) {
     { k: "retencion_tipo", t: "Retención (IRPF u otra)", type: "select", options: Object.entries(C.retenciones).map(([k, v]) => [k, v.pct ? `${v.nombre} · ${v.pct} %` : v.nombre]) },
     { k: "retencion_pct", t: "Retención %", type: "number" },
     { k: "forma_pago", t: "Se paga por (transferencia o cargo en cuenta)", type: "select", options: kv(C.formas_pago) },
-    { k: "pagado", t: "Pagado", type: "checkbox" }, { k: "fecha_pago", t: "Fecha de pago", type: "date" },
+    { k: "pagado", t: "Pagado (se marca con el botón «Pagado» de la cuenta de gastos, adjuntando el justificante de pago)", type: "checkbox", wide: true }, { k: "fecha_pago", t: "Fecha de pago", type: "date" },
     ...(alta ? [{ k: "retener_pago", t: "Retener el pago: no pagar de momento (se avisa a dirección y administración)", type: "checkbox", wide: true },
       { k: "retener_motivo", t: "Motivo de la retención del pago", wide: true }, { k: "retener_revision", t: "Fecha de revisión", type: "date" }] : []),
   ];
@@ -3184,8 +3184,10 @@ function camposGasto(C, unidades, alta = true) {
 // Retención IRPF: % habitual al elegir el tipo. Pago retenido: motivo y fecha de revisión.
 function bindRetencion(f) {
   const C = S.catGastos, e = f.elements;
+  if (e.pagado) e.pagado.disabled = true;  // solo con el justificante (botón «Pagado»)
   const pinta = () => {
     verCampos(f, ["retencion_pct"], !!e.retencion_tipo.value);
+    verCampos(f, ["fecha_pago"], !!e.pagado?.checked);
     if (e.retener_pago) { verCampos(f, ["retener_motivo", "retener_revision"], e.retener_pago.checked); verCampos(f, ["pagado", "fecha_pago"], !e.retener_pago.checked); }
   };
   e.retencion_tipo.onchange = () => { const p = C.retenciones[e.retencion_tipo.value]?.pct; if (p) e.retencion_pct.value = p; pinta(); };
@@ -3283,6 +3285,25 @@ async function subirDocumento(reload, fija = null) {  // fija = {asset_id, unit_
   gasto();
 }
 
+// Marcar una factura recibida como pagada: el justificante de pago es obligatorio
+function pagarGasto(g, reload) {
+  const C = S.catGastos || {};
+  form(`Pagado · ${g.proveedor || g.concepto} · ${eur(g.liquido)}`, [
+    { html: `<div class="aviso-vencidas"><b>Antes de marcar la factura como pagada es obligatorio adjuntar el justificante de pago</b> (transferencia, cargo en cuenta, recibo…). Se guarda en la carpeta del activo y queda enlazado al gasto.</div>` },
+    { html: '<label class="wide">Justificante de pago (PDF o fotos) *<input type="file" name="ficheros" multiple accept="application/pdf,image/*" required></label>' },
+    { k: "fecha_pago", t: "Fecha de pago", type: "date", req: true, def: today() },
+    ...(g.forma_pago ? [] : [{ k: "forma_pago", t: "Se ha pagado por", type: "select", req: true, options: kv(C.formas_pago || {}) }]),
+  ], {}, async (d, fm) => {
+    const files = [...fm.querySelector("input[type=file]").files];
+    if (!files.length) throw new Error("Adjunte el justificante de pago");
+    const fd = new FormData();
+    files.forEach((x) => fd.append("ficheros", x));
+    fd.append("fecha_pago", d.fecha_pago);
+    if (d.forma_pago) fd.append("forma_pago", d.forma_pago);
+    await upload(`/api/gastos/${g.id}/pagar`, fd);
+    toast("Factura pagada con su justificante"); reload && reload();
+  }, "Marcar como pagada");
+}
 async function editarGasto(g, reload, aidNuevo) {
   const aid = g ? g.asset_id : aidNuevo || await pickAsset();
   const [C, unidades] = await Promise.all([catGastos(), unidadesActivo(aid)]);
@@ -3371,8 +3392,8 @@ V.gastos = async (el) => {
       { k: "documento_tipo", t: "Documento", f: (v) => (v ? esc(v) : '<span class="badge b-cancelada">sin documento</span>') },
     ], r.gastos, (g) => [
       g.documento_id && ["Ver", () => abrirFichero(`/api/documentos-recibidos/${g.documento_id}/fichero`)],
-      editar && !g.pagado && !g.pago_retenido && ["Pagado", () => g.forma_pago ? run(() => put(`/api/gastos/${g.id}`, { ...g, total: g.liquido, pagado: true, fecha_pago: today() }), "Marcado como pagado").then(load)
-        : (toast("Indique antes cómo se paga: transferencia o cargo en cuenta", true), editarGasto(g, load))],
+      g.justificante_id && ["Justificante", () => abrirFichero(`/api/documentos-recibidos/${g.justificante_id}/fichero`)],
+      editar && !g.pagado && !g.pago_retenido && ["Pagado", () => pagarGasto(g, load)],
       editar && !g.pagado && ["Retener pago", () => form(g.pago_retenido ? "Cambiar la retención del pago" : "Retener el pago: no pagar de momento", [
         { html: '<p class="muted">Se avisa por correo a dirección y administración (quienes pagan). La factura sigue en el resumen diario hasta que se libere.</p>' },
         { k: "motivo", t: "Motivo", req: true, wide: true }, { k: "revision", t: "Fecha de revisión", type: "date", req: true }],
@@ -3430,8 +3451,15 @@ V.usuarios = async (el) => {
     { k: "nombre", t: "Nombre", f: (v) => `<span class="persona">${avatar(v, "sm")}${esc(v)}</span>` }, { k: "email", t: "Email" },
     { k: "asignaciones", t: "Roles / ámbito", f: (v, u) => (u.supplier_id ? `<span class="badge b-asignada">Colaborador · ${esc(provNombre[u.supplier_id] || "")}</span><br>` : "") + (u.is_superadmin ? "<b>Superadministrador</b>" : v.map((a) => `${esc(a.rol)} <span class="muted">(${esc(scopeTxt(a))})</span>`).join("<br>") || '<span class="muted">Sin acceso</span>') },
     { k: "activo", t: "Estado", f: (v, u) => (v ? badge("vigente") : badge("baja")) + (u.debe_cambiar_password ? ' <span class="badge b-pendiente">contraseña provisional</span>' : "") },
-  ], users, (u) => [["Editar", () => edit(u)]]);
+  ], users, (u) => [["Editar", () => edit(u)], S.me.borrar_usuarios && u.id !== S.me.id && ["Borrar", () => borrarUsuario(u), "danger"]]);
 };
+async function borrarUsuario(u) {
+  if (!confirm(`¿Borrar el usuario ${u.nombre} (${u.email})?\n\nDejará de poder entrar. Si ya ha trabajado en el PMS, su nombre se conserva solo en el historial (partes, gastos, auditoría).`)) return;
+  try {
+    const r = await api("DELETE", `/api/admin/usuarios/${u.id}`);
+    toast(r.historial ? "Usuario borrado (su nombre se conserva en el historial)" : "Usuario borrado"); go("usuarios");
+  } catch (e) { alert(e.message); }
+}
 
 V.roles = async (el) => {
   const roles = await get("/api/admin/roles");
@@ -4277,10 +4305,23 @@ function ajustarNav(prioritario) {
   if (sb.scrollHeight > sb.clientHeight + 1 && gen && gen !== prioritario && !gen.querySelector("a.active")) gen.classList.add("cerrado");
 }
 window.addEventListener("resize", () => { clearTimeout(S._navT); S._navT = setTimeout(() => $("#nav") && $("#nav").children.length && ajustarNav(), 150); });
+// Volver: pantallas visitadas en esta sesión (la última es la actual)
+S.pila = [];
+function pintarVolver() {
+  const b = $("#backBtn"), inicio = S.me?.colaborador ? "colaborador" : "panel";
+  b.hidden = S.pila.length < 2 && S.pila[0] === inicio;
+}
+function volver() {
+  if ($("#modal").open) return $("#modal").close();
+  S.pila.pop();  // la actual
+  go(S.pila.pop() || (S.me.colaborador ? "colaborador" : "panel"));
+}
 async function go(view) {
   if (S.me.colaborador) view = ["colaborador", "perfil"].includes(view) ? view : "colaborador";
   else view = TITLES[view] && view !== "colaborador" && allowed(MENU.flatMap(([, i]) => i).find(([id]) => id === view)[2]) ? view : "panel";
   if (location.hash !== "#" + view) history.replaceState(null, "", "#" + view);
+  if (S.pila.at(-1) !== view) { S.pila.push(view); if (S.pila.length > 50) S.pila.shift(); }
+  pintarVolver();
   document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.v === view));
   ajustarNav();
   $(".sidebar").classList.remove("open");
@@ -4348,7 +4389,7 @@ function pintarUsuario() {
   $("#userName").innerHTML = `${esc(S.me.nombre)}<small>${esc(S.me.colaborador ? S.me.colaborador.proveedor : rolDe(S.me))}</small>`;
 }
 function showLogin() { $("#app").classList.add("hidden"); $("#login").classList.remove("hidden"); }
-function logout() { S.token = null; localStorage.removeItem("pms_token"); showLogin(); }
+function logout() { S.token = null; S.pila = []; localStorage.removeItem("pms_token"); showLogin(); }
 
 $("#loginForm").onsubmit = async (e) => {
   e.preventDefault();
@@ -4358,6 +4399,7 @@ $("#loginForm").onsubmit = async (e) => {
 };
 $("#logoutBtn").onclick = logout;
 $("#menuBtn").onclick = () => $(".sidebar").classList.toggle("open");
+$("#backBtn").onclick = volver;
 $("#assetFilter").onchange = (e) => { setAsset(e.target.value); go(location.hash.slice(1)); };
 window.onhashchange = () => S.me && go(location.hash.slice(1));
 S.token ? start() : showLogin();
