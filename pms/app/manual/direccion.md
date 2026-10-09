@@ -80,3 +80,6 @@
 - **Alquiler residencial → Cobros de otro programa**: **Importar facturas (PDF o ZIP)** lee cada factura simplificada (inquilino, importe y mes). En la revisión se indica de qué mes a qué mes se repite la renta (por defecto, de enero al mes actual); avisa si alguna factura es de un mes distinto (inquilino nuevo).
 - Al importar: se abre la **ficha del inquilino** si no existe (el piso y el contrato se completan después en **Contratos**) y se guarda **un ingreso cobrado por mes**, que cuenta en la producción del activo (panel, informes e informe a presidencia). Repetir la importación actualiza, no duplica.
 - **Documento** de cada inquilino (PDF con sus mensualidades) y **Excel de ingresos** con todos los cobros para la contabilidad. **Borrar cobros** de un inquilino para corregirlo.
+
+## Facturas pagadas: justificante obligatorio
+- En la **Cuenta de gastos**, una factura solo se marca como pagada con el botón **Pagado**, que pide **adjuntar el justificante de pago** (transferencia, cargo en cuenta…) y la fecha. Sin justificante no se puede marcar. El justificante queda en **Documentos recibidos** («Justificante de pago») y se abre con el botón **Justificante**.

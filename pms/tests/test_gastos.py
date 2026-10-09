@@ -55,8 +55,16 @@ def test_documentos_y_gastos(client, admin, ids):
         "asset_id": sae, "fecha": HOY.isoformat(), "categoria": "suministros", "concepto": "Luz zonas comunes",
         "total": 250, "base": 210, "tipo_iva": 21, "pagado": True, "forma_pago": "domiciliacion",
         "naturaleza": "OPEX"})
+    assert s.status_code == 400 and "justificante" in s.json()["detail"]  # pagada sin justificante: no
+    s = client.post("/api/gastos", headers=rec_sae, json={
+        "asset_id": sae, "fecha": HOY.isoformat(), "categoria": "suministros", "concepto": "Luz zonas comunes",
+        "total": 250, "base": 210, "tipo_iva": 21, "forma_pago": "domiciliacion", "naturaleza": "OPEX"})
     assert s.status_code == 201, s.text
+    s = client.post(f"/api/gastos/{s.json()['id']}/pagar", headers=rec_sae, files=[("ficheros", ("cargo.jpg", _jpeg(), "image/jpeg"))])
+    assert s.status_code == 200, s.text
     assert s.json()["cuota"] == 40 and s.json()["fecha_pago"] == HOY.isoformat() and s.json()["lugar"] == "General"
+    assert s.json()["pagado"] and s.json()["justificante_id"]
+    assert client.get(f"/api/documentos-recibidos/{s.json()['justificante_id']}/fichero", headers=rec_sae).status_code == 200
     assert client.post("/api/gastos", headers=rec_sae, json={
         "asset_id": sae, "fecha": HOY.isoformat(), "categoria": "inventada", "concepto": "X x", "total": 1}
     ).status_code == 400
@@ -89,9 +97,19 @@ def test_documentos_y_gastos(client, admin, ids):
     assert _subir(client, rec_sfl, sfl, [("x.jpg", _jpeg())], tipo="ticket").status_code == 201
     assert {x["asset_id"] for x in client.get("/api/documentos-recibidos", headers=admin).json()} >= {sae, sfl}
 
-    # editar el gasto y marcarlo pagado
+    # marcarlo pagado: solo con el justificante de pago
     e = client.put(f"/api/gastos/{g['id']}", headers=rec_sae, json={**g, "pagado": True, "base": None})
+    assert e.status_code == 400 and "justificante" in e.json()["detail"]
+    assert client.post(f"/api/gastos/{g['id']}/pagar", headers=rec_sae, data={"fecha_pago": "2099-01-01"},
+                       files=[("ficheros", ("t.jpg", _jpeg(), "image/jpeg"))]).status_code == 400  # fecha futura
+    e = client.post(f"/api/gastos/{g['id']}/pagar", headers=rec_sae, files=[("ficheros", ("t.jpg", _jpeg(), "image/jpeg"))])
     assert e.status_code == 200 and e.json()["pagado"] and e.json()["base"] == 100
+    assert client.post(f"/api/gastos/{g['id']}/pagar", headers=rec_sae,
+                       files=[("ficheros", ("t.jpg", _jpeg(), "image/jpeg"))]).status_code == 400  # ya pagada
+    # editar otros datos de una pagada la mantiene pagada
+    e2 = client.put(f"/api/gastos/{g['id']}", headers=rec_sae, json={**e.json(), "total": e.json()["liquido"],
+                                                                      "base": None, "notas": "Revisada"})
+    assert e2.status_code == 200 and e2.json()["pagado"] and e2.json()["justificante_id"] == e.json()["justificante_id"]
 
     # Excel de la cuenta de gastos
     x = client.get(f"/api/gastos/excel?asset_id={sae}&desde={HOY.replace(day=1)}&hasta={HOY}", headers=admin)

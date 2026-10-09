@@ -3176,7 +3176,7 @@ function camposGasto(C, unidades, alta = true) {
     { k: "retencion_tipo", t: "Retención (IRPF u otra)", type: "select", options: Object.entries(C.retenciones).map(([k, v]) => [k, v.pct ? `${v.nombre} · ${v.pct} %` : v.nombre]) },
     { k: "retencion_pct", t: "Retención %", type: "number" },
     { k: "forma_pago", t: "Se paga por (transferencia o cargo en cuenta)", type: "select", options: kv(C.formas_pago) },
-    { k: "pagado", t: "Pagado", type: "checkbox" }, { k: "fecha_pago", t: "Fecha de pago", type: "date" },
+    { k: "pagado", t: "Pagado (se marca con el botón «Pagado» de la cuenta de gastos, adjuntando el justificante de pago)", type: "checkbox", wide: true }, { k: "fecha_pago", t: "Fecha de pago", type: "date" },
     ...(alta ? [{ k: "retener_pago", t: "Retener el pago: no pagar de momento (se avisa a dirección y administración)", type: "checkbox", wide: true },
       { k: "retener_motivo", t: "Motivo de la retención del pago", wide: true }, { k: "retener_revision", t: "Fecha de revisión", type: "date" }] : []),
   ];
@@ -3184,8 +3184,10 @@ function camposGasto(C, unidades, alta = true) {
 // Retención IRPF: % habitual al elegir el tipo. Pago retenido: motivo y fecha de revisión.
 function bindRetencion(f) {
   const C = S.catGastos, e = f.elements;
+  if (e.pagado) e.pagado.disabled = true;  // solo con el justificante (botón «Pagado»)
   const pinta = () => {
     verCampos(f, ["retencion_pct"], !!e.retencion_tipo.value);
+    verCampos(f, ["fecha_pago"], !!e.pagado?.checked);
     if (e.retener_pago) { verCampos(f, ["retener_motivo", "retener_revision"], e.retener_pago.checked); verCampos(f, ["pagado", "fecha_pago"], !e.retener_pago.checked); }
   };
   e.retencion_tipo.onchange = () => { const p = C.retenciones[e.retencion_tipo.value]?.pct; if (p) e.retencion_pct.value = p; pinta(); };
@@ -3283,6 +3285,25 @@ async function subirDocumento(reload, fija = null) {  // fija = {asset_id, unit_
   gasto();
 }
 
+// Marcar una factura recibida como pagada: el justificante de pago es obligatorio
+function pagarGasto(g, reload) {
+  const C = S.catGastos || {};
+  form(`Pagado · ${g.proveedor || g.concepto} · ${eur(g.liquido)}`, [
+    { html: `<div class="aviso-vencidas"><b>Antes de marcar la factura como pagada es obligatorio adjuntar el justificante de pago</b> (transferencia, cargo en cuenta, recibo…). Se guarda en la carpeta del activo y queda enlazado al gasto.</div>` },
+    { html: '<label class="wide">Justificante de pago (PDF o fotos) *<input type="file" name="ficheros" multiple accept="application/pdf,image/*" required></label>' },
+    { k: "fecha_pago", t: "Fecha de pago", type: "date", req: true, def: today() },
+    ...(g.forma_pago ? [] : [{ k: "forma_pago", t: "Se ha pagado por", type: "select", req: true, options: kv(C.formas_pago || {}) }]),
+  ], {}, async (d, fm) => {
+    const files = [...fm.querySelector("input[type=file]").files];
+    if (!files.length) throw new Error("Adjunte el justificante de pago");
+    const fd = new FormData();
+    files.forEach((x) => fd.append("ficheros", x));
+    fd.append("fecha_pago", d.fecha_pago);
+    if (d.forma_pago) fd.append("forma_pago", d.forma_pago);
+    await upload(`/api/gastos/${g.id}/pagar`, fd);
+    toast("Factura pagada con su justificante"); reload && reload();
+  }, "Marcar como pagada");
+}
 async function editarGasto(g, reload, aidNuevo) {
   const aid = g ? g.asset_id : aidNuevo || await pickAsset();
   const [C, unidades] = await Promise.all([catGastos(), unidadesActivo(aid)]);
@@ -3371,8 +3392,8 @@ V.gastos = async (el) => {
       { k: "documento_tipo", t: "Documento", f: (v) => (v ? esc(v) : '<span class="badge b-cancelada">sin documento</span>') },
     ], r.gastos, (g) => [
       g.documento_id && ["Ver", () => abrirFichero(`/api/documentos-recibidos/${g.documento_id}/fichero`)],
-      editar && !g.pagado && !g.pago_retenido && ["Pagado", () => g.forma_pago ? run(() => put(`/api/gastos/${g.id}`, { ...g, total: g.liquido, pagado: true, fecha_pago: today() }), "Marcado como pagado").then(load)
-        : (toast("Indique antes cómo se paga: transferencia o cargo en cuenta", true), editarGasto(g, load))],
+      g.justificante_id && ["Justificante", () => abrirFichero(`/api/documentos-recibidos/${g.justificante_id}/fichero`)],
+      editar && !g.pagado && !g.pago_retenido && ["Pagado", () => pagarGasto(g, load)],
       editar && !g.pagado && ["Retener pago", () => form(g.pago_retenido ? "Cambiar la retención del pago" : "Retener el pago: no pagar de momento", [
         { html: '<p class="muted">Se avisa por correo a dirección y administración (quienes pagan). La factura sigue en el resumen diario hasta que se libere.</p>' },
         { k: "motivo", t: "Motivo", req: true, wide: true }, { k: "revision", t: "Fecha de revisión", type: "date", req: true }],

@@ -202,6 +202,10 @@ def _valores_gasto(db: Session, asset_id: int, data: ExpenseIn) -> dict:
             "retencion_tipo": data.retencion_tipo or None, "retencion_pct": pct, "retencion": retencion}
 
 
+SIN_JUSTIFICANTE = ("Para marcar la factura como pagada hay que adjuntar antes el justificante de pago "
+                    "(botón «Pagado» de la cuenta de gastos)")
+
+
 def _retener(g: Expense, user_id: int, motivo: str | None, revision: date | None) -> None:
     motivo = " ".join((motivo or "").split())
     if len(motivo) < 3:
@@ -309,6 +313,8 @@ def upload_document(tareas: BackgroundTasks, ficheros: list[UploadFile] = File(.
             gasto_in = ExpenseIn(**json.loads(gasto))
         except (ValueError, ValidationError) as e:
             bad_request(f"Datos del gasto no válidos: {str(e)[:300]}")
+    if gasto_in and gasto_in.pagado:
+        bad_request(SIN_JUSTIFICANTE)
     valores = _valores_gasto(db, asset_id, gasto_in) if gasto_in else None
     confirmado = confirmar_duplicado or bool(gasto_in and gasto_in.confirmar_duplicado)
     huella = documentos.huella(datos)
@@ -504,6 +510,8 @@ def create_expense(data: ExpenseIn, tareas: BackgroundTasks, scope: Scope = Depe
     else:
         bad_request("Indique el activo del gasto")
     scope.require_asset("documentos.editar", asset_id)
+    if data.pagado:
+        bad_request(SIN_JUSTIFICANTE)
     valores = _valores_gasto(db, asset_id, data)
     _comprobar(db, asset_id, valores, confirmado=data.confirmar_duplicado)
     g = Expense(asset_id=asset_id, documento_id=data.documento_id, user_id=scope.user.id, **valores)
@@ -533,12 +541,52 @@ def update_expense(gid: int, data: ExpenseIn, scope: Scope = Depends(get_scope),
     antes = {k: str(v) for k, v in g.to_dict().items()}
     if data.pagado and not g.pagado and g.pago_retenido:
         bad_request("El pago de esta factura está retenido: debe liberarlo quien se encarga de los pagos")
+    if data.pagado and not g.pagado:
+        bad_request(SIN_JUSTIFICANTE)
     valores = _valores_gasto(db, g.asset_id, data)
     _comprobar(db, g.asset_id, valores, excluir=gid, confirmado=True)  # al editar: solo el duplicado exacto
+    if g.pagado and data.pagado:  # sigue pagada: se conserva la fecha de pago si no se cambia
+        valores["fecha_pago"] = data.fecha_pago or g.fecha_pago
+    if not data.pagado:  # desmarcar el pago: el justificante queda en la carpeta, sin enlazar
+        g.justificante_id = None
     for k, v in valores.items():
         setattr(g, k, v)
     audit(db, scope.user, "editar", "gasto", gid,
           {k: [antes.get(k), str(v)] for k, v in g.to_dict().items() if antes.get(k) != str(v)})
+    db.commit()
+    return _uno(db, scope, gid)
+
+
+@router.post("/gastos/{gid}/pagar")
+def pay_expense(gid: int, ficheros: list[UploadFile] = File(...), fecha_pago: date | None = Form(None),
+                forma_pago: str | None = Form(None), scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Marca la factura como pagada con su justificante de pago (obligatorio), que se guarda en la carpeta del
+    activo como «Justificante de pago» enlazado al gasto."""
+    g = get_or_404(db, Expense, gid)
+    scope.require_asset("documentos.editar", g.asset_id)
+    if g.pagado:
+        bad_request("La factura ya está pagada")
+    if g.pago_retenido:
+        bad_request("El pago de esta factura está retenido: debe liberarlo quien se encarga de los pagos")
+    if forma_pago:
+        if forma_pago not in FORMAS_PAGO_GASTO:
+            bad_request("Forma de pago no válida")
+        g.forma_pago = forma_pago
+    if not g.forma_pago:
+        bad_request("Indique cómo se ha pagado: transferencia o cargo en cuenta")
+    f = fecha_pago or date.today()
+    if f > date.today():
+        bad_request("La fecha de pago no puede ser futura")
+    datos, mime, nombre = _fichero(ficheros)
+    x = ReceivedDocument(asset_id=g.asset_id, unit_id=g.unit_id, tipo="justificante", fecha=f, emisor=g.proveedor,
+                         referencia=g.numero_factura, descripcion=f"Justificante de pago · {g.concepto}"[:1000],
+                         nombre=nombre, fichero=documentos.guardar(datos), mime=mime, tamano=len(datos),
+                         sha256=documentos.huella(datos), user_id=scope.user.id)
+    db.add(x)
+    db.flush()
+    g.pagado, g.fecha_pago, g.justificante_id = True, f, x.id
+    audit(db, scope.user, "pagar", "gasto", gid, {"fecha_pago": f.isoformat(), "justificante": x.id,
+                                                  "total": float(g.total)})
     db.commit()
     return _uno(db, scope, gid)
 

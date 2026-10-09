@@ -1,5 +1,8 @@
 # Novedades
 
+## 2026-10-09 · Versión 1.32 · Justificante de pago obligatorio
+- **Cuenta de gastos**: para marcar una factura como pagada hay que adjuntar antes el **justificante de pago** (botón **Pagado**). Queda guardado y enlazado a la factura (botón **Justificante**).
+
 ## 2026-10-08 · Versión 1.31 · Cobros de alquiler de otro programa
 - **Alquiler residencial**: nuevo **Cobros de otro programa**. Se suben las facturas en PDF (o un ZIP), se indica de qué mes a qué mes se repite la renta y el PMS abre las fichas de los inquilinos y registra cada mensualidad como ingreso cobrado (producción del activo). Documento por inquilino y Excel de ingresos.
 
