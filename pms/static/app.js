@@ -3451,7 +3451,7 @@ V.usuarios = async (el) => {
     { k: "nombre", t: "Nombre", f: (v) => `<span class="persona">${avatar(v, "sm")}${esc(v)}</span>` }, { k: "email", t: "Email" },
     { k: "asignaciones", t: "Roles / ámbito", f: (v, u) => (u.supplier_id ? `<span class="badge b-asignada">Colaborador · ${esc(provNombre[u.supplier_id] || "")}</span><br>` : "") + (u.is_superadmin ? "<b>Superadministrador</b>" : v.map((a) => `${esc(a.rol)} <span class="muted">(${esc(scopeTxt(a))})</span>`).join("<br>") || '<span class="muted">Sin acceso</span>') },
     { k: "activo", t: "Estado", f: (v, u) => (v ? badge("vigente") : badge("baja")) + (u.debe_cambiar_password ? ' <span class="badge b-pendiente">contraseña provisional</span>' : "") },
-  ], users, (u) => [["Editar", () => edit(u)], u.id !== S.me.id && ["Borrar", () => borrarUsuario(u), "danger"]]);
+  ], users, (u) => [["Editar", () => edit(u)], S.me.borrar_usuarios && u.id !== S.me.id && ["Borrar", () => borrarUsuario(u), "danger"]]);
 };
 async function borrarUsuario(u) {
   if (!confirm(`¿Borrar el usuario ${u.nombre} (${u.email})?\n\nDejará de poder entrar. Si ya ha trabajado en el PMS, su nombre se conserva solo en el historial (partes, gastos, auditoría).`)) return;

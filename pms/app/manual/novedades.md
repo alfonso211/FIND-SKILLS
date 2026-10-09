@@ -2,7 +2,7 @@
 
 ## 2026-10-09 · Versión 1.34 · Botón Volver y borrar usuarios
 - **Todos**: nuevo botón **← Volver** arriba, junto al título de la pantalla. Vuelve a la pantalla anterior o cierra la ventana abierta.
-- **Dirección y administración**: botón **Borrar** en *Administración → Usuarios*. Si la persona ya había trabajado en el PMS, su nombre se conserva solo en el historial.
+- **Director Técnico y administrador**: botón **Borrar** en *Administración → Usuarios* (solo estas dos cuentas). Si la persona ya había trabajado en el PMS, su nombre se conserva solo en el historial.
 
 ## 2026-10-09 · Versión 1.33 · Menos reinicios del PMS
 - **Todos**: si el PMS se queda parado unos minutos y vuelve a responder solo, ya no se reinicia encima (era un corte más). Queda un diagnóstico detallado para localizar la causa, y el mantenimiento diario lo avisa como «PMS parado» en vez de «cuelgue».

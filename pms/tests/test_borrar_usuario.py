@@ -34,11 +34,30 @@ def test_borrar_usuario_con_actividad_conserva_historial(client, admin, ids):
     assert client.delete(f"/api/admin/usuarios/{uid}", headers=admin).status_code == 404
 
 
-def test_borrar_usuario_limites(client, admin, ids):
+def test_solo_alfonso_y_admin_borran(client, admin, ids, monkeypatch):
+    """Solo las cuentas autorizadas (por defecto alfonso@inversiete.es y el administrador) borran usuarios; a ellas
+    no se las puede borrar. Otra cuenta de dirección, aunque gestione usuarios, no borra."""
+    from app.config import settings
+    assert {"alfonso@inversiete.es", "admin@inversiete.es"} <= set(settings.borrar_usuarios)
+    monkeypatch.setattr(settings, "borrar_usuarios", ("dt.borrar@inversiete.com",))  # hace de alfonso@
     me = client.get("/api/auth/me", headers=admin).json()
+    assert me["borrar_usuarios"] is True  # administrador inicial
     assert client.delete(f"/api/admin/usuarios/{me['id']}", headers=admin).status_code == 400  # a sí mismo
-    uid = _alta(client, admin, ids, "borrar.sinpermiso@inversiete.com")
-    h = login(client, "borrar.sinpermiso@inversiete.com", "Provisional1")
-    client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"})
-    assert client.delete(f"/api/admin/usuarios/{me['id']}", headers=h).status_code == 403  # sin permiso
-    assert client.delete(f"/api/admin/usuarios/{uid}", headers=admin).status_code == 200
+
+    def alta_con_clave(email, rol):
+        r = client.post("/api/admin/usuarios", headers=admin, json={
+            "email": email, "nombre": email, "password": "Provisional1",
+            "asignaciones": [{"role_id": ids["roles"][rol]}]})
+        assert r.status_code == 201, r.text
+        h = login(client, email, "Provisional1")
+        client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"})
+        return r.json()["id"], h
+    _, direccion = alta_con_clave("dir.borrar@inversiete.com", "Dirección Grupo")
+    dt_id, dt = alta_con_clave("dt.borrar@inversiete.com", "Dirección Grupo")
+    uid = _alta(client, admin, ids, "borrar.limites@inversiete.com")
+    assert client.get("/api/auth/me", headers=direccion).json()["borrar_usuarios"] is False
+    assert client.delete(f"/api/admin/usuarios/{uid}", headers=direccion).status_code == 403
+    assert client.get("/api/auth/me", headers=dt).json()["borrar_usuarios"] is True
+    assert client.delete(f"/api/admin/usuarios/{me['id']}", headers=dt).status_code == 400  # el administrador
+    assert client.delete(f"/api/admin/usuarios/{dt_id}", headers=admin).status_code == 400  # la otra cuenta
+    assert client.delete(f"/api/admin/usuarios/{uid}", headers=dt).status_code == 200

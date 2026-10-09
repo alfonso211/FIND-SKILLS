@@ -40,6 +40,10 @@ class Settings:
     url: str = (os.environ.get("PMS_URL") or "").rstrip("/")  # enlace en los correos (https://pms.inversiete.es)
     # Mantenimiento diario (deploy/mantenimiento.sh): a quién se avisa si hay un fallo grave
     mantenimiento_email: str = os.environ.get("PMS_MANTENIMIENTO_EMAIL") or "alfonso@inversiete.es"
+    # Únicas cuentas que pueden borrar usuarios (además del administrador inicial, PMS_ADMIN_EMAIL)
+    borrar_usuarios: tuple[str, ...] = tuple(
+        e.strip().lower() for e in (os.environ.get("PMS_BORRAR_USUARIOS") or "alfonso@inversiete.es,admin@inversiete.es")
+        .split(",") if e.strip())
 
 
 settings = Settings()

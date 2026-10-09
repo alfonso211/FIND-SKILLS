@@ -18,6 +18,11 @@ router = APIRouter(prefix="/api/admin", tags=["administración"])
 BORRADO = "@usuario-borrado.invalid"  # dominio del email de los usuarios borrados que se conservan por su historial
 
 
+def puede_borrar(u: User) -> bool:
+    """Solo las cuentas autorizadas (PMS_BORRAR_USUARIOS y el administrador inicial) borran usuarios."""
+    return u.activo and u.email.lower() in {*settings.borrar_usuarios, settings.admin_email.lower()}
+
+
 def _user_out(u: User) -> dict:
     d = u.to_dict(exclude=("password_hash",))
     d["asignaciones"] = [{"id": a.id, "role_id": a.role_id, "rol": a.role.nombre,
@@ -129,14 +134,15 @@ def _referencias(db: Session, uid: int) -> list[str]:
 def delete_user(uid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     """Borra un usuario. Si ya tiene actividad en el PMS (partes, gastos, auditoría…), se conserva solo su nombre
     para el historial: sin acceso, sin roles, fuera de la lista y con el email libre para volver a usarlo."""
-    scope.require_group("usuarios.gestionar")
+    if not puede_borrar(scope.user):
+        raise HTTPException(403, "Solo las cuentas autorizadas pueden borrar usuarios")
     u = get_or_404(db, User, uid)
     if u.email.endswith(BORRADO):
         raise HTTPException(404, "Usuario no encontrado")
     if u.id == scope.user.id:
         bad_request("No puede borrarse a sí mismo")
-    if u.is_superadmin and not scope.user.is_superadmin:
-        raise HTTPException(403, "Solo un superadministrador puede borrar superadministradores")
+    if puede_borrar(u):
+        bad_request("Es una de las cuentas que borran usuarios: no se puede borrar")
     if u.is_superadmin and not db.scalar(select(exists().where(User.is_superadmin.is_(True), User.activo.is_(True),
                                                                    User.id != u.id,
                                                                    ~User.email.endswith(BORRADO)))):
