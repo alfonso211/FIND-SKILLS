@@ -7,11 +7,14 @@
 - Vigilancia: un hilo comprueba cada pocos segundos que el bucle de peticiones responde y que las peticiones
   terminan. Si el PMS está colgado, deja el diagnóstico (qué peticiones había y dónde estaba cada hilo) en el
   registro y en un fichero, y termina el proceso: Docker lo arranca de nuevo en segundos (restart: unless-stopped).
-- Congelación: si el propio vigilante ha estado parado (su pausa de INTERVALO ha durado más de SIN_LATIDO), no es
-  el PMS el que se ha colgado sino todo el proceso o la máquina (pausa de la máquina virtual, falta de CPU): el bucle
-  vuelve a responder solo, así que no se reinicia; se anota en un fichero «congelado_*» para el mantenimiento.
+- Congelación: si el propio vigilante ha estado parado (su pausa de INTERVALO ha durado más de SIN_LATIDO), se ha
+  detenido el proceso entero (algún hilo retiene el intérprete dentro de código C), no solo el bucle de peticiones.
+  Al volver, el PMS responde solo, así que no se reinicia; se anota en un fichero «congelado_*». Como durante la
+  congelación ningún hilo de Python puede ejecutarse, faulthandler (un hilo en C que no necesita el intérprete) deja
+  la pila de todos los hilos a los TRAZA segundos: así se ve qué hilo y qué llamada lo retienen.
 """
 import asyncio
+import faulthandler
 import json
 import logging
 import os
@@ -32,6 +35,7 @@ LENTA = 15  # s: se anota en el registro como petición lenta
 SIN_LATIDO = 60  # s sin que el bucle de peticiones responda -> colgado
 ATASCO = 150  # s con todos los turnos ocupados y ninguna petición terminada -> colgado
 INTERVALO = 5  # s entre comprobaciones
+TRAZA = SIN_LATIDO + 30  # s sin que el vigilante vuelva: faulthandler deja la pila de todos los hilos
 PESADOS_A_LA_VEZ = 2
 ESPERA_PESADO = 90
 ACTIVO = (os.environ.get("PMS_VIGILANTE") or "1") != "0"
@@ -89,6 +93,7 @@ class Vigilante:
         self.ultima_fin = time.monotonic()
         self.latido = time.monotonic()
         self._n = 0
+        self._traza = None  # fichero donde faulthandler escribe la pila durante una congelación
 
     # ----------------------------------------------------------------- peticiones
     async def __call__(self, scope, receive, send):
@@ -164,20 +169,48 @@ class Vigilante:
         if dormido <= SIN_LATIDO:
             return False
         ahora = time.monotonic()
-        texto = self.diagnostico(f"parado durante {dormido:.0f} s (todo el proceso, también el vigilante): pausa de "
-                                 "la máquina o falta de CPU. No se reinicia el PMS", "SERVIDOR CONGELADO")
+        texto = self.diagnostico(f"parado durante {dormido:.0f} s (todos los hilos, también el vigilante). Ha vuelto "
+                                 "a responder solo: no se reinicia", "PMS CONGELADO")
+        if traza := self._leer_traza():
+            texto += "\n\n=== Pila de los hilos DURANTE la congelación (faulthandler) ===\n" + traza
         log.warning(texto)
         _guardar("congelado", texto)
         self.latido = ahora  # el bucle responde en cuanto vuelve la CPU: se vigila de nuevo desde ahora
         self.ultima_fin = max(self.ultima_fin, ahora)
         return True
 
+    def _armar_traza(self, segundos: float) -> None:
+        """Si el vigilante no vuelve a armarlo en `segundos`, faulthandler escribe la pila de todos los hilos."""
+        try:
+            if self._traza is None:
+                carpeta = settings.docs_dir / "_diagnostico"
+                carpeta.mkdir(parents=True, exist_ok=True)
+                self._traza = open(carpeta / "traza_en_curso.txt", "a+", encoding="utf-8")  # noqa: SIM115
+            faulthandler.dump_traceback_later(segundos, repeat=False, file=self._traza, exit=False)
+        except (OSError, ValueError):
+            pass
+
+    def _leer_traza(self) -> str:
+        if self._traza is None:
+            return ""
+        try:
+            self._traza.flush()
+            self._traza.seek(0)
+            texto = self._traza.read()[-20000:]
+            self._traza.seek(0)
+            self._traza.truncate()
+            return texto.strip()
+        except (OSError, ValueError):
+            return ""
+
     def _vigilar(self) -> None:
         while True:
             try:  # se pide el latido y se comprueba después de dar tiempo a que el bucle lo atienda
                 self.bucle.call_soon_threadsafe(self._latir)
             except RuntimeError:  # el bucle se ha cerrado: el proceso está terminando
+                faulthandler.cancel_dump_traceback_later()
                 return
+            self._armar_traza(TRAZA)
             t0 = time.monotonic()
             time.sleep(INTERVALO)
             if self.congelado(time.monotonic() - t0):

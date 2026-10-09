@@ -310,7 +310,7 @@ El PMS se vigila solo. Si deja de responder, guarda un diagnóstico y se reinici
 - Comprobar que responde: `docker ps`. La aplicación debe salir como `(healthy)`.
 - Ver los avisos del vigilante: `cd /opt/pms/deploy && docker compose logs app | grep -E "COLGADO|lenta|Sin turno|Base de datos"`.
 - Leer los diagnósticos guardados: `docker compose exec app ls /data/documentos/_diagnostico`. Para ver uno: `docker compose exec app cat /data/documentos/_diagnostico/<fichero>`.
-- Ficheros `cuelgue_*`: el PMS estaba bloqueado y se reinició. Ficheros `congelado_*`: estaba parado el servidor entero
-  (pausa de la máquina virtual o falta de CPU); el PMS no se reinicia porque vuelve a responder solo. Si se repiten,
-  consultar con Arsys.
+- Ficheros `cuelgue_*`: el bucle de peticiones estaba bloqueado y el PMS se reinició. Ficheros `congelado_*`: estaba
+  parado el proceso entero (todos sus hilos) y volvió a responder solo, sin reinicio; incluyen la pila de los hilos
+  tomada durante la congelación (faulthandler), que indica qué llamada lo retenía.
 - Reinicio manual si hiciera falta: `docker compose restart app`.

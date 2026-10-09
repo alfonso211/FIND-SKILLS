@@ -143,10 +143,10 @@ def _cuelgues() -> list[Resultado]:
         for f in congelados:  # «… parado durante 486 s …»
             m = re.search(r"parado durante (\d+) s", f.read_text(encoding="utf-8", errors="replace")[:300])
             segundos += int(m.group(1)) if m else 0
-        res.append((AVISO, "Estabilidad", f"El servidor se ha quedado congelado {len(congelados)} vez/veces en 24 h "
-                                          f"({segundos // 60} min en total; el PMS no se ha reiniciado). No es un "
-                                          "fallo del PMS: si se repite, consultar con Arsys (pausas de la máquina "
-                                          "virtual o falta de CPU)."))
+        res.append((AVISO, "Estabilidad", f"El PMS se ha quedado parado {len(congelados)} vez/veces en 24 h "
+                                          f"({segundos // 60} min en total) y ha vuelto a responder solo, sin "
+                                          "reiniciarse. Pila de los hilos en /data/documentos/_diagnostico "
+                                          "(ficheros congelado_*)."))
     return res or [(OK, "Estabilidad", "Sin cuelgues en las últimas 24 h")]
 
 
