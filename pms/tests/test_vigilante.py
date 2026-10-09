@@ -104,3 +104,19 @@ def test_ocr_con_limite_de_tiempo(monkeypatch):
     monkeypatch.setattr(pytesseract, "image_to_string", lento)
     from PIL import Image
     assert ocr_documentos._ocr(Image.new("L", (10, 10))) == ""
+
+
+def test_servidor_congelado_no_reinicia(monkeypatch, tmp_path):
+    """Si el propio vigilante ha estado parado (máquina pausada o sin CPU), el bucle no está colgado: no se reinicia
+    el PMS, se deja un diagnóstico «congelado_*» y el mantenimiento lo avisa aparte."""
+    from app import mantenimiento
+    monkeypatch.setattr(vigilante.settings, "docs_dir", tmp_path)
+    v = vigilante.Vigilante(None)
+    assert not v.congelado(vigilante.INTERVALO + 1)
+    v.latido -= 600
+    assert v.congelado(600)
+    assert v.colgado() is None  # el latido vuelve a contar desde ahora
+    ficheros = list((tmp_path / "_diagnostico").glob("congelado_*.txt"))
+    assert len(ficheros) == 1 and "SERVIDOR CONGELADO" in ficheros[0].read_text(encoding="utf-8")
+    [(estado, area, texto)] = mantenimiento._cuelgues()
+    assert estado == mantenimiento.AVISO and "congelado 1 vez" in texto and "10 min" in texto

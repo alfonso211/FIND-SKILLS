@@ -9,6 +9,7 @@ el disco, las copias de seguridad, el certificado HTTPS y la seguridad del servi
 Estados: OK, ARREGLADO (había un fallo y se ha corregido solo), AVISO (punto débil o algo que vigilar) y GRAVE
 (no se ha podido corregir: se avisa con un correo urgente para resolverlo).
 """
+import re
 import smtplib
 import ssl
 import sys
@@ -130,11 +131,23 @@ def _correo(db) -> list[Resultado]:
 def _cuelgues() -> list[Resultado]:
     carpeta = settings.docs_dir / "_diagnostico"
     hace = time.time() - 86400
-    n = len([f for f in carpeta.glob("cuelgue_*.txt") if f.stat().st_mtime >= hace]) if carpeta.is_dir() else 0
-    if n:
-        return [(AVISO, "Estabilidad", f"El PMS se ha colgado {n} vez/veces en 24 h y se ha reiniciado solo. "
-                                       "Diagnóstico en /data/documentos/_diagnostico.")]
-    return [(OK, "Estabilidad", "Sin cuelgues en las últimas 24 h")]
+
+    def recientes(tipo: str) -> list:
+        return [f for f in carpeta.glob(f"{tipo}_*.txt") if f.stat().st_mtime >= hace] if carpeta.is_dir() else []
+    res: list[Resultado] = []
+    if n := len(recientes("cuelgue")):
+        res.append((AVISO, "Estabilidad", f"El PMS se ha colgado {n} vez/veces en 24 h y se ha reiniciado solo. "
+                                          "Diagnóstico en /data/documentos/_diagnostico."))
+    if congelados := recientes("congelado"):
+        segundos = 0
+        for f in congelados:  # «… parado durante 486 s …»
+            m = re.search(r"parado durante (\d+) s", f.read_text(encoding="utf-8", errors="replace")[:300])
+            segundos += int(m.group(1)) if m else 0
+        res.append((AVISO, "Estabilidad", f"El servidor se ha quedado congelado {len(congelados)} vez/veces en 24 h "
+                                          f"({segundos // 60} min en total; el PMS no se ha reiniciado). No es un "
+                                          "fallo del PMS: si se repite, consultar con Arsys (pausas de la máquina "
+                                          "virtual o falta de CPU)."))
+    return res or [(OK, "Estabilidad", "Sin cuelgues en las últimas 24 h")]
 
 
 def _usuarios(db) -> list[Resultado]:

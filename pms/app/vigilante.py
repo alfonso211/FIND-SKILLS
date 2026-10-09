@@ -7,6 +7,9 @@
 - Vigilancia: un hilo comprueba cada pocos segundos que el bucle de peticiones responde y que las peticiones
   terminan. Si el PMS está colgado, deja el diagnóstico (qué peticiones había y dónde estaba cada hilo) en el
   registro y en un fichero, y termina el proceso: Docker lo arranca de nuevo en segundos (restart: unless-stopped).
+- Congelación: si el propio vigilante ha estado parado (su pausa de INTERVALO ha durado más de SIN_LATIDO), no es
+  el PMS el que se ha colgado sino todo el proceso o la máquina (pausa de la máquina virtual, falta de CPU): el bucle
+  vuelve a responder solo, así que no se reinicia; se anota en un fichero «congelado_*» para el mantenimiento.
 """
 import asyncio
 import json
@@ -60,6 +63,18 @@ async def _responder(send, status: int, datos: dict) -> None:
                 "headers": [(b"content-type", b"application/json"), (b"cache-control", b"no-store"),
                             (b"content-length", str(len(cuerpo)).encode())]})
     await send({"type": "http.response.body", "body": cuerpo})
+
+
+def _guardar(tipo: str, texto: str) -> None:
+    """Diagnóstico en /data/documentos/_diagnostico (se guardan los 30 últimos de cada tipo)."""
+    try:
+        carpeta = settings.docs_dir / "_diagnostico"
+        carpeta.mkdir(parents=True, exist_ok=True)
+        (carpeta / f"{tipo}_{datetime.now():%Y%m%d_%H%M%S}.txt").write_text(texto, encoding="utf-8")
+        for viejo in sorted(carpeta.glob(f"{tipo}_*.txt"))[:-30]:
+            viejo.unlink()
+    except OSError:
+        pass
 
 
 class Vigilante:
@@ -132,9 +147,9 @@ class Vigilante:
                     f"{ahora - self.ultima_fin:.0f} s")
         return None
 
-    def diagnostico(self, motivo: str) -> str:
+    def diagnostico(self, motivo: str, titulo: str = "PMS COLGADO") -> str:
         ahora = time.monotonic()
-        lineas = [f"PMS COLGADO {datetime.now():%d/%m/%Y %H:%M:%S}: {motivo}",
+        lineas = [f"{titulo} {datetime.now():%d/%m/%Y %H:%M:%S}: {motivo}",
                   f"Peticiones en curso ({len(self.en_curso)}), esperando turno: {self.esperando}"]
         for m, p, t in sorted(self.en_curso.values(), key=lambda x: x[2]):
             lineas.append(f"  {ahora - t:7.1f} s  {m} {p}")
@@ -144,26 +159,35 @@ class Vigilante:
             lineas.append(f"\n--- hilo {nombres.get(ident, ident)} ---\n{pila}")
         return "\n".join(lineas)
 
+    def congelado(self, dormido: float) -> bool:
+        """El vigilante ha estado parado tanto como el bucle: se ha congelado el proceso entero, no colgado el PMS."""
+        if dormido <= SIN_LATIDO:
+            return False
+        ahora = time.monotonic()
+        texto = self.diagnostico(f"parado durante {dormido:.0f} s (todo el proceso, también el vigilante): pausa de "
+                                 "la máquina o falta de CPU. No se reinicia el PMS", "SERVIDOR CONGELADO")
+        log.warning(texto)
+        _guardar("congelado", texto)
+        self.latido = ahora  # el bucle responde en cuanto vuelve la CPU: se vigila de nuevo desde ahora
+        self.ultima_fin = max(self.ultima_fin, ahora)
+        return True
+
     def _vigilar(self) -> None:
         while True:
             try:  # se pide el latido y se comprueba después de dar tiempo a que el bucle lo atienda
                 self.bucle.call_soon_threadsafe(self._latir)
             except RuntimeError:  # el bucle se ha cerrado: el proceso está terminando
                 return
+            t0 = time.monotonic()
             time.sleep(INTERVALO)
+            if self.congelado(time.monotonic() - t0):
+                continue
             motivo = self.colgado()
             if not motivo:
                 continue
             texto = self.diagnostico(motivo)
             log.critical(texto)
-            try:
-                carpeta = settings.docs_dir / "_diagnostico"
-                carpeta.mkdir(parents=True, exist_ok=True)
-                (carpeta / f"cuelgue_{datetime.now():%Y%m%d_%H%M%S}.txt").write_text(texto, encoding="utf-8")
-                for viejo in sorted(carpeta.glob("cuelgue_*.txt"))[:-30]:
-                    viejo.unlink()
-            except OSError:
-                pass
+            _guardar("cuelgue", texto)
             sys.stderr.write(texto + "\nReiniciando el PMS…\n")
             sys.stderr.flush()
             os._exit(3)  # Docker vuelve a arrancar el contenedor

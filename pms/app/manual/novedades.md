@@ -1,5 +1,8 @@
 # Novedades
 
+## 2026-10-09 · Versión 1.33 · Sin reinicios del PMS cuando se congela el servidor
+- **Todos**: si el servidor se queda congelado unos minutos (pausa de la máquina en Arsys), el PMS ya no se reinicia al volver: sigue funcionando sin corte. El mantenimiento diario lo avisa aparte como «servidor congelado», y no como un cuelgue del PMS.
+
 ## 2026-10-09 · Versión 1.32 · Justificante de pago obligatorio
 - **Cuenta de gastos**: para marcar una factura como pagada hay que adjuntar antes el **justificante de pago** (botón **Pagado**). Queda guardado y enlazado a la factura (botón **Justificante**).
 
