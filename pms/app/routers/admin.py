@@ -1,18 +1,21 @@
 """Usuarios, roles, auditoría (solo administradores a nivel de grupo)."""
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+import secrets
+
+from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
 from .. import avisos
 from ..config import settings
 from ..database import get_db
-from ..models import Asset, Assignment, AuditLog, Company, EmailLog, Role, Supplier, User
+from ..models import Asset, Assignment, AuditLog, Base, Company, EmailLog, Role, Supplier, User
 from ..schemas import AssignmentIn, RoleIn, UserIn, UserUpdate
 from ..security import PERMISOS, Scope, audit, get_scope, hash_password
 from ..utils import bad_request, get_or_404
 
 router = APIRouter(prefix="/api/admin", tags=["administración"])
+BORRADO = "@usuario-borrado.invalid"  # dominio del email de los usuarios borrados que se conservan por su historial
 
 
 def _user_out(u: User) -> dict:
@@ -44,7 +47,7 @@ def _validar_colaborador(db: Session, supplier_id: int | None, superadmin: bool)
 @router.get("/usuarios")
 def list_users(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     scope.require_group("usuarios.gestionar")
-    return [_user_out(u) for u in db.scalars(select(User).order_by(User.nombre))]
+    return [_user_out(u) for u in db.scalars(select(User).where(~User.email.endswith(BORRADO)).order_by(User.nombre))]
 
 
 @router.post("/usuarios", status_code=201)
@@ -106,6 +109,50 @@ def update_user(uid: int, data: UserUpdate, scope: Scope = Depends(get_scope), d
     db.commit()
     db.refresh(u)
     return _user_out(u)
+
+
+def _referencias(db: Session, uid: int) -> list[str]:
+    """Tablas con registros del usuario (sin contar sus roles, que se borran con él)."""
+    out = []
+    for t in Base.metadata.sorted_tables:
+        if t.name == "asignaciones":
+            continue
+        for c in t.columns:
+            if any(fk.column.table.name == "usuarios" for fk in c.foreign_keys) and \
+                    db.scalar(select(exists().where(c == uid))):
+                out.append(t.name)
+                break
+    return out
+
+
+@router.delete("/usuarios/{uid}")
+def delete_user(uid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Borra un usuario. Si ya tiene actividad en el PMS (partes, gastos, auditoría…), se conserva solo su nombre
+    para el historial: sin acceso, sin roles, fuera de la lista y con el email libre para volver a usarlo."""
+    scope.require_group("usuarios.gestionar")
+    u = get_or_404(db, User, uid)
+    if u.email.endswith(BORRADO):
+        raise HTTPException(404, "Usuario no encontrado")
+    if u.id == scope.user.id:
+        bad_request("No puede borrarse a sí mismo")
+    if u.is_superadmin and not scope.user.is_superadmin:
+        raise HTTPException(403, "Solo un superadministrador puede borrar superadministradores")
+    if u.is_superadmin and not db.scalar(select(exists().where(User.is_superadmin.is_(True), User.activo.is_(True),
+                                                                   User.id != u.id,
+                                                                   ~User.email.endswith(BORRADO)))):
+        bad_request("Es el único superadministrador activo: no se puede borrar")
+    refs = _referencias(db, u.id)
+    det = {"email": u.email, "nombre": u.nombre, "modo": "conservado por historial" if refs else "borrado"}
+    if refs:
+        u.email, u.activo, u.is_superadmin, u.supplier_id = f"{u.id}{BORRADO}", False, False, None
+        u.password_hash = hash_password(secrets.token_urlsafe(24))
+        u.debe_cambiar_password = False
+        u.assignments = []
+    else:
+        db.delete(u)
+    audit(db, scope.user, "borrar", "usuario", uid, det)
+    db.commit()
+    return {"ok": True, "historial": bool(refs)}
 
 
 @router.get("/roles")

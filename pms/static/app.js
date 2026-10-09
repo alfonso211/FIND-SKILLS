@@ -3451,8 +3451,15 @@ V.usuarios = async (el) => {
     { k: "nombre", t: "Nombre", f: (v) => `<span class="persona">${avatar(v, "sm")}${esc(v)}</span>` }, { k: "email", t: "Email" },
     { k: "asignaciones", t: "Roles / ámbito", f: (v, u) => (u.supplier_id ? `<span class="badge b-asignada">Colaborador · ${esc(provNombre[u.supplier_id] || "")}</span><br>` : "") + (u.is_superadmin ? "<b>Superadministrador</b>" : v.map((a) => `${esc(a.rol)} <span class="muted">(${esc(scopeTxt(a))})</span>`).join("<br>") || '<span class="muted">Sin acceso</span>') },
     { k: "activo", t: "Estado", f: (v, u) => (v ? badge("vigente") : badge("baja")) + (u.debe_cambiar_password ? ' <span class="badge b-pendiente">contraseña provisional</span>' : "") },
-  ], users, (u) => [["Editar", () => edit(u)]]);
+  ], users, (u) => [["Editar", () => edit(u)], u.id !== S.me.id && ["Borrar", () => borrarUsuario(u), "danger"]]);
 };
+async function borrarUsuario(u) {
+  if (!confirm(`¿Borrar el usuario ${u.nombre} (${u.email})?\n\nDejará de poder entrar. Si ya ha trabajado en el PMS, su nombre se conserva solo en el historial (partes, gastos, auditoría).`)) return;
+  try {
+    const r = await api("DELETE", `/api/admin/usuarios/${u.id}`);
+    toast(r.historial ? "Usuario borrado (su nombre se conserva en el historial)" : "Usuario borrado"); go("usuarios");
+  } catch (e) { alert(e.message); }
+}
 
 V.roles = async (el) => {
   const roles = await get("/api/admin/roles");
@@ -4298,10 +4305,23 @@ function ajustarNav(prioritario) {
   if (sb.scrollHeight > sb.clientHeight + 1 && gen && gen !== prioritario && !gen.querySelector("a.active")) gen.classList.add("cerrado");
 }
 window.addEventListener("resize", () => { clearTimeout(S._navT); S._navT = setTimeout(() => $("#nav") && $("#nav").children.length && ajustarNav(), 150); });
+// Volver: pantallas visitadas en esta sesión (la última es la actual)
+S.pila = [];
+function pintarVolver() {
+  const b = $("#backBtn"), inicio = S.me?.colaborador ? "colaborador" : "panel";
+  b.hidden = S.pila.length < 2 && S.pila[0] === inicio;
+}
+function volver() {
+  if ($("#modal").open) return $("#modal").close();
+  S.pila.pop();  // la actual
+  go(S.pila.pop() || (S.me.colaborador ? "colaborador" : "panel"));
+}
 async function go(view) {
   if (S.me.colaborador) view = ["colaborador", "perfil"].includes(view) ? view : "colaborador";
   else view = TITLES[view] && view !== "colaborador" && allowed(MENU.flatMap(([, i]) => i).find(([id]) => id === view)[2]) ? view : "panel";
   if (location.hash !== "#" + view) history.replaceState(null, "", "#" + view);
+  if (S.pila.at(-1) !== view) { S.pila.push(view); if (S.pila.length > 50) S.pila.shift(); }
+  pintarVolver();
   document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.v === view));
   ajustarNav();
   $(".sidebar").classList.remove("open");
@@ -4369,7 +4389,7 @@ function pintarUsuario() {
   $("#userName").innerHTML = `${esc(S.me.nombre)}<small>${esc(S.me.colaborador ? S.me.colaborador.proveedor : rolDe(S.me))}</small>`;
 }
 function showLogin() { $("#app").classList.add("hidden"); $("#login").classList.remove("hidden"); }
-function logout() { S.token = null; localStorage.removeItem("pms_token"); showLogin(); }
+function logout() { S.token = null; S.pila = []; localStorage.removeItem("pms_token"); showLogin(); }
 
 $("#loginForm").onsubmit = async (e) => {
   e.preventDefault();
@@ -4379,6 +4399,7 @@ $("#loginForm").onsubmit = async (e) => {
 };
 $("#logoutBtn").onclick = logout;
 $("#menuBtn").onclick = () => $(".sidebar").classList.toggle("open");
+$("#backBtn").onclick = volver;
 $("#assetFilter").onchange = (e) => { setAsset(e.target.value); go(location.hash.slice(1)); };
 window.onhashchange = () => S.me && go(location.hash.slice(1));
 S.token ? start() : showLogin();

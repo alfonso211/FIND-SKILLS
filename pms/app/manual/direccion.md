@@ -45,6 +45,7 @@
 
 ## Administración
 - **Usuarios** y **Roles y permisos**: alta de personas y qué puede hacer cada una en cada activo.
+- **Borrar un usuario** (botón **Borrar** en Administración → Usuarios): deja de poder entrar y desaparece de la lista; su email queda libre. Si ya ha trabajado en el PMS, su nombre se conserva solo en el historial (partes, gastos, auditoría). Nadie puede borrarse a sí mismo y no se puede borrar al último superadministrador.
 - **Sociedades**, **Avisos por correo** (servidor y resumen diario) y **Auditoría** (quién hizo qué y cuándo).
 
 ## Seguridad y continuidad
