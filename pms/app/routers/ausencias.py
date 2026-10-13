@@ -229,6 +229,7 @@ def create_absence(data: AbsenceIn, scope: Scope = Depends(get_scope), db: Sessi
                                                       "hasta": x.hasta.isoformat(), "estado": x.estado})
     db.commit()
     _avisos_nueva(db, x, a, scope.user.id)
+    _calendario(db, x, "solicita vacaciones" if x.estado != "aprobada" else "vacaciones registradas y autorizadas", scope)
     out = _uno(db, scope, x)
     out["aviso_saldo"] = empleados.aviso_saldo(db, x)
     # coincidencias con otras personas del mismo colectivo (para organizar el servicio)
@@ -236,6 +237,12 @@ def create_absence(data: AbsenceIn, scope: Scope = Depends(get_scope), db: Sessi
         Absence.asset_id == a.id, Absence.colectivo == colectivo, Absence.id != x.id,
         Absence.estado.in_(VIGENTES), Absence.desde <= x.hasta, Absence.hasta >= x.desde))]
     return out
+
+
+def _calendario(db: Session, x: Absence, que: str, scope: Scope) -> None:
+    """Cada cambio en una solicitud de vacaciones: nueva revisión del calendario, enviada a todos."""
+    from .. import informe_vacaciones
+    informe_vacaciones.tras_cambio(db, x, que, scope.user.id)
 
 
 def _trabajador(db: Session, x: Absence) -> tuple[str | None, str | None]:
@@ -294,7 +301,9 @@ def approve(xid: int, scope: Scope = Depends(get_scope), db: Session = Depends(g
     x.estado, x.resuelto_por, x.resuelto_en = "aprobada", scope.user.id, datetime.now()
     audit(db, scope.user, "aprobar", "ausencia", x.id, {"persona": x.persona})
     db.commit()
-    return {**_uno(db, scope, x), "comunicado": _comunicar(db, scope, x, a, "autorizada")}
+    out = {**_uno(db, scope, x), "comunicado": _comunicar(db, scope, x, a, "autorizada")}
+    _calendario(db, x, "autorizadas las vacaciones", scope)
+    return out
 
 
 @router.post("/{xid}/denegar")
@@ -309,7 +318,9 @@ def deny(xid: int, data: NotaIn, scope: Scope = Depends(get_scope), db: Session 
     x.estado, x.resuelto_por, x.resuelto_en, x.nota = "denegada", scope.user.id, datetime.now(), data.nota.strip()
     audit(db, scope.user, "denegar", "ausencia", x.id, {"persona": x.persona, "nota": x.nota})
     db.commit()
-    return {**_uno(db, scope, x), "comunicado": _comunicar(db, scope, x, a, "desestimada")}
+    out = {**_uno(db, scope, x), "comunicado": _comunicar(db, scope, x, a, "desestimada")}
+    _calendario(db, x, "desestimada la solicitud de vacaciones", scope)
+    return out
 
 
 @router.post("/{xid}/anular")
@@ -330,6 +341,7 @@ def cancel(xid: int, data: NotaIn, scope: Scope = Depends(get_scope), db: Sessio
     out = _uno(db, scope, x)
     if not propia:
         out["comunicado"] = _comunicar(db, scope, x, a, "anulada")
+    _calendario(db, x, "anuladas las vacaciones", scope)
     return out
 
 
@@ -365,6 +377,15 @@ def summary(asset_id: int | None = None, anio: int | None = None, scope: Scope =
         _activo(db, scope, asset_id)
     anio = anio or date.today().year
     return {"anio": anio, "tipos": TIPOS_AUSENCIA, "personas": _resumen(db, scope, asset_id, anio)}
+
+
+@router.get("/calendario-vacaciones.pdf")
+def vacation_calendar(anio: int | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Calendario de vacaciones del personal propio con los saldos (el mismo que se envía en cada revisión)."""
+    from .. import informe_vacaciones
+    anio = anio or date.today().year
+    return Response(informe_vacaciones.pdf(db, anio), media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="Calendario_vacaciones_{anio}.pdf"'})
 
 
 @router.get("/excel")

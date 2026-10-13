@@ -47,8 +47,10 @@ def test_ficha_saldo_documentos_y_jornada(client, admin, ids):
     v = client.post(f"/api/ausencias/{v.json()['id']}/aprobar", headers=admin)
     assert v.json()["estado"] == "aprobada"
     s = client.get(f"/api/personal/{p['id']}/saldo", headers=admin).json()
-    if l1.year == anio:
-        assert (s["aprobadas"], s["restantes"]) == (5, 17)
+    if l1.year == anio:  # laborables: sin fines de semana ni festivos
+        from app.calendario import laborable
+        n = sum(1 for i in range(5) if laborable(l1 + timedelta(days=i)))
+        assert (s["aprobadas"], s["restantes"]) == (n, 22 - n)
     l2 = _lunes(12)
     w = client.post("/api/ausencias", headers=rec, json={
         "asset_id": sfl, "tipo": "vacaciones", "desde": l2.isoformat(), "hasta": (l2 + timedelta(days=27)).isoformat()})
@@ -170,3 +172,65 @@ def test_recepcion1_explicita_comprobar_y_borrar_todo(client, admin, ids):
     assert client.post("/api/ausencias", headers=jc, json={"asset_id": bab, "tipo": "dia_libre", "desde": "2099-04-01",
                                                            "hasta": "2099-04-01"}).status_code == 201
     client.put(f"/api/activos/{bab}", headers=admin, json={"recepcion1_id": antes})
+
+
+def test_vacaciones_registro_calendario_y_recordatorio(client, admin, ids):
+    """El Director Técnico registra en la ficha las vacaciones ya disfrutadas y acordadas; el saldo distingue
+    disfrutadas, solicitadas y pendientes de solicitar; cada cambio envía el calendario a todos los usuarios (también a
+    los colaboradores) y cada lunes se recuerda a quien tiene días sin solicitar."""
+    from app import informe_vacaciones
+    from test_ausencias import _user
+    sae = ids["assets"]["SAE"]["id"]
+    tec = _user(client, admin, ids, "tec.vac@inversiete.com", "Técnico Vacaciones", "Técnico Mantenimiento", "SAE")
+    yo = client.get("/api/auth/me", headers=tec).json()
+    f = client.post("/api/personal", headers=admin, json={"asset_id": sae, "area": "mantenimiento", "nombre": yo["nombre"],
+                                                          "user_id": yo["id"], "email": yo["email"], "vacaciones_dias": 30,
+                                                          "vacaciones_tipo": "naturales"})
+    assert f.status_code == 201, f.text
+    f = f.json()
+    hoy = date.today()
+    pasado = (hoy - timedelta(days=20), hoy - timedelta(days=11)) if hoy.timetuple().tm_yday > 25 else None
+    futuro = (hoy + timedelta(days=10), hoy + timedelta(days=14))
+    periodos = ([{"desde": pasado[0].isoformat(), "hasta": pasado[1].isoformat()}] if pasado else []) + \
+        [{"desde": futuro[0].isoformat(), "hasta": futuro[1].isoformat()}]
+    assert client.post(f"/api/personal/{f['id']}/vacaciones", headers=tec, json={"periodos": periodos}).status_code == 403
+    from test_colaborador import _user as _colab
+    prov = client.post("/api/proveedores", headers=admin, json={"nombre": "Mantenimiento Colab Vac SL"}).json()
+    _colab(client, admin, ids, "colab.vac@inversiete.com", "Colaborador Vacaciones", "Colaborador", supplier_id=prov["id"])
+    avisos.BANDEJA.clear()
+    r = client.post(f"/api/personal/{f['id']}/vacaciones", headers=admin, json={"periodos": periodos})
+    assert r.status_code == 201, r.text
+    s = r.json()["saldo"]
+    if futuro[1].year == hoy.year:
+        assert s["disfrutadas"] == (10 if pasado else 0) and s["solicitadas"] == 5
+        assert s["pendientes_solicitar"] == s["corresponden"] - s["disfrutadas"] - 5
+    # solapado: no
+    assert client.post(f"/api/personal/{f['id']}/vacaciones", headers=admin, json={"periodos": [periodos[-1]]}).status_code == 400
+    # el calendario se envía a todos los usuarios activos, colaboradores incluidos
+    with SessionLocal() as db:
+        todos = {u.email for u in informe_vacaciones.destinatarios(db)}
+    assert "colab.vac@inversiete.com" in todos
+    m = [x for x in avisos.BANDEJA if x["asunto"].startswith("Calendario de vacaciones")]
+    assert {x["para"] for x in m} == todos and m[0]["adjuntos"][0][0].endswith(".pdf")
+    assert "Técnico Vacaciones: registradas las vacaciones" in m[0]["texto"]
+    pdf = client.get("/api/ausencias/calendario-vacaciones.pdf", headers=tec)
+    assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")
+    v = client.get(f"/api/personal/{f['id']}/vacaciones", headers=admin).json()
+    assert v["registrar"] and len(v["periodos"]) == len(periodos) and v["periodos"][-1]["registrada_por"]
+    # su propia solicitud también genera una revisión
+    avisos.BANDEJA.clear()
+    lejos = hoy + timedelta(days=40)
+    x = client.post("/api/ausencias", headers=tec, json={"asset_id": sae, "tipo": "vacaciones", "desde": lejos.isoformat(),
+                                                         "hasta": (lejos + timedelta(days=1)).isoformat()})
+    assert x.status_code == 201, x.text
+    assert any("solicita vacaciones" in z["texto"] for z in avisos.BANDEJA if z["asunto"].startswith("Calendario"))
+
+    # recordatorio semanal (lunes), una vez por semana y persona
+    lunes = hoy - timedelta(days=hoy.weekday())
+    avisos.BANDEJA.clear()
+    with SessionLocal() as db:
+        assert informe_vacaciones.recordatorio_semanal(db, lunes + timedelta(days=1)) == 0  # martes: nada
+        assert informe_vacaciones.recordatorio_semanal(db, lunes) >= 1
+        assert informe_vacaciones.recordatorio_semanal(db, lunes) == 0
+    r = next(z for z in avisos.BANDEJA if z["para"] == "tec.vac@inversiete.com")
+    assert "por solicitar" in r["asunto"] and "31 de diciembre" in r["texto"]

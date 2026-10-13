@@ -1,5 +1,6 @@
 """Recepción 1 de cada activo asignada expresamente en la ficha del activo (antes se deducía del nombre del usuario,
 y un cambio de nombre la convertía en Recepción 2). Se rellena con las cuentas de Recepción 1 del grupo.
+Revisiones del calendario de vacaciones (informe que se envía a todos en cada cambio).
 
 Revision ID: 0045
 Revises: 0044
@@ -20,6 +21,15 @@ RECEPCION_1 = {"SFL": "juancarlos@apartamentossuitesflorida.es", "SAE": "jaime@a
 
 
 def upgrade() -> None:
+    op.create_table(
+        "vacaciones_revisiones",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("anio", sa.Integer(), nullable=False, index=True),
+        sa.Column("creado", sa.DateTime(), nullable=False),
+        sa.Column("cambios", sa.JSON(), nullable=False),
+        sa.Column("enviados", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.Integer(), sa.ForeignKey("usuarios.id")),
+    )
     with op.batch_alter_table("activos") as b:
         b.add_column(sa.Column("recepcion1_id", sa.Integer(), nullable=True))
         b.create_foreign_key("fk_activos_recepcion1", "usuarios", ["recepcion1_id"], ["id"])
@@ -42,6 +52,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_table("vacaciones_revisiones")
     with op.batch_alter_table("activos") as b:
         b.drop_constraint("fk_activos_recepcion1", type_="foreignkey")
         b.drop_column("recepcion1_id")

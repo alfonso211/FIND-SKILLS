@@ -171,6 +171,9 @@ def create_staff(data: StaffIn, scope: Scope = Depends(get_scope), db: Session =
     _puede_editar(scope, db, data.area, data.asset_id, _propio_de(data))
     if data.asset_id:
         get_or_404(db, Asset, data.asset_id)
+    if data.user_id and not data.email and empleados.director_tecnico(scope):  # el correo de su usuario
+        u = db.get(User, data.user_id)
+        data.email = u.email if u else None
     if data.area in PERMISO_AREA and not (data.email or data.telefono):
         bad_request("Indique al menos un correo electrónico o un teléfono")
     _valida_ficha(db, data)
@@ -194,6 +197,9 @@ def update_staff(pid: int, data: StaffIn, scope: Scope = Depends(get_scope), db:
     _puede_editar(scope, db, data.area, data.asset_id, _propio_de(data))
     if data.asset_id:
         get_or_404(db, Asset, data.asset_id)
+    if data.user_id and not data.email and empleados.director_tecnico(scope):  # el correo de su usuario
+        u = db.get(User, data.user_id)
+        data.email = u.email if u else None
     if data.area in PERMISO_AREA and not (data.email or data.telefono):
         bad_request("Indique al menos un correo electrónico o un teléfono")
     _valida_ficha(db, data, pid)
@@ -240,6 +246,87 @@ def staff_catalogs():
 @router.get("/{pid}/saldo")
 def vacation_balance(pid: int, anio: int | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     return empleados.saldo(db, _gestionada(db, scope, pid), anio)
+
+
+# --------------------------------------------------------------------------- vacaciones de la ficha
+class PeriodoIn(BaseModel):
+    desde: date
+    hasta: date
+
+
+class VacacionesIn(BaseModel):
+    periodos: list[PeriodoIn] = Field(min_length=1, max_length=20)
+    nota: str | None = Field(default=None, max_length=300)
+
+
+def _periodos(db: Session, p: StaffMember, anio: int) -> list[dict]:
+    from ..models import Absence
+    hoy = date.today()
+    cond = [Absence.staff_id == p.id] + ([Absence.user_id == p.user_id] if p.user_id else [])
+    out = []
+    for x in db.scalars(select(Absence).where(or_(*cond), Absence.tipo == "vacaciones",
+                                              Absence.estado.in_(("pendiente", "visto_bueno", "aprobada")),
+                                              Absence.desde <= date(anio, 12, 31), Absence.hasta >= date(anio, 1, 1))
+                        .order_by(Absence.desde)):
+        estado = ("por aprobar" if x.estado != "aprobada" else "disfrutada" if x.hasta <= hoy
+                  else "en curso" if x.desde <= hoy else "solicitada")
+        autor = db.get(User, x.creado_por) if x.creado_por else None
+        out.append({"id": x.id, "desde": x.desde.isoformat(), "hasta": x.hasta.isoformat(), "estado": estado,
+                    "dias": empleados._computa(x.desde, x.hasta, empleados.saldo(db, p, anio)["tipo"]),
+                    "registrada_por": autor.nombre if autor and autor.id != p.user_id else None, "nota": x.motivo})
+    return out
+
+
+@router.get("/{pid}/vacaciones")
+def vacations(pid: int, anio: int | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    p = _gestionada(db, scope, pid)
+    anio = anio or date.today().year
+    return {"saldo": empleados.saldo(db, p, anio), "periodos": _periodos(db, p, anio),
+            "registrar": empleados.director_tecnico(scope) and empleados.es_propio(p)}
+
+
+@router.post("/{pid}/vacaciones", status_code=201)
+def register_vacations(pid: int, data: VacacionesIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """El Director Técnico registra en la ficha las vacaciones ya disfrutadas y las ya acordadas (quedan autorizadas),
+    para que cuadre el saldo pendiente. Se envía la nueva revisión del calendario a todos."""
+    from .. import informe_vacaciones
+    from ..models import Absence
+    if not empleados.director_tecnico(scope):
+        raise HTTPException(403, "Las vacaciones de la ficha las registra el Director Técnico")
+    p = get_or_404(db, StaffMember, pid)
+    if not empleados.es_propio(p):
+        bad_request("Solo se registran vacaciones del personal propio")
+    u = db.get(User, p.user_id) if p.user_id else None
+    aid = p.asset_id or next((x.asset_id for x in (u.assignments if u else []) if x.asset_id), None) or \
+        db.scalar(select(Asset.id).where(Asset.activo).order_by(Asset.id).limit(1))
+    a = get_or_404(db, Asset, aid)
+    colectivo = ausencias.colectivo_usuario(db, u, a) if u else ausencias.colectivo_staff(p)
+    nuevas, cambios, tramos = [], [], []
+    for per in data.periodos:
+        if per.hasta < per.desde:
+            bad_request("La fecha final es anterior a la inicial")
+        cond = [Absence.staff_id == p.id] + ([Absence.user_id == p.user_id] if p.user_id else [])
+        choque = db.scalar(select(Absence).where(or_(*cond), Absence.estado.in_(("pendiente", "visto_bueno", "aprobada")),
+                                                 Absence.desde <= per.hasta, Absence.hasta >= per.desde).limit(1))
+        if choque or any(n.desde <= per.hasta and n.hasta >= per.desde for n in nuevas):
+            bad_request(f"El periodo del {per.desde:%d/%m/%Y} al {per.hasta:%d/%m/%Y} se solapa con otro ya registrado")
+        x = Absence(asset_id=a.id, user_id=p.user_id, staff_id=p.id, persona=p.nombre, colectivo=colectivo,
+                    tipo="vacaciones", desde=per.desde, hasta=per.hasta, estado="aprobada", creado_por=scope.user.id,
+                    resuelto_por=scope.user.id, resuelto_en=datetime.now(),
+                    motivo=(data.nota or "").strip() or "Registrada por la Dirección Técnica")
+        db.add(x)
+        nuevas.append(x)
+        que = "disfrutadas" if per.hasta < date.today() else "acordadas"
+        cambios.append(f"{p.nombre}: registradas las vacaciones {que} del {per.desde:%d/%m/%Y} al {per.hasta:%d/%m/%Y}.")
+        tramos.append((p.id, per.desde, per.hasta))
+    db.flush()
+    audit(db, scope.user, "registrar_vacaciones", "personal", p.id,
+          {"periodos": [(n.desde.isoformat(), n.hasta.isoformat()) for n in nuevas]})
+    db.commit()
+    for anio in sorted({n.desde.year for n in nuevas}):
+        informe_vacaciones.notificar(anio, [c for c, n in zip(cambios, nuevas) if n.desde.year == anio],
+                                     [t for t, n in zip(tramos, nuevas) if n.desde.year == anio], scope.user.id)
+    return {"saldo": empleados.saldo(db, p), "periodos": _periodos(db, p, date.today().year)}
 
 
 @router.get("/{pid}/documentos")

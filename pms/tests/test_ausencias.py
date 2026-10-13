@@ -54,7 +54,7 @@ def test_ausencias_flujo_por_colectivo(client, admin, ids):
         "asset_id": bab, "tipo": "vacaciones", "desde": _f(0), "hasta": _f(13)}).json()
     assert v["colectivo"] == "mantenimiento" and v["estado"] == "pendiente"
     assert (v["dias_naturales"], v["dias_laborables"]) == (14, 10)
-    para = {m["para"] for m in avisos.BANDEJA}
+    para = {m["para"] for m in avisos.BANDEJA if not m["asunto"].startswith("Calendario de vacaciones")}
     assert {"r1.aus@inversiete.com", "r2.aus@inversiete.com", "dt.aus@inversiete.com"} <= para
     assert "tec.aus@inversiete.com" not in para
     assert client.post(f"/api/ausencias/{v['id']}/aprobar", headers=dir_).status_code == 403
@@ -152,7 +152,7 @@ def test_direccion_aprueba_cualquiera_y_presidencia_no(client, admin, ids):
     x = client.post("/api/ausencias", headers=of, json={
         "asset_id": bab, "tipo": "permiso", "desde": _f(50), "hasta": _f(50), "motivo": "Médico"}).json()
     assert x["colectivo"] == "direccion"
-    para = {m["para"] for m in avisos.BANDEJA}
+    para = {m["para"] for m in avisos.BANDEJA if not m["asunto"].startswith("Calendario de vacaciones")}
     assert {"dg.aus@inversiete.com", "dt2.aus@inversiete.com"} <= para and "pres.aus@inversiete.com" not in para
     # aparece en el panel de los dos directores, no en el de la presidencia
     assert any(a["id"] == x["id"] for a in client.get("/api/panel", headers=d1).json()["ausencias_pendientes"])

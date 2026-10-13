@@ -3272,11 +3272,12 @@ V.personal = async (el) => {
     { k: "nombre", t: "Nombre", f: (v, p) => `${esc(v)}${p.activo ? "" : ' <span class="badge">baja</span>'}${p.puesto ? `<div class="muted peq">${esc(p.puesto)}</div>` : ""}<div class="muted peq">${p.propio ? `Personal propio${p.usuario ? ` · usuario ${esc(p.usuario)}` : ""}` : `Subcontrata · ${esc(p.empresa || "")}`}</div>` },
     { k: "activo_nombre", t: "Activo" },
     { k: "telefono", t: "Contacto", f: (v, p) => [v, p.email].filter(Boolean).map(esc).join("<br>") + (p.avisar_urgentes ? '<div class="muted peq">OT urgentes al momento</div>' : "") },
-    { k: "saldo", t: "Vacaciones", f: (v) => (v ? `<b>${v.restantes}</b> de ${v.corresponden}<div class="muted peq">${v.tipo}${v.pendientes ? ` · ${v.pendientes} por aprobar` : ""}</div>` : "") },
+    { k: "saldo", t: "Vacaciones", f: (v) => (v ? `<b>${v.pendientes_solicitar}</b> por solicitar<div class="muted peq">de ${v.corresponden} ${v.tipo} · ${v.disfrutadas} disfrutadas · ${v.solicitadas} solicitadas${v.por_aprobar ? ` (${v.por_aprobar} por aprobar)` : ""}</div>` : "") },
     { k: "fichado", t: "Jornada", f: (v, p) => (p.gestiona && p.propio ? (v ? '<span class="badge b-vigente">dentro</span>' : '<span class="muted">fuera</span>') : "") },
     { k: "documentos_vencen", t: "Docs.", f: (v) => (v ? `<span class="badge b-urgente" title="Documentos vencidos">${v} ⚠</span>` : "") },
   ], await get("/api/personal", { asset_id: S.asset, area: $("#ar", el).value }), (p) => [
     p.editable && ["Editar", async () => { await frescos(); sugerirProveedores(form(p.nombre, camposDe(p), p, guardar(p)), "empresa"); }],
+    p.gestiona && p.propio && ["Vacaciones", () => vacacionesFicha(p, load)],
     p.gestiona && ["Docs.", () => documentosEmpleado(p, load)],
     p.gestiona && p.propio && ["Enlace", () => enlaceFichaje(p, load)],
     p.gestiona && p.propio && ["Jornada", () => { S.jornadaStaff = p.id; go("jornada"); }],
@@ -3288,6 +3289,36 @@ V.personal = async (el) => {
   if ($("#chk", el)) $("#chk", el).onclick = () => comprobarPersonal(load);
   load();
 };
+
+// Vacaciones de la ficha: saldo (disfrutadas, solicitadas, pendientes de solicitar) y periodos. El Director Técnico
+// registra las ya disfrutadas y las ya acordadas para cuadrar el saldo; cada cambio envía el calendario a todos.
+async function vacacionesFicha(p, reload) {
+  const r = await get(`/api/personal/${p.id}/vacaciones`), s = r.saldo;
+  const filas = r.periodos.map((x) => `<tr><td>${fdate(x.desde)}${x.hasta !== x.desde ? ` – ${fdate(x.hasta)}` : ""}</td><td class="num">${x.dias}</td>
+    <td><span class="badge ${x.estado === "disfrutada" ? "b-vigente" : x.estado === "por aprobar" ? "b-pendiente" : "b-borrador"}">${esc(x.estado)}</span></td>
+    <td class="peq muted">${x.registrada_por ? `registrada por ${esc(x.registrada_por)}` : "solicitada por la persona"}</td>
+    <td>${r.registrar ? `<button type="button" class="btn sm danger" data-anula="${x.id}">Anular</button>` : ""}</td></tr>`).join("");
+  const f = form(`Vacaciones ${s.anio} · ${p.nombre}`, [
+    { html: `<div class="capex-kpis" style="margin-bottom:10px"><div><small>Corresponden (${esc(s.tipo)})</small><b>${s.corresponden}</b></div><div><small>Disfrutadas</small><b>${s.disfrutadas}</b></div>
+      <div><small>Solicitadas (pdte. disfrutar)</small><b>${s.solicitadas}</b></div><div class="${s.pendientes_solicitar > 0 ? "mal" : ""}"><small>Pendientes de solicitar</small><b>${s.pendientes_solicitar}</b></div></div>
+      ${filas ? `<div class="table-wrap"><table><thead><tr><th>Periodo</th><th class="num">Días</th><th>Estado</th><th></th><th></th></tr></thead><tbody>${filas}</tbody></table></div>` : '<p class="muted">Sin periodos registrados este año.</p>'}
+      ${r.registrar ? `<h4>Registrar vacaciones (Director Técnico)</h4><p class="muted peq">Para cuadrar el saldo: periodos ya disfrutados o ya acordados con la persona. Quedan autorizados y se envía el calendario actualizado a todos los usuarios y colaboradores.</p><div id="vfPer"></div><button type="button" class="btn sm" id="vfMas">+ Otro periodo</button>` : ""}` },
+    ...(r.registrar ? [{ k: "nota", t: "Nota (opcional)", wide: true }] : []),
+  ], {}, async (d, fm) => {
+    if (!r.registrar) return;
+    const periodos = [...fm.querySelectorAll(".vf-per")].map((x) => ({ desde: x.querySelector("[data-d]").value, hasta: x.querySelector("[data-h]").value })).filter((x) => x.desde && x.hasta);
+    if (!periodos.length) throw new Error("Indique al menos un periodo (desde y hasta)");
+    await post(`/api/personal/${p.id}/vacaciones`, { periodos, nota: d.nota });
+    toast("Vacaciones registradas · calendario enviado a todos"); reload();
+  }, r.registrar ? "Registrar y enviar calendario" : "Cerrar");
+  $("#modal").classList.add("ancho");
+  const otro = () => $("#vfPer", f).insertAdjacentHTML("beforeend", '<div class="vf-per toolbar"><label>Desde <input type="date" data-d></label><label>Hasta <input type="date" data-h></label></div>');
+  if (r.registrar) { otro(); $("#vfMas", f).onclick = otro; }
+  f.querySelectorAll("[data-anula]").forEach((b) => (b.onclick = async () => {
+    const m = prompt("Motivo de la anulación (se comunica a la persona y a Recepción):"); if (!m) return;
+    await run(() => post(`/api/ausencias/${b.dataset.anula}/anular`, { nota: m }), "Periodo anulado · calendario enviado"); $("#modal").close(); reload(); vacacionesFicha(p, reload);
+  }));
+}
 
 // Comprobación de errores (Recepción 1 de cada activo, fichas, usuarios repetidos, solicitudes mal clasificadas),
 // corrección automática y borrado de todo el personal para empezar de nuevo
@@ -4486,7 +4517,7 @@ V.ausencias = async (el) => {
   const cat = await get("/api/ausencias/catalogos");
   el.innerHTML = `<div class="toolbar"><label>Mes<input type="month" id="m" value="${today().slice(0, 7)}"></label>
     <select id="e"><option value="vigentes">Pendientes y aprobadas</option><option value="">Todas</option><option value="pendiente">Pendientes</option><option value="aprobada">Autorizadas</option><option value="denegada">Desestimadas</option><option value="anulada">Anuladas</option></select>
-    <span class="spacer"></span><button class="btn" id="res">Resumen del año</button><button class="btn" id="xl">Excel</button><button class="btn primary" id="new">Solicitar ausencia</button></div>
+    <span class="spacer"></span><button class="btn" id="cal">Calendario de vacaciones (PDF)</button><button class="btn" id="res">Resumen del año</button><button class="btn" id="xl">Excel</button><button class="btn primary" id="new">Solicitar ausencia</button></div>
     <div id="pend"></div><div id="cuad" class="no-encajar"></div><div id="t"></div>`;
   const leyenda = Object.entries(cat.tipos).map(([k, v]) => `<span class="aus-ley ${COLOR_AUS[k]}">${esc(v.split(" (")[0])}</span>`).join("") + '<span class="aus-ley aus-pend">Pendiente</span>';
   const load = async () => {
@@ -4541,6 +4572,7 @@ V.ausencias = async (el) => {
     }, "Enviar solicitud");
     f.elements.desde.onchange = () => { if (f.elements.hasta.value < f.elements.desde.value) f.elements.hasta.value = f.elements.desde.value; };
   };
+  $("#cal", el).onclick = () => abrirFichero(`/api/ausencias/calendario-vacaciones.pdf?anio=${$("#m", el).value.slice(0, 4)}`);
   $("#res", el).onclick = async () => {
     const anio = Number($("#m", el).value.slice(0, 4));
     const r = await run(() => get("/api/ausencias/resumen", { asset_id: aid, anio }));

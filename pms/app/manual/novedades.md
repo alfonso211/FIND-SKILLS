@@ -7,6 +7,13 @@
   - **Recepción 1 y Recepción 2** solo dan de alta personal de **subcontratas**, indicando la empresa.
   - Cada usuario del PMS solo puede estar en **una** ficha.
 - **Vacaciones y ausencias**: cada persona las solicita **con su usuario y sobre su propia ficha**. Ya no se registran ausencias de otras personas.
+- **Saldo de vacaciones**: en cada ficha se ven los días **disfrutados**, los **solicitados** pendientes de disfrutar y los **pendientes de solicitar**. Por defecto son 30 días naturales, o los que indique la ficha.
+- **Vacaciones en la ficha** (Director Técnico): registra los periodos ya disfrutados y los ya acordados para cuadrar el saldo.
+- **Calendario de vacaciones**:
+  - Se genera en cada cambio (solicitud, autorización, desestimación, anulación o registro) y se envía por correo a **todos los usuarios, colaboradores incluidos**.
+  - Tiene dos hojas con el año completo (disfrutadas, solicitadas, festivos de Madrid, hoy y el tramo modificado) y una de saldos, solapes y días pendientes.
+  - También se descarga en *Vacaciones y ausencias → Calendario de vacaciones (PDF)*.
+- **Recordatorio semanal**: cada lunes, a quien le quedan días sin solicitar, para que los pida antes del 31 de diciembre.
 - **Comprobar personal** (Director Técnico):
   - Lista los errores: activos sin Recepción 1, nombres que no cuadran, usuarios en varias fichas y solicitudes que van a quien no debe aprobarlas, que se corrigen con un clic.
   - Genera las fichas desde los usuarios.
