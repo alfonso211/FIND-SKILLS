@@ -681,6 +681,10 @@ def _bucle() -> None:
                         log.info("Resumen diario: %s", resumen_diario(db, ahora.date()))
             with SessionLocal() as db:
                 recordatorios_agenda(db, ahora.replace(tzinfo=None))
+            if (ahora.hour, ahora.minute) >= (hh, mm):
+                from .informe_vacaciones import recordatorio_semanal
+                with SessionLocal() as db:
+                    recordatorio_semanal(db, ahora.date())  # los lunes; una vez por semana y persona
         except Exception:  # noqa: BLE001
             log.exception("Error en el programador de avisos")
         time.sleep(120)  # cada 2 minutos: los recordatorios de la agenda llegan a su hora

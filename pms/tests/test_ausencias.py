@@ -26,6 +26,15 @@ def _f(n):
     return (LUNES + timedelta(days=n)).isoformat()
 
 
+def _ficha(client, admin, h, asset_id, area="otros"):
+    """Ficha de empleado (la da de alta el Director Técnico / administrador) enlazada al usuario."""
+    yo = client.get("/api/auth/me", headers=h).json()
+    r = client.post("/api/personal", headers=admin, json={"asset_id": asset_id, "area": area, "nombre": yo["nombre"],
+                                                          "user_id": yo["id"], "email": yo["email"]})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
 def test_ausencias_flujo_por_colectivo(client, admin, ids):
     bab = ids["assets"]["BAB35"]["id"]
     tec = _user(client, admin, ids, "tec.aus@inversiete.com", "Técnico Ausencias", "Técnico Mantenimiento")
@@ -33,6 +42,11 @@ def test_ausencias_flujo_por_colectivo(client, admin, ids):
     r2 = _user(client, admin, ids, "r2.aus@inversiete.com", "Recepción 2 · Babilonia", "Recepción")
     dt = _user(client, admin, ids, "dt.aus@inversiete.com", "Director Técnico Pruebas", "Dirección Técnica")
     dir_ = _user(client, admin, ids, "dir.aus@inversiete.com", "Dirección Pruebas", "Dirección Sociedad")
+    # sin ficha de empleado no se pueden pedir ausencias
+    r = client.post("/api/ausencias", headers=tec, json={"asset_id": bab, "tipo": "vacaciones", "desde": _f(0), "hasta": _f(1)})
+    assert r.status_code == 400 and "ficha" in r.json()["detail"]
+    for h, area in ((tec, "mantenimiento"), (r1, "recepcion"), (r2, "recepcion")):
+        _ficha(client, admin, h, bab, area)
     avisos.BANDEJA.clear()
 
     # mantenimiento: lo solicita el técnico, se avisa a todos y solo lo autoriza el director técnico
@@ -40,7 +54,7 @@ def test_ausencias_flujo_por_colectivo(client, admin, ids):
         "asset_id": bab, "tipo": "vacaciones", "desde": _f(0), "hasta": _f(13)}).json()
     assert v["colectivo"] == "mantenimiento" and v["estado"] == "pendiente"
     assert (v["dias_naturales"], v["dias_laborables"]) == (14, 10)
-    para = {m["para"] for m in avisos.BANDEJA}
+    para = {m["para"] for m in avisos.BANDEJA if not m["asunto"].startswith("Calendario de vacaciones")}
     assert {"r1.aus@inversiete.com", "r2.aus@inversiete.com", "dt.aus@inversiete.com"} <= para
     assert "tec.aus@inversiete.com" not in para
     assert client.post(f"/api/ausencias/{v['id']}/aprobar", headers=dir_).status_code == 403
@@ -75,21 +89,20 @@ def test_ausencias_flujo_por_colectivo(client, admin, ids):
     assert client.post(f"/api/ausencias/{y['id']}/denegar", headers=dir_,
                        json={"nota": "Coincide con Recepción 2"}).json()["estado"] == "denegada"
 
-    # personal de subcontrata (conserjería) que gestiona Recepción 1; Recepción 2 no puede
+    # fichas: Recepción (1 y 2) solo da de alta personal de subcontratas; el propio, el Director Técnico
     p = {"asset_id": bab, "area": "conserjeria", "nombre": "Conserje Pruebas", "empresa": "Servicios Pruebas SL"}
-    assert client.post("/api/personal", headers=r2, json=p).status_code == 403
-    staff = client.post("/api/personal", headers=r1, json=p).json()
-    assert staff["area_nombre"] == "Conserjería"
-    assert client.post("/api/ausencias", headers=r2, json={
+    assert client.post("/api/personal", headers=r2, json={**p, "empresa": None}).status_code == 403
+    staff = client.post("/api/personal", headers=r2, json=p).json()
+    assert staff["area_nombre"] == "Conserjería" and not staff["propio"]
+    # nadie registra ausencias de otros: cada uno las suyas con su usuario
+    assert client.post("/api/ausencias", headers=r1, json={
         "asset_id": bab, "staff_id": staff["id"], "tipo": "falta", "desde": _f(2), "hasta": _f(2)}).status_code == 403
-    personas = client.get("/api/ausencias/personas", headers=r1, params={"asset_id": bab}).json()
-    assert personas["gestiona"] and any(q["clave"] == "s" and q["id"] == staff["id"] for q in personas["personas"])
-    assert [q["id"] for q in client.get("/api/ausencias/personas", headers=r2,
-                                        params={"asset_id": bab}).json()["personas"]] != []
-    b = client.post("/api/ausencias", headers=r1, json={
-        "asset_id": bab, "staff_id": staff["id"], "tipo": "baja_medica", "desde": _f(1), "hasta": _f(9),
-        "motivo": "Parte de baja entregado", "aprobar": True}).json()
-    assert b["colectivo"] == "conserjeria" and b["estado"] == "aprobada" and b["resuelto_nombre"].startswith("Recepción 1")
+    yo_r2 = client.get("/api/auth/me", headers=r2).json()["id"]
+    assert client.post("/api/ausencias", headers=r1, json={
+        "asset_id": bab, "user_id": yo_r2, "tipo": "falta", "desde": _f(2), "hasta": _f(2)}).status_code == 403
+    b = client.post("/api/ausencias", headers=r2, json={
+        "asset_id": bab, "tipo": "baja_medica", "desde": _f(50), "hasta": _f(55), "motivo": "Parte de baja entregado"}).json()
+    assert b["colectivo"] == "recepcion2" and b["estado"] == "pendiente"
 
     # la baja médica es un dato de salud: el técnico solo ve «Ausencia»
     lista = {z["id"]: z for z in client.get("/api/ausencias", headers=tec, params={"asset_id": bab}).json()}
@@ -113,7 +126,7 @@ def test_ausencias_flujo_por_colectivo(client, admin, ids):
     xl = load_workbook(io.BytesIO(client.get("/api/ausencias/excel", headers=dir_,
                                              params={"asset_id": bab, "anio": anio}).content))
     assert xl.sheetnames == ["Ausencias", "Resumen aprobadas"]
-    assert any(c.value == "Conserje Pruebas" for fila in xl["Ausencias"].iter_rows() for c in fila)
+    assert any(c.value == "Recepción 2 · Babilonia" for fila in xl["Ausencias"].iter_rows() for c in fila)
 
 
 def test_dias():
@@ -134,11 +147,12 @@ def test_direccion_aprueba_cualquiera_y_presidencia_no(client, admin, ids):
     pres = login(client, "pres.aus@inversiete.com", "Provisional1")
     client.post("/api/auth/password", headers=pres, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"})
     of = _user(client, admin, ids, "oficina.aus@inversiete.com", "Oficina Pruebas", "Consulta")
+    _ficha(client, admin, of, bab)
     avisos.BANDEJA.clear()
     x = client.post("/api/ausencias", headers=of, json={
         "asset_id": bab, "tipo": "permiso", "desde": _f(50), "hasta": _f(50), "motivo": "Médico"}).json()
     assert x["colectivo"] == "direccion"
-    para = {m["para"] for m in avisos.BANDEJA}
+    para = {m["para"] for m in avisos.BANDEJA if not m["asunto"].startswith("Calendario de vacaciones")}
     assert {"dg.aus@inversiete.com", "dt2.aus@inversiete.com"} <= para and "pres.aus@inversiete.com" not in para
     # aparece en el panel de los dos directores, no en el de la presidencia
     assert any(a["id"] == x["id"] for a in client.get("/api/panel", headers=d1).json()["ausencias_pendientes"])
@@ -158,9 +172,14 @@ def test_resolver_y_comunicar(client, admin, ids):
     r1 = _user(client, admin, ids, "r1.com@inversiete.com", "Recepción 1 · Zz comunica", "Recepción", "SAE")
     r2 = _user(client, admin, ids, "r2.com@inversiete.com", "Recepción 2 · Comunica", "Recepción", "SAE")
     dir_ = _user(client, admin, ids, "dir.com@inversiete.com", "Dirección Comunica", "Dirección Sociedad", "SAE")
-    antes = next(a for a in client.get("/api/activos", headers=admin).json() if a["id"] == sae)["informe_responsable_id"]
+    antes = next(a for a in client.get("/api/activos", headers=admin).json() if a["id"] == sae)["recepcion1_id"]
     yo = client.get("/api/auth/me", headers=r1).json()["id"]
-    client.put(f"/api/activos/{sae}", headers=admin, json={"informe_responsable_id": yo})  # Recepción 1 del activo
+    # Recepción 1 del activo: asignada expresamente (no se deduce del nombre)
+    assert client.put(f"/api/activos/{sae}", headers=admin, json={"recepcion1_id": yo}).status_code == 200
+    assert client.put(f"/api/activos/{sae}", headers=admin, json={
+        "recepcion1_id": client.get("/api/auth/me", headers=dir_).json()["id"]}).status_code == 400  # no es Recepción
+    for h in (r1, r2):
+        _ficha(client, admin, h, sae, "recepcion")
 
     # autorizar (dirección): correo a la persona y al resto de Recepción del activo
     x = client.post("/api/ausencias", headers=r1, json={
@@ -184,15 +203,13 @@ def test_resolver_y_comunicar(client, admin, ids):
     m = next(m for m in avisos.BANDEJA if m["para"] == "r2.com@inversiete.com")
     assert "DESESTIMADA" in m["texto"] and "Ocupación completa" in m["texto"]
 
-    # anular la de una persona sin correo (personal por administración): motivo obligatorio y WhatsApp
-    p = client.post("/api/personal", headers=admin, json={
-        "asset_id": sae, "area": "conserjeria", "nombre": "Conserje Comunica", "telefono": "611000111"}).json()
-    z = client.post("/api/ausencias", headers=admin, json={
-        "asset_id": sae, "staff_id": p["id"], "tipo": "falta", "desde": _f(3), "hasta": _f(3)}).json()
+    # anular la solicitud de otro (con un error o que no procede): el motivo es obligatorio y le llega
+    z = client.post("/api/ausencias", headers=r2, json={
+        "asset_id": sae, "tipo": "falta", "desde": _f(3), "hasta": _f(3)}).json()
     assert client.post(f"/api/ausencias/{z['id']}/anular", headers=dir_, json={}).status_code == 400
     avisos.BANDEJA.clear()
     r = client.post(f"/api/ausencias/{z['id']}/anular", headers=dir_, json={"nota": "Fecha equivocada"}).json()
-    assert r["estado"] == "anulada" and not r["comunicado"]["trabajador_correo"]
-    assert r["comunicado"]["whatsapp"].startswith("https://wa.me/34611000111?text=")
+    assert r["estado"] == "anulada" and r["comunicado"]["trabajador_correo"]
+    assert any(m["para"] == "r2.com@inversiete.com" and "Fecha equivocada" in m["texto"] for m in avisos.BANDEJA)
     assert any(m["para"] == "r1.com@inversiete.com" and "Fecha equivocada" in m["texto"] for m in avisos.BANDEJA)
-    client.put(f"/api/activos/{sae}", headers=admin, json={"informe_responsable_id": antes})
+    client.put(f"/api/activos/{sae}", headers=admin, json={"recepcion1_id": antes})

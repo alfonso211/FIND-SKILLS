@@ -31,10 +31,12 @@
 - Cuando se actualiza el programa, la pantalla **se recarga sola** y le mostramos las **novedades**.
 
 ## Vacaciones y ausencias
-- **Personal → Vacaciones y ausencias**: pulse **Solicitar ausencia**, elija el tipo (vacaciones, día libre, baja médica, permiso, falta u otro) y las fechas. Debajo de la persona se ve quién la aprueba.
+- **Personal → Vacaciones y ausencias**: pulse **Solicitar ausencia**, elija el tipo (vacaciones, día libre, baja médica, permiso, falta u otro) y las fechas. La solicitud es siempre suya y queda en su ficha de empleado. Si su usuario no está enlazado a una ficha, pídalo al Director Técnico.
 - El **cuadrante del mes** muestra quién falta cada día (rayado = pendiente). Las bajas médicas solo las ven con detalle la persona, Recepción 1 y dirección; los demás ven «Ausencia».
 - Mientras está pendiente, la puede **anular** usted mismo.
 - Cuando se **autoriza**, se **desestima** o se **anula**, le llega un correo con el resultado y, si no se autoriza, el motivo.
+- Con cada cambio en las vacaciones de cualquiera, todos reciben por correo el **calendario de vacaciones** actualizado. También está en el botón **Calendario de vacaciones (PDF)**.
+- Si le quedan días sin solicitar, cada lunes le llegará un recordatorio para que los pida antes del 31 de diciembre.
 
 ## Mi jornada (fichar)
 - Si es personal propio, fiche al **entrar** y al **salir** en **Personal → Mi jornada (fichar)**: un botón grande. Se guarda la hora del servidor y, si lo permite, la ubicación.

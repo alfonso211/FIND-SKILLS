@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from .. import avisos, documentos
 from .. import informe_presidencia as ip
 from ..database import get_db
-from ..models import Asset, Assignment, PresidencyReport, ReceivedDocument, Role, User
+from ..models import Asset, PresidencyReport, ReceivedDocument, User
 from ..security import Scope, audit, get_scope
 from ..seed import PRESIDENCIA
 from ..utils import bad_request, get_or_404
@@ -27,9 +27,8 @@ def responsable(db: Session, a: Asset) -> User | None:
         u = db.get(User, a.informe_responsable_id)
         if u and u.activo:
             return u
-    candidatos = db.scalars(select(User).join(Assignment, Assignment.user_id == User.id).join(Role).where(
-        User.activo, Assignment.asset_id == a.id, Role.nombre == "Recepción").order_by(User.nombre))
-    return next((u for u in candidatos if re.match(r"recepci[oó]n\s*1\b", u.nombre or "", re.I)), None)
+    from ..ausencias import recepcion_1
+    return recepcion_1(db, a)
 
 
 def destinatarios(db: Session, a: Asset) -> list[str]:

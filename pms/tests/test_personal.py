@@ -39,16 +39,24 @@ def test_fichas_del_personal(client, admin, ids):
     assert p["id"] not in [x["id"] for x in client.get("/api/personal?solo_activos=true", headers=admin).json()]
     assert client.delete(f"/api/personal/{p['id']}", headers=admin).json()["ok"]
 
-    # recepción ve el personal (para enviar trabajo) pero no da de alta técnicos de mantenimiento; la gobernanta
-    # da de alta al personal de limpieza de su activo, pero no para todos los activos
+    # recepción ve el personal (para enviar trabajo) y solo da de alta personal de subcontratas; el personal propio
+    # de las sociedades lo da de alta el Director Técnico (tampoco la gobernanta)
     rec = _usuario(client, admin, ids, "recepcion.personal@inversiete.com", "Recepción", "SAE")
     assert client.get(f"/api/personal?asset_id={sae}", headers=rec).status_code == 200
-    assert client.post("/api/personal", headers=rec, json={"asset_id": sae, "area": "mantenimiento", "nombre": "No",
-                                                           "telefono": "600111222"}).status_code == 403
+    r = client.post("/api/personal", headers=rec, json={"asset_id": sae, "area": "mantenimiento", "nombre": "No",
+                                                        "telefono": "600111222"})
+    assert r.status_code == 403 and "Director Técnico" in r.json()["detail"]
+    r = client.post("/api/personal", headers=rec, json={"asset_id": sae, "area": "mantenimiento", "nombre": "Sí",
+                                                        "empresa": "Clima Prueba SL", "telefono": "600111222"})
+    assert r.status_code == 201 and not r.json()["propio"] and r.json()["editable"]
     gob = _usuario(client, admin, ids, "gobernanta.personal@inversiete.com", "Gobernanta / Limpieza", "SAE")
     assert client.post("/api/personal", headers=gob, json={"asset_id": sae, "area": "limpieza", "nombre": "Camarera",
+                                                           "telefono": "600111333"}).status_code == 403
+    assert client.post("/api/personal", headers=gob, json={"asset_id": sae, "area": "limpieza", "nombre": "Camarera",
+                                                           "empresa": "Limpiezas Prueba SL",
                                                            "telefono": "600111333"}).status_code == 201
     assert client.post("/api/personal", headers=gob, json={"area": "limpieza", "nombre": "Camarera grupo",
+                                                           "empresa": "Limpiezas Prueba SL",
                                                            "telefono": "600111444"}).status_code == 403
 
 

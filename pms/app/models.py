@@ -77,6 +77,8 @@ class Asset(Base):
     pais: Mapped[str | None] = mapped_column(String(60))
     # informe mensual a la presidencia: quién lo revisa y envía (por defecto, «Recepción 1» del activo) y a dónde
     informe_responsable_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    # Recepción 1 del activo (aprueba ausencias de su personal, valida partes…): asignada expresamente
+    recepcion1_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     informe_emails: Mapped[str | None] = mapped_column(String(500))
     informe_whatsapp: Mapped[str | None] = mapped_column(String(30))
     ref_catastral: Mapped[str | None] = mapped_column(String(30))
@@ -1322,3 +1324,14 @@ class CapexApproval(Base):
     ip: Mapped[str | None] = mapped_column(String(60))
     user_agent: Mapped[str | None] = mapped_column(String(300))
     creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class VacationRevision(Base):
+    """Revisión del calendario de vacaciones: cada cambio en una solicitud genera el informe y se envía a todos."""
+    __tablename__ = "vacaciones_revisiones"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    anio: Mapped[int] = mapped_column(Integer, index=True)
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    cambios: Mapped[list] = mapped_column(JSON, default=list)
+    enviados: Mapped[int] = mapped_column(Integer, default=0)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))

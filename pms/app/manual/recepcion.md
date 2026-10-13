@@ -120,6 +120,10 @@
 - Las de Recepción 1 las aprueba dirección; las de mantenimiento, el director técnico.
 - **Resumen del año** (días aprobados por persona y tipo) y **Excel**.
 
+## Personal de subcontratas
+- Recepción (1 y 2) da de alta en **Personal → Fichas del personal** solo al personal de **subcontratas**: indique siempre la empresa. El personal propio de las sociedades lo da de alta el Director Técnico.
+- Sus vacaciones las pide cada persona con su usuario del PMS. Recepción ya no registra ausencias de otras personas.
+
 ## Ficha del empleado y registro de jornada (Recepción 1)
 - **Personal → Fichas del personal → Editar**: complete la **ficha del empleado** (DNI, puesto, contrato, jornada, alta, días de vacaciones). En **Vacaciones** se ve lo que le queda; si una solicitud lo supera, sale un aviso en rojo.
 - **Docs.**: suba contrato, reconocimiento médico, formación… con su fecha de vencimiento.

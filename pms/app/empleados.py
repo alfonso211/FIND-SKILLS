@@ -16,12 +16,24 @@ from sqlalchemy.orm import Session
 from . import ausencias as au
 from .models import Absence, Asset, StaffMember, TimeEntry
 
-VACACIONES_DEFECTO = 22  # días laborables al año (los convenios de hostelería suelen fijar 30 naturales)
+VACACIONES_DEFECTO = (30, "naturales")  # por defecto 30 días naturales (fines de semana y festivos incluidos)
 VIGENTES = ("pendiente", "visto_bueno", "aprobada")
 
 
 def es_propio(p: StaffMember) -> bool:
-    return p.supplier_id is None and p.tipo_contrato != "autonomo"
+    """Personal de las sociedades del grupo (no de una subcontrata ni autónomo)."""
+    return p.supplier_id is None and not (p.empresa or "").strip() and p.tipo_contrato != "autonomo"
+
+
+def director_tecnico(scope) -> bool:
+    """Da de alta y edita las fichas del personal propio de las sociedades (y el administrador del PMS)."""
+    return scope.user.is_superadmin or scope.has_any("personal.autorizar_mto")
+
+
+def es_recepcion(db: Session, scope, asset_id: int | None) -> bool:
+    """Recepción (1 o 2) del activo: solo da de alta personal de subcontratas."""
+    return asset_id is not None and any(x.asset_id == asset_id and x.role.nombre == "Recepción"
+                                        for x in scope.user.assignments)
 
 
 def puede_gestionar(db: Session, scope, p: StaffMember) -> bool:
@@ -48,30 +60,47 @@ def _ausencias(db: Session, p: StaffMember):
     return select(Absence).where(or_(*cond), Absence.tipo == "vacaciones", Absence.estado.in_(VIGENTES))
 
 
-def saldo(db: Session, p: StaffMember, anio: int | None = None, sin: int | None = None) -> dict:
-    """Vacaciones del año: corresponden, disfrutadas/aprobadas, pendientes de aprobar y restantes.
+def _computa(desde: date, hasta: date, tipo: str) -> int:
+    """Días que consume un periodo: naturales (todos) o laborables (sin fines de semana ni festivos)."""
+    from .calendario import laborable
+    n = (hasta - desde).days + 1
+    return n if tipo == "naturales" else sum(1 for i in range(n) if laborable(desde + timedelta(days=i)))
+
+
+def saldo(db: Session, p: StaffMember, anio: int | None = None, sin: int | None = None, hoy: date | None = None) -> dict:
+    """Vacaciones del año: corresponden, disfrutadas (aprobadas y ya pasadas), solicitadas pendientes de disfrutar
+    (aprobadas futuras y las que esperan aprobación) y pendientes de solicitar.
     `sin`: ausencia que no se cuenta (la que se está valorando)."""
     anio = anio or date.today().year
+    hoy = hoy or date.today()
     ini, fin = date(anio, 1, 1), date(anio, 12, 31)
-    tipo = p.vacaciones_tipo or "laborables"
-    total = p.vacaciones_dias if p.vacaciones_dias is not None else (30 if tipo == "naturales" else VACACIONES_DEFECTO)
+    tipo = p.vacaciones_tipo or VACACIONES_DEFECTO[1]
+    total = p.vacaciones_dias if p.vacaciones_dias is not None else (30 if tipo == "naturales" else 22)
     desde, hasta = max(ini, p.fecha_alta or ini), min(fin, p.fecha_baja or fin)
     if hasta < desde:
         corresponden = 0.0
     else:  # prorrata por los días del año que está de alta, redondeada a medio día
         corresponden = round(total * ((hasta - desde).days + 1) / ((fin - ini).days + 1) * 2) / 2
-    aprobadas = pendientes = 0
+    disfrutadas = solicitadas = por_aprobar = 0
     for x in db.scalars(_ausencias(db, p).where(Absence.desde <= fin, Absence.hasta >= ini)):
         if x.id == sin:
             continue
-        nat, lab = au.dias(max(x.desde, ini), min(x.hasta, fin))
-        n = nat if tipo == "naturales" else lab
-        if x.estado == "aprobada":
-            aprobadas += n
-        else:
-            pendientes += n
-    return {"anio": anio, "tipo": tipo, "corresponden": corresponden, "aprobadas": aprobadas,
-            "pendientes": pendientes, "restantes": corresponden - aprobadas - pendientes}
+        a, b = max(x.desde, ini), min(x.hasta, fin)
+        if x.estado != "aprobada":
+            n = _computa(a, b, tipo)
+            solicitadas += n
+            por_aprobar += n
+            continue
+        if a <= hoy:  # la parte ya transcurrida está disfrutada
+            disfrutadas += _computa(a, min(b, hoy), tipo)
+        if b > hoy:
+            solicitadas += _computa(max(a, hoy + timedelta(days=1)), b, tipo)
+    pendientes_solicitar = corresponden - disfrutadas - solicitadas
+    return {"anio": anio, "tipo": tipo, "corresponden": corresponden, "disfrutadas": disfrutadas,
+            "solicitadas": solicitadas, "por_aprobar": por_aprobar, "pendientes_solicitar": pendientes_solicitar,
+            # compatibilidad
+            "aprobadas": disfrutadas + solicitadas - por_aprobar, "pendientes": por_aprobar,
+            "restantes": pendientes_solicitar}
 
 
 def aviso_saldo(db: Session, x: Absence) -> str | None:
@@ -82,8 +111,7 @@ def aviso_saldo(db: Session, x: Absence) -> str | None:
     if p is None:
         return None
     s = saldo(db, p, x.desde.year, sin=x.id)
-    nat, lab = au.dias(x.desde, min(x.hasta, date(x.desde.year, 12, 31)))
-    pide = nat if s["tipo"] == "naturales" else lab
+    pide = _computa(x.desde, min(x.hasta, date(x.desde.year, 12, 31)), s["tipo"])
     if pide > s["restantes"]:
         return (f"Supera el saldo de vacaciones: pide {pide} días {s['tipo']} y le quedan {s['restantes']:g} "
                 f"de {s['corresponden']:g} en {s['anio']}.")

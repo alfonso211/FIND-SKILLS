@@ -76,8 +76,21 @@
 - Si una solicitud de vacaciones **supera el saldo** de la persona, sale el aviso en rojo antes de aprobarla.
 
 ## Gestión del personal: ficha, saldo, documentos y jornada
+- **Reglas**:
+  - El **Director Técnico** da de alta al personal propio de las sociedades y enlaza su usuario del PMS (un usuario, una ficha).
+  - Recepción solo da de alta subcontratas.
+  - **Recepción 1** de cada activo se asigna en *Activos → Editar*.
+- **Vacaciones** (botón en la ficha):
+  - Muestra lo que corresponde, lo disfrutado, lo solicitado y lo pendiente de solicitar.
+  - El Director Técnico registra los periodos ya disfrutados o ya acordados (quedan autorizados) y puede anularlos con motivo.
+  - Cada cambio genera el **calendario de vacaciones** en PDF y lo envía a todos los usuarios y colaboradores.
+- **Recordatorio**: cada lunes se avisa por correo a quien tiene días sin solicitar, con el plazo del 31 de diciembre.
+- **Comprobar personal** (en *Fichas del personal*) tiene cuatro funciones:
+  - Revisa activos sin Recepción 1, nombres que no cuadran, usuarios repetidos y solicitudes mal clasificadas (estas se corrigen con un clic).
+  - **Generar las fichas desde los usuarios** crea las que falten, con el área y el activo según el rol.
+  - **Borrar todo el personal** borra todas las fichas, sus fichajes, documentos y envíos. Solo pueden hacerlo las cuentas autorizadas y hay que escribir «BORRAR PERSONAL». Las ausencias de los usuarios se conservan.
 - **Personal → Fichas del personal → Editar**: ficha del empleado (DNI, puesto, contrato, jornada semanal, alta y baja, días de vacaciones del convenio y su usuario del PMS). Solo la ven Recepción 1 de su activo y la dirección.
-- **Saldo de vacaciones**: los días del convenio (22 laborables por defecto, o los que indique la ficha) prorrateados por la fecha de alta y de baja, menos las aprobadas. Se ve en la columna **Vacaciones**.
+- **Saldo de vacaciones**: los días del convenio (30 naturales por defecto, o los que indique la ficha) prorrateados por la fecha de alta y de baja: disfrutadas, solicitadas y pendientes de solicitar. Se ve en la columna **Vacaciones**.
 - **Docs.**: contrato, nóminas, reconocimiento médico, formación PRL… cifrados y con vencimiento. Los que vencen en 30 días salen en el panel y en el resumen diario de correo.
 - **Registro de jornada** (art. 34.9 ET): el personal propio ficha desde **Mi jornada** (con usuario) o con su **Enlace** personal en el móvil. En **Personal → Registro de jornada**: horas del mes por persona, **Detalle**, **Corregir** (queda el original, quién y el motivo), **Registro manual**, **Informe PDF** para firmar y **Excel** para la asesoría. Se conserva 4 años.
 - **Panel de control**: tarjeta **Personal hoy** con quién falta, quién está dentro, olvidos de fichar la salida y documentos que vencen.

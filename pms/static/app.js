@@ -885,6 +885,8 @@ V.activos = async (el) => {
     { k: "contrato_email", t: "Correo para notificaciones", type: "email" },
     { html: "<h4>Informe mensual a la presidencia</h4><p class='muted'>El primer día laborable de cada mes se avisa a quien lo revisa y envía (si no se indica, «Recepción 1» del activo). Correos: si se deja vacío, a la presidencia.</p>" },
     { k: "informe_responsable_id", t: "Revisa y envía el informe", type: "select", options: usuarios.map((u) => [u.id, u.nombre]) },
+    ...(isNew ? [] : [{ html: "<h4>Recepción 1 del activo</h4><p class='muted'>Aprueba las ausencias de limpieza y conserjería, da el visto bueno a las de Recepción 2 y valida los partes. Debe tener el rol Recepción en este activo.</p>" },
+      { k: "recepcion1_id", t: "Recepción 1", type: "select", options: usuarios.map((u) => [u.id, `${u.nombre} · ${u.email}`]) }]),
     { k: "informe_emails", t: "Correos de envío (separados por comas)", wide: true }, { k: "informe_whatsapp", t: "WhatsApp de envío (teléfono)" },
     { k: "activo", t: "Activo en explotación", type: "checkbox", def: true }, { k: "notas", t: "Notas", type: "textarea", wide: true },
   ];
@@ -3219,65 +3221,130 @@ V.limpieza = async (el) => {
   await load();
 };
 V.personal = async (el) => {
-  // conserjería y otros por administración: los gestiona Recepción 1 del activo (o dirección)
-  const gest = can("personal.autorizar") || (await Promise.all((S.asset ? S.assets.filter((a) => a.id === S.asset) : S.assets)
-    .map((a) => get("/api/ausencias/personas", { asset_id: a.id }).then((r) => r.gestiona).catch(() => false)))).some(Boolean);
-  const editar = (area) => (area === "limpieza" ? can("limpieza.editar") : area === "mantenimiento" ? can("mantenimiento.editar") : gest);
-  const areas = AREAS.filter(([a]) => editar(a));
+  // Personal propio de las sociedades: lo da de alta el Director Técnico. Subcontratas: Recepción (1 y 2), quien
+  // gestiona mantenimiento o limpieza y dirección. Un usuario del PMS solo puede estar en una ficha.
+  const dt = !!(S.me.is_superadmin || can("personal.autorizar_mto"));
+  const alta = dt || ["mantenimiento.abrir", "mantenimiento.editar", "limpieza.editar", "personal.autorizar"].some(can);
   el.innerHTML = `<div class="toolbar"><select id="ar"><option value="">Todas las áreas</option>${AREAS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
-    <span class="spacer"></span>${can("limpieza.editar") ? '<button class="btn" id="pl">Enviar parte de limpieza</button>' : ""}${areas.length ? '<button class="btn primary" id="new">Nueva persona</button>' : ""}</div>
-    <p class="muted">Técnicos, limpieza, conserjería y demás personal propio o de subcontratas por administración. A mantenimiento y limpieza se les envían las OT y el parte de limpieza por correo o WhatsApp; conserjería y otros los da de alta Recepción 1 para registrar sus ausencias. No necesitan usuario en INVERPMS.</p><div id="t"></div>`;
+    <span class="spacer"></span>${dt ? '<button class="btn" id="chk">Comprobar personal</button>' : ""}${can("limpieza.editar") ? '<button class="btn" id="pl">Enviar parte de limpieza</button>' : ""}${alta ? '<button class="btn primary" id="new">Nueva persona</button>' : ""}</div>
+    <p class="muted">${dt ? "Como Director Técnico da de alta al <b>personal propio</b> de las sociedades (con su ficha de empleado y su usuario del PMS, que solo puede estar en una ficha) y también al de subcontratas." : "Recepción da de alta solo al <b>personal de subcontratas</b> (indique la empresa). El personal propio de las sociedades lo da de alta el Director Técnico."} Las vacaciones y ausencias las pide cada persona con su usuario, sobre su propia ficha.</p><div id="t"></div>`;
   const catP = await get("/api/personal/catalogos");
-  const usuarios = S.me.admin_grupo ? await get("/api/admin/usuarios").catch(() => []) : [];
-  const fields = [
-    { k: "area", t: "Área", type: "select", req: true, options: areas },
+  let usuarios = [];
+  const frescos = async () => { if (dt) usuarios = await get("/api/personal/usuarios").catch(() => []); };  // un usuario, una ficha
+  const fields = (p) => [
+    ...(dt && !p ? [{ k: "tipo", t: "Tipo de personal", type: "select", req: true, options: [["propio", "Personal propio de la sociedad"], ["subcontrata", "Subcontrata (indique la empresa)"]], wide: true }] : []),
+    { k: "area", t: "Área", type: "select", req: true, options: AREAS },
     { k: "asset_id", t: "Activo (vacío = todos)", type: "select", options: opts(S.assets) },
-    { k: "nombre", t: "Nombre", req: true }, { k: "empresa", t: "Empresa (si es subcontrata)" },
+    { k: "nombre", t: "Nombre", req: true }, { k: "empresa", t: dt ? "Empresa (solo si es subcontrata)" : "Empresa subcontratista", req: !dt },
     { k: "email", t: "Correo electrónico", type: "email" }, { k: "telefono", t: "Móvil (WhatsApp)" },
     { k: "avisar_urgentes", t: "Recibir al momento por correo las OT urgentes (mantenimiento)", type: "checkbox", wide: true },
     { k: "activo", t: "En activo", type: "checkbox", def: true },
     { k: "notas", t: "Notas (horario, especialidad…)", type: "textarea", wide: true },
   ];
-  // datos laborales: solo Recepción 1 del activo y dirección (los demás no los ven)
-  const ficha = [
-    { html: '<fieldset><legend>Ficha del empleado (personal propio)</legend><p class="muted peq">Solo la ven Recepción 1 del activo y la dirección. Las vacaciones se cuentan con estos datos y el registro de jornada se hace sobre esta ficha.</p></fieldset>', wide: true },
+  // datos laborales del personal propio: los gestiona el Director Técnico
+  const ficha = (p) => [
+    { html: '<fieldset><legend>Ficha del empleado (personal propio)</legend><p class="muted peq">La gestiona el Director Técnico. Las vacaciones se cuentan con estos datos y el registro de jornada se hace sobre esta ficha. El usuario del PMS solo puede estar en una ficha.</p></fieldset>', wide: true },
     { k: "dni", t: "DNI / NIE" }, { k: "puesto", t: "Puesto" },
     { k: "tipo_contrato", t: "Contrato", type: "select", options: Object.entries(catP.contratos) },
     { k: "jornada_semanal", t: "Jornada (horas / semana)", type: "number" },
     { k: "fecha_alta", t: "Fecha de alta", type: "date" }, { k: "fecha_baja", t: "Fecha de baja", type: "date" },
     { k: "vacaciones_dias", t: "Días de vacaciones al año (convenio)", type: "number" },
     { k: "vacaciones_tipo", t: "Los días son", type: "select", options: [["laborables", "Laborables"], ["naturales", "Naturales"]] },
-    ...(usuarios.length ? [{ k: "user_id", t: "Su usuario del PMS (para pedir vacaciones y fichar)", type: "select", options: usuarios.map((u) => [u.id, `${u.nombre} · ${u.email}`]), wide: true }] : []),
+    { k: "user_id", t: "Su usuario del PMS (para pedir vacaciones y fichar)", type: "select", wide: true,
+      options: usuarios.filter((u) => !u.ficha_id || u.ficha_id === p?.id).map((u) => [u.id, `${u.nombre} · ${u.email}`]) },
   ];
-  const camposDe = (p) => (p ? (p.gestiona ? [...fields, ...ficha] : fields) : gest ? [...fields, ...ficha] : fields);
+  const camposDe = (p) => (dt && (!p || p.propio) ? [...fields(p), ...ficha(p)] : fields(p));
   const guardar = (p) => async (d) => {
-    const body = { ...d, asset_id: d.asset_id ? Number(d.asset_id) : null, user_id: d.user_id ? Number(d.user_id) : (p?.user_id ?? null),
-      jornada_semanal: d.jornada_semanal ? Number(d.jornada_semanal) : null, vacaciones_dias: d.vacaciones_dias !== undefined && d.vacaciones_dias !== "" ? Number(d.vacaciones_dias) : null,
+    const sub = p ? !p.propio : !dt || d.tipo === "subcontrata";
+    if (sub && !(d.empresa || "").trim()) throw new Error("Indique la empresa subcontratista");
+    if (!sub && (d.empresa || "").trim()) throw new Error("El personal propio no lleva empresa: elija «Subcontrata» o deje la empresa vacía");
+    delete d.tipo;
+    const body = { ...d, asset_id: d.asset_id ? Number(d.asset_id) : null, user_id: d.user_id ? Number(d.user_id) : null,
+      jornada_semanal: d.jornada_semanal ? Number(d.jornada_semanal) : null, vacaciones_dias: d.vacaciones_dias !== undefined && d.vacaciones_dias !== null && d.vacaciones_dias !== "" ? Number(d.vacaciones_dias) : null,
       tipo_contrato: d.tipo_contrato || null, vacaciones_tipo: d.vacaciones_tipo || null, fecha_alta: d.fecha_alta || null, fecha_baja: d.fecha_baja || null };
+    if (!dt || sub) ["user_id", "dni", "puesto", "tipo_contrato", "jornada_semanal", "fecha_alta", "fecha_baja", "vacaciones_dias", "vacaciones_tipo"].forEach((k) => { if (p && !(k in d)) body[k] = p[k] ?? null; });
     await (p ? put(`/api/personal/${p.id}`, body) : post("/api/personal", body));
     toast(p ? "Ficha guardada" : "Persona dada de alta"); load();
-    await altaProveedorSiNuevo(d.empresa, d.area === "limpieza" ? "Limpieza" : d.area === "mantenimiento" ? "Mantenimiento" : "Otros");
+    if (sub) await altaProveedorSiNuevo(d.empresa, d.area === "limpieza" ? "Limpieza" : d.area === "mantenimiento" ? "Mantenimiento" : "Otros");
   };
   const load = async () => table($("#t", el), [
     { k: "area_nombre", t: "Área" },
-    { k: "nombre", t: "Nombre", f: (v, p) => `${esc(v)}${p.activo ? "" : ' <span class="badge">baja</span>'}${p.puesto ? `<div class="muted peq">${esc(p.puesto)}</div>` : ""}${p.empresa ? `<div class="muted peq">${esc(p.empresa)}</div>` : ""}` },
+    { k: "nombre", t: "Nombre", f: (v, p) => `${esc(v)}${p.activo ? "" : ' <span class="badge">baja</span>'}${p.puesto ? `<div class="muted peq">${esc(p.puesto)}</div>` : ""}<div class="muted peq">${p.propio ? `Personal propio${p.usuario ? ` · usuario ${esc(p.usuario)}` : ""}` : `Subcontrata · ${esc(p.empresa || "")}`}</div>` },
     { k: "activo_nombre", t: "Activo" },
     { k: "telefono", t: "Contacto", f: (v, p) => [v, p.email].filter(Boolean).map(esc).join("<br>") + (p.avisar_urgentes ? '<div class="muted peq">OT urgentes al momento</div>' : "") },
-    { k: "saldo", t: "Vacaciones", f: (v) => (v ? `<b>${v.restantes}</b> de ${v.corresponden}<div class="muted peq">${v.tipo}${v.pendientes ? ` · ${v.pendientes} por aprobar` : ""}</div>` : "") },
+    { k: "saldo", t: "Vacaciones", f: (v) => (v ? `<b>${v.pendientes_solicitar}</b> por solicitar<div class="muted peq">de ${v.corresponden} ${v.tipo} · ${v.disfrutadas} disfrutadas · ${v.solicitadas} solicitadas${v.por_aprobar ? ` (${v.por_aprobar} por aprobar)` : ""}</div>` : "") },
     { k: "fichado", t: "Jornada", f: (v, p) => (p.gestiona && p.propio ? (v ? '<span class="badge b-vigente">dentro</span>' : '<span class="muted">fuera</span>') : "") },
     { k: "documentos_vencen", t: "Docs.", f: (v) => (v ? `<span class="badge b-urgente" title="Documentos vencidos">${v} ⚠</span>` : "") },
   ], await get("/api/personal", { asset_id: S.asset, area: $("#ar", el).value }), (p) => [
-    (editar(p.area) || p.gestiona) && ["Editar", () => sugerirProveedores(form(p.nombre, camposDe(p), p, guardar(p)), "empresa")],
+    p.editable && ["Editar", async () => { await frescos(); sugerirProveedores(form(p.nombre, camposDe(p), p, guardar(p)), "empresa"); }],
+    p.gestiona && p.propio && ["Vacaciones", () => vacacionesFicha(p, load)],
     p.gestiona && ["Docs.", () => documentosEmpleado(p, load)],
     p.gestiona && p.propio && ["Enlace", () => enlaceFichaje(p, load)],
     p.gestiona && p.propio && ["Jornada", () => { S.jornadaStaff = p.id; go("jornada"); }],
-    editar(p.area) && ["Borrar", async () => { if (confirm(`¿Borrar la ficha de ${p.nombre}?`)) { await run(() => api("DELETE", `/api/personal/${p.id}`), "Ficha borrada"); load(); } }, "danger"],
+    p.editable && ["Borrar", async () => { if (confirm(`¿Borrar la ficha de ${p.nombre}?`)) { await run(() => api("DELETE", `/api/personal/${p.id}`), "Ficha borrada"); load(); } }, "danger"],
   ]);
   $("#ar", el).onchange = load;
-  if ($("#new", el)) $("#new", el).onclick = () => sugerirProveedores(form("Nueva persona", camposDe(null), { area: areas[0][0], asset_id: S.asset || (S.assets.length === 1 ? S.assets[0].id : "") }, guardar(null)), "empresa");
+  if ($("#new", el)) $("#new", el).onclick = async () => { await frescos(); sugerirProveedores(form("Nueva persona", camposDe(null), { tipo: dt ? "propio" : "subcontrata", area: AREAS[0][0], asset_id: S.asset || (S.assets.length === 1 ? S.assets[0].id : "") }, guardar(null)), "empresa"); };
   if ($("#pl", el)) $("#pl", el).onclick = () => parteLimpieza(today());
+  if ($("#chk", el)) $("#chk", el).onclick = () => comprobarPersonal(load);
   load();
 };
+
+// Vacaciones de la ficha: saldo (disfrutadas, solicitadas, pendientes de solicitar) y periodos. El Director Técnico
+// registra las ya disfrutadas y las ya acordadas para cuadrar el saldo; cada cambio envía el calendario a todos.
+async function vacacionesFicha(p, reload) {
+  const r = await get(`/api/personal/${p.id}/vacaciones`), s = r.saldo;
+  const filas = r.periodos.map((x) => `<tr><td>${fdate(x.desde)}${x.hasta !== x.desde ? ` – ${fdate(x.hasta)}` : ""}</td><td class="num">${x.dias}</td>
+    <td><span class="badge ${x.estado === "disfrutada" ? "b-vigente" : x.estado === "por aprobar" ? "b-pendiente" : "b-borrador"}">${esc(x.estado)}</span></td>
+    <td class="peq muted">${x.registrada_por ? `registrada por ${esc(x.registrada_por)}` : "solicitada por la persona"}</td>
+    <td>${r.registrar ? `<button type="button" class="btn sm danger" data-anula="${x.id}">Anular</button>` : ""}</td></tr>`).join("");
+  const f = form(`Vacaciones ${s.anio} · ${p.nombre}`, [
+    { html: `<div class="capex-kpis" style="margin-bottom:10px"><div><small>Corresponden (${esc(s.tipo)})</small><b>${s.corresponden}</b></div><div><small>Disfrutadas</small><b>${s.disfrutadas}</b></div>
+      <div><small>Solicitadas (pdte. disfrutar)</small><b>${s.solicitadas}</b></div><div class="${s.pendientes_solicitar > 0 ? "mal" : ""}"><small>Pendientes de solicitar</small><b>${s.pendientes_solicitar}</b></div></div>
+      ${filas ? `<div class="table-wrap"><table><thead><tr><th>Periodo</th><th class="num">Días</th><th>Estado</th><th></th><th></th></tr></thead><tbody>${filas}</tbody></table></div>` : '<p class="muted">Sin periodos registrados este año.</p>'}
+      ${r.registrar ? `<h4>Registrar vacaciones (Director Técnico)</h4><p class="muted peq">Para cuadrar el saldo: periodos ya disfrutados o ya acordados con la persona. Quedan autorizados y se envía el calendario actualizado a todos los usuarios y colaboradores.</p><div id="vfPer"></div><button type="button" class="btn sm" id="vfMas">+ Otro periodo</button>` : ""}` },
+    ...(r.registrar ? [{ k: "nota", t: "Nota (opcional)", wide: true }] : []),
+  ], {}, async (d, fm) => {
+    if (!r.registrar) return;
+    const periodos = [...fm.querySelectorAll(".vf-per")].map((x) => ({ desde: x.querySelector("[data-d]").value, hasta: x.querySelector("[data-h]").value })).filter((x) => x.desde && x.hasta);
+    if (!periodos.length) throw new Error("Indique al menos un periodo (desde y hasta)");
+    await post(`/api/personal/${p.id}/vacaciones`, { periodos, nota: d.nota });
+    toast("Vacaciones registradas · calendario enviado a todos"); reload();
+  }, r.registrar ? "Registrar y enviar calendario" : "Cerrar");
+  $("#modal").classList.add("ancho");
+  const otro = () => $("#vfPer", f).insertAdjacentHTML("beforeend", '<div class="vf-per toolbar"><label>Desde <input type="date" data-d></label><label>Hasta <input type="date" data-h></label></div>');
+  if (r.registrar) { otro(); $("#vfMas", f).onclick = otro; }
+  f.querySelectorAll("[data-anula]").forEach((b) => (b.onclick = async () => {
+    const m = prompt("Motivo de la anulación (se comunica a la persona y a Recepción):"); if (!m) return;
+    await run(() => post(`/api/ausencias/${b.dataset.anula}/anular`, { nota: m }), "Periodo anulado · calendario enviado"); $("#modal").close(); reload(); vacacionesFicha(p, reload);
+  }));
+}
+
+// Comprobación de errores (Recepción 1 de cada activo, fichas, usuarios repetidos, solicitudes mal clasificadas),
+// corrección automática y borrado de todo el personal para empezar de nuevo
+async function comprobarPersonal(reload) {
+  const r = await get("/api/personal/comprobar");
+  const color = { error: "b-urgente", aviso: "b-pendiente", info: "b-borrador" };
+  const f = cerrarSolo(form("Comprobar personal", [{ html: `<p>${r.fichas} ficha(s) de personal.</p>
+    ${r.resultados.length ? `<table><tbody>${r.resultados.map((x) => `<tr><td><span class="badge ${color[x.nivel]}">${esc(x.nivel)}</span></td><td><b>${esc(x.que)}</b></td><td>${esc(x.texto)}</td></tr>`).join("")}</tbody></table>` : '<p class="ok">✔ No se ha encontrado ningún error.</p>'}
+    <div class="toolbar">${r.resultados.some((x) => x.corregible) ? '<button type="button" class="btn primary" id="cpFix">Corregir las solicitudes mal clasificadas</button>' : ""}
+      <button type="button" class="btn" id="cpGen">Generar las fichas desde los usuarios</button><span class="spacer"></span>
+      ${r.puede_borrar ? '<button type="button" class="btn danger" id="cpDel">Borrar todo el personal</button>' : ""}</div>
+    <p class="muted peq">Recepción 1 de cada activo se asigna en Activos → Editar. Los roles se asignan en Administración → Usuarios.</p>` }], {}, async () => {}));
+  $("#modal").classList.add("ancho");
+  if ($("#cpFix", f)) $("#cpFix", f).onclick = async () => { const x = await run(() => post("/api/personal/comprobar/corregir")); toast(`${x.corregidas} solicitud(es) corregida(s)`); comprobarPersonal(reload); };
+  $("#cpGen", f).onclick = async () => {
+    if (!confirm("Se creará la ficha de personal propio de cada usuario del PMS que aún no la tenga (área y activo según su rol; sin presidencia ni colaboradores). Después complete en cada ficha el DNI, contrato, jornada y vacaciones.")) return;
+    const x = await run(() => post("/api/personal/generar-desde-usuarios"));
+    toast(x.creadas.length ? `${x.creadas.length} ficha(s) creada(s)` : "Todos los usuarios ya tienen ficha"); reload(); comprobarPersonal(reload);
+  };
+  if ($("#cpDel", f)) $("#cpDel", f).onclick = async () => {
+    const c = prompt("Se borrarán TODAS las fichas del personal, sus fichajes, documentos y envíos (las ausencias de los usuarios se conservan). No se puede deshacer.\n\nEscriba BORRAR PERSONAL para confirmar:");
+    if (c === null) return;
+    const x = await run(() => post("/api/personal/borrar-todo", { confirmacion: c }));
+    toast(`Borradas ${x.fichas} fichas, ${x.fichajes} fichajes y ${x.documentos} documentos`); $("#modal").close(); reload();
+  };
+}
 
 // ---- ficha del empleado: documentos (contrato, nóminas, reconocimiento médico, formación…) con vencimiento
 async function documentosEmpleado(p, reload) {
@@ -4447,10 +4514,10 @@ V.ausencias = async (el) => {
   // con «Todos los activos» y varios activos: vista global (cuadrante y pendientes de todos); para solicitar se elige activo
   const global = !S.asset && S.assets.length > 1;
   const aid = global ? null : await pickAsset();
-  const [cat, per] = await Promise.all([get("/api/ausencias/catalogos"), aid ? get("/api/ausencias/personas", { asset_id: aid }) : Promise.resolve({ personas: [], gestiona: false })]);
+  const cat = await get("/api/ausencias/catalogos");
   el.innerHTML = `<div class="toolbar"><label>Mes<input type="month" id="m" value="${today().slice(0, 7)}"></label>
     <select id="e"><option value="vigentes">Pendientes y aprobadas</option><option value="">Todas</option><option value="pendiente">Pendientes</option><option value="aprobada">Autorizadas</option><option value="denegada">Desestimadas</option><option value="anulada">Anuladas</option></select>
-    <span class="spacer"></span><button class="btn" id="res">Resumen del año</button><button class="btn" id="xl">Excel</button><button class="btn primary" id="new">Solicitar ausencia</button></div>
+    <span class="spacer"></span><button class="btn" id="cal">Calendario de vacaciones (PDF)</button><button class="btn" id="res">Resumen del año</button><button class="btn" id="xl">Excel</button><button class="btn primary" id="new">Solicitar ausencia</button></div>
     <div id="pend"></div><div id="cuad" class="no-encajar"></div><div id="t"></div>`;
   const leyenda = Object.entries(cat.tipos).map(([k, v]) => `<span class="aus-ley ${COLOR_AUS[k]}">${esc(v.split(" (")[0])}</span>`).join("") + '<span class="aus-ley aus-pend">Pendiente</span>';
   const load = async () => {
@@ -4490,29 +4557,22 @@ V.ausencias = async (el) => {
       { k: "aprueba", t: "La aprueba" },
     ], filas, (x) => accionesAusencia(x, load));
   };
+  // cada persona solicita sus propias ausencias, con su usuario y sobre su ficha de empleado
   $("#new", el).onclick = async () => {
     const aidN = aid || await pickAsset();
-    const perN = aid ? per : await get("/api/ausencias/personas", { asset_id: aidN });
-    const ops = perN.personas.map((p) => [`${p.clave}:${p.id}`, `${p.nombre} · ${p.colectivo_nombre}`]);
-    const f = form("Solicitar ausencia", [
-      { k: "persona", t: "Persona", type: "select", req: true, options: ops, wide: true },
-      { html: '<p class="muted" id="aprueba"></p>' },
+    const f = form(`Solicitar ausencia · ${S.me.nombre}`, [
+      { html: '<p class="muted">La solicitud es para usted y queda en su ficha de empleado. Si su usuario no está enlazado a una ficha, pídalo al Director Técnico.</p>' },
       { k: "tipo", t: "Tipo", type: "select", req: true, options: Object.entries(cat.tipos) },
       { k: "desde", t: "Desde", type: "date", req: true, def: today() }, { k: "hasta", t: "Hasta (incluido)", type: "date", req: true, def: today() },
       { k: "motivo", t: "Motivo / observaciones", type: "textarea", wide: true },
-      { k: "aprobar", t: "Aprobarla ya (si le corresponde a usted aprobarla)", type: "checkbox", wide: true },
     ], {}, async (d) => {
-      const [clave, id] = d.persona.split(":");
-      const r = await post("/api/ausencias", clean({ asset_id: aidN, tipo: d.tipo, desde: d.desde, hasta: d.hasta, motivo: d.motivo, aprobar: d.aprobar,
-        ...(clave === "s" ? { staff_id: Number(id) } : Number(id) !== S.me.id ? { user_id: Number(id) } : {}) }));
-      toast(`${r.estado === "aprobada" ? "Ausencia registrada y aprobada" : `Solicitud enviada · la aprueba: ${r.aprueba}`}${r.coinciden.length ? ` · coincide con ${r.coinciden.join(", ")}` : ""}${r.aviso_saldo ? ` · ⚠ ${r.aviso_saldo}` : ""}`, !!r.aviso_saldo);
+      const r = await post("/api/ausencias", clean({ asset_id: aidN, tipo: d.tipo, desde: d.desde, hasta: d.hasta, motivo: d.motivo }));
+      toast(`Solicitud enviada · la aprueba: ${r.aprueba}${r.coinciden.length ? ` · coincide con ${r.coinciden.join(", ")}` : ""}${r.aviso_saldo ? ` · ⚠ ${r.aviso_saldo}` : ""}`, !!r.aviso_saldo);
       load();
-    }, "Guardar");
-    const info = () => { const p = perN.personas.find((q) => `${q.clave}:${q.id}` === f.elements.persona.value); $("#aprueba").textContent = p ? `La aprueba: ${p.aprueba}.` : ""; };
-    f.elements.persona.onchange = info; info();
-    f.elements.aprobar.closest("label").style.display = perN.gestiona || can("personal.autorizar_mto") ? "" : "none";
+    }, "Enviar solicitud");
     f.elements.desde.onchange = () => { if (f.elements.hasta.value < f.elements.desde.value) f.elements.hasta.value = f.elements.desde.value; };
   };
+  $("#cal", el).onclick = () => abrirFichero(`/api/ausencias/calendario-vacaciones.pdf?anio=${$("#m", el).value.slice(0, 4)}`);
   $("#res", el).onclick = async () => {
     const anio = Number($("#m", el).value.slice(0, 4));
     const r = await run(() => get("/api/ausencias/resumen", { asset_id: aid, anio }));

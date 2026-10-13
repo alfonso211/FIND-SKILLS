@@ -201,27 +201,22 @@ def create_absence(data: AbsenceIn, scope: Scope = Depends(get_scope), db: Sessi
         bad_request("La fecha final es anterior a la inicial")
     if (data.hasta - data.desde).days > 365:
         bad_request("Una ausencia no puede pasar de un año: divídala en varias")
-    if data.user_id and data.staff_id:
-        bad_request("Indique un usuario o una persona del personal, no los dos")
-    gest = au.gestiona(db, scope, a)
-    if data.staff_id:
-        p = get_or_404(db, StaffMember, data.staff_id)
-        if p.asset_id not in (None, a.id):
-            bad_request("Esa persona no trabaja en este activo")
-        colectivo, persona, uid = au.colectivo_staff(p), p.nombre, None
-    else:
-        u = get_or_404(db, User, data.user_id) if data.user_id else scope.user
-        colectivo, persona, uid = au.colectivo_usuario(db, u, a), u.nombre, u.id
-    propia = uid == scope.user.id
-    tecnico = colectivo == "mantenimiento" and scope.can_asset("personal.autorizar_mto", a.id)
-    if not (propia or gest or tecnico):
-        raise HTTPException(403, "Solo Recepción 1 o dirección registran las ausencias de otras personas")
+    # cada persona solicita las suyas, con su usuario y sobre su ficha de empleado
+    if data.staff_id or (data.user_id and data.user_id != scope.user.id):
+        raise HTTPException(403, "Cada persona solicita sus propias ausencias con su usuario del PMS")
+    ficha = empleados.ficha_de_usuario(db, scope.user.id)
+    if ficha is None:
+        bad_request("Su usuario no está enlazado a una ficha de empleado. Pídalo al Director Técnico "
+                    "(Personal → Fichas del personal).")
+    u = scope.user
+    colectivo, persona, uid = au.colectivo_usuario(db, u, a), u.nombre, u.id
+    data.staff_id = None
     choque = db.scalar(select(Absence).where(
         Absence.estado.in_(VIGENTES), Absence.desde <= data.hasta, Absence.hasta >= data.desde,
         Absence.staff_id == data.staff_id if data.staff_id else Absence.user_id == uid))
     if choque:
         bad_request(f"{persona} ya tiene una ausencia del {choque.desde:%d/%m/%Y} al {choque.hasta:%d/%m/%Y}")
-    x = Absence(asset_id=a.id, user_id=uid, staff_id=data.staff_id, persona=persona, colectivo=colectivo,
+    x = Absence(asset_id=a.id, user_id=uid, staff_id=ficha.id, persona=persona, colectivo=colectivo,
                 tipo=data.tipo, desde=data.desde, hasta=data.hasta, motivo=data.motivo or None,
                 creado_por=scope.user.id)
     db.add(x)
@@ -234,6 +229,7 @@ def create_absence(data: AbsenceIn, scope: Scope = Depends(get_scope), db: Sessi
                                                       "hasta": x.hasta.isoformat(), "estado": x.estado})
     db.commit()
     _avisos_nueva(db, x, a, scope.user.id)
+    _calendario(db, x, "solicita vacaciones" if x.estado != "aprobada" else "vacaciones registradas y autorizadas", scope)
     out = _uno(db, scope, x)
     out["aviso_saldo"] = empleados.aviso_saldo(db, x)
     # coincidencias con otras personas del mismo colectivo (para organizar el servicio)
@@ -241,6 +237,12 @@ def create_absence(data: AbsenceIn, scope: Scope = Depends(get_scope), db: Sessi
         Absence.asset_id == a.id, Absence.colectivo == colectivo, Absence.id != x.id,
         Absence.estado.in_(VIGENTES), Absence.desde <= x.hasta, Absence.hasta >= x.desde))]
     return out
+
+
+def _calendario(db: Session, x: Absence, que: str, scope: Scope) -> None:
+    """Cada cambio en una solicitud de vacaciones: nueva revisión del calendario, enviada a todos."""
+    from .. import informe_vacaciones
+    informe_vacaciones.tras_cambio(db, x, que, scope.user.id)
 
 
 def _trabajador(db: Session, x: Absence) -> tuple[str | None, str | None]:
@@ -299,7 +301,9 @@ def approve(xid: int, scope: Scope = Depends(get_scope), db: Session = Depends(g
     x.estado, x.resuelto_por, x.resuelto_en = "aprobada", scope.user.id, datetime.now()
     audit(db, scope.user, "aprobar", "ausencia", x.id, {"persona": x.persona})
     db.commit()
-    return {**_uno(db, scope, x), "comunicado": _comunicar(db, scope, x, a, "autorizada")}
+    out = {**_uno(db, scope, x), "comunicado": _comunicar(db, scope, x, a, "autorizada")}
+    _calendario(db, x, "autorizadas las vacaciones", scope)
+    return out
 
 
 @router.post("/{xid}/denegar")
@@ -314,7 +318,9 @@ def deny(xid: int, data: NotaIn, scope: Scope = Depends(get_scope), db: Session 
     x.estado, x.resuelto_por, x.resuelto_en, x.nota = "denegada", scope.user.id, datetime.now(), data.nota.strip()
     audit(db, scope.user, "denegar", "ausencia", x.id, {"persona": x.persona, "nota": x.nota})
     db.commit()
-    return {**_uno(db, scope, x), "comunicado": _comunicar(db, scope, x, a, "desestimada")}
+    out = {**_uno(db, scope, x), "comunicado": _comunicar(db, scope, x, a, "desestimada")}
+    _calendario(db, x, "desestimada la solicitud de vacaciones", scope)
+    return out
 
 
 @router.post("/{xid}/anular")
@@ -335,6 +341,7 @@ def cancel(xid: int, data: NotaIn, scope: Scope = Depends(get_scope), db: Sessio
     out = _uno(db, scope, x)
     if not propia:
         out["comunicado"] = _comunicar(db, scope, x, a, "anulada")
+    _calendario(db, x, "anuladas las vacaciones", scope)
     return out
 
 
@@ -370,6 +377,15 @@ def summary(asset_id: int | None = None, anio: int | None = None, scope: Scope =
         _activo(db, scope, asset_id)
     anio = anio or date.today().year
     return {"anio": anio, "tipos": TIPOS_AUSENCIA, "personas": _resumen(db, scope, asset_id, anio)}
+
+
+@router.get("/calendario-vacaciones.pdf")
+def vacation_calendar(anio: int | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Calendario de vacaciones del personal propio con los saldos (el mismo que se envía en cada revisión)."""
+    from .. import informe_vacaciones
+    anio = anio or date.today().year
+    return Response(informe_vacaciones.pdf(db, anio), media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="Calendario_vacaciones_{anio}.pdf"'})
 
 
 @router.get("/excel")
