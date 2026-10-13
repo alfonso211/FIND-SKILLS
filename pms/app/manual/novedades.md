@@ -1,5 +1,12 @@
 # Novedades
 
+## 2026-10-13 · Versión 1.40 · CAPEX: inversiones y reformas (fase 1)
+- **Dirección Técnica**: nuevo menú **Inversiones (CAPEX)**. Cada proyecto lleva sus mediciones y su presupuesto base (PEM, gastos generales, beneficio industrial, PBL e IVA) y se compara con el presupuesto objetivo.
+- **Presupuesto en minutos**: importar un **BC3** (Presto, Arquímedes…), añadir partidas desde una **base de precios** pública o cargar una **plantilla «CAPEX tipo»** (reforma de baño, panelado de puertas…) con sus planos y pliegos.
+- **Licitación ciega**: cada contratista recibe por correo un enlace personal y un Excel protegido, **sin los precios base**. Puede ofertar en la web o devolver el Excel. Se registra cuándo abre el enlace y descarga la documentación.
+- **Comparativo** con mapa de calor (bajas anormales y excesos) y PDF. **Adjudicación** de la obra completa o por capítulos a distintas contratas.
+- **Más de 30.000 € sin IVA**: la adjudicación queda bloqueada hasta que la **Dirección General** la aprueba o la rechaza con los botones del correo, sin entrar en el PMS. Queda la fecha y la hora de la decisión.
+
 ## 2026-10-13 · Versión 1.39 · Gestión del personal
 - **Acceso**: el grupo **Personal** sube al segundo lugar del menú: Vacaciones y ausencias, Fichas del personal, Registro de jornada y Mi jornada.
 - **Dirección**: con **Todos los activos**, las ausencias de todos los activos en una sola pantalla, con resumen y Excel.

@@ -39,6 +39,8 @@ PERMISOS: dict[str, str] = {
     "personal.autorizar_mto": "Director técnico: autorizar las ausencias del personal de mantenimiento",
     "legal.ver": "Ver la documentación legal de los activos (licencias, certificados, seguros…)",
     "legal.editar": "Aportar y actualizar la documentación legal de los activos",
+    "capex.ver": "CAPEX: consultar los proyectos de inversión y reforma, ofertas y adjudicaciones",
+    "capex.gestionar": "CAPEX: crear proyectos, presupuestos, plantillas, licitar y adjudicar",
     "colaborador.portal": "Colaborador externo: solo su portal (sus OT, partes y envíos, y subir sus documentos)",
     "usuarios.gestionar": "Gestionar usuarios, roles y sociedades",
     "auditoria.ver": "Consultar registro de auditoría",
@@ -61,7 +63,7 @@ ROLES_POR_DEFECTO: dict[str, tuple[str, list[str]]] = {
         "mantenimiento.cerrar", "partes_estado.crear",
         "finanzas.ver", "facturas.ver", "facturas.rectificar", "auditoria.ver", "documentos.ver", "documentos.editar",
         "pedidos.crear", "pedidos.autorizar", "partes.validar", "personal.autorizar", "legal.ver",
-        "legal.editar"]),
+        "legal.editar", "capex.ver"]),
     "Gestor Alquiler Residencial": ("Contratos, inquilinos y cobros", [
         "activos.ver", "alquiler.ver", "alquiler.editar", "mantenimiento.ver", "finanzas.ver", "facturas.ver",
         "documentos.ver", "documentos.editar", "legal.ver", "legal.editar"]),

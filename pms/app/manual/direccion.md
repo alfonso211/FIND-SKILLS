@@ -103,3 +103,12 @@
 
 ## Facturas pagadas: justificante obligatorio
 - En la **Cuenta de gastos**, una factura solo se marca como pagada con el botón **Pagado**, que pide **adjuntar el justificante de pago** (transferencia, cargo en cuenta…) y la fecha. Sin justificante no se puede marcar. El justificante queda en **Documentos recibidos** («Justificante de pago») y se abre con el botón **Justificante**.
+
+## Inversiones (CAPEX)
+- **Inversiones (CAPEX) → Proyectos CAPEX → Nuevo proyecto**: activo, título, presupuesto objetivo y, si se quiere, una **plantilla «CAPEX tipo»** que carga capítulos, partidas y documentos base.
+- **Presupuesto**: **Importar BC3** (con mediciones), **Añadir desde base de precios** o **Nuevo capítulo**. Cantidades y precios se escriben en la tabla y se guardan solos. Las partidas sin medir salen en amarillo. Arriba se ven el PEM, el PBL (con GG y BI), el total con IVA y la desviación sobre el objetivo.
+- **Documentos**: planos (PDF, DWG, DXF), fotos del estado previo, pliegos y licencias. Los marcados «Va a licitación» se envían a los contratistas.
+- **Licitación** → **Pedir ofertas**: se eligen los proveedores y el plazo. Cada uno recibe un enlace personal y un Excel protegido, **sin los precios base**. La tabla muestra si han abierto el enlace y si han enviado la oferta. Si alguien devuelve el Excel por correo, súbalo con **Subir su Excel**. Para terminar, **Cerrar recepción y comparar**.
+- **Comparativo y adjudicación**: mapa de calor por partida y capítulo (azul = baja anormal, rojo = exceso; ★ = mejor oferta completa) y **PDF del comparativo**. Se adjudica todo a un contratista o cada capítulo a uno distinto.
+- **Aprobación**: por encima de 30.000 € sin IVA, la adjudicación va por correo a la **Dirección General** con el comparativo y los botones **Aprobar** y **Rechazar**. La obra queda bloqueada hasta su decisión. Si la rechaza, el proyecto vuelve al comparativo.
+- **Plantillas CAPEX tipo** y **Base de precios (BC3)**: se gestionan en sus pantallas. La forma más rápida de crear una plantilla es abrir un proyecto y pulsar **Guardar como plantilla**.

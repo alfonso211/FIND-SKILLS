@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/static/marca/favicon.png">
+<title>Petición de oferta · Grupo INVERSIETE</title>
+<style>
+  :root { --ink: #18181b; --muted: #6f6a61; --line: #e8e3d8; --bg: #f6f4ef; --oro: #c9a45a; --oro-claro: #e6cf95; --negro: #0e0e10; --ok: #2e7d4f; --bad: #b3261e; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif; }
+  header { background: var(--negro); color: #fff; padding: 14px 18px; border-bottom: 3px solid var(--oro); }
+  header small { color: var(--oro-claro); letter-spacing: .08em; text-transform: uppercase; font-size: 11px; }
+  header h1 { margin: 2px 0 0; font-size: 19px; font-weight: 600; }
+  main { padding: 16px; max-width: 1100px; margin: 0 auto; }
+  section { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
+  h2 { font-size: 15px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .05em; color: #8a6d2f; }
+  .muted { color: var(--muted); font-size: 13px; } .error { color: var(--bad); font-weight: 600; } .ok { color: var(--ok); font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 12px; text-transform: uppercase; color: var(--muted); padding: 6px; border-bottom: 2px solid var(--line); }
+  td { padding: 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  tr.cap td { background: #f7f3ea; font-weight: 700; }
+  .desc { white-space: pre-line; } .desc small { color: var(--muted); }
+  input[type=number], input[type=text], textarea { font: inherit; padding: 7px 9px; border: 1px solid #cfc8b8; border-radius: 8px; }
+  input.precio { width: 110px; text-align: right; background: #fff8dc; }
+  input.precio:focus { outline: 2px solid var(--oro); }
+  textarea { width: 100%; min-height: 70px; }
+  .barra { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .barra .esp { flex: 1; }
+  button, .btn { font: inherit; font-weight: 600; padding: 10px 16px; border-radius: 9px; border: 1px solid #cfc8b8; background: #fff; cursor: pointer; text-decoration: none; color: var(--ink); display: inline-block; }
+  button.prim { background: var(--negro); color: #fff; border-color: var(--negro); }
+  button.oro { background: var(--oro); border-color: var(--oro); color: var(--negro); }
+  button:disabled { opacity: .5; cursor: default; }
+  .total { font-size: 18px; font-weight: 700; }
+  .aviso { border-left: 4px solid var(--oro); background: #fffaf0; padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; }
+  ul.docs { margin: 0; padding-left: 18px; }
+  @media (max-width: 720px) {
+    thead { display: none; }
+    tr.part { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+    tr.part td { border: 0; padding: 2px 0; }
+    tr.part td.desc { grid-column: 1 / -1; }
+    tr.cap td { display: block; }
+    td.cod { display: none; }
+  }
+</style>
+</head>
+<body>
+<header><small>Grupo INVERSIETE · Petición de oferta</small><h1 id="tit">Cargando…</h1></header>
+<main id="app"><p class="muted">Cargando…</p></main>
+<script>
+"use strict";
+const iid = location.pathname.split("/").filter(Boolean).pop();
+const k = new URLSearchParams(location.search).get("k") || "";
+const api = (ruta = "") => `/api/publico/oferta/${iid}${ruta}?k=${encodeURIComponent(k)}`;
+const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const eur = (v) => (v == null ? "—" : v.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €");
+const fecha = (d) => new Date(d.length === 10 ? d + "T00:00:00" : d).toLocaleDateString("es-ES");
+let D = null;
+async function json(r) { const j = await r.json().catch(() => null); if (!r.ok) throw new Error(j?.detail || `Error ${r.status}`); return j; }
+
+function precios() {
+  const out = {};
+  document.querySelectorAll("input.precio").forEach((i) => { if (i.value !== "") out[i.dataset.id] = Number(i.value.replace(",", ".")); });
+  return out;
+}
+function recalcula() {
+  let total = 0; const caps = {};
+  document.querySelectorAll("input.precio").forEach((i) => {
+    const v = i.value === "" ? null : Number(i.value.replace(",", "."));
+    const imp = v == null || isNaN(v) ? null : Math.round(v * Number(i.dataset.cant) * 100) / 100;
+    document.getElementById("imp" + i.dataset.id).textContent = eur(imp);
+    if (imp != null) { total += imp; caps[i.dataset.cap] = (caps[i.dataset.cap] || 0) + imp; }
+  });
+  document.querySelectorAll("[data-subtotal]").forEach((c) => (c.textContent = eur(caps[c.dataset.subtotal] || 0)));
+  const faltan = [...document.querySelectorAll("input.precio")].filter((i) => i.value === "").length;
+  document.getElementById("total").textContent = eur(Math.round(total * 100) / 100);
+  document.getElementById("faltan").textContent = faltan ? `Faltan ${faltan} precio(s)` : "Todas las partidas tienen precio";
+}
+function pinta(msg = "", ok = false) {
+  const p = D.proyecto, o = D.oferta || {}, abierta = D.abierta;
+  document.getElementById("tit").textContent = `${p.codigo} · ${p.titulo}`;
+  const caps = [...new Map(D.partidas.map((x) => [x.capitulo, x.capitulo_nombre])).entries()];
+  document.getElementById("app").innerHTML = `
+    <section>
+      <p><b>${esc(D.proveedor)}</b>: les invitamos a presentar oferta para estos trabajos en <b>${esc(p.activo)}</b>${p.direccion ? ` (${esc(p.direccion)})` : ""}${p.ubicacion ? ` · ${esc(p.ubicacion)}` : ""}.</p>
+      ${p.descripcion ? `<p class="desc">${esc(p.descripcion)}</p>` : ""}
+      ${D.mensaje ? `<p class="desc">${esc(D.mensaje)}</p>` : ""}
+      <p>Plazo de presentación: <b>hasta el ${fecha(D.fecha_limite)}</b>.</p>
+      <div class="aviso">Escriba el <b>precio unitario de ejecución material</b> de cada partida (sin gastos generales, beneficio industrial ni IVA: se aplican aparte y por igual a todas las ofertas). Puede guardar y seguir más tarde; la oferta solo cuenta cuando pulse <b>Enviar oferta</b>.</div>
+      ${o.estado === "enviada" ? `<p class="ok">✔ Oferta enviada el ${new Date(o.enviada_en).toLocaleString("es-ES")}. ${abierta ? "Puede modificarla y volver a enviarla hasta el plazo." : ""}</p>` : ""}
+      ${abierta ? "" : '<p class="error">El plazo de presentación está cerrado: la oferta ya no se puede modificar.</p>'}
+    </section>
+    ${D.documentos.length ? `<section><h2>Documentación</h2><ul class="docs">${D.documentos.map((d) => `<li><a href="${api(`/documentos/${d.id}`)}">${esc(d.nombre)}</a> <span class="muted">· ${esc(d.etiqueta)} · ${(d.tamano / 1048576).toFixed(1).replace(".", ",")} MB</span></li>`).join("")}</ul></section>` : ""}
+    <section>
+      <div class="barra"><h2 style="margin:0">Mediciones y precios</h2><span class="esp"></span>
+        <a class="btn" href="${api("/excel")}">Descargar Excel</a>
+        ${abierta ? '<label class="btn">Subir Excel relleno<input type="file" id="xl" accept=".xlsx" hidden></label>' : ""}</div>
+      <table><thead><tr><th class="cod">Código</th><th>Descripción</th><th>Ud</th><th class="num">Cantidad</th><th class="num">Precio unitario €</th><th class="num">Importe</th></tr></thead><tbody>
+      ${caps.map(([c, n]) => `<tr class="cap"><td colspan="5">${esc(c)} ${esc(n)}</td><td class="num" data-subtotal="${esc(c)}"></td></tr>` +
+        D.partidas.filter((x) => x.capitulo === c).map((x) => { const [r, ...resto] = x.descripcion.split("\n"); const v = (o.precios || {})[x.id];
+          return `<tr class="part"><td class="cod">${esc(x.codigo || "")}</td><td class="desc"><b>${esc(r)}</b>${resto.length ? `<br><small>${esc(resto.join("\n"))}</small>` : ""}</td>
+          <td>${esc(x.unidad || "")}</td><td class="num">${x.cantidad.toLocaleString("es-ES")}</td>
+          <td class="num"><input class="precio" type="number" min="0" step="0.01" inputmode="decimal" data-id="${x.id}" data-cap="${esc(c)}" data-cant="${x.cantidad}" value="${v ?? ""}" ${abierta ? "" : "disabled"} aria-label="Precio unitario"></td>
+          <td class="num" id="imp${x.id}"></td></tr>`; }).join("")).join("")}
+      </tbody></table>
+      <p class="barra" style="margin-top:12px"><span id="faltan" class="muted"></span><span class="esp"></span><span>Total ejecución material: <span class="total" id="total"></span></span></p>
+    </section>
+    <section>
+      <div class="barra"><label>Plazo de ejecución (días) <input type="number" id="plazo" min="1" max="1000" value="${o.plazo_dias ?? ""}" style="width:90px" ${abierta ? "" : "disabled"}></label></div>
+      <p><label>Observaciones (alcance, exclusiones, condiciones)<textarea id="notas" ${abierta ? "" : "disabled"}>${esc(o.notas || "")}</textarea></label></p>
+      ${abierta ? `<div class="barra"><button id="guardar">Guardar borrador</button><span class="esp"></span><button class="prim" id="enviar">Enviar oferta</button></div>` : ""}
+      <p id="msg" class="${ok ? "ok" : "error"}">${esc(msg)}</p>
+    </section>
+    <p class="muted">Enlace personal para ${esc(D.proveedor)}: no lo reenvíe. Para cualquier duda, responda al correo de la invitación.</p>`;
+  document.querySelectorAll("input.precio").forEach((i) => (i.oninput = recalcula));
+  recalcula();
+  if (!abierta) return;
+  const guarda = async (enviar) => {
+    const b = [document.getElementById("guardar"), document.getElementById("enviar")]; b.forEach((x) => (x.disabled = true));
+    try {
+      const plazo = document.getElementById("plazo").value;
+      const r = await json(await fetch(api(), { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ precios: precios(), notas: document.getElementById("notas").value, plazo_dias: plazo ? Number(plazo) : null, enviar }) }));
+      D.oferta = { ...(D.oferta || {}), precios: precios(), notas: document.getElementById("notas").value, plazo_dias: plazo ? Number(plazo) : null, estado: r.estado, enviada_en: r.enviada_en };
+      pinta(enviar ? "✔ Oferta enviada. Muchas gracias." : "✔ Borrador guardado (todavía no se ha enviado).", true);
+    } catch (e) { document.getElementById("msg").textContent = e.message; b.forEach((x) => (x.disabled = false)); }
+  };
+  document.getElementById("guardar").onclick = () => guarda(false);
+  document.getElementById("enviar").onclick = () => {
+    const faltan = [...document.querySelectorAll("input.precio")].filter((i) => i.value === "").length;
+    if (confirm(`${faltan ? `Faltan ${faltan} precio(s): esas partidas quedarán sin ofertar.\n\n` : ""}¿Enviar la oferta por ${document.getElementById("total").textContent} de ejecución material?`)) guarda(true);
+  };
+  document.getElementById("xl").onchange = async (ev) => {
+    const f = ev.target.files[0]; if (!f) return;
+    const fd = new FormData(); fd.append("fichero", f);
+    try {
+      const r = await json(await fetch(api("/excel"), { method: "POST", body: fd }));
+      D.oferta = { ...(D.oferta || {}), precios: r.precios, estado: r.estado };
+      pinta(`✔ Excel leído: ${Object.keys(r.precios).length} precio(s). Revíselos y pulse «Enviar oferta».`, true);
+    } catch (e) { document.getElementById("msg").textContent = e.message; }
+  };
+}
+fetch(api()).then(json).then((d) => { D = d; pinta(); })
+  .catch((e) => { document.getElementById("tit").textContent = "Enlace no válido"; document.getElementById("app").innerHTML = `<section><p class="error">${esc(e.message)}</p></section>`; });
+</script>
+</body>
+</html>
