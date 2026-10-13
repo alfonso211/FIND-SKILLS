@@ -1303,6 +1303,9 @@ const scanHtml = (titulo = "Escanear documento de identidad") => `<fieldset clas
   <div class="scan-tipos" role="group" aria-label="Tipo de documento">${Object.entries(TIPOS_DOC).map(([k, d]) => `<button type="button" class="btn sm" data-tipodoc="${k}">${esc(d.t)}</button>`).join("")}</div>
   <p class="muted" data-guia></p>
   <div class="scan-caras" data-caras></div>
+  <div class="scan-lector"><b>Lector de documentos</b> <span class="muted peq">(lector MRZ conectado al ordenador)</span>
+    <textarea data-mrz rows="2" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="Pulse aquí y pase el documento por el lector: los datos se rellenan solos"></textarea>
+    <label class="check peq"><input type="checkbox" data-lectorpref> En este equipo hay lector: empezar siempre por aquí (sin abrir la cámara)</label></div>
   <div data-camzone class="camzone hidden">
     <div class="cam-marco"><video data-video autoplay playsinline muted></video><div class="cam-guia" data-guiacam><span data-guiatxt></span></div></div>
     <div class="toolbar"><button type="button" class="btn primary" data-capturar>📸 Capturar</button>
@@ -1455,6 +1458,29 @@ function bindScan(f, cid, aplicar) {
       } else apagar();
     }
   };
+  // lector MRZ «por teclado»: escribe las líneas «<<<» en el cuadro; al terminar de escribir se interpretan
+  const cajaMrz = $s("[data-mrz]"), prefLector = $s("[data-lectorpref]");
+  let tMrz = null;
+  const leerMrz = async () => {
+    const texto = cajaMrz.value.trim();
+    if (texto.replace(/\s/g, "").length < 60) return;  // aún llegando (la zona más corta tiene 72 caracteres)
+    msg.innerHTML = '<p class="muted">Leyendo del lector…</p>';
+    try {
+      const j = await post("/api/documentos/mrz", { texto, tipo, tercero_id: cid || null });
+      const lec = j.lectura;
+      if (lec.leido) aplicar(lec, j.tercero);
+      msg.innerHTML = (lec.leido ? `<p class="${lec.mrz_valido ? "ok" : "aviso"}"><b>${lec.mrz_valido ? "✔ Leído con el lector y validado." : "⚠ Leído con dudas: revise."}</b> Revise los campos resaltados. El lector no guarda copia del documento: si la necesita, escanéelo arriba.</p>` : "") +
+        (lec.avisos || []).map((a) => `<p class="${a.includes("CADUCADO") || !lec.leido ? "error" : "muted"}">• ${esc(a)}</p>`).join("");
+      if (lec.leido) cajaMrz.value = "";
+    } catch (e) { msg.innerHTML = `<p class="error">${esc(e.message)}</p>`; }
+  };
+  cajaMrz.oninput = () => { clearTimeout(tMrz); tMrz = setTimeout(leerMrz, 500); };
+  try { prefLector.checked = localStorage.getItem("pms_lector_mrz") === "1"; } catch {}
+  prefLector.onchange = () => {
+    try { localStorage.setItem("pms_lector_mrz", prefLector.checked ? "1" : "0"); } catch {}
+    if (prefLector.checked) { apagar(); cajaMrz.focus(); }
+  };
+  if (prefLector.checked) { f._sinCamara = true; setTimeout(() => cajaMrz.focus(), 50); }
   const auto = $s("[data-camauto]");
   let pref = null;
   try { pref = localStorage.getItem("pms_cam_auto"); } catch {}

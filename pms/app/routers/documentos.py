@@ -9,6 +9,7 @@ Dos maneras de escanear:
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -148,6 +149,30 @@ def read_document(anverso: UploadFile | None = File(None), reverso: UploadFile |
           {"documentos": [g.id for g in guardados], "leido": lectura.get("leido"), "pendiente": True})
     db.commit()
     return {"documentos": [_doc_out(g, scope.user.nombre) for g in guardados], "lectura": lectura}
+
+
+class MrzIn(BaseModel):
+    texto: str = Field(min_length=20, max_length=500)
+    tipo: str | None = None
+    tercero_id: int | None = None
+
+
+@router.post("/documentos/mrz")
+def read_mrz(data: MrzIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Lector de documentos que «teclea» la zona MRZ (Access IS, Desko…): sin imagen ni OCR, lectura exacta.
+    Con `tercero_id` completa la ficha de ese cliente; sin él (alta o reserva nueva) solo devuelve lo leído para
+    rellenar el formulario. No guarda copia del documento: la copia escaneada sigue siendo aparte."""
+    c = None
+    if data.tercero_id:
+        c = _tercero(db, scope, data.tercero_id, "editar")
+    elif not (scope.has_any("reservas.editar") or scope.has_any("alquiler.editar")):
+        raise HTTPException(403, "Sin permiso para dar de alta clientes")
+    lectura = ocr_documentos.leer_texto(data.texto, (data.tipo or "").upper() or None)
+    aplicado = aplicar_lectura(c, lectura) if c else []
+    audit(db, scope.user, "leer_mrz", "tercero" if c else "documento", c.id if c else None,
+          {"leido": lectura.get("leido"), "valido": lectura.get("mrz_valido"), "aplicado": aplicado})
+    db.commit()
+    return {"lectura": lectura, "aplicado": aplicado, "tercero": c.to_dict() if c else None}
 
 
 @router.post("/terceros/{cid}/documentos", status_code=201)

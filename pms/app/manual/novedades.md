@@ -1,5 +1,8 @@
 # Novedades
 
+## 2026-10-13 · Versión 1.35 · Lector de documentos (MRZ)
+- **Recepción**: en el escaneo del documento hay un cuadro nuevo, **Lector de documentos**, para usar un lector MRZ conectado al ordenador. Al pasar el DNI, la TIE o el pasaporte, la ficha se rellena sola y validada en un segundo, sin fotos ni reflejos. Con la casilla «En este equipo hay lector», el cuadro queda listo nada más abrir la ficha.
+
 ## 2026-10-09 · Versión 1.34 · Botón Volver y borrar usuarios
 - **Todos**: nuevo botón **← Volver** arriba, junto al título de la pantalla. Vuelve a la pantalla anterior o cierra la ventana abierta.
 - **Director Técnico y administrador**: botón **Borrar** en *Administración → Usuarios* (solo estas dos cuentas). Si la persona ya había trabajado en el PMS, su nombre se conserva solo en el historial.

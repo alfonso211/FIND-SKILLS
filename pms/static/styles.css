@@ -680,3 +680,8 @@ label.check.precio-pendiente { color: #c2410c; font-weight: 600; }
 .legal-grupo { margin: 14px 0 6px; font-size: 14px; }
 .barra-legal { height: 6px; background: #ece6da; border-radius: 4px; overflow: hidden; margin-top: 6px; min-width: 80px; }
 .barra-legal span { display: block; height: 100%; background: #2f8f4e; }
+
+/* lector de documentos MRZ (escribe como un teclado) */
+.scan-lector { margin: 10px 0; display: grid; gap: 6px; }
+.scan-lector textarea { width: 100%; font-family: ui-monospace, Consolas, monospace; font-size: 12px; text-transform: uppercase; }
+.scan-lector textarea::placeholder { text-transform: none; }
