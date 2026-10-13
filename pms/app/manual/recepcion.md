@@ -12,6 +12,7 @@
    - Pasaporte: la página de la foto.
    - El documento **recto, nítido, sin reflejos** y ocupando el marco. Verá «Leyendo… N s»; en 2-3 segundos rellena los datos.
    - Revise siempre lo leído (los nombres de la zona «<<<» no llevan tildes).
+   - **Con lector de documentos (MRZ)**: pulse en el cuadro **Lector de documentos** y pase el documento por el lector (DNI y TIE por la cara de las líneas «<<<»; pasaporte por la página de la foto). Los datos se rellenan solos y validados en un segundo. El lector no guarda copia: si hace falta, escanéela con la cámara o el fichero. Marque **«En este equipo hay lector»** para que el cuadro quede listo al abrir la ficha y la cámara no se abra sola.
 3. Si el cliente **ya estuvo alojado**, búsquelo en «¿Ya ha estado alojado?» y se reutiliza su ficha.
 4. Indique **apartamento y canal**. El **localizador** se pone solo si lo deja en blanco: **SF** + número en Suite Florida y **SA** + número en Suite Aeropuerto (p. ej. SF0000000001); si la reserva viene de un canal, escriba el suyo. El **precio a pagar** sale solo, en **naranja**, con la tarifa estándar según las noches:
    - 1 a 6 noches: estudio 50 €, 1 dormitorio 55 €, 2 dormitorios 75 € por noche.

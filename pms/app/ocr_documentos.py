@@ -244,7 +244,7 @@ def _leer(caras, tipo: str | None = None) -> dict:
                                "reverso (la cara con las líneas «<<<»)."]}
     else:
         a_leer = caras
-    datos_mrz, avisos, domicilio = None, [], {}
+    datos_mrz, domicilio = None, {}
     imagenes = []
     for _, contenido in a_leer:
         imagenes += a_imagenes(contenido)[1]
@@ -265,6 +265,12 @@ def _leer(caras, tipo: str | None = None) -> dict:
         return {"leido": False, "domicilio": domicilio,
                 "avisos": [f"No se han podido leer las líneas «<<<». Escanee {donde} recto, nítido, sin reflejos "
                            "y ocupando todo el marco. Si no se lee, complete los datos a mano."]}
+    return resultado(datos_mrz, tipo, domicilio)
+
+
+def resultado(datos_mrz: dict, tipo: str | None, domicilio: dict | None = None) -> dict:
+    """Respuesta común (OCR o lector MRZ): datos leídos, domicilio y avisos para recepción."""
+    avisos, domicilio = [], dict(domicilio or {})
     if tipo and datos_mrz["documento_tipo"] != tipo and not (tipo == "OTRO" and datos_mrz["documento_tipo"] == "OTRO"):
         avisos.append(f"Ha indicado «{TIPOS[tipo]}», pero el documento leído es "
                       f"«{TIPOS.get(datos_mrz['documento_tipo'], datos_mrz['documento_tipo'])}»: se usa lo leído.")
@@ -284,3 +290,26 @@ def _leer(caras, tipo: str | None = None) -> dict:
     for k in ("fecha_nacimiento", "fecha_caducidad"):
         out[k] = out[k].isoformat() if out[k] else None
     return {"leido": True, **out, "domicilio": domicilio, "avisos": avisos}
+
+
+# Largos de la zona MRZ completa cuando el lector la envía en una sola línea (TD1 3×30, TD2 2×36, TD3 2×44)
+_EN_UNA_LINEA = {90: 30, 72: 36, 88: 44}
+
+
+def _tecleado(linea: str) -> str:
+    """Línea «tecleada» por un lector MRZ. La zona solo lleva A-Z, 0-9 y «<»: cualquier otro carácter es un «<»
+    que la distribución del teclado ha cambiado (con teclado español, el lector configurado en inglés escribe «;»)."""
+    return re.sub(r"[^A-Z0-9]", "<", re.sub(r"\s+", "", linea.upper()))
+
+
+def leer_texto(texto: str, tipo: str | None = None) -> dict:
+    """Lectura con un lector de documentos que escribe la zona MRZ como un teclado (sin imagen ni OCR)."""
+    tipo = tipo if tipo in TIPOS else None
+    lineas = [x for x in (_tecleado(y) for y in re.split(r"[\r\n]+", texto)) if x]
+    if len(lineas) == 1 and (largo := _EN_UNA_LINEA.get(len(lineas[0]))):
+        lineas = [lineas[0][i:i + largo] for i in range(0, len(lineas[0]), largo)]
+    datos = mrz.interpretar(lineas)
+    if not datos:
+        return {"leido": False, "avisos": ["Lo recibido del lector no es una zona «<<<» válida: vuelva a pasar el "
+                                           "documento (en el DNI y la TIE, por la cara de las líneas «<<<»)."]}
+    return resultado(datos, tipo)
