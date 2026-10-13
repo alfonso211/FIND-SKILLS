@@ -48,7 +48,9 @@
   - **Roturas y faltas**: elija el artículo de la dotación y cuántos. Se descuentan de la fianza a su precio de reposición y el detalle va solo en el motivo.
   - Si limpieza ha hecho la **revisión en el móvil**, lo que marcó como roto o que falta ya sale cargado.
   - **OT mantenimiento**: márquela en lo roto que haya que reponer o reparar; se abre una orden de trabajo para ese apartamento. Lo roto de valor ya viene marcado.
+  - **Pedido**: lo que se repone comprándolo (menaje, toallas, sábanas…) viene marcado y se suma al **pedido de reposición** del activo. Hay uno abierto que se va sumando hasta que Recepción 1 lo autoriza en *Pedidos* y elige el proveedor.
   - Si las roturas **superan la fianza**, marque **Facturar al cliente lo que supera la fianza**. Se emite una factura sin IVA (es una indemnización) que queda **pendiente de cobro**.
+  - Facturas de exceso sin cobrar: se recuerdan solas al cliente por correo a los **3, 10 y 17 días**. En *Devoluciones de fianza* está el botón **Recordar cobro** (correo con la factura y WhatsApp). Cuando pague, márquela **Cobrada** en Facturas emitidas.
   - Si se retiene algo más, indique el **motivo**. Si no procede devolverla, elija **No procede**.
   - En *Reservas → Devoluciones de fianza* se ven todas; cuando la Dirección haga la transferencia, pulse **Transferencia hecha**.
 - Tras el check-out el apartamento pasa a **pendiente de limpieza**, sale en el **parte de limpieza** y se abre sola una **OT de revisión de salida** para mantenimiento.

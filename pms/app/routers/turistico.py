@@ -473,6 +473,7 @@ def _registrar_devolucion(db: Session, scope: Scope, r: Reservation, f: DepositR
     db.flush()
     extra: dict = {}
     u = r.unit
+    zonas = {x["codigo"]: x["zona"] for x in dotacion.de_reserva(db, r)["items"]}
     ots = []
     for c, ci in zip(cargos, f.cargos):  # lo roto que hay que reponer o reparar va a mantenimiento
         if not ci.ot:
@@ -490,6 +491,15 @@ def _registrar_devolucion(db: Session, scope: Scope, r: Reservation, f: DepositR
     if ots:
         flag_modified(d, "cargos")  # se ha añadido la OT a cada cargo
         extra["ots"] = ots
+    a_pedir = [{**c, "zona": zonas.get(c.get("codigo"), "auxiliar")} for c, ci in zip(cargos, f.cargos) if ci.pedido]
+    if a_pedir:  # lo que se repone comprándolo (menaje, ropa…): al pedido de reposición del activo
+        from .. import pedidos as pd
+        ped = pd.reponer(db, scope.user, u.asset, a_pedir, f"Salida {u.codigo} ({r.localizador or r.id})")
+        if ped is not None:
+            extra["pedido"] = {"id": ped.id, "numero": ped.numero, "nuevo": ped._nuevo}
+            if ped._nuevo:
+                from .pedidos import _avisar_r1
+                _avisar_r1(db, ped)
     exceso = round(suma - total, 2)
     if exceso > 0 and f.facturar_exceso:  # lo que no cubre la fianza: factura al cliente, pendiente de cobro
         a = u.asset
@@ -1697,8 +1707,10 @@ def deposits(estado: str | None = None, asset_id: int | None = None, scope: Scop
         stmt = stmt.where(DepositRefund.estado == estado)
     out = []
     for d, r, u, a in db.execute(stmt.order_by(DepositRefund.estado.desc(), DepositRefund.id.desc()).limit(500)):
+        fx = fianzas.factura_exceso(db, d)
         out.append({**fianzas.a_dict(d), "activo": a.nombre, "unidad": u.codigo,
-                    "localizador": r.localizador, "salida": r.fecha_salida.isoformat()})
+                    "localizador": r.localizador, "salida": r.fecha_salida.isoformat(),
+                    "exceso_cobro": fx.cobro if fx else None, "exceso_total": float(fx.total) if fx else None})
     return out
 
 
@@ -1717,6 +1729,18 @@ def deposit_done(fid: int, data: DevueltaIn, scope: Scope = Depends(get_scope), 
     audit(db, scope.user, "fianza_devuelta", "reserva", r.id, {"devolucion": d.id})
     db.commit()
     return fianzas.a_dict(d)
+
+
+@router.post("/fianzas/{fid}/recordatorio")
+def deposit_reminder(fid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Recordatorio de cobro al cliente de la factura de lo que superó la fianza (correo y WhatsApp)."""
+    d, r = _fianza(db, scope, fid)
+    x = fianzas.recordatorio_exceso(db, d, f"recordatorio_exceso:manual:{d.id}:{datetime.now():%Y%m%d%H%M}")
+    if not x["ok"]:
+        bad_request(x["error"])
+    audit(db, scope.user, "recordatorio_cobro", "reserva", r.id, {"factura": x["factura"]})
+    db.commit()
+    return x
 
 
 @router.post("/fianzas/{fid}/avisar")

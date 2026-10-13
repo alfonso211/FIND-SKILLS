@@ -1401,6 +1401,8 @@ async function expedienteCliente(c, volver) {
   }));
 }
 
+// lo que se repone comprándolo (menaje, ropa de cama y baño): va al pedido de reposición; lo demás, a mantenimiento
+const seRepone = (x) => x.zona === "menaje" || /^(BAN(07|09|10|11|12)|DOR(06|08|09|10|11|12))$/.test(x.codigo || "");
 // ---- salida del apartamento con la devolución de la fianza (si procede)
 async function salidaReserva(r, reload, preguntar = false) {
   const info = await run(() => get(`/api/turistico/reservas/${r.id}/fianza`));
@@ -1428,7 +1430,7 @@ async function salidaReserva(r, reload, preguntar = false) {
   ], {}, async (d) => {
     const facturar_exceso = f.elements.facturar_exceso.checked;
     const x = await post(`/api/turistico/reservas/${r.id}/checkout`, { fianza: { ...clean({ ...d, importe: d.forma === "no_procede" ? 0 : d.importe }), cargos, facturar_exceso } });
-    toast(`Salida realizada · fianza: ${x.devolucion.forma_texto}${x.ots ? ` · ${x.ots.length} OT a mantenimiento` : ""}${x.factura_exceso ? ` · factura ${x.factura_exceso.codigo} (${eur(x.factura_exceso.total)}, pendiente de cobro)` : ""}`);
+    toast(`Salida realizada · fianza: ${x.devolucion.forma_texto}${x.ots ? ` · ${x.ots.length} OT a mantenimiento` : ""}${x.pedido ? ` · pedido ${x.pedido.numero}` : ""}${x.factura_exceso ? ` · factura ${x.factura_exceso.codigo} (${eur(x.factura_exceso.total)}, pendiente de cobro)` : ""}`);
     reload && reload();
     if (x.whatsapp) setTimeout(() => avisoFianza(x), 0);
   }, "Dar la salida");
@@ -1444,10 +1446,12 @@ async function salidaReserva(r, reload, preguntar = false) {
   const pintaCargos = () => {
     const suma = Math.round(cargos.reduce((t, c) => t + c.cantidad * c.precio, 0) * 100) / 100;
     $("[data-cargos]", f).innerHTML = cargos.length ? `<ul class="envios">${cargos.map((c, i) => `<li>${c.cantidad} × ${esc(c.articulo)} · ${eur(c.precio)} = <b>${eur(c.cantidad * c.precio)}</b>
-        <label class="check" title="Orden de trabajo a mantenimiento para reponerlo o repararlo"><input type="checkbox" data-ot="${i}" ${c.ot ? "checked" : ""}> OT mantenimiento</label> <button type="button" class="btn sm" data-quita="${i}">Quitar</button></li>`).join("")}</ul>
+        <label class="check" title="Orden de trabajo a mantenimiento para reponerlo o repararlo"><input type="checkbox" data-ot="${i}" ${c.ot ? "checked" : ""}> OT mantenimiento</label>
+        ${c.codigo ? `<label class="check" title="Se añade al pedido de reposición del activo (lo autoriza Recepción 1)"><input type="checkbox" data-ped="${i}" ${c.pedido ? "checked" : ""}> Pedido</label>` : ""} <button type="button" class="btn sm" data-quita="${i}">Quitar</button></li>`).join("")}</ul>
       <p>Total cargos: <b>${eur(suma)}</b>${suma > info.fianza ? ` <span class="error">supera la fianza en ${eur(suma - info.fianza)}</span>` : ""}</p>` : '<p class="muted">Sin roturas ni faltas.</p>';
     f.querySelectorAll("[data-quita]").forEach((b) => (b.onclick = () => { cargos.splice(Number(b.dataset.quita), 1); pintaCargos(); }));
     f.querySelectorAll("[data-ot]").forEach((b) => (b.onchange = () => (cargos[b.dataset.ot].ot = b.checked)));
+    f.querySelectorAll("[data-ped]").forEach((b) => (b.onchange = () => (cargos[b.dataset.ped].pedido = b.checked)));
     $("[data-exc]", f).style.display = suma > info.fianza ? "" : "none";
     f.elements.importe.value = Math.max(0, Math.round((info.fianza - suma) * 100) / 100);
     sync();
@@ -1464,7 +1468,7 @@ async function salidaReserva(r, reload, preguntar = false) {
       const x = dot.items[Number(v)];
       let precio = x.precio;
       if (precio == null) { precio = Number(String(prompt(`Precio de reposición de «${x.articulo}» €:`) || "").replace(",", ".")); if (!(precio >= 0)) return toast("Precio no válido", true); }
-      cargos.push({ codigo: x.codigo, articulo: x.articulo, cantidad: cant, precio });
+      cargos.push({ codigo: x.codigo, articulo: x.articulo, cantidad: cant, precio, pedido: seRepone(x), ot: !seRepone(x) && precio >= 20 });
     }
     pintaCargos();
   };
@@ -1475,7 +1479,7 @@ async function salidaReserva(r, reload, preguntar = false) {
   };
   // lo que limpieza marcó en el móvil llega ya cargado; lo roto de valor abre OT a mantenimiento por defecto
   (info.revision?.items || []).forEach((x) => cargos.push({ codigo: x.codigo, articulo: x.articulo, cantidad: x.cantidad, precio: x.precio ?? 0,
-    ot: x.estado === "roto" && x.zona !== "menaje" && (x.precio ?? 0) >= 20 }));
+    ot: x.estado === "roto" && !seRepone(x) && (x.precio ?? 0) >= 20, pedido: seRepone(x) }));
   pintaCargos();
 }
 async function informeRoturas() {
@@ -1511,12 +1515,18 @@ async function devolucionesFianza() {
       { k: "fianza", t: "Fianza", num: true, f: eur }, { k: "importe", t: "Devuelto", num: true, f: eur }, { k: "forma_texto", t: "Forma" },
       { k: "fecha", t: "Fecha", f: (v, x) => fdate(x.devuelta_fecha || v) },
       { k: "estado", t: "Estado", f: (v) => (v === "devuelta" ? "✔ devuelta" : '<span class="badge b-pendiente">transferencia pendiente</span>') },
+      { k: "exceso_total", t: "Exceso", f: (v, x) => (v ? `${eur(v)} ${x.exceso_cobro === "pendiente" ? '<span class="badge b-pendiente">sin cobrar</span>' : "✔"}` : "—") },
       { k: "exportada", t: "Gestoría", f: (v) => (v ? `enviada ${fdate(v)}` : "—") }], l,
-    (x) => x.estado !== "devuelta" && can("reservas.editar") ? [
-      ["Transferencia hecha", () => run(() => post(`/api/turistico/fianzas/${x.id}/devuelta`, {}), "Fianza devuelta").then(pinta)],
-      ["Reenviar aviso", async () => avisoFianza(await run(() => post(`/api/turistico/fianzas/${x.id}/avisar`)))]] : []);
+    (x) => can("reservas.editar") ? [
+      x.estado !== "devuelta" && ["Transferencia hecha", () => run(() => post(`/api/turistico/fianzas/${x.id}/devuelta`, {}), "Fianza devuelta").then(pinta)],
+      x.estado !== "devuelta" && ["Reenviar aviso", async () => avisoFianza(await run(() => post(`/api/turistico/fianzas/${x.id}/avisar`)))],
+      x.exceso_cobro === "pendiente" && ["Recordar cobro", async () => {
+        const m = await run(() => post(`/api/turistico/fianzas/${x.id}/recordatorio`));
+        toast(m.email ? `Recordatorio enviado a ${m.email.destinatario}${m.email.ok ? "" : " (error)"}` : "El cliente no tiene correo");
+        if (m.whatsapp && confirm("¿Enviar también el recordatorio por WhatsApp al cliente?")) window.open(m.whatsapp, "_blank", "noopener");
+      }]] : []);
   };
-  const f = cerrarSolo(form("Devoluciones de fianza", [{ html: `<p class="muted">Registradas al dar la salida. Las transferencias las hace la Dirección; cuando esté hecha, márquela. Todas van en el envío a INVERGESTION (gestoría).</p>
+  const f = cerrarSolo(form("Devoluciones de fianza", [{ html: `<p class="muted">Registradas al dar la salida. Las transferencias las hace la Dirección; cuando esté hecha, márquela. Todas van en el envío a INVERGESTION (gestoría). Las facturas de exceso sin cobrar se recuerdan solas al cliente a los 3, 10 y 17 días (si tiene correo).</p>
     <div class="toolbar"><span class="spacer"></span><button type="button" class="btn" data-roturas>Informe de roturas</button></div><div data-t></div>` }], {}, async () => {}));
   $("#modal").classList.add("ancho");
   $("[data-roturas]", f).onclick = () => informeRoturas();

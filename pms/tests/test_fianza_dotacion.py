@@ -260,3 +260,45 @@ def test_revision_movil_ot_factura_exceso_e_informe(client, admin, ids):
     assert tv_inf["importe"] >= 450 and tv_inf["ots"] >= 1 and inf["facturado_exceso"] >= 408
     xl = client.get("/api/turistico/informe-roturas", headers=admin, params={**q, "formato": "xlsx"})
     assert xl.status_code == 200 and xl.content[:2] == b"PK"
+
+
+def test_pedido_reposicion_y_recordatorio_cobro(client, admin, ids):
+    from app import fianzas
+    from app.database import SessionLocal
+    sae = ids["assets"]["SAE"]["id"]
+
+    def salida(loc, doc, cargos, fianza=20):
+        r = _reserva(client, admin, sae, {"guest": {**COMPLETO, "documento_num": doc, "nombre": loc,
+                                                     "email": f"{loc.lower()}@example.com"}}, loc)
+        client.put(f"/api/turistico/reservas/{r['id']}", headers=admin, json={"estado": "checkin"})
+        client.post(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin, json={
+            "fecha_firma": HOY.isoformat(), "fianza": fianza, "motivo": ["turismo"], "acreditacion": ["dni"],
+            "solo_guardar": True})
+        x = client.post(f"/api/turistico/reservas/{r['id']}/checkout", headers=admin, json={"fianza": {
+            "forma": "efectivo", "facturar_exceso": True, "cargos": cargos}})
+        assert x.status_code == 200, x.text
+        return x.json()
+
+    vasos = {"codigo": "MEN04", "articulo": "Vasos de agua / refresco", "cantidad": 3, "precio": 2.5, "pedido": True}
+    a = salida("PEDA", "66666666Q", [vasos, {"codigo": "BAN09", "articulo": "Toallas de baño (100x150)",
+                                             "precio": 15, "pedido": True}])
+    b = salida("PEDB", "77777777B", [{**vasos, "cantidad": 2}])
+    # un solo pedido de reposición pendiente de autorizar, que se va sumando
+    assert a["pedido"]["nuevo"] and not b["pedido"]["nuevo"] and a["pedido"]["id"] == b["pedido"]["id"]
+    p = client.get(f"/api/pedidos/{a['pedido']['id']}", headers=admin).json()
+    assert p["estado"] == "pendiente" and len(p["lineas"]) == 2
+    assert any(float(x["cantidad"]) == 5 for x in p["lineas"])
+    # recordatorio de cobro del exceso (fianza 20 €, cargos 22,50 €)
+    dv = a["devolucion"]
+    assert a["factura_exceso"]["total"] == 2.5
+    avisos.BANDEJA.clear()
+    m = client.post(f"/api/turistico/fianzas/{dv['id']}/recordatorio", headers=admin).json()
+    assert m["email"]["ok"] and m["whatsapp"].startswith("https://wa.me/34611222333")
+    assert avisos.BANDEJA[-1]["para"] == "peda@example.com" and avisos.BANDEJA[-1]["adjuntos"]
+    lst = {x["id"]: x for x in client.get("/api/turistico/fianzas", headers=admin).json()}
+    assert lst[dv["id"]]["exceso_cobro"] == "pendiente"
+    with SessionLocal() as db:
+        assert fianzas.recordatorios_exceso(db, HOY) == 0  # aún no toca
+        n3 = fianzas.recordatorios_exceso(db, HOY + timedelta(days=3))
+        assert n3 >= 1 and fianzas.recordatorios_exceso(db, HOY + timedelta(days=3)) == 0  # una vez
+        assert fianzas.recordatorios_exceso(db, HOY + timedelta(days=10)) >= 1
