@@ -432,3 +432,49 @@ def reponer(db: Session, user: User | None, asset: Asset, cargos: list[dict], or
     db.flush()
     p._nuevo = nuevo  # para avisar a Recepción 1 solo al crearlo
     return p
+
+
+# --------------------------------------------------------------------------- aviso a la Dirección
+DIAS_SIN_AUTORIZAR = 3
+
+
+def avisar_reposicion_atascada(db: Session, hoy: date | None = None) -> int:
+    """Un correo al día (laborable) a la Dirección con los pedidos de reposición que llevan más de 3 días sin que
+    Recepción 1 los autorice. Devuelve cuántos pedidos se han avisado."""
+    from datetime import timedelta
+    from html import escape
+
+    from . import avisos, calendario
+    from .config import settings
+    from .models import EmailLog
+    hoy = hoy or date.today()
+    if not calendario.laborable(hoy):
+        return 0
+    clave = f"pedidos_reposicion:{hoy.isoformat()}"
+    if db.scalar(select(EmailLog.id).where(EmailLog.clave == clave)):
+        return 0
+    pend = list(db.scalars(select(PurchaseOrder).where(
+        PurchaseOrder.estado == "pendiente", PurchaseOrder.notas.like(f"{REPOSICION}%"),
+        PurchaseOrder.fecha <= hoy - timedelta(days=DIAS_SIN_AUTORIZAR)).order_by(PurchaseOrder.fecha)))
+    if not pend:
+        return 0
+    filas = []
+    for p in pend:
+        t = totales(p)
+        r1 = recepcion_1(db, p.asset)
+        filas.append([p.numero, p.asset.nombre, f"{p.fecha:%d/%m/%Y}", (hoy - p.fecha).days, len(p.lineas),
+                      f"{t['total']:.2f} €", r1.nombre if r1 else "—"])
+    asunto = f"Pedidos de reposición sin autorizar: {len(pend)}"
+    texto = (f"Hay {len(pend)} pedido(s) de reposición de la dotación con más de {DIAS_SIN_AUTORIZAR} días sin "
+             "autorizar por Recepción 1:\n" + "\n".join(f"{f[0]} · {f[1]} · desde {f[2]} ({f[3]} días) · {f[5]}"
+                                                       for f in filas))
+    html = avisos._html("Pedidos de reposición sin autorizar", (
+        f"<p>Estos pedidos de reposición (menaje, ropa…) llevan más de {DIAS_SIN_AUTORIZAR} días pendientes de que "
+        f"Recepción 1 los autorice y elija proveedor. Se pueden autorizar en <b>Mantenimiento → Pedidos de material</b>.</p>")
+        + avisos._tabla(["Pedido", "Activo", "Desde", "Días", "Líneas", "Total est.", "Recepción 1"], filas)
+        + f"<p style='color:#8d877b'>{escape('Se avisa cada día laborable hasta que se autoricen.')}</p>")
+    for e in settings.fianza_avisos:  # Dirección (Bárbara y Alfonso)
+        u = db.scalar(select(User).where(User.email == e))
+        avisos._enviar_registrado(db, u, e, clave, "pedidos_reposicion", asunto, texto, html)
+    db.commit()
+    return len(pend)

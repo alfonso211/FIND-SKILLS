@@ -428,6 +428,11 @@ def bloqueado_por_gestion(db: Session, uid: int) -> UnitBlock | None:
 DESTINOS = {"inicio", "unidad", "incidencias", "produccion"}
 
 
+def puede_ir(u: User) -> bool:
+    """El botón «Gestión» solo es para el superadministrador y las cuentas de PMS_GESTION_USUARIOS."""
+    return bool(u.is_superadmin or (u.email or "").lower() in settings.gestion_usuarios)
+
+
 def _b64(b: bytes) -> str:
     return base64.urlsafe_b64encode(b).decode().rstrip("=")
 
@@ -436,6 +441,8 @@ def _b64(b: bytes) -> str:
 def pase(destino: str = "inicio", asset_id: int | None = None, unit_id: int | None = None,
          scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     """Dirección para abrir gestión desde el PMS. La firma se calcula aquí, en el servidor."""
+    if not puede_ir(scope.user):
+        raise HTTPException(403, "El acceso a gestión solo está habilitado para la Dirección")
     if destino not in DESTINOS:
         bad_request("Destino no válido")
     a = db.get(Asset, asset_id) if asset_id else None

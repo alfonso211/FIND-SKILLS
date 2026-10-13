@@ -790,14 +790,14 @@ async function fichaApartamento(uid, recarga, cargada = null) {
     d.puede.gasto && ["gasto", "Factura recibida", "Subir una factura o ticket imputado a esta vivienda"],
     d.puede.incidencia && ["incidencia", "Incidencia", "Abrir una incidencia o parte de trabajo con fotos"],
     d.puede.parte_estado && ["estado", "Parte de estado", "Señalar una deficiencia al revisar la vivienda"],
-    ["gestion", "Gestión", "Abrir esta vivienda en INVERGESTION (órdenes de trabajo, costes)"],
+    S.me.gestion && ["gestion", "Gestión", "Abrir esta vivienda en INVERGESTION (órdenes de trabajo, costes)"],
   ].filter(Boolean) : [
     d.puede.reservar && ["reserva", "Reserva", garaje ? "Por días o semanas (huésped o cliente)" : "Nueva reserva en este apartamento"],
     d.puede.alquilar && !d.alquiler && ["alquiler", "Alquiler mensual", "Cliente externo: recibo cada mes y factura al 21 %"],
     d.puede.bloquear && (d.estado === "bloqueado" ? ["desbloquear", "Bloqueado", bloqueoVigente ? `Motivo: ${bloqueoVigente.motivo}. Pulse para desbloquear` : "Pulse para desbloquear"] : ["bloqueo", "Bloqueado", "Sacarlo de venta indicando el motivo"]),
     d.puede.incidencia && ["incidencia", "Incidencia", "Abrir una incidencia (avería) con fotos"],
     d.puede.parte_estado && ["estado", "Parte de estado", "Señalar una deficiencia al revisar el apartamento"],
-    !garaje && ["gestion", "Gestión", "Abrir este apartamento en INVERGESTION (órdenes de trabajo, costes)"],
+    !garaje && S.me.gestion && ["gestion", "Gestión", "Abrir este apartamento en INVERGESTION (órdenes de trabajo, costes)"],
   ].filter(Boolean);
   const f = cerrarSolo(form(garaje ? `Plaza de garaje ${u.codigo} · ${u.bloque || ""}` : vivienda ? `Vivienda ${u.codigo} · ${assetName(u.asset_id)}` : `Apartamento ${u.codigo} · ${u.tipologia || ""}`, [
     { html: `${vivienda ? cabVivienda : `<p><span class="estado-ap pc-${d.estado}">${ESTADO_TXT[d.estado]}</span> ${u.bloque ? esc(u.bloque) + " · " : ""}planta ${esc(u.planta || "")}${u.capacidad ? ` · ${u.capacidad} plazas` : ""}${d.limpieza ? ' · <span class="badge b-pendiente_limpieza">pendiente de limpieza</span>' : ""}</p>${actual}`}
@@ -5774,6 +5774,7 @@ function vigilarResultadosOT() {
 }
 function pintarUsuario() {
   $("#userAvatar").textContent = iniciales(S.me.nombre); $("#userAvatar").title = S.me.nombre;
+  $("#gestionBtn").hidden = !S.me.gestion;  // solo superadministrador, Alfonso y Bárbara
   $("#userName").innerHTML = `${esc(S.me.nombre)}<small>${esc(S.me.colaborador ? S.me.colaborador.proveedor : rolDe(S.me))}</small>`;
 }
 function showLogin() { $("#app").classList.add("hidden"); $("#login").classList.remove("hidden"); }

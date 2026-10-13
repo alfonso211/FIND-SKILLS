@@ -302,3 +302,22 @@ def test_pedido_reposicion_y_recordatorio_cobro(client, admin, ids):
         n3 = fianzas.recordatorios_exceso(db, HOY + timedelta(days=3))
         assert n3 >= 1 and fianzas.recordatorios_exceso(db, HOY + timedelta(days=3)) == 0  # una vez
         assert fianzas.recordatorios_exceso(db, HOY + timedelta(days=10)) >= 1
+
+
+def test_aviso_direccion_pedidos_reposicion_atascados(client, admin, ids):
+    from app import pedidos
+    from app.database import SessionLocal
+    from app.models import PurchaseOrder
+    lunes = HOY + timedelta(days=(7 - HOY.weekday()) % 7 or 7)  # un lunes laborable futuro
+    with SessionLocal() as db:
+        p = db.scalar(pedidos.select(PurchaseOrder).where(PurchaseOrder.notas.like(f"{pedidos.REPOSICION}%"),
+                                                         PurchaseOrder.estado == "pendiente"))
+        assert p is not None, "la prueba del pedido de reposición debe haberlo creado"
+        p.fecha = lunes - timedelta(days=4)
+        db.commit()
+        avisos.BANDEJA.clear()
+        assert pedidos.avisar_reposicion_atascada(db, lunes) >= 1
+        para = sorted({m["para"] for m in avisos.BANDEJA if "reposición" in m["asunto"]})
+        assert para == ["alfonso@inversiete.es", "barbara@inversiete.es"]
+        assert pedidos.avisar_reposicion_atascada(db, lunes) == 0  # una vez al día
+        assert pedidos.avisar_reposicion_atascada(db, lunes - timedelta(days=1)) == 0  # domingo: no

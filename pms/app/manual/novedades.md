@@ -1,5 +1,9 @@
 # Novedades
 
+## 2026-10-15 · Versión 1.49 · Botón «Gestión» solo para la Dirección y aviso de pedidos de reposición
+- **Todos · botón «Gestión»**: solo lo ven el administrador, Alfonso y Bárbara.
+- **Dirección · pedidos de reposición sin autorizar**: si Recepción 1 no autoriza un pedido de reposición en 3 días, llega un aviso cada día laborable.
+
 ## 2026-10-15 · Versión 1.48 · Pasarela con INVERGESTION (gestión)
 - **Recepción · salida sin OT automática**: el check-out ya no abre la OT de revisión de salida. En el parte de limpieza, **Hecha con incidencia** abre la OT cuando hay algo que reparar (y llega a gestión). Las OT por roturas y el pedido de reposición al dar la salida siguen igual.
 - **Recepción · apartamentos cerrados desde gestión**: una avería grave registrada en gestión bloquea el apartamento en el PMS y lo reabre al cerrarla. Las reservas no se cancelan: llega un correo con las que hay que reubicar.

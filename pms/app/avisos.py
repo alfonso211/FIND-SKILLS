@@ -685,6 +685,9 @@ def _bucle() -> None:
                 from .informe_vacaciones import recordatorio_semanal
                 with SessionLocal() as db:
                     recordatorio_semanal(db, ahora.date())  # los lunes; una vez por semana y persona
+                from .pedidos import avisar_reposicion_atascada
+                with SessionLocal() as db:
+                    avisar_reposicion_atascada(db, ahora.date())  # pedidos de reposición > 3 días sin autorizar
                 from .fianzas import recordatorios_exceso
                 with SessionLocal() as db:
                     recordatorios_exceso(db, ahora.date())  # facturas de roturas sin cobrar: 3, 10 y 17 días
