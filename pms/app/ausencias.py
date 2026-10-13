@@ -1,16 +1,17 @@
 """Ausencias del personal: quién pertenece a cada colectivo y quién aprueba sus solicitudes.
 
-    Colectivo                         Quién la registra             Quién la aprueba
-    Mantenimiento                     el propio técnico (todos       solo el director técnico
-                                      la ven en el calendario)      («personal.autorizar_mto»)
-    Limpieza, conserjería, otros      Recepción 1 (se lo dicen       Recepción 1 (o dirección)
-    (subcontratas por administración) de palabra)
-    Recepción 2                       ella misma                     visto bueno de Recepción 1 y
-                                                                     después dirección («personal.autorizar»)
-    Recepción 1, dirección, oficinas  la propia persona              dirección («personal.autorizar»)
+Cada persona solicita sus propias ausencias con su usuario del PMS, enlazado a su ficha de empleado (las fichas
+del personal propio las da de alta el Director Técnico). Quién las aprueba:
 
-Nadie aprueba su propia solicitud (salvo el administrador del PMS).
+    Colectivo                         Quién la aprueba
+    Mantenimiento                     solo el director técnico («personal.autorizar_mto»)
+    Limpieza, conserjería, otros      Recepción 1 del activo (o dirección)
+    Recepción 2                       visto bueno de Recepción 1 y después dirección («personal.autorizar»)
+    Recepción 1, dirección, oficinas  dirección («personal.autorizar»)
+
+Recepción 1 de cada activo es la asignada en la ficha del activo. Nadie aprueba su propia solicitud.
 """
+import re
 from datetime import date, timedelta
 
 from sqlalchemy import select
@@ -23,8 +24,15 @@ PERSONAL_R1 = ("limpieza", "conserjeria", "otros")  # colectivos que gestiona Re
 
 
 def recepcion_1(db: Session, a: Asset) -> User | None:
-    from .routers.presidencia import responsable
-    return responsable(db, a)
+    """Recepción 1 del activo: la asignada en la ficha del activo. Si no hay ninguna asignada (instalaciones
+    antiguas), el usuario de Recepción del activo cuyo nombre empieza por «Recepción 1»."""
+    if a.recepcion1_id:
+        u = db.get(User, a.recepcion1_id)
+        return u if u and u.activo else None
+    from .models import Role
+    candidatos = db.scalars(select(User).join(Assignment, Assignment.user_id == User.id).join(Role).where(
+        User.activo, Assignment.asset_id == a.id, Role.nombre == "Recepción").order_by(User.nombre))
+    return next((u for u in candidatos if re.match(r"recepci[oó]n\s*1\b", u.nombre or "", re.I)), None)
 
 
 def recepcion(db: Session, a: Asset) -> list[User]:

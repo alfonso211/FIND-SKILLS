@@ -1,5 +1,17 @@
 # Novedades
 
+## 2026-10-14 · Versión 1.41 · Personal: nuevas reglas y empezar de cero
+- **Recepción 1 de cada activo**: ahora se asigna en *Activos → Editar → Recepción 1*. Antes se deducía del nombre del usuario y podía tomar a Recepción 1 por Recepción 2.
+- **Fichas del personal**:
+  - El personal propio de las sociedades lo da de alta solo el **Director Técnico**.
+  - **Recepción 1 y Recepción 2** solo dan de alta personal de **subcontratas**, indicando la empresa.
+  - Cada usuario del PMS solo puede estar en **una** ficha.
+- **Vacaciones y ausencias**: cada persona las solicita **con su usuario y sobre su propia ficha**. Ya no se registran ausencias de otras personas.
+- **Comprobar personal** (Director Técnico):
+  - Lista los errores: activos sin Recepción 1, nombres que no cuadran, usuarios en varias fichas y solicitudes que van a quien no debe aprobarlas, que se corrigen con un clic.
+  - Genera las fichas desde los usuarios.
+  - **Borra todo el personal** para empezar de nuevo.
+
 ## 2026-10-13 · Versión 1.40 · CAPEX: inversiones y reformas (fase 1)
 - **Dirección Técnica**: nuevo menú **Inversiones (CAPEX)**. Cada proyecto lleva sus mediciones y su presupuesto base (PEM, gastos generales, beneficio industrial, PBL e IVA) y se compara con el presupuesto objetivo.
 - **Presupuesto en minutos**: importar un **BC3** (Presto, Arquímedes…), añadir partidas desde una **base de precios** pública o cargar una **plantilla «CAPEX tipo»** (reforma de baño, panelado de puertas…) con sus planos y pliegos.

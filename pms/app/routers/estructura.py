@@ -8,7 +8,7 @@ from .. import avisos, limpiezas, marca, nif, registro_viajeros
 from ..database import get_db
 from ..facturacion import FORMAS_PAGO
 from ..models import (ESTADOS_UNIDAD, MODALIDADES, USOS_UNIDAD, Asset, Company, Contact, ContactDistinct,
-                      ContactDocument, Invoice, Lease, Reservation, ReservationGuest, Unit)
+                      ContactDocument, Invoice, Lease, Reservation, ReservationGuest, Unit, User)
 from ..schemas import AssetIn, AssetUpdate, CompanyIn, ContactIn, UnitBulk, UnitIn, UnitUpdate
 from ..security import PERMISOS, Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
@@ -116,6 +116,15 @@ def list_assets(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)
     return [_asset_out(a, counts.get(a.id, 0)) for a in rows]
 
 
+def _valida_r1(db: Session, aid: int | None, uid: int | None) -> None:
+    """Recepción 1 debe ser un usuario activo con el rol Recepción en ese activo."""
+    if not uid:
+        return
+    u = get_or_404(db, User, uid)
+    if not u.activo or aid is None or not any(x.asset_id == aid and x.role.nombre == "Recepción" for x in u.assignments):
+        bad_request(f"{u.nombre} no tiene el rol Recepción en este activo: asígneselo en Administración → Usuarios")
+
+
 @router.post("/activos", status_code=201)
 def create_asset(data: AssetIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     if not scope.can_company("activos.editar", data.company_id):
@@ -128,6 +137,8 @@ def create_asset(data: AssetIn, scope: Scope = Depends(get_scope), db: Session =
     if db.scalar(select(Asset).where(Asset.codigo == data.codigo)):
         bad_request("Ya existe un activo con ese código")
     _serie_libre(db, data.serie_factura)
+    if data.recepcion1_id:
+        bad_request("Asigne la Recepción 1 después de crear el activo y dar a esa persona el rol Recepción en él")
     a = Asset(**{**data.model_dump(), "propietaria_id": data.propietaria_id or data.company_id})
     db.add(a)
     db.flush()
@@ -147,6 +158,8 @@ def update_asset(aid: int, data: AssetUpdate, scope: Scope = Depends(get_scope),
     if data.propietaria_id is not None and data.propietaria_id != a.propietaria_id:
         get_or_404(db, Company, data.propietaria_id)
     _serie_libre(db, data.serie_factura, aid)
+    if "recepcion1_id" in data.model_fields_set:
+        _valida_r1(db, aid, data.recepcion1_id)
     ch = apply(a, data)
     audit(db, scope.user, "editar", "activo", aid, ch)
     db.commit()

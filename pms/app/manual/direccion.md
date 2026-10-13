@@ -76,6 +76,14 @@
 - Si una solicitud de vacaciones **supera el saldo** de la persona, sale el aviso en rojo antes de aprobarla.
 
 ## Gestión del personal: ficha, saldo, documentos y jornada
+- **Reglas**:
+  - El **Director Técnico** da de alta al personal propio de las sociedades y enlaza su usuario del PMS (un usuario, una ficha).
+  - Recepción solo da de alta subcontratas.
+  - **Recepción 1** de cada activo se asigna en *Activos → Editar*.
+- **Comprobar personal** (en *Fichas del personal*) tiene cuatro funciones:
+  - Revisa activos sin Recepción 1, nombres que no cuadran, usuarios repetidos y solicitudes mal clasificadas (estas se corrigen con un clic).
+  - **Generar las fichas desde los usuarios** crea las que falten, con el área y el activo según el rol.
+  - **Borrar todo el personal** borra todas las fichas, sus fichajes, documentos y envíos. Solo pueden hacerlo las cuentas autorizadas y hay que escribir «BORRAR PERSONAL». Las ausencias de los usuarios se conservan.
 - **Personal → Fichas del personal → Editar**: ficha del empleado (DNI, puesto, contrato, jornada semanal, alta y baja, días de vacaciones del convenio y su usuario del PMS). Solo la ven Recepción 1 de su activo y la dirección.
 - **Saldo de vacaciones**: los días del convenio (22 laborables por defecto, o los que indique la ficha) prorrateados por la fecha de alta y de baja, menos las aprobadas. Se ve en la columna **Vacaciones**.
 - **Docs.**: contrato, nóminas, reconocimiento médico, formación PRL… cifrados y con vencimiento. Los que vencen en 30 días salen en el panel y en el resumen diario de correo.

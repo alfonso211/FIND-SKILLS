@@ -21,7 +21,19 @@ VIGENTES = ("pendiente", "visto_bueno", "aprobada")
 
 
 def es_propio(p: StaffMember) -> bool:
-    return p.supplier_id is None and p.tipo_contrato != "autonomo"
+    """Personal de las sociedades del grupo (no de una subcontrata ni autónomo)."""
+    return p.supplier_id is None and not (p.empresa or "").strip() and p.tipo_contrato != "autonomo"
+
+
+def director_tecnico(scope) -> bool:
+    """Da de alta y edita las fichas del personal propio de las sociedades (y el administrador del PMS)."""
+    return scope.user.is_superadmin or scope.has_any("personal.autorizar_mto")
+
+
+def es_recepcion(db: Session, scope, asset_id: int | None) -> bool:
+    """Recepción (1 o 2) del activo: solo da de alta personal de subcontratas."""
+    return asset_id is not None and any(x.asset_id == asset_id and x.role.nombre == "Recepción"
+                                        for x in scope.user.assignments)
 
 
 def puede_gestionar(db: Session, scope, p: StaffMember) -> bool:

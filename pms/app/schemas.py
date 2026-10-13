@@ -37,6 +37,7 @@ class AssetIn(BaseModel):
     cp: str | None = None
     pais: str | None = None
     informe_responsable_id: int | None = None
+    recepcion1_id: int | None = None
     informe_emails: str | None = None
     informe_whatsapp: str | None = None
     ref_catastral: str | None = None
@@ -60,6 +61,7 @@ class AssetUpdate(BaseModel):
     cp: str | None = None
     pais: str | None = None
     informe_responsable_id: int | None = None
+    recepcion1_id: int | None = None
     informe_emails: str | None = None
     informe_whatsapp: str | None = None
     ref_catastral: str | None = None

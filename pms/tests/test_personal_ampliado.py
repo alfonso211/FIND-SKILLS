@@ -39,16 +39,19 @@ def test_ficha_saldo_documentos_y_jornada(client, admin, ids):
 
     # vacaciones: saldo, aviso al superarlo y vista de todos los activos
     l1 = _lunes(8)
-    v = client.post("/api/ausencias", headers=admin, json={
-        "asset_id": sfl, "staff_id": p["id"], "tipo": "vacaciones", "desde": l1.isoformat(),
-        "hasta": (l1 + timedelta(days=4)).isoformat(), "aprobar": True})
-    assert v.status_code == 201 and v.json()["aviso_saldo"] is None and v.json()["estado"] == "aprobada"
+    r1_antes = next(a for a in client.get("/api/activos", headers=admin).json() if a["id"] == sfl)["recepcion1_id"]
+    client.put(f"/api/activos/{sfl}", headers=admin, json={"recepcion1_id": yo["id"]})  # la aprueba dirección
+    v = client.post("/api/ausencias", headers=rec, json={
+        "asset_id": sfl, "tipo": "vacaciones", "desde": l1.isoformat(), "hasta": (l1 + timedelta(days=4)).isoformat()})
+    assert v.status_code == 201 and v.json()["aviso_saldo"] is None and v.json()["colectivo"] == "recepcion1", v.text
+    v = client.post(f"/api/ausencias/{v.json()['id']}/aprobar", headers=admin)
+    assert v.json()["estado"] == "aprobada"
     s = client.get(f"/api/personal/{p['id']}/saldo", headers=admin).json()
     if l1.year == anio:
         assert (s["aprobadas"], s["restantes"]) == (5, 17)
     l2 = _lunes(12)
-    w = client.post("/api/ausencias", headers=admin, json={
-        "asset_id": sfl, "staff_id": p["id"], "tipo": "vacaciones", "desde": l2.isoformat(), "hasta": (l2 + timedelta(days=27)).isoformat()})
+    w = client.post("/api/ausencias", headers=rec, json={
+        "asset_id": sfl, "tipo": "vacaciones", "desde": l2.isoformat(), "hasta": (l2 + timedelta(days=27)).isoformat()})
     if l2.year == anio and (l2 + timedelta(days=27)).year == anio:
         assert "Supera el saldo" in w.json()["aviso_saldo"]
     todas = client.get("/api/ausencias", headers=admin, params={"estado": "vigentes"}).json()
@@ -56,6 +59,7 @@ def test_ficha_saldo_documentos_y_jornada(client, admin, ids):
     assert any(x["id"] == w.json()["id"] and x.get("aviso_saldo") for x in todas) or l2.year != anio
     assert client.get("/api/ausencias/resumen", headers=admin).status_code == 200
     assert client.get("/api/ausencias/excel", headers=admin).status_code == 200
+    client.put(f"/api/activos/{sfl}", headers=admin, json={"recepcion1_id": r1_antes})
 
     # documentos de la ficha con vencimiento
     vencido = (date.today() - timedelta(days=1)).isoformat()
@@ -114,3 +118,55 @@ def test_ficha_saldo_documentos_y_jornada(client, admin, ids):
     assert client.get("/api/jornada/excel", headers=admin, params={"mes": mes}).status_code == 200
     # la ficha con fichajes no se borra (se conservan 4 años): se da de baja
     assert client.delete(f"/api/personal/{m['id']}", headers=admin).status_code == 400
+
+
+def test_recepcion1_explicita_comprobar_y_borrar_todo(client, admin, ids):
+    """Recepción 1 asignada en el activo (no por el nombre), un usuario en una sola ficha, comprobación con corrección
+    de solicitudes mal clasificadas y borrado de todo el personal para empezar de nuevo."""
+    from test_ausencias import _user
+    bab = ids["assets"]["BAB35"]["id"]
+    jc = _user(client, admin, ids, "jc.r1@inversiete.com", "Juan Carlos Pruebas", "Recepción", "BAB35")
+    yo = client.get("/api/auth/me", headers=jc).json()
+    ficha = client.post("/api/personal", headers=admin, json={"asset_id": bab, "area": "recepcion", "nombre": yo["nombre"],
+                                                              "user_id": yo["id"]}).json()
+    # un usuario, una ficha
+    r = client.post("/api/personal", headers=admin, json={"asset_id": bab, "area": "otros", "nombre": "Duplicada",
+                                                          "user_id": yo["id"]})
+    assert r.status_code == 400 and "ya está enlazado" in r.json()["detail"]
+    libres = {u["id"]: u for u in client.get("/api/personal/usuarios", headers=admin).json()}
+    assert libres[yo["id"]]["ficha_id"] == ficha["id"]
+    assert client.get("/api/personal/usuarios", headers=jc).status_code == 403
+    # su nombre no dice «Recepción 1»: se le tomaba por Recepción 2
+    x = client.post("/api/ausencias", headers=jc, json={"asset_id": bab, "tipo": "vacaciones",
+                                                        "desde": "2099-03-02", "hasta": "2099-03-06"}).json()
+    antes = next(a for a in client.get("/api/activos", headers=admin).json() if a["id"] == bab)["recepcion1_id"]
+    assert x["colectivo"] == "recepcion2"
+    assert client.put(f"/api/activos/{bab}", headers=admin, json={"recepcion1_id": yo["id"]}).status_code == 200
+    c = client.get("/api/personal/comprobar", headers=admin).json()
+    assert c["puede_borrar"] and any(e["que"] == "Ausencias" and e["corregible"] for e in c["resultados"])
+    assert client.post("/api/personal/comprobar/corregir", headers=admin).json()["corregidas"] >= 1
+    lista = {a["id"]: a for a in client.get("/api/ausencias", headers=admin, params={"asset_id": bab}).json()}
+    assert lista[x["id"]]["colectivo"] == "recepcion1"
+
+    # borrar todo el personal: solo las cuentas autorizadas y con la confirmación escrita
+    assert client.post("/api/personal/borrar-todo", headers=jc, json={"confirmacion": "BORRAR PERSONAL"}).status_code == 403
+    assert client.post("/api/personal/borrar-todo", headers=admin, json={"confirmacion": "si"}).status_code == 400
+    n = client.post("/api/personal/borrar-todo", headers=admin, json={"confirmacion": "borrar personal"}).json()
+    assert n["fichas"] >= 1
+    assert client.get("/api/personal", headers=admin).json() == []
+    lista = {a["id"]: a for a in client.get("/api/ausencias", headers=admin, params={"asset_id": bab}).json()}
+    assert x["id"] in lista  # las ausencias de usuarios se conservan
+    # se vuelve a empezar: sin ficha no se pueden pedir ausencias
+    r = client.post("/api/ausencias", headers=jc, json={"asset_id": bab, "tipo": "dia_libre",
+                                                        "desde": "2099-04-01", "hasta": "2099-04-01"})
+    assert r.status_code == 400
+    # y se vuelven a generar desde los usuarios (una por usuario, sin presidencia ni administrador)
+    assert client.post("/api/personal/generar-desde-usuarios", headers=jc).status_code == 403
+    g = client.post("/api/personal/generar-desde-usuarios", headers=admin).json()["creadas"]
+    assert "Juan Carlos Pruebas" in g and "Presidente" not in g
+    assert client.post("/api/personal/generar-desde-usuarios", headers=admin).json()["creadas"] == []
+    mia = next(p for p in client.get("/api/personal", headers=admin).json() if p.get("usuario") == "Juan Carlos Pruebas")
+    assert mia["area"] == "recepcion" and mia["asset_id"] == bab and mia["propio"]
+    assert client.post("/api/ausencias", headers=jc, json={"asset_id": bab, "tipo": "dia_libre", "desde": "2099-04-01",
+                                                           "hasta": "2099-04-01"}).status_code == 201
+    client.put(f"/api/activos/{bab}", headers=admin, json={"recepcion1_id": antes})

@@ -70,12 +70,16 @@ def _usuarios_iniciales(db: Session, assets: dict[str, Asset]) -> None:
     pw = hash_password(PASSWORD_INICIAL)
     for email, nombre, rol, codigo in USUARIOS_INICIALES:
         a = assets[codigo] if codigo else None
-        db.add(User(email=email, nombre=nombre, password_hash=pw, debe_cambiar_password=True,
-                    no_asignable=email in PRESIDENCIA,
-                    assignments=[Assignment(role_id=roles[rol].id, asset_id=a.id if a else None,
-                                            company_id=a.company_id if a else None),
-                                 *([Assignment(role_id=roles["Dirección Técnica"].id)]
-                                   if email in DIRECCION_TECNICA else [])]))
+        u = User(email=email, nombre=nombre, password_hash=pw, debe_cambiar_password=True,
+                 no_asignable=email in PRESIDENCIA,
+                 assignments=[Assignment(role_id=roles[rol].id, asset_id=a.id if a else None,
+                                         company_id=a.company_id if a else None),
+                              *([Assignment(role_id=roles["Dirección Técnica"].id)]
+                                if email in DIRECCION_TECNICA else [])])
+        db.add(u)
+        if a is not None and nombre.startswith("Recepción 1"):  # Recepción 1 del activo, asignada expresamente
+            db.flush()
+            a.recepcion1_id = u.id
 
 
 def seed(db: Session) -> None:

@@ -201,27 +201,22 @@ def create_absence(data: AbsenceIn, scope: Scope = Depends(get_scope), db: Sessi
         bad_request("La fecha final es anterior a la inicial")
     if (data.hasta - data.desde).days > 365:
         bad_request("Una ausencia no puede pasar de un año: divídala en varias")
-    if data.user_id and data.staff_id:
-        bad_request("Indique un usuario o una persona del personal, no los dos")
-    gest = au.gestiona(db, scope, a)
-    if data.staff_id:
-        p = get_or_404(db, StaffMember, data.staff_id)
-        if p.asset_id not in (None, a.id):
-            bad_request("Esa persona no trabaja en este activo")
-        colectivo, persona, uid = au.colectivo_staff(p), p.nombre, None
-    else:
-        u = get_or_404(db, User, data.user_id) if data.user_id else scope.user
-        colectivo, persona, uid = au.colectivo_usuario(db, u, a), u.nombre, u.id
-    propia = uid == scope.user.id
-    tecnico = colectivo == "mantenimiento" and scope.can_asset("personal.autorizar_mto", a.id)
-    if not (propia or gest or tecnico):
-        raise HTTPException(403, "Solo Recepción 1 o dirección registran las ausencias de otras personas")
+    # cada persona solicita las suyas, con su usuario y sobre su ficha de empleado
+    if data.staff_id or (data.user_id and data.user_id != scope.user.id):
+        raise HTTPException(403, "Cada persona solicita sus propias ausencias con su usuario del PMS")
+    ficha = empleados.ficha_de_usuario(db, scope.user.id)
+    if ficha is None:
+        bad_request("Su usuario no está enlazado a una ficha de empleado. Pídalo al Director Técnico "
+                    "(Personal → Fichas del personal).")
+    u = scope.user
+    colectivo, persona, uid = au.colectivo_usuario(db, u, a), u.nombre, u.id
+    data.staff_id = None
     choque = db.scalar(select(Absence).where(
         Absence.estado.in_(VIGENTES), Absence.desde <= data.hasta, Absence.hasta >= data.desde,
         Absence.staff_id == data.staff_id if data.staff_id else Absence.user_id == uid))
     if choque:
         bad_request(f"{persona} ya tiene una ausencia del {choque.desde:%d/%m/%Y} al {choque.hasta:%d/%m/%Y}")
-    x = Absence(asset_id=a.id, user_id=uid, staff_id=data.staff_id, persona=persona, colectivo=colectivo,
+    x = Absence(asset_id=a.id, user_id=uid, staff_id=ficha.id, persona=persona, colectivo=colectivo,
                 tipo=data.tipo, desde=data.desde, hasta=data.hasta, motivo=data.motivo or None,
                 creado_por=scope.user.id)
     db.add(x)

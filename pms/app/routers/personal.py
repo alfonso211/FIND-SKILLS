@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from .. import ausencias, avisos, documentos, empleados, firma_contrato, planos
@@ -72,6 +72,7 @@ def _out(p: StaffMember, db: Session, scope: Scope | None = None) -> dict:
     d["whatsapp"] = bool(p.telefono and firma_contrato.movil_whatsapp(p.telefono))
     d["propio"] = empleados.es_propio(p)
     d["gestiona"] = bool(scope and empleados.puede_gestionar(db, scope, p))
+    d["editable"] = bool(scope and _editable(scope, db, p))
     if d["gestiona"]:
         d["usuario"] = db.get(User, p.user_id).nombre if p.user_id else None
         d["tipo_contrato_nombre"] = TIPOS_CONTRATO.get(p.tipo_contrato)
@@ -86,7 +87,7 @@ def _out(p: StaffMember, db: Session, scope: Scope | None = None) -> dict:
     return d
 
 
-def _valida_ficha(db: Session, data: StaffIn) -> None:
+def _valida_ficha(db: Session, data: StaffIn, pid: int | None = None) -> None:
     if data.tipo_contrato and data.tipo_contrato not in TIPOS_CONTRATO:
         bad_request(f"Tipo de contrato no válido. Opciones: {', '.join(TIPOS_CONTRATO)}")
     if data.vacaciones_tipo and data.vacaciones_tipo not in ("laborables", "naturales"):
@@ -95,6 +96,14 @@ def _valida_ficha(db: Session, data: StaffIn) -> None:
         bad_request("La fecha de baja es anterior a la de alta")
     if data.user_id:
         get_or_404(db, User, data.user_id)
+        otra = db.scalar(select(StaffMember).where(StaffMember.user_id == data.user_id,
+                                                   StaffMember.id != (pid or -1)).limit(1))
+        if otra:  # un usuario, una ficha
+            bad_request(f"Ese usuario ya está enlazado a la ficha de {otra.nombre}")
+
+
+def _propio_de(data: StaffIn) -> bool:
+    return not (data.empresa or "").strip() and data.tipo_contrato != "autonomo"
 
 
 def _visibles(scope: Scope) -> set[int] | None:
@@ -107,20 +116,36 @@ def _visibles(scope: Scope) -> set[int] | None:
     return ids
 
 
-def _puede_editar(scope: Scope, db: Session, area: str, asset_id: int | None) -> None:
+def _puede_editar(scope: Scope, db: Session, area: str, asset_id: int | None, propio: bool) -> None:
+    """Personal propio de las sociedades: solo el Director Técnico. Subcontratas: Recepción (1 y 2) del activo, quien
+    gestiona mantenimiento o limpieza del activo, dirección y el Director Técnico."""
     if area not in AREAS_PERSONAL:
         bad_request(f"Área no válida. Opciones: {', '.join(AREAS_PERSONAL)}")
-    perm = PERMISO_AREA.get(area)
-    if perm is None:  # conserjería y otros por administración: los gestiona Recepción 1 (o dirección)
-        if asset_id is None and not scope.is_group_level("personal.autorizar"):
-            raise HTTPException(403, "Solo dirección del grupo puede dar de alta personal para todos los activos")
-        if asset_id is not None and not ausencias.gestiona(db, scope, get_or_404(db, Asset, asset_id)):
-            raise HTTPException(403, "Este personal lo gestiona Recepción 1 del activo")
+    dt = empleados.director_tecnico(scope)
+    if propio:
+        if not dt:
+            raise HTTPException(403, "El personal propio de las sociedades lo da de alta el Director Técnico. "
+                                     "Recepción solo da de alta personal de subcontratas: indique la empresa.")
         return
-    if asset_id is None and not scope.is_group_level(perm):
-        raise HTTPException(403, "Solo quien gestiona todo el grupo puede dar de alta personal para todos los activos")
-    if asset_id is not None and not scope.can_asset(perm, asset_id):
-        raise HTTPException(403, f"Sin permiso '{perm}' sobre este activo")
+    if dt:
+        return
+    perm = PERMISO_AREA.get(area)
+    if asset_id is None:
+        if not (scope.is_group_level("personal.autorizar") or (perm and scope.is_group_level(perm))):
+            raise HTTPException(403, "Solo dirección del grupo puede dar de alta personal para todos los activos")
+        return
+    if empleados.es_recepcion(db, scope, asset_id) or ausencias.direccion(scope, asset_id) or \
+            (perm and scope.can_asset(perm, asset_id)):
+        return
+    raise HTTPException(403, "Sin permiso para dar de alta personal de subcontratas en este activo")
+
+
+def _editable(scope: Scope, db: Session, p: StaffMember) -> bool:
+    try:
+        _puede_editar(scope, db, p.area, p.asset_id, empleados.es_propio(p))
+        return True
+    except HTTPException:
+        return False
 
 
 @router.get("")
@@ -143,7 +168,7 @@ def list_staff(asset_id: int | None = None, area: str | None = None, solo_activo
 
 @router.post("", status_code=201)
 def create_staff(data: StaffIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    _puede_editar(scope, db, data.area, data.asset_id)
+    _puede_editar(scope, db, data.area, data.asset_id, _propio_de(data))
     if data.asset_id:
         get_or_404(db, Asset, data.asset_id)
     if data.area in PERMISO_AREA and not (data.email or data.telefono):
@@ -152,7 +177,7 @@ def create_staff(data: StaffIn, scope: Scope = Depends(get_scope), db: Session =
     valores = data.model_dump()
     p = StaffMember(**{k: v for k, v in valores.items() if k not in CAMPOS_FICHA})
     enlazar_empresa(db, p)
-    if empleados.puede_gestionar(db, scope, p):
+    if empleados.es_propio(p) and empleados.director_tecnico(scope):  # datos laborales: solo personal propio
         for k in CAMPOS_FICHA:
             setattr(p, k, valores[k])
     db.add(p)
@@ -165,15 +190,15 @@ def create_staff(data: StaffIn, scope: Scope = Depends(get_scope), db: Session =
 @router.put("/{pid}")
 def update_staff(pid: int, data: StaffIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     p = get_or_404(db, StaffMember, pid)
-    _puede_editar(scope, db, p.area, p.asset_id)
-    _puede_editar(scope, db, data.area, data.asset_id)
+    _puede_editar(scope, db, p.area, p.asset_id, empleados.es_propio(p))
+    _puede_editar(scope, db, data.area, data.asset_id, _propio_de(data))
     if data.asset_id:
         get_or_404(db, Asset, data.asset_id)
     if data.area in PERMISO_AREA and not (data.email or data.telefono):
         bad_request("Indique al menos un correo electrónico o un teléfono")
-    _valida_ficha(db, data)
+    _valida_ficha(db, data, pid)
     antes = p.to_dict()
-    ficha = empleados.puede_gestionar(db, scope, p)  # quien no gestiona la ficha no toca los datos laborales
+    ficha = empleados.director_tecnico(scope)  # los datos laborales solo los toca el Director Técnico
     for k, v in data.model_dump().items():
         if k not in CAMPOS_FICHA or ficha:
             setattr(p, k, v)
@@ -187,7 +212,7 @@ def update_staff(pid: int, data: StaffIn, scope: Scope = Depends(get_scope), db:
 @router.delete("/{pid}")
 def delete_staff(pid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     p = get_or_404(db, StaffMember, pid)
-    _puede_editar(scope, db, p.area, p.asset_id)
+    _puede_editar(scope, db, p.area, p.asset_id, empleados.es_propio(p))
     if db.scalar(select(TimeEntry.id).where(TimeEntry.staff_id == pid).limit(1)) or \
             db.scalar(select(StaffDocument.id).where(StaffDocument.staff_id == pid).limit(1)):
         bad_request("Tiene registro de jornada o documentos (se conservan 4 años): desmarque «En activo» para darle de baja")
@@ -291,6 +316,158 @@ def time_link(pid: int, request: Request, nuevo: bool = False, scope: Scope = De
     texto = (f"Hola {p.nombre.split()[0]}, este es tu enlace personal para registrar la jornada (entrada y salida): "
              f"{url} . Guárdalo en la pantalla de inicio del móvil y no lo compartas.")
     return {"url": url, "whatsapp": f"https://wa.me/{movil}?text={quote(texto)}" if movil else None}
+
+
+# --------------------------------------------------------------------------- usuarios, comprobación y borrado
+@router.get("/usuarios")
+def users_for_link(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Usuarios activos para enlazar a una ficha, con la ficha que ya tienen (un usuario, una ficha)."""
+    if not empleados.director_tecnico(scope):
+        raise HTTPException(403, "Las fichas del personal propio las gestiona el Director Técnico")
+    fichas = {p.user_id: p for p in db.scalars(select(StaffMember).where(StaffMember.user_id.is_not(None)))}
+    return [{"id": u.id, "nombre": u.nombre, "email": u.email, "ficha_id": fichas[u.id].id if u.id in fichas else None,
+             "ficha": fichas[u.id].nombre if u.id in fichas else None}
+            for u in db.scalars(select(User).where(User.activo, User.supplier_id.is_(None)).order_by(User.nombre))]
+
+
+def _comprobaciones(db: Session) -> list[dict]:
+    from ..models import Absence, Assignment, Role
+    out = []
+
+    def add(nivel: str, que: str, texto: str, corregible: bool = False):
+        out.append({"nivel": nivel, "que": que, "texto": texto, "corregible": corregible})
+
+    recep = {}  # activo -> usuarios con rol Recepción
+    for u, aid in db.execute(select(User, Assignment.asset_id).join(Assignment, Assignment.user_id == User.id)
+                             .join(Role, Role.id == Assignment.role_id)
+                             .where(Role.nombre == "Recepción", Assignment.asset_id.is_not(None))):
+        recep.setdefault(aid, []).append(u)
+    for a in db.scalars(select(Asset).where(Asset.activo).order_by(Asset.nombre)):
+        usuarios = recep.get(a.id, [])
+        if not usuarios:
+            continue
+        r1 = db.get(User, a.recepcion1_id) if a.recepcion1_id else None
+        if a.recepcion1_id is None:
+            add("error", "Recepción 1", f"{a.nombre}: no tiene Recepción 1 asignada. Asígnela en Activos → Editar.")
+        elif r1 is None or not r1.activo:
+            add("error", "Recepción 1", f"{a.nombre}: la Recepción 1 asignada no existe o está desactivada.")
+        elif r1.id not in {u.id for u in usuarios}:
+            add("error", "Recepción 1", f"{a.nombre}: {r1.nombre} es Recepción 1 pero no tiene el rol Recepción en el activo.")
+        for u in usuarios:
+            n = (u.nombre or "").lower()
+            if r1 and u.id == r1.id and "recepción 2" in n.replace("recepcion", "recepción"):
+                add("aviso", "Nombres", f"{a.nombre}: {u.nombre} ({u.email}) es Recepción 1 pero su nombre dice «Recepción 2».")
+            if r1 and u.id != r1.id and "recepción 1" in n.replace("recepcion", "recepción"):
+                add("aviso", "Nombres", f"{a.nombre}: {u.nombre} ({u.email}) se llama «Recepción 1» pero no es la Recepción 1 del activo.")
+    vistos: dict[int, list[str]] = {}
+    for p in db.scalars(select(StaffMember).order_by(StaffMember.nombre)):
+        if p.user_id:
+            vistos.setdefault(p.user_id, []).append(p.nombre)
+            u = db.get(User, p.user_id)
+            if u is None or not u.activo:
+                add("error", "Fichas", f"Ficha de {p.nombre}: su usuario no existe o está desactivado.")
+        if empleados.es_propio(p) and p.activo and not p.user_id:
+            add("info", "Fichas", f"Ficha de {p.nombre} (personal propio) sin usuario: no podrá pedir vacaciones.")
+        if not empleados.es_propio(p) and (p.empresa or "").strip() and not p.supplier_id:
+            add("aviso", "Fichas", f"Ficha de {p.nombre}: la empresa «{p.empresa}» no está en Proveedores (su colaborador no la ve).")
+    for uid, nombres in vistos.items():
+        if len(nombres) > 1:
+            add("error", "Fichas", f"El usuario {db.get(User, uid).nombre} está en {len(nombres)} fichas: {', '.join(nombres)}.")
+    for x in db.scalars(select(Absence).where(Absence.estado.in_(("pendiente", "visto_bueno")), Absence.user_id.is_not(None))):
+        u, a = db.get(User, x.user_id), db.get(Asset, x.asset_id)
+        if u and a and ausencias.colectivo_usuario(db, u, a) != x.colectivo:
+            add("error", "Ausencias", f"Solicitud de {x.persona} ({x.desde:%d/%m/%Y}) está como «{x.colectivo}» y le corresponde "
+                f"«{ausencias.colectivo_usuario(db, u, a)}»: va a quien no debe aprobarla.", corregible=True)
+    return out
+
+
+@router.get("/comprobar")
+def check(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    if not empleados.director_tecnico(scope):
+        raise HTTPException(403, "La comprobación la hace el Director Técnico")
+    from .admin import puede_borrar
+    return {"resultados": _comprobaciones(db), "fichas": db.scalar(select(func.count(StaffMember.id))),
+            "puede_borrar": puede_borrar(scope.user)}
+
+
+@router.post("/comprobar/corregir")
+def fix(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Recoloca las solicitudes pendientes en el colectivo que les corresponde (p. ej. Recepción 1 tomada por R2)."""
+    if not empleados.director_tecnico(scope):
+        raise HTTPException(403, "La comprobación la hace el Director Técnico")
+    from ..models import Absence
+    n = 0
+    for x in db.scalars(select(Absence).where(Absence.estado.in_(("pendiente", "visto_bueno")), Absence.user_id.is_not(None))):
+        u, a = db.get(User, x.user_id), db.get(Asset, x.asset_id)
+        col = ausencias.colectivo_usuario(db, u, a) if u and a else x.colectivo
+        if col != x.colectivo:
+            x.colectivo, n = col, n + 1
+            if col != "recepcion2" and x.estado == "visto_bueno":
+                x.estado = "pendiente"
+    audit(db, scope.user, "corregir_ausencias", "personal", 0, {"corregidas": n})
+    db.commit()
+    return {"corregidas": n}
+
+
+AREA_POR_ROL = {"Recepción": "recepcion", "Técnico Mantenimiento": "mantenimiento", "Gobernanta / Limpieza": "limpieza",
+                "Administración / Finanzas": "administracion"}
+
+
+@router.post("/generar-desde-usuarios")
+def generate_from_users(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Crea la ficha de personal propio de cada usuario del PMS que aún no la tiene (área y activo según su rol).
+    No incluye a la presidencia, a los colaboradores externos ni al administrador del sistema."""
+    if not empleados.director_tecnico(scope):
+        raise HTTPException(403, "Las fichas del personal propio las genera el Director Técnico")
+    con_ficha = set(db.scalars(select(StaffMember.user_id).where(StaffMember.user_id.is_not(None))))
+    creadas = []
+    for u in db.scalars(select(User).where(User.activo, User.supplier_id.is_(None)).order_by(User.nombre)):
+        if u.id in con_ficha or u.no_asignable or (u.email or "").lower() == settings.admin_email.lower():
+            continue
+        asign = sorted(u.assignments, key=lambda x: x.asset_id is None)  # primero la de un activo concreto
+        rol = next((x for x in asign if x.role.nombre in AREA_POR_ROL), asign[0] if asign else None)
+        area = AREA_POR_ROL.get(rol.role.nombre, "otros") if rol else "otros"
+        p = StaffMember(asset_id=rol.asset_id if rol else None, area=area, nombre=u.nombre, email=u.email,
+                        user_id=u.id, activo=True)
+        db.add(p)
+        creadas.append(u.nombre)
+    db.flush()
+    audit(db, scope.user, "generar_fichas", "personal", 0, {"creadas": creadas})
+    db.commit()
+    return {"creadas": creadas}
+
+
+class BorrarTodoIn(BaseModel):
+    confirmacion: str
+
+
+@router.post("/borrar-todo")
+def wipe(data: BorrarTodoIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Borra todas las fichas del personal (y sus fichajes, documentos y envíos) para empezar de nuevo. Las ausencias
+    de usuarios se conservan (se desenlazan de la ficha); las del personal sin usuario se borran. Las OT y documentos
+    que las citaban quedan sin persona asignada."""
+    from ..models import Absence, ReceivedDocument, WorkOrder
+    from .admin import puede_borrar
+    if not puede_borrar(scope.user):
+        raise HTTPException(403, "Solo el Director Técnico y el administrador pueden borrar todo el personal")
+    if data.confirmacion.strip().upper() != "BORRAR PERSONAL":
+        bad_request("Escriba BORRAR PERSONAL para confirmar")
+    ids = list(db.scalars(select(StaffMember.id)))
+    n = {"fichas": len(ids)}
+    ficheros = list(db.scalars(select(StaffDocument.fichero)))
+    n["documentos"] = db.execute(delete(StaffDocument)).rowcount
+    n["fichajes"] = db.execute(delete(TimeEntry)).rowcount
+    n["envios"] = db.execute(delete(StaffDispatch)).rowcount
+    n["ausencias_borradas"] = db.execute(delete(Absence).where(Absence.staff_id.is_not(None), Absence.user_id.is_(None))).rowcount
+    db.execute(update(Absence).where(Absence.staff_id.is_not(None)).values(staff_id=None))
+    db.execute(update(WorkOrder).where(WorkOrder.personal_id.is_not(None)).values(personal_id=None))
+    db.execute(update(ReceivedDocument).where(ReceivedDocument.staff_id.is_not(None)).values(staff_id=None))
+    db.execute(delete(StaffMember))
+    audit(db, scope.user, "borrar_todo", "personal", 0, n)
+    db.commit()
+    for f in ficheros:
+        documentos.borrar(f)
+    return n
 
 
 # --------------------------------------------------------------------------- envíos

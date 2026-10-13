@@ -77,6 +77,8 @@ class Asset(Base):
     pais: Mapped[str | None] = mapped_column(String(60))
     # informe mensual a la presidencia: quién lo revisa y envía (por defecto, «Recepción 1» del activo) y a dónde
     informe_responsable_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    # Recepción 1 del activo (aprueba ausencias de su personal, valida partes…): asignada expresamente
+    recepcion1_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     informe_emails: Mapped[str | None] = mapped_column(String(500))
     informe_whatsapp: Mapped[str | None] = mapped_column(String(30))
     ref_catastral: Mapped[str | None] = mapped_column(String(30))
