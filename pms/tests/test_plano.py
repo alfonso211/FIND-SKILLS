@@ -72,7 +72,8 @@ def test_plano_y_estados(client, admin, ids):
     f = client.get(f"/api/plano/unidades/{reservado['id']}/ficha", headers=admin).json()
     assert f["estado"] == "bloqueado" and f["bloqueos"][0]["motivo"] == "Cambio de suelo del baño"
     assert f["bloqueos"][0]["levantado"] is None and f["reservas"][0]["localizador"] == "PLANO-2"
-    assert f["puede"] == {"reservar": True, "alquilar": False, "bloquear": True, "incidencia": True}
+    assert f["puede"] == {"reservar": True, "alquilar": False, "bloquear": True, "incidencia": True,
+                          "parte_estado": True}
     assert client.post(f"/api/plano/unidades/{reservado['id']}/desbloquear", headers=admin,
                        json={"nota": "Obra terminada"}).json()["estado"] == "disponible"
     f = client.get(f"/api/plano/unidades/{reservado['id']}/ficha", headers=admin).json()
@@ -101,7 +102,7 @@ def test_zonas_comunes_y_permisos(client, admin, ids):
     parte = client.get(f"/api/mantenimiento/ordenes/{w.json()['id']}/parte", headers=admin)
     assert parte.status_code == 200
 
-    # limpieza: ve el plano y abre incidencias, pero no reserva ni bloquea
+    # limpieza: ve el plano y registra partes de estado, pero no abre OT, ni reserva ni bloquea
     email = "limpieza.plano@inversiete.com"
     client.post("/api/admin/usuarios", headers=admin, json={
         "email": email, "nombre": "Limpieza", "password": "Provisional1",
@@ -109,14 +110,14 @@ def test_zonas_comunes_y_permisos(client, admin, ids):
     h = login(client, email, "Provisional1")
     client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"})
     p = client.get(f"/api/plano/{sae}", headers=h).json()
-    assert p["puede"] == {"reservar": False, "bloquear": False, "incidencia": True, "ver_reservas": False,
-                          "ver_mantenimiento": True}
+    assert p["puede"] == {"reservar": False, "bloquear": False, "incidencia": False, "parte_estado": True,
+                          "ver_reservas": False, "ver_mantenimiento": True}
     assert "reserva" not in _celda(p, "B-305")  # no ve datos de huéspedes
     f = client.get(f"/api/plano/unidades/{u['id']}/ficha", headers=h).json()
     assert "reservas" not in f and "facturas" not in f and "incidencias" in f
     assert client.post(f"/api/plano/unidades/{u['id']}/bloquear", headers=h, json={"motivo": "Prueba"}).status_code == 403
     assert client.post("/api/mantenimiento/ordenes", headers=h, json={
-        "asset_id": sae, "unit_id": u["id"], "titulo": "Grifo gotea"}).status_code == 201
+        "asset_id": sae, "unit_id": u["id"], "titulo": "Grifo gotea"}).status_code == 403
     # sin acceso al activo
     email = "recepcion.plano.sfl@inversiete.com"
     client.post("/api/admin/usuarios", headers=admin, json={

@@ -137,9 +137,11 @@ def _asignar(db: Session, w: WorkOrder) -> None:
 @router.post("/ordenes", status_code=201)
 def create_order(data: WorkOrderIn, tareas: BackgroundTasks, scope: Scope = Depends(get_scope),
                  db: Session = Depends(get_db)):
+    # las abren recepción y dirección; mantenimiento y limpieza avisan con un parte de estado
+    if not scope.can_asset("mantenimiento.abrir", data.asset_id):
+        raise HTTPException(403, "Sin permiso para abrir órdenes de trabajo en este activo: "
+                                 "registre un parte de estado y recepción generará la orden")
     gestiona = scope.can_asset("mantenimiento.editar", data.asset_id)
-    if not (gestiona or scope.can_asset("mantenimiento.abrir", data.asset_id)):
-        raise HTTPException(403, "Sin permiso para abrir órdenes de trabajo en este activo")
     asset = get_or_404(db, Asset, data.asset_id)
     if data.zona:
         if data.unit_id:
@@ -151,16 +153,23 @@ def create_order(data: WorkOrderIn, tareas: BackgroundTasks, scope: Scope = Depe
         unit = get_or_404(db, Unit, data.unit_id)
         if unit.asset_id != data.asset_id:
             bad_request("La unidad no pertenece al activo indicado")
-    valores = data.model_dump()
+    valores = data.model_dump(exclude={"parte_estado_id"})
     if not gestiona:
         for campo in CAMPOS_GESTION:
             valores.pop(campo, None)
     w = WorkOrder(**valores, abierta_por=scope.user.id)
     _asignar(db, w)
     db.add(w)
-    if unit and data.bloquea_unidad and unit.estado in ("disponible", "pendiente_limpieza"):
+    parte = None
+    if data.parte_estado_id:
+        from .partes_estado import vincular_ot
+        parte = vincular_ot(db, scope, data.parte_estado_id, w)
+    if unit and w.bloquea_unidad and unit.estado in ("disponible", "pendiente_limpieza"):
         unit.estado = "mantenimiento"
     db.flush()
+    if parte:
+        from .partes_estado import copiar_fotos
+        copiar_fotos(db, parte, w, scope.user.id)
     audit(db, scope.user, "crear", "orden_trabajo", w.id, {"titulo": w.titulo, "prioridad": w.prioridad})
     db.commit()
     if w.prioridad == "urgente":
@@ -515,8 +524,10 @@ def _release_unit(db: Session, w: WorkOrder, cancelada: bool) -> None:
     if not (w.unit_id and w.bloquea_unidad):
         return
     unit = db.get(Unit, w.unit_id)
+    from .partes_estado import bloqueo_por_partes
     others = db.scalar(select(WorkOrder.id).where(WorkOrder.unit_id == unit.id, WorkOrder.id != w.id,
-                                                  WorkOrder.bloquea_unidad, WorkOrder.estado.in_(ABIERTAS)))
+                                                  WorkOrder.bloquea_unidad, WorkOrder.estado.in_(ABIERTAS))) \
+        or bloqueo_por_partes(db, unit.id)
     if unit.estado == "mantenimiento" and not others:
         # cerrada: limpieza ya confirmó la unidad -> disponible; cancelada: hay que revisarla
         unit.estado = "pendiente_limpieza" if cancelada else "disponible"
@@ -541,6 +552,8 @@ def close_order(wid: int, data: CloseOrder, scope: Scope = Depends(get_scope), d
     w.fecha_cierre = date.today()
     w.cerrada_por = scope.user.id
     _release_unit(db, w, cancelada=data.cancelar)
+    from .partes_estado import cerrar_partes
+    cerrar_partes(db, w, data.motivo)
     audit(db, scope.user, w.estado, "orden_trabajo", wid, data.model_dump())
     db.commit()
     return _wo_out(w, db)

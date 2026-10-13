@@ -54,11 +54,14 @@ TIPOS = {
                          "(resumen diario)", "finanzas.ver"),
     "documentacion_legal": ("Documentación legal de los activos que falta o ha caducado (cada lunes): a Recepción 1 "
                             "la de su activo y a la dirección la de todos", "legal.ver"),
+    "partes_estado": ("Partes de estado de mantenimiento y limpieza: aviso al momento a recepción de su activo (los "
+                      "críticos, también a la dirección) y, en el resumen diario, los pendientes y abiertos hasta "
+                      "resolverlos", "mantenimiento.abrir"),
     "agenda": ("Agenda: tareas, reuniones y recordatorios que le envían, aviso antes de cada cita y su agenda del "
                "día en el resumen", None),
 }
 RESUMEN = ("hitos_normativos", "pagos_retenidos", "facturas_pendientes", "estancias_vencidas", "recibos_impagados", "contratos_vencen", "garajes_impagados",
-           "garajes_vencen", "revisiones_normativas")
+           "garajes_vencen", "revisiones_normativas", "partes_estado")
 DIAS_ESTANCIAS = 3
 DIAS_GARAJES = 30
 DIAS_CONTRATOS, DIAS_REVISIONES = 90, 30
@@ -232,6 +235,38 @@ def _ot_urgente_personal(db, w: WorkOrder) -> int:
     return sum(r["ok"] for r in res)
 
 
+# --------------------------------------------------------------------------- parte de estado (al momento)
+def parte_estado(pid: int) -> int:
+    """Aviso a recepción del activo (permiso por activo) al registrar un parte; los críticos, a todos los suscritos
+    (también la dirección). Siguen saliendo en el resumen diario hasta que se resuelven o descartan."""
+    if not configurado():
+        return 0
+    from .models import StatusReport
+    from .routers.partes_estado import fila_aviso
+    with SessionLocal() as db:
+        p = db.get(StatusReport, pid)
+        if p is None:
+            return 0
+        fila = fila_aviso(db, p)
+        critico = p.gravedad == "critica"
+        asunto = f"{'PARTE CRÍTICO' if critico else 'Parte de estado'} · {fila[0]} · {fila[2]}: {fila[3]}"[:200]
+        cab = ["Activo", "Parte", "Ubicación", "Elemento · deficiencia", "Gravedad", "Fecha", "Situación"]
+        extra = [*(p.alertas or []), *([f"Observaciones: {p.observaciones}"] if p.observaciones else []),
+                 "Genere la orden de trabajo y encárguela, o descarte el parte (Mantenimiento → Partes de estado)."]
+        texto = "\n".join(f"{k}: {v}" for k, v in zip(cab, fila)) + "\n\n" + "\n".join(extra) + (
+            f"\n\n{settings.url}/#estado" if settings.url else "")
+        html = _html("Parte de estado" + (" CRÍTICO: unidad fuera de servicio" if p.bloquea_unidad else ""),
+                     _tabla([], [[k, v] for k, v in zip(cab, fila)]) + "".join(f"<p>{escape(x)}</p>" for x in extra))
+        enviados = 0
+        for user, ids in suscritos(db, "partes_estado"):
+            if user.id == p.user_id or (ids is None and not critico) or (ids is not None and p.asset_id not in ids):
+                continue
+            enviados += _enviar_registrado(db, user, user.email, f"parte_estado:{pid}", "parte_estado", asunto,
+                                           texto, html)
+        db.commit()
+        return enviados
+
+
 # --------------------------------------------------------------------------- pago retenido (al momento)
 def _euros(x) -> str:
     return f"{float(x):,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -372,7 +407,12 @@ def _datos_resumen(db, dia: date) -> dict[str, list[tuple[int, list]]]:
     for g in db.scalars(select(Expense).where(Expense.pago_retenido, ~Expense.pagado)
                         .order_by(Expense.pago_retenido_revision, Expense.id)):
         retenidos.append((g.asset_id, _fila_retenido(db, g, nombres[g.asset_id], dia)))
-    return {"hitos_normativos": normativos, "pagos_retenidos": retenidos, "facturas_pendientes": facturas, "estancias_vencidas": estancias, "recibos_impagados": recibos, "contratos_vencen": contratos,
+    from .models import StatusReport
+    from .partes_estado import ABIERTOS
+    from .routers.partes_estado import fila_aviso
+    partes = [(p.asset_id, fila_aviso(db, p)) for p in db.scalars(
+        select(StatusReport).where(StatusReport.estado.in_(ABIERTOS)).order_by(StatusReport.creado))]
+    return {"partes_estado": partes, "hitos_normativos": normativos, "pagos_retenidos": retenidos, "facturas_pendientes": facturas, "estancias_vencidas": estancias, "recibos_impagados": recibos, "contratos_vencen": contratos,
             "garajes_impagados": garajes,
             "garajes_vencen": garajes_fin, "revisiones_normativas": revisiones}
 
@@ -398,6 +438,9 @@ SECCIONES = {
                           "recibo(s) de garaje impagado(s)"),
     "garajes_vencen": ("Plazas de garaje: bajas próximas", ["Activo", "Plaza", "Cliente", "Teléfono", "Fecha de baja",
                                                            "Quedan"], "baja(s) de garaje"),
+    "partes_estado": ("Partes de estado sin resolver: generar la orden de trabajo o descartarlos",
+                      ["Activo", "Parte", "Ubicación", "Elemento · deficiencia", "Gravedad", "Desde", "Situación"],
+                      "parte(s) de estado"),
     "revisiones_normativas": ("Revisiones preventivas y normativas", ["Activo", "Revisión", "Normativa", "Mantenedor",
                                                                       "Fecha", "Plazo"], "revisión(es)"),
 }

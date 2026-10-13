@@ -124,7 +124,8 @@ def panel(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
         out.append(k)
     from .presidencia import pendientes
     aus = ausencias.pendientes_de(db, scope)
-    return {"fecha": hoy.isoformat(), "activos": out, "hitos": hitos.para(scope, hoy),
+    from .partes_estado import partes_panel
+    return {"partes_estado": partes_panel(db, scope),"fecha": hoy.isoformat(), "activos": out, "hitos": hitos.para(scope, hoy),
             "informes_pendientes": pendientes(db, scope, hoy),
             "ausencias_pendientes": [{"id": x.id, "asset_id": x.asset_id, "persona": x.persona, "desde": x.desde.isoformat(),
                                       "hasta": x.hasta.isoformat(), "estado": x.estado} for x in aus]}

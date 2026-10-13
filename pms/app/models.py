@@ -994,3 +994,51 @@ class LegalFile(Base):
     sha256: Mapped[str] = mapped_column(String(64))
     subido: Mapped[datetime] = mapped_column(DateTime, default=_now)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+
+
+class StatusReport(Base):
+    """Parte de estado: mantenimiento o limpieza revisan una vivienda o zona común y señalan una deficiencia con
+    listas encadenadas (ver app/partes_estado.py). Recepción genera la orden de trabajo o lo descarta."""
+    __tablename__ = "partes_estado"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
+    unit_id: Mapped[int | None] = mapped_column(ForeignKey("unidades.id"), index=True)
+    zona: Mapped[str | None] = mapped_column(String(40))  # zona común del plano, si la hay
+    tipologia: Mapped[str] = mapped_column(String(2))  # T0 | T1 | T2 | ZC
+    estancia: Mapped[str] = mapped_column(String(40))
+    familia: Mapped[str] = mapped_column(String(4))  # C1..C5
+    elemento: Mapped[str] = mapped_column(String(40), index=True)
+    clase: Mapped[str] = mapped_column(String(4))  # D1 técnica | D2 operativa
+    deficiencia: Mapped[str] = mapped_column(String(30))
+    gravedad: Mapped[str] = mapped_column(String(10))  # leve | media | critica
+    departamento: Mapped[str] = mapped_column(String(20))  # mantenimiento | limpieza (motor de reglas)
+    prioridad: Mapped[str] = mapped_column(String(10))  # prioridad propuesta para la orden de trabajo
+    alertas: Mapped[list | None] = mapped_column(JSON)
+    observaciones: Mapped[str | None] = mapped_column(Text)
+    lat: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    lon: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    precision_m: Mapped[float | None] = mapped_column(Numeric(8, 1))
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    estado: Mapped[str] = mapped_column(String(20), default="pendiente", index=True)
+    bloquea_unidad: Mapped[bool] = mapped_column(Boolean, default=False)  # crítico: la dejó fuera de servicio
+    work_order_id: Mapped[int | None] = mapped_column(ForeignKey("ordenes_trabajo.id"), index=True)
+    gestionado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    gestionado_en: Mapped[datetime | None] = mapped_column(DateTime)
+    motivo_descarte: Mapped[str | None] = mapped_column(String(300))
+    resuelto_en: Mapped[datetime | None] = mapped_column(DateTime)
+    fotos: Mapped[list["StatusReportPhoto"]] = relationship(cascade="all, delete-orphan", lazy="selectin",
+                                                            order_by="StatusReportPhoto.id")
+
+
+class StatusReportPhoto(Base):
+    """Foto del parte de estado (obligatoria). Cifrada fuera de la base de datos, como las de las OT."""
+    __tablename__ = "partes_estado_fotos"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    parte_id: Mapped[int] = mapped_column(ForeignKey("partes_estado.id"), index=True)
+    nombre: Mapped[str] = mapped_column(String(160))
+    fichero: Mapped[str] = mapped_column(String(64))
+    mime: Mapped[str] = mapped_column(String(60))
+    tamano: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    subido: Mapped[datetime] = mapped_column(DateTime, default=_now)

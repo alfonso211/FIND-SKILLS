@@ -513,6 +513,7 @@ class WorkOrderIn(BaseModel):
     coste_estimado: float | None = None
     bloquea_unidad: bool = False
     fecha_prevista: date | None = None
+    parte_estado_id: int | None = None  # OT generada por recepción a partir de un parte de estado
 
 
 class WorkOrderUpdate(BaseModel):
