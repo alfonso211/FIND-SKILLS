@@ -40,9 +40,10 @@ ESTADO_POR_RESULTADO = {"pendiente_material": "pendiente_material", "otra_visita
 
 
 def _orden(db: Session, wid: int, c: int, f: str) -> WorkOrder:
-    if not token_valido(wid, c, f):
+    w = db.get(WorkOrder, wid)
+    if w is None or not token_valido(w, c, f):
         raise HTTPException(404, "Enlace no válido o caducado. Pida a recepción que le reenvíe la orden.")
-    return get_or_404(db, WorkOrder, wid)
+    return w
 
 
 def _abierta(db: Session, w: WorkOrder) -> WorkOrderVisit | None:

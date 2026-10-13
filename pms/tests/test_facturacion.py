@@ -190,7 +190,7 @@ def test_permisos_facturas(client, admin, ids):
         "email": email, "nombre": "Rec", "password": "Provisional1",
         "asignaciones": [{"role_id": ids["roles"]["Recepción"], "asset_id": sae}]}).status_code == 201
     h = login(client, email, "Provisional1")
-    client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"})
+    h["Authorization"] = "Bearer " + client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"}).json()["token"]
     # recepción cobra y factura en su activo
     r = _reserva(client, h, sae, "B-2", 150)
     c = client.post(f"/api/turistico/reservas/{r['id']}/cobro", headers=h, json={"importe": 150}).json()
@@ -295,7 +295,7 @@ def test_servicios_en_factura(client, admin, ids, monkeypatch):
         "email": email, "nombre": "x", "password": "Provisional1",
         "asignaciones": [{"role_id": ids["roles"]["Recepción"], "asset_id": sae}]})
     h = login(client, email, "Provisional1")
-    client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"})
+    h["Authorization"] = "Bearer " + client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"}).json()["token"]
     assert client.post("/api/servicios", headers=h, json={"asset_id": sae, "nombre": "Otro"}).status_code == 403
     assert client.post("/api/facturas/servicios", headers=h, json={
         "asset_id": sae, "reservation_id": r["id"], "lineas": [{"servicio_id": parking["id"]}]}).status_code == 201

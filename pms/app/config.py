@@ -51,10 +51,23 @@ class Settings:
     capex_umbral: float = float(os.environ.get("PMS_CAPEX_UMBRAL") or 30000)
     # Calendario de vacaciones: los cambios se agrupan y se envían juntos cada N horas (en horario de 8 a 20)
     vacaciones_envio_horas: float = float(os.environ.get("PMS_VACACIONES_ENVIO_HORAS") or 3)
+    # Botón «Gestión» (INVERGESTION): solo el superadministrador y estas cuentas
+    gestion_usuarios: tuple[str, ...] = tuple(
+        e.strip().lower() for e in (os.environ.get("PMS_GESTION_USUARIOS") or "alfonso@inversiete.es,barbara@inversiete.es")
+        .split(",") if e.strip())
     # Devolución de fianzas por transferencia: aviso por correo y WhatsApp a la Dirección para hacerla
     fianza_avisos: tuple[str, ...] = tuple(
         e.strip().lower() for e in (os.environ.get("PMS_FIANZA_AVISOS") or "barbara@inversiete.es,alfonso@inversiete.es")
         .split(",") if e.strip())
+
+    # Informe diario de dirección (ocupación, ADR, RevPAR, cobros pendientes, fianzas por transferir…) a primera hora
+    informe_direccion: tuple[str, ...] = tuple(
+        e.strip().lower() for e in (os.environ.get("PMS_INFORME_DIRECCION") or "barbara@inversiete.es,alfonso@inversiete.es")
+        .split(",") if e.strip())
+    # Mensaje al cliente la víspera de la llegada (documentos para el registro de viajeros, hora de entrada, fianza)
+    aviso_llegada: bool = (os.environ.get("PMS_AVISO_LLEGADA") or "1") != "0"
+    # Preventivo: el programador genera solo las OT que vencen en los próximos días
+    preventivo_auto: bool = (os.environ.get("PMS_PREVENTIVO_AUTO") or "1") != "0"
 
 
 settings = Settings()

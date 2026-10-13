@@ -1,5 +1,17 @@
 # Dirección y administración
 
+## Informe diario de dirección
+- Cada mañana, a la hora del resumen, llega un correo con los indicadores de cada activo turístico:
+  - ocupación de hoy y de ayer;
+  - ADR y RevPAR de ayer, sin IVA;
+  - llegadas y salidas;
+  - facturas pendientes de cobro y lo que deben los alojados;
+  - fianzas por transferir;
+  - OT urgentes y fuera de plazo;
+  - descuadres de caja.
+- Destinatarios: PMS_INFORME_DIRECCION (por defecto Bárbara y Alfonso). Los mismos datos van a gestión.
+- **Caja y cierres de turno**: la Dirección ve los cierres de todos los recepcionistas de sus activos. Un descuadre llega por correo al momento.
+
 ## Panel de control
 - Por cada activo: **ocupación**, **producción del mes** (facturado sin IVA ni garajes; incluye lo importado de SYADE), renta, **deuda vencida** y OT abiertas.
 - Avisos: **facturas pendientes de cobro**, estancias vencidas e **hitos normativos** (Verifactu, factura electrónica…).
@@ -15,6 +27,7 @@
 ## Devoluciones de fianza
 - Cuando Recepción da la salida con fianza **por transferencia**, llega un **correo** con cliente, apartamento, importe, IBAN y fecha (y Recepción puede enviarlo también por **WhatsApp**). Hecha la transferencia, se marca en *Reservas → Devoluciones de fianza*.
 - Lo que **supera la fianza** se factura al cliente sin IVA (indemnización por daños, art. 78.Tres.1º LIVA) y queda **pendiente de cobro** en Facturas emitidas.
+- **Pedidos de reposición sin autorizar**: si un pedido de reposición lleva más de 3 días pendiente de Recepción 1, llega un correo cada día laborable con la lista hasta que se autorice.
 - **Informe de roturas** (en *Reservas → Devoluciones de fianza*): qué se rompe o falta más, en qué apartamentos y su coste, con Excel.
 - Todas las devoluciones van en la exportación a **INVERGESTION** (FIANZAS_*.csv) para la gestoría. Los avisos quedan en *Administración → Avisos* (registro de envíos).
 
@@ -60,6 +73,8 @@
 
 ## Administración
 - **Usuarios** y **Roles y permisos**: alta de personas y qué puede hacer cada una en cada activo.
+- Al **cambiar la contraseña**, al **restablecerla** o al **desactivar** un usuario, se cierran todas sus sesiones abiertas (otros ordenadores o móviles).
+- Los **colaboradores** (subcontratas) reciben el calendario de vacaciones sin la hoja de saldos de la plantilla.
 - **Borrar un usuario** (botón **Borrar** en Administración → Usuarios; solo lo tienen el Director Técnico y el administrador): deja de poder entrar y desaparece de la lista; su email queda libre. Si ya ha trabajado en el PMS, su nombre se conserva solo en el historial (partes, gastos, auditoría). Esas dos cuentas no se pueden borrar.
 - **Sociedades**, **Avisos por correo** (servidor y resumen diario) y **Auditoría** (quién hizo qué y cuándo).
 
@@ -136,5 +151,11 @@
 - **Administración → Pasarela con gestión**: estado de la conexión, avisos enviados a gestión (reservas, salidas, incidencias y liquidaciones) y los que no han llegado. Si gestión no responde, el PMS reintenta solo (1 min, 5 min, 30 min, 2 h y después cada 2 h) y avisa por correo; no se pierde nada. **Reintentar ahora** adelanta el reintento.
 - **Comisión de cada canal** (% del bruto: Booking, Airbnb…) por activo. Con ella se calcula el neto de la **liquidación mensual** que recibe gestión; gestión la compara con los cobros del banco.
 - **Liquidación mensual**: **Ver** la de un mes y **Mandar a gestión**. Si se marca **Mandar sola cada mes**, el día 2 se manda la del mes anterior. La cifra sale de las reservas del PMS: si no están todas metidas, saldrá corta. Gestión no sustituye una producción metida a mano sin enseñar antes las diferencias.
+- **Botón «Gestión»**: solo lo ven el superadministrador y las cuentas de PMS_GESTION_USUARIOS (por defecto alfonso@inversiete.es y barbara@inversiete.es); a los demás no les aparece y el servidor les niega el pase.
 - Claves: PMS_EVENTOS_SECRET y PMS_GESTION_SSO_SECRET en el .env del servidor, las mismas en gestión. Sin la segunda, el botón «Gestión» abre gestión y allí se entra con usuario y contraseña.
 - El importador manual de ZIP (exportación a INVERGESTION) sigue disponible como respaldo.
+- **Avisos nuevos (versión 1.50)**:
+  - Tipos: fianza cobrada, devuelta y transferida; ampliación de reserva; cierre de caja; cierre de incidencias; indicadores del día.
+  - Se guardan desde ya, pero no salen hasta poner PMS_GESTION_EVENTOS_V2=1 en el .env del servidor. Al activarlo se mandan todos los guardados.
+  - El contrato para gestión está en `pms/docs/pasarela_v2.md`.
+  - La ampliación de una reserva ya no llega a gestión como salida.

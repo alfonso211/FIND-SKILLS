@@ -104,7 +104,7 @@ def test_extras_y_parte(client, admin, ids):
                     limpieza={"periodicidad": "unica", "inicio": "2031-04-04", "precio": 25}).json()
     p = client.get("/api/limpieza/parte", headers=admin, params={"asset_id": sae, "fecha": "2031-04-04"}).json()
     assert any(x["unit_id"] == u2["id"] and x["tipo"] == "contratada" for x in p["limpiezas"])
-    client.put(f"/api/turistico/reservas/{otra['id']}", headers=admin, json={"estado": "cancelada"})
+    client.post(f"/api/turistico/reservas/{otra['id']}/anular", headers=admin, json={"motivo": "Prueba: cancelada"})
     p = client.get("/api/limpieza/parte", headers=admin, params={"asset_id": sae, "fecha": "2031-04-04"}).json()
     assert not any(x["unit_id"] == u2["id"] for x in p["limpiezas"])
 

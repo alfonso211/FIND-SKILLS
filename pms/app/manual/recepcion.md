@@ -42,20 +42,23 @@
 - **Dotación especial** de una reserva: botón **Dotación** de la reserva. Quite, cambie cantidades o añada artículos (cuna, plancha extra…). Sale marcada como «dotación especial» en el anexo del contrato.
 
 ## Check-in y check-out
+- **La víspera de la llegada** el cliente con correo recibe un mensaje automático: hora de entrada, que traiga el DNI o pasaporte de todos los huéspedes (registro de viajeros), la fianza y lo que tenga pendiente de pago. No hay que hacer nada.
 - **Check-in** en la reserva cuando el cliente llega (exige el registro completo de ocupantes).
+- **Cobrar fianza** (botón de la reserva): anote la fianza que entrega el cliente, con su forma (efectivo, tarjeta, preautorización, Bizum o transferencia). Entra en su caja del turno y es la que se devuelve a la salida, **aunque no se haya guardado el contrato**.
+- **Saldo pendiente**: al pulsar **Check-out**, si el cliente debe algo (estancia, servicios o facturas sin cobrar) sale un aviso con el detalle. Cobre antes o confirme la salida igualmente.
 - **Check-out** a la salida. Si la reserva tiene **fianza**, sale la **devolución de fianza**: cliente, importe y forma (**transferencia**, **efectivo** o **tarjeta**, según indiquen Recepción 1 o Recepción 2).
   - **Transferencia**: ponga el **IBAN** del cliente y la fecha. Los datos se envían por **correo** a Bárbara y a Alfonso, y se abren los botones de **WhatsApp** con el mismo texto. Queda en el registro de envíos y en el envío a INVERGESTION.
   - **Roturas y faltas**: elija el artículo de la dotación y cuántos. Se descuentan de la fianza a su precio de reposición y el detalle va solo en el motivo.
   - Si limpieza ha hecho la **revisión en el móvil**, lo que marcó como roto o que falta ya sale cargado.
   - **OT mantenimiento**: márquela en lo roto que haya que reponer o reparar; se abre una orden de trabajo para ese apartamento. Lo roto de valor ya viene marcado.
-  - **Pedido**: lo que se repone comprándolo (menaje, toallas, sábanas…) viene marcado y se suma al **pedido de reposición** del activo. Hay uno abierto que se va sumando hasta que Recepción 1 lo autoriza en *Pedidos* y elige el proveedor.
+  - **Pedido**: lo que se repone comprándolo (menaje, toallas, sábanas…) viene marcado y se suma al **pedido de reposición** del activo. Hay uno abierto que se va sumando hasta que Recepción 1 lo autoriza en *Pedidos* y elige el proveedor. Si pasan más de 3 días sin autorizarlo, la Dirección recibe un aviso cada día laborable.
   - Si las roturas **superan la fianza**, marque **Facturar al cliente lo que supera la fianza**. Se emite una factura sin IVA (es una indemnización) que queda **pendiente de cobro**.
   - Facturas de exceso sin cobrar: se recuerdan solas al cliente por correo a los **3, 10 y 17 días**. En *Devoluciones de fianza* está el botón **Recordar cobro** (correo con la factura y WhatsApp). Cuando pague, márquela **Cobrada** en Facturas emitidas.
   - Si se retiene algo más, indique el **motivo**. Si no procede devolverla, elija **No procede**.
   - En *Reservas → Devoluciones de fianza* se ven todas; cuando la Dirección haga la transferencia, pulse **Transferencia hecha**.
 - Tras el check-out el apartamento pasa a **pendiente de limpieza** y sale en el **parte de limpieza**. Ya no se abre sola una OT de revisión: si limpieza encuentra algo, en el parte pulse **Hecha con incidencia**, escriba qué hay que reparar y, si no se puede alquilar, marque la casilla. Se abre la OT a mantenimiento y llega a gestión.
 - **Apartamento cerrado desde gestión** (avería grave): queda **bloqueado** con el motivo «Avería · orden de gestión …». Las reservas de esas fechas **no se cancelan**: le llega un correo con las que hay que **reubicar**. Si hay un huésped dentro, el apartamento se bloquea al hacer su salida. Se reabre solo al cerrar la orden en gestión.
-- **Botón «Gestión»** (arriba, y en la ficha del apartamento): abre INVERGESTION en otra pestaña con su usuario de gestión; desde un apartamento, directamente en su ficha.
+- **Botón «Gestión»**: solo lo ve la Dirección (Alfonso y Bárbara) y el administrador.
 - **Parte de limpieza**: la limpieza de salida entra en el parte **al hacer el check-out**, no antes (el cliente puede ampliar la reserva). Haga el check-out en cuanto el cliente entregue las llaves. Cada mañana, **Imprimir PDF** o **Enviar** a limpieza (el Excel queda en Documentos recibidos). Antes de imprimir o enviar puede **ordenarlo** (↑ ↓), marcar algo como **urgente**, añadir una **nota** o **pasarlo a otro día** («Cambiar»). Añada las **limpiezas extra** del día. Para algo que no puede esperar: **⚡ Limpieza urgente** (va la primera y se imprime o envía al momento). Cuando limpieza avise, pulse **Hecha** en cada una; lo no validado pasa al día siguiente.
 - **Plano de apartamentos**: colores por estado. Pulse un apartamento para ver su ficha, reservar, bloquear o abrir una incidencia.
 
@@ -77,6 +80,14 @@
 - **Facturas pendientes de cobro**: salen en el panel y en el correo de cada mañana. Compruebe en el banco si ha llegado la transferencia y en **Facturas emitidas** pulse **Cobrada** (fecha, forma y referencia).
 - Si marcó una factura cobrada por error: **Deshacer cobro** (indique el motivo).
 - Una factura emitida **no se modifica**: si hay un error, Dirección emite una **rectificativa**.
+
+## Caja y cierre de turno
+- **Apartamentos turísticos → Caja y cierres de turno → Mi turno**: lo que usted ha cobrado y devuelto desde su último cierre, por forma de pago (efectivo, tarjeta, Bizum…). Cuenta los cobros, las facturas que marcó cobradas, las fianzas cobradas y las fianzas devueltas en efectivo o tarjeta.
+- Al terminar el turno, pulse **Cerrar turno (arqueo)**:
+  1. Cuente el efectivo y anótelo.
+  2. Si deja **fondo de caja**, indíquelo.
+  3. Si no cuadra, escriba el motivo. La Dirección recibe un aviso por correo.
+- El turno siguiente empieza en ese cierre. Abajo se ven los cierres anteriores.
 
 ## Ampliación de reserva
 - Los apartamentos turísticos **no renuevan**: se hace una **ampliación de reserva**. Ningún documento dice «renovación».

@@ -418,6 +418,13 @@ class DepositRefundIn(BaseModel):
     facturar_exceso: bool = False  # lo que supera la fianza se factura al cliente (pendiente de cobro)
 
 
+class DepositChargeIn(BaseModel):
+    """Cobro de la fianza al llegar el cliente."""
+    importe: float = Field(gt=0, le=100000)
+    forma: Literal["efectivo", "tarjeta", "preautorizacion", "bizum", "transferencia"]
+    referencia: str | None = Field(default=None, max_length=80)
+
+
 class CheckoutIn(BaseModel):
     fianza: DepositRefundIn | None = None
 

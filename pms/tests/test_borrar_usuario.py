@@ -23,7 +23,7 @@ def test_borrar_usuario_sin_actividad(client, admin, ids):
 def test_borrar_usuario_con_actividad_conserva_historial(client, admin, ids):
     uid = _alta(client, admin, ids, "borrar.activo@inversiete.com", "Usuario Con Historial")
     h = login(client, "borrar.activo@inversiete.com", "Provisional1")
-    client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"})
+    h["Authorization"] = "Bearer " + client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"}).json()["token"]
     r = client.delete(f"/api/admin/usuarios/{uid}", headers=admin)
     assert r.status_code == 200 and r.json()["historial"] is True
     assert all(u["id"] != uid for u in client.get("/api/admin/usuarios", headers=admin).json())
@@ -50,7 +50,7 @@ def test_solo_alfonso_y_admin_borran(client, admin, ids, monkeypatch):
             "asignaciones": [{"role_id": ids["roles"][rol]}]})
         assert r.status_code == 201, r.text
         h = login(client, email, "Provisional1")
-        client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"})
+        h["Authorization"] = "Bearer " + client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"}).json()["token"]
         return r.json()["id"], h
     _, direccion = alta_con_clave("dir.borrar@inversiete.com", "Dirección Grupo")
     dt_id, dt = alta_con_clave("dt.borrar@inversiete.com", "Dirección Grupo")

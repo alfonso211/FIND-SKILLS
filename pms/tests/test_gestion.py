@@ -232,3 +232,20 @@ def test_ot_por_roturas_al_dar_la_salida_llega_a_gestion(client, admin, ids):
     assert len(_eventos("checkout", reserva_id=r["id"])) == 1
     with SessionLocal() as db:  # sin la orden automática «Revisión de salida»
         assert not db.query(WorkOrder).filter(WorkOrder.unit_id == u["id"], WorkOrder.titulo.like("Revisión de salida%")).count()
+
+
+def test_boton_gestion_solo_direccion(client, admin, ids, monkeypatch):
+    """El botón «Gestión» solo lo ven el superadministrador y las cuentas de PMS_GESTION_USUARIOS (Alfonso y Bárbara)."""
+    from tests.conftest import login
+    assert client.get("/api/auth/me", headers=admin).json()["gestion"] is True  # superadministrador
+    a = ids["assets"]["SAE"]["id"]
+    r = client.post("/api/admin/usuarios", headers=admin, json={
+        "email": "recepcion.sin.gestion@inversiete.com", "nombre": "Recepción sin gestión", "password": "Provisional1",
+        "asignaciones": [{"role_id": ids["roles"]["Recepción"], "asset_id": a}]})
+    assert r.status_code == 201, r.text
+    h = login(client, "recepcion.sin.gestion@inversiete.com", "Provisional1")
+    assert client.get("/api/auth/me", headers=h).json()["gestion"] is False
+    assert client.get("/api/gestion/pase", headers=h, params={"destino": "inicio"}).status_code == 403
+    from app.config import settings
+    monkeypatch.setattr(settings, "gestion_usuarios", ("recepcion.sin.gestion@inversiete.com",))
+    assert client.get("/api/auth/me", headers=h).json()["gestion"] is True

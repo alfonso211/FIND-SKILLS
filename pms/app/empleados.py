@@ -27,7 +27,8 @@ def es_propio(p: StaffMember) -> bool:
 
 def director_tecnico(scope) -> bool:
     """Da de alta y edita las fichas del personal propio de las sociedades (y el administrador del PMS)."""
-    return scope.user.is_superadmin or scope.has_any("personal.autorizar_mto")
+    # a nivel de grupo: «Dirección Técnica» solo en un activo no da poder sobre el personal de todos
+    return scope.user.is_superadmin or scope.is_group_level("personal.autorizar_mto")
 
 
 def es_recepcion(db: Session, scope, asset_id: int | None) -> bool:
@@ -134,6 +135,8 @@ def fichar(db: Session, p: StaffMember, origen: str, lat: float | None = None, l
         raise ValueError("Solo ficha el personal propio en activo")
     ahora = datetime.now().replace(microsecond=0)
     t = abierto(db, p)
+    if t is not None and t.entrada.date() < ahora.date():
+        t = None  # olvidó fichar la salida otro día: ese queda como olvido y hoy empieza una entrada nueva
     if t is None:
         t = TimeEntry(staff_id=p.id, entrada=ahora, origen=origen, lat=lat, lon=lon)
         db.add(t)

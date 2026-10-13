@@ -152,7 +152,8 @@ def invoice_book(anio: int | None = None, asset_id: int | None = None, company_i
                         codigos.get(f.rectifica_id, ""), f.cliente.get("nombre"), f.cliente.get("nif") or "",
                         f.cliente.get("domicilio") or "", f.concepto.replace("\n", " / "), num(d["base"]),
                         num(d["tipo_iva"]), num(d["cuota"]), num(d["base"] + d["cuota"]),
-                        "Exenta" if d["tipo_iva"] == 0 else "", FORMAS_PAGO.get(f.forma_pago or "", f.forma_pago or "")])
+                        ("No sujeta" if (f.exencion or "").startswith("Operación no sujeta") else "Exenta")
+                        if d["tipo_iva"] == 0 else "", FORMAS_PAGO.get(f.forma_pago or "", f.forma_pago or "")])
     nombre = f"libro_facturas_emitidas_{anio or 'todas'}.csv"
     return Response("﻿" + out.getvalue(), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="{nombre}"'})

@@ -26,6 +26,8 @@
   3. **Estado al finalizar** (obligatorio): **Resuelta**; **Pendiente de material**; **Requiere otra visita** (proponga la fecha); **Notificar a subcontrata** (solo personal propio, si la avería supera su capacidad: gas, certificaciones, maquinaria); **Otro** (explique el motivo).
   4. **Firme** con el dedo y pulse **Enviar resultado**. La hora de salida se anota sola.
 - Recepción recibe el aviso al momento. Si vuelve otro día (material o segunda visita), use el mismo enlace.
+- Si la orden se **reasigna** a otra persona, o recepción pulsa **Revocar enlace**, el enlace anterior deja de funcionar. Pida que le envíen la orden otra vez.
+- **Plazo de respuesta**: urgente **4 horas**, alta **24 horas** desde que se abre. Si nadie ha empezado el trabajo en ese plazo, la orden sale marcada **⏰ fuera de plazo** y el director técnico recibe un aviso.
 
 ## Parte de estado (al revisar una vivienda o zona común)
 - Ya **no se abren órdenes de trabajo**: se registra un **parte de estado** y recepción genera la OT y la encarga.
@@ -41,12 +43,13 @@
 ## Plan preventivo
 - **Plan preventivo**: revisiones periódicas y normativas (PCI, ascensores, legionela, BT…).
 - **Cargar plantilla normativa** para crear las revisiones obligatorias de un activo.
-- **Generar OT próximas** crea las órdenes de las revisiones que se acercan.
-- Las revisiones a 30 días o vencidas llegan en el **resumen diario por correo**.
+- Las órdenes de las revisiones que vencen en los próximos 7 días **se generan solas** cada mañana. **Generar OT próximas** sigue disponible para adelantarlas.
+- Las revisiones a 30 días o vencidas, y las OT preventivas que siguen sin hacer pasada su fecha, llegan en el **resumen diario por correo**.
 
 ## Personal y proveedores
 - **Personal → Fichas del personal**: técnicos y personal (propio o subcontratas) a los que se envían las OT. No necesitan usuario en el programa.
 - **Proveedores**: fichas de empresas y autónomos (NIF, contacto, gremio).
+- **CAE/PRL de subcontratas**: en la ficha del proveedor, anote hasta cuándo es válida su documentación (seguro, TC2, formación PRL…). Con la fecha vencida **no se le pueden asignar órdenes** hasta que la renueve. En la lista de OT sale **CAE vencida**.
 
 ## Consejos
 - Ponga siempre **fotos antes y después**: sirven a recepción, a limpieza y a Dirección.

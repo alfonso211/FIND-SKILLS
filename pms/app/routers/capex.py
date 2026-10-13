@@ -233,6 +233,9 @@ def get_project(pid: int, request: Request, scope: Scope = Depends(get_scope), d
 def update_project(pid: int, data: ProjectUpdate, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     p = _proyecto(db, scope, pid, gestionar=True)
     cambios = data.model_dump(exclude_unset=True)
+    for k in ("titulo", "gg_pct", "bi_pct", "iva_pct"):  # obligatorios: vacíos en el formulario = no se cambian
+        if cambios.get(k, 0) is None:
+            cambios.pop(k)
     if p.estado not in EDITABLE and {"gg_pct", "bi_pct"} & cambios.keys():
         bad_request("Los gastos generales y el beneficio industrial solo se cambian en definición")
     if cambios.get("unit_id") and get_or_404(db, Unit, cambios["unit_id"]).asset_id != p.asset_id:

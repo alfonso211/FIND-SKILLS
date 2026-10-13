@@ -52,12 +52,12 @@ def _limpia(codigo: str) -> tuple[str, bool, bool]:
 
 
 def _texto(datos: bytes) -> str:
-    cabecera = datos[:400].decode("latin-1", "replace")
+    cabecera = datos[:400].decode("latin-1", "replace").lstrip("\ufeff").lstrip("ï»¿")
     cod = "cp1252"
     if cabecera.startswith("~V"):
-        campos = cabecera.split("~", 2)[1].split("|")
-        if len(campos) > 4:
-            cod = CODIFICACIONES.get(campos[4].strip().upper(), cod)
+        campos = cabecera.split("~", 2)[1].split("|")  # ["V", propiedad, versión, programa, cabecera, juego…]
+        if len(campos) > 5:
+            cod = CODIFICACIONES.get(campos[5].strip().upper(), cod)
     for c in (cod, "utf-8", "cp1252"):
         try:
             return datos.decode(c)

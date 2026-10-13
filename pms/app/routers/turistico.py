@@ -21,7 +21,7 @@ from ..facturacion import (EXENCION_INDEMNIZACION, IVA_ALOJAMIENTO, IVA_GENERAL,
                            estancia_facturada, linea, lineas_servicios, serie_activo)
 from ..models import (FORMAS_DEVOLUCION, MODALIDADES_RESERVA, AccommodationContract, Asset, Contact, DepositRefund, Invoice, Lease,
                       Reservation, ReservationGuest, Unit, User, WorkOrder)
-from ..schemas import (AccommodationContractIn, CheckoutIn, DepositRefundIn, ExtrasPaymentIn, LimpiezaPlanIn, OccupantIn, Payment, RenewalIn,
+from ..schemas import (AccommodationContractIn, CheckoutIn, DepositChargeIn, DepositRefundIn, ExtrasPaymentIn, LimpiezaPlanIn, OccupantIn, Payment, RenewalIn,
                        ReservationIn, ReservationUpdate, SendContractIn, ServiceLine, SignatureIn, UnpaidInvoiceIn)
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
@@ -267,7 +267,9 @@ def _cobrar(db: Session, scope: Scope, r: Reservation, data: Payment, cobrado: b
                       else linea("alojamiento", concepto, data.importe, IVA_ALOJAMIENTO))
     servicios = lineas_servicios(db, a.id, data.servicios)
     extras = [dict(e) for e in r.extras or []]
-    pend = [e for e in extras if not e.get("factura")] if getattr(data, "incluir_extras", True) else []
+    # extras pendientes: con un pago a cuenta de la estancia no se dan por cobrados (se facturan al cobrar el resto)
+    a_cuenta = cobrado and data.importe and dinero(data.importe) < pendiente
+    pend = [e for e in extras if not e.get("factura")] if getattr(data, "incluir_extras", True) and not a_cuenta else []
     servicios += [linea("servicio", e["concepto"], e["precio"], e["tipo_iva"], e["cantidad"], e.get("servicio_id"))
                   for e in pend]
     if not lineas and not servicios:
@@ -340,6 +342,12 @@ def update_reservation(rid: int, data: ReservationUpdate, scope: Scope = Depends
     scope.require_asset("reservas.editar", r.unit.asset_id)
     if data.estado is not None and data.estado not in ESTADOS_RESERVA:
         bad_request("Estado de reserva no válido")
+    if data.estado is not None and data.estado != r.estado:
+        # anular, cancelar o dar la salida tienen sus botones (comprueban facturas, fianza y limpieza)
+        if data.estado not in ACTIVAS or r.estado not in ACTIVAS:
+            bad_request("El estado no se cambia desde Editar: use Check-out, Anular o Check-in")
+        if data.estado == "checkin":
+            _sin_otro_alojado(db, r)
     unit_id = data.unit_id or r.unit_id
     if unit_id != r.unit_id:
         new_unit = _tourist_unit(db, unit_id)
@@ -358,8 +366,11 @@ def update_reservation(rid: int, data: ReservationUpdate, scope: Scope = Depends
     if destino.capacidad and adultos > destino.capacidad and (unit_id != r.unit_id or adultos > r.adultos):
         bad_request(f"Se supera la capacidad de {destino.codigo} ({destino.capacidad} plazas; "
                     "los menores de 16 años no cuentan)")
-    if data.importe_total is not None and dinero(data.importe_total) < dinero(r.importe_pagado):
-        bad_request(f"El importe total no puede ser menor que lo ya cobrado ({dinero(r.importe_pagado)} €)")
+    if data.importe_total is not None:
+        minimo = max(dinero(r.importe_pagado), estancia_facturada(db, r.id))
+        if dinero(data.importe_total) < minimo:
+            bad_request(f"El importe total no puede ser menor que lo ya cobrado o facturado ({minimo} €): "
+                        "si hay un error, rectifique antes la factura")
     garajes = _garajes_asociados(db, r)
     # los extras y la limpieza no se copian tal cual: los resuelve _guardar_extras
     ch = apply(r, ReservationUpdate(**data.model_dump(exclude_unset=True,
@@ -392,6 +403,18 @@ def _garajes_asociados(db: Session, r: Reservation) -> list[Reservation]:
         Reservation.estado.in_(ACTIVAS))))
 
 
+def _sin_otro_alojado(db: Session, r: Reservation) -> None:
+    """No puede haber dos estancias con check-in a la vez en el mismo apartamento (p.ej. la anterior vencida)."""
+    if r.unit.uso == "garaje":
+        return
+    otro = db.scalar(select(Reservation).where(Reservation.unit_id == r.unit_id, Reservation.estado == "checkin",
+                                               Reservation.id != r.id))
+    if otro is not None:
+        bad_request(f"En {r.unit.codigo} sigue alojado {otro.guest.nombre} {otro.guest.apellidos or ''}".rstrip()
+                    + f" (reserva {otro.localizador or otro.id}, salida {otro.fecha_salida:%d/%m/%Y}): haga antes su "
+                    "salida o amplíe su reserva, o cambie de apartamento al cliente que llega")
+
+
 @router.post("/reservas/{rid}/checkin")
 def checkin(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     r = get_or_404(db, Reservation, rid)
@@ -400,6 +423,7 @@ def checkin(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(g
         bad_request(f"No se puede hacer check-in de una reserva en estado '{r.estado}'")
     if r.fecha_entrada > date.today():
         bad_request("La fecha de entrada aún no ha llegado")
+    _sin_otro_alojado(db, r)
     if r.unit.uso != "garaje":
         problemas = _registro_incompleto(r)
         if problemas:
@@ -412,11 +436,49 @@ def checkin(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(g
     return _res_out(r)
 
 
+def saldo(db: Session, r: Reservation) -> dict:
+    """Lo que el cliente debe todavía: estancia sin cobrar (facturada o no), servicios extra sin facturar y facturas
+    de servicios pendientes de cobro (también la de roturas que superan la fianza)."""
+    estancia = max(Decimal(0), dinero(r.importe_total) - dinero(r.importe_pagado))
+    extras = sum((dinero(e["precio"]) * dinero(e["cantidad"]) for e in r.extras or [] if not e.get("factura")),
+                 Decimal(0))
+    from ..facturacion import importe_estancia
+    facturas = []
+    for f in db.scalars(select(Invoice).where(Invoice.reservation_id == r.id, Invoice.cobro == "pendiente")):
+        resto = dinero(f.total) - importe_estancia(f)  # la parte de estancia ya cuenta en «estancia»
+        if resto > 0:
+            facturas.append({"codigo": f.codigo, "importe": float(resto)})
+    total = estancia + extras + sum((Decimal(str(x["importe"])) for x in facturas), Decimal(0))
+    return {"estancia": float(estancia), "extras": float(extras), "facturas": facturas, "total": float(total)}
+
+
 @router.get("/reservas/{rid}")
 def reservation_detail(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     r = get_or_404(db, Reservation, rid)
     scope.require_asset("reservas.ver", r.unit.asset_id)
-    return _res_out(r)
+    return {**_res_out(r), "saldo": saldo(db, r), "fianza": fianzas.importe(r)}
+
+
+@router.post("/reservas/{rid}/fianza/cobro")
+def deposit_charge(rid: int, data: DepositChargeIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Recepción anota la fianza cobrada al llegar el cliente (importe y forma). Cuenta en la caja de su turno y es
+    la que se devuelve a la salida, aunque no se haya guardado el contrato."""
+    r = get_or_404(db, Reservation, rid)
+    scope.require_asset("reservas.editar", r.unit.asset_id)
+    if r.estado not in ACTIVAS:
+        bad_request("Solo se cobra la fianza de una reserva confirmada o con el cliente alojado")
+    if _devolucion(db, r) is not None:
+        bad_request("La fianza de esta reserva ya se ha devuelto")
+    if r.fianza_cobro:
+        bad_request(f"La fianza ya se cobró el {datetime.fromisoformat(r.fianza_cobro['fecha']):%d/%m/%Y %H:%M} "
+                    f"({fianzas.FORMAS_COBRO.get(r.fianza_cobro['forma'], r.fianza_cobro['forma'])})")
+    c = fianzas.registrar_cobro(r, data.importe, data.forma, scope.user, data.referencia)
+    from .. import gestion
+    gestion.encolar(db, "fianza.cobrada", {**gestion._datos_reserva(r), "fianza": c["importe"], "forma": c["forma"],
+                                            "fecha": c["fecha"]})
+    audit(db, scope.user, "cobro_fianza", "reserva", r.id, {"importe": c["importe"], "forma": c["forma"]})
+    db.commit()
+    return {**_res_out(r), "fianza_cobro": c}
 
 
 def _devolucion(db: Session, r: Reservation) -> DepositRefund | None:
@@ -431,7 +493,8 @@ def deposit_info(rid: int, scope: Scope = Depends(get_scope), db: Session = Depe
     d = _devolucion(db, r)
     return {"fianza": fianzas.importe(r), "titular": fianzas.titular(r), "iban": r.guest.iban,
             "procede": fianzas.importe(r) > 0 and d is None, "devolucion": fianzas.a_dict(d) if d else None,
-            "revision": r.revision,
+            "revision": r.revision, "saldo": saldo(db, r), "cobro": r.fianza_cobro,
+            "formas_cobro": fianzas.FORMAS_COBRO,
             "formas": FORMAS_DEVOLUCION, "avisos": list(settings.fianza_avisos)}
 
 
@@ -450,8 +513,9 @@ def _registrar_devolucion(db: Session, scope: Scope, r: Reservation, f: DepositR
         if suma > total:
             detalle += f". Superan la fianza en {suma - total:.2f} €"
         motivo = detalle + (f". {motivo}" if motivo else "")
-    if importe > total:
-        bad_request(f"No se puede devolver más que la fianza ({total:.2f} €)")
+    tope = max(0.0, round(total - suma, 2))  # la fianza menos las roturas que se cargan
+    if importe > tope:
+        bad_request(f"No se puede devolver más que la fianza menos las roturas ({tope:.2f} €)")
     if importe < total and not motivo:
         bad_request("Indique el motivo por el que no se devuelve la fianza completa")
     iban = None
@@ -516,6 +580,14 @@ def _registrar_devolucion(db: Session, scope: Scope, r: Reservation, f: DepositR
     if f.forma == "transferencia" and importe > 0:
         extra["avisos"] = fianzas.avisar(db, d, r, scope.user)
         extra["whatsapp"] = fianzas.whatsapp(db, d, r)
+    from .. import gestion
+    gestion.encolar(db, "fianza.devolucion", {
+        **gestion._datos_reserva(r), "devolucion_id": d.id, "fianza": total, "devuelto": importe,
+        "retenido": round(total - importe, 2), "cargos": [{k: c.get(k) for k in ("articulo", "cantidad", "precio", "importe",
+                                                                                   "ot_id")} for c in cargos],
+        "cargos_total": suma, "forma": f.forma, "estado": d.estado, "fecha": d.fecha.isoformat(),
+        "cobro": r.fianza_cobro and {k: r.fianza_cobro.get(k) for k in ("forma", "fecha")},
+        "factura_exceso": extra.get("factura_exceso") and {k: extra["factura_exceso"][k] for k in ("codigo", "total")}})
     audit(db, scope.user, "devolver_fianza", "reserva", r.id,
           {"forma": f.forma, "fianza": total, "importe": importe, "devolucion": d.id, "cargos": suma,
            "ots": ots, "factura_exceso": d.factura_exceso})
@@ -559,7 +631,13 @@ def cancel(rid: int, no_show: bool = False, scope: Scope = Depends(get_scope), d
     scope.require_asset("reservas.editar", r.unit.asset_id)
     if r.estado != "confirmada":
         bad_request("Solo se pueden cancelar reservas confirmadas")
-    r.estado = "no_show" if no_show else "cancelada"
+    afectadas = [r, *[g for g in _garajes_asociados(db, r) if g.estado in ACTIVAS]]
+    for x in afectadas:  # como Anular: con facturas, antes la rectificativa
+        if db.scalar(select(Invoice.id).where(Invoice.reservation_id == x.id)):
+            bad_request(f"La reserva {x.localizador or x.id} tiene facturas. Emita antes la factura rectificativa "
+                        "(Facturas emitidas → Rectificar)")
+    for x in afectadas:  # la plaza de garaje asociada se libera con ella
+        x.estado = "no_show" if no_show else "cancelada"
     audit(db, scope.user, r.estado, "reserva", rid)
     db.commit()
     return _res_out(r)
@@ -587,7 +665,7 @@ def void_reservation(rid: int, data: AnularIn, scope: Scope = Depends(get_scope)
                         "factura rectificativa (Facturas emitidas → Rectificar) y vuelva a anularla.")
     for x in afectadas:
         if x.estado == "checkin" and x.unit.estado == "ocupada":
-            x.unit.estado = "disponible"
+            x.unit.estado = "disponible" if x.unit.uso == "garaje" else "pendiente_limpieza"  # el cliente estuvo dentro
         x.estado = "cancelada"
         x.notas = f"{x.notas + chr(10) if x.notas else ''}Anulada el {date.today():%d/%m/%Y}: {data.motivo}"
         audit(db, scope.user, "anular", "reserva", x.id, {"motivo": data.motivo})
@@ -1176,6 +1254,7 @@ def cerrar_renovadas(db: Session) -> None:
     nueva = aliased(Reservation)
     for vieja, ren in db.execute(select(Reservation, nueva).join(nueva, nueva.renueva_id == Reservation.id).where(
             Reservation.estado == "checkin", nueva.estado.in_(ACTIVAS), nueva.fecha_entrada <= hoy)).all():
+        vieja._ampliada_en = ren  # para gestión es una ampliación, no una salida
         vieja.estado = "checkout"
         ren.estado = "checkin"
 
@@ -1728,8 +1807,14 @@ def _fianza(db: Session, scope: Scope, fid: int) -> tuple[DepositRefund, Reserva
 def deposit_done(fid: int, data: DevueltaIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     """Transferencia hecha: la devolución queda cerrada."""
     d, r = _fianza(db, scope, fid)
+    if d.estado != "pendiente" or d.forma != "transferencia":
+        bad_request("Solo se marcan las transferencias de fianza pendientes")
     d.estado = "devuelta"
     d.devuelta_fecha = data.fecha or date.today()
+    from .. import gestion
+    gestion.encolar(db, "fianza.transferida", {**gestion._datos_reserva(r), "devolucion_id": d.id,
+                                               "fianza": float(d.fianza), "devuelto": float(d.importe),
+                                               "fecha": d.devuelta_fecha.isoformat()})
     audit(db, scope.user, "fianza_devuelta", "reserva", r.id, {"devolucion": d.id})
     db.commit()
     return fianzas.a_dict(d)

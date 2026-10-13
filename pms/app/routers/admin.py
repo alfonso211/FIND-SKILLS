@@ -11,7 +11,7 @@ from ..config import settings
 from ..database import get_db
 from ..models import Asset, Assignment, AuditLog, Base, Company, EmailLog, Role, Supplier, User
 from ..schemas import AssignmentIn, RoleIn, UserIn, UserUpdate
-from ..security import PERMISOS, Scope, audit, get_scope, hash_password
+from ..security import PERMISOS, Scope, audit, cerrar_sesiones, get_scope, hash_password
 from ..utils import bad_request, get_or_404
 
 router = APIRouter(prefix="/api/admin", tags=["administración"])
@@ -95,6 +95,8 @@ def update_user(uid: int, data: UserUpdate, scope: Scope = Depends(get_scope), d
     if data.nombre is not None:
         u.nombre = data.nombre
     if data.activo is not None:
+        if u.activo and not data.activo:
+            cerrar_sesiones(u)
         u.activo = data.activo
     if data.is_superadmin is not None:
         u.is_superadmin = data.is_superadmin
@@ -106,6 +108,7 @@ def update_user(uid: int, data: UserUpdate, scope: Scope = Depends(get_scope), d
     if data.password:
         u.password_hash = hash_password(data.password)
         u.debe_cambiar_password = True
+        cerrar_sesiones(u)
         det["password"] = "restablecida (provisional)"
     if data.asignaciones is not None:
         _validate_assignments(db, data.asignaciones)
@@ -152,6 +155,7 @@ def delete_user(uid: int, scope: Scope = Depends(get_scope), db: Session = Depen
     if refs:
         u.email, u.activo, u.is_superadmin, u.supplier_id = f"{u.id}{BORRADO}", False, False, None
         u.password_hash = hash_password(secrets.token_urlsafe(24))
+        cerrar_sesiones(u)
         u.debe_cambiar_password = False
         u.assignments = []
     else:
@@ -192,6 +196,9 @@ def update_role(rid: int, data: RoleIn, scope: Scope = Depends(get_scope), db: S
     scope.require_group("usuarios.gestionar")
     _check_perms(data.permisos)
     r = get_or_404(db, Role, rid)
+    from ..security import ROLES_POR_DEFECTO
+    if r.nombre in ROLES_POR_DEFECTO and data.nombre != r.nombre:  # ausencias, personal y avisos usan su nombre
+        bad_request(f"El rol «{r.nombre}» es del sistema y no se puede renombrar (sí cambiar sus permisos)")
     old = list(r.permisos or [])
     r.nombre, r.descripcion, r.permisos = data.nombre, data.descripcion, list(data.permisos)
     audit(db, scope.user, "editar", "rol", rid, {"antes": old, "despues": data.permisos})

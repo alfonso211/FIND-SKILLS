@@ -790,14 +790,14 @@ async function fichaApartamento(uid, recarga, cargada = null) {
     d.puede.gasto && ["gasto", "Factura recibida", "Subir una factura o ticket imputado a esta vivienda"],
     d.puede.incidencia && ["incidencia", "Incidencia", "Abrir una incidencia o parte de trabajo con fotos"],
     d.puede.parte_estado && ["estado", "Parte de estado", "Señalar una deficiencia al revisar la vivienda"],
-    ["gestion", "Gestión", "Abrir esta vivienda en INVERGESTION (órdenes de trabajo, costes)"],
+    S.me.gestion && ["gestion", "Gestión", "Abrir esta vivienda en INVERGESTION (órdenes de trabajo, costes)"],
   ].filter(Boolean) : [
     d.puede.reservar && ["reserva", "Reserva", garaje ? "Por días o semanas (huésped o cliente)" : "Nueva reserva en este apartamento"],
     d.puede.alquilar && !d.alquiler && ["alquiler", "Alquiler mensual", "Cliente externo: recibo cada mes y factura al 21 %"],
     d.puede.bloquear && (d.estado === "bloqueado" ? ["desbloquear", "Bloqueado", bloqueoVigente ? `Motivo: ${bloqueoVigente.motivo}. Pulse para desbloquear` : "Pulse para desbloquear"] : ["bloqueo", "Bloqueado", "Sacarlo de venta indicando el motivo"]),
     d.puede.incidencia && ["incidencia", "Incidencia", "Abrir una incidencia (avería) con fotos"],
     d.puede.parte_estado && ["estado", "Parte de estado", "Señalar una deficiencia al revisar el apartamento"],
-    !garaje && ["gestion", "Gestión", "Abrir este apartamento en INVERGESTION (órdenes de trabajo, costes)"],
+    !garaje && S.me.gestion && ["gestion", "Gestión", "Abrir este apartamento en INVERGESTION (órdenes de trabajo, costes)"],
   ].filter(Boolean);
   const f = cerrarSolo(form(garaje ? `Plaza de garaje ${u.codigo} · ${u.bloque || ""}` : vivienda ? `Vivienda ${u.codigo} · ${assetName(u.asset_id)}` : `Apartamento ${u.codigo} · ${u.tipologia || ""}`, [
     { html: `${vivienda ? cabVivienda : `<p><span class="estado-ap pc-${d.estado}">${ESTADO_TXT[d.estado]}</span> ${u.bloque ? esc(u.bloque) + " · " : ""}planta ${esc(u.planta || "")}${u.capacidad ? ` · ${u.capacidad} plazas` : ""}${d.limpieza ? ' · <span class="badge b-pendiente_limpieza">pendiente de limpieza</span>' : ""}</p>${actual}`}
@@ -1176,6 +1176,7 @@ function resActions(reload) {
     r.extras_pendientes > 0 && ["Facturar extras", () => facturarExtras(r, reload)],
     r.estado === "confirmada" && ["Check-in", () => run(() => post(`/api/turistico/reservas/${r.id}/checkin`), "Check-in realizado").then(reload).catch(() => ocupantesReserva(r, reload))],
     ["confirmada", "checkin"].includes(r.estado) && r.uso !== "garaje" && ["Ampliar reserva", () => renovarEstancia(r, reload)],
+    ["confirmada", "checkin"].includes(r.estado) && r.uso !== "garaje" && !r.fianza_cobro && ["Cobrar fianza", () => cobrarFianza(r, reload)],
     r.estado === "checkin" && ["Check-out", () => salidaReserva(r, reload)],
     r.uso !== "garaje" && ["confirmada", "checkin"].includes(r.estado) && ["Dotación", () => dotacionReserva(r)],
     ["Huésped", () => editGuest(r.guest_id)],
@@ -1406,9 +1407,23 @@ async function expedienteCliente(c, volver) {
 
 // lo que se repone comprándolo (menaje, ropa de cama y baño): va al pedido de reposición; lo demás, a mantenimiento
 const seRepone = (x) => x.zona === "menaje" || /^(BAN(07|09|10|11|12)|DOR(06|08|09|10|11|12))$/.test(x.codigo || "");
+// ---- fianza cobrada al llegar (cuenta en la caja del turno y es la que se devuelve a la salida)
+async function cobrarFianza(r, reload) {
+  const info = await run(() => get(`/api/turistico/reservas/${r.id}/fianza`));
+  form(`Cobrar fianza · ${r.unidad} · ${info.titular}`, [
+    { html: `<p class="muted">Anote la fianza que entrega el cliente al llegar. Entra en su caja del turno y es la que se devuelve al dar la salida, aunque no se haya guardado el contrato.</p>` },
+    { k: "importe", t: "Importe €", type: "number", step: "0.01", req: true, def: info.fianza || "" },
+    { k: "forma", t: "Forma", type: "select", req: true, options: kv(info.formas_cobro) },
+    { k: "referencia", t: "Referencia (nº de operación del datáfono, si lo hay)" },
+  ], {}, async (d) => { await post(`/api/turistico/reservas/${r.id}/fianza/cobro`, clean(d)); toast("Fianza cobrada"); reload && reload(); }, "Cobrar fianza");
+}
+const saldoTxt = (s) => [s.estancia > 0.004 && `estancia ${eur(s.estancia)}`, s.extras > 0.004 && `servicios sin facturar ${eur(s.extras)}`,
+  ...s.facturas.map((x) => `factura ${x.codigo} ${eur(x.importe)}`)].filter(Boolean).join(" · ");
 // ---- salida del apartamento con la devolución de la fianza (si procede)
 async function salidaReserva(r, reload, preguntar = false) {
   const info = await run(() => get(`/api/turistico/reservas/${r.id}/fianza`));
+  if (info.saldo && info.saldo.total > 0.004 && !confirm(`ATENCIÓN: el cliente tiene ${eur(info.saldo.total)} pendiente de pago (${saldoTxt(info.saldo)}).\n\n¿Dar la salida igualmente? Si no, cancele y cobre antes.`)) return;
+  preguntar = preguntar && !(info.saldo && info.saldo.total > 0.004);  // ya se ha confirmado
   if (!info.procede) {
     if (preguntar && !confirm(`¿Dar la salida a ${r.huesped} (${r.unidad})?`)) return;
     return run(() => post(`/api/turistico/reservas/${r.id}/checkout`), "Salida realizada").then(reload);
@@ -1416,7 +1431,7 @@ async function salidaReserva(r, reload, preguntar = false) {
   const dot = await get(`/api/turistico/reservas/${r.id}/dotacion`).catch(() => ({ items: [] }));
   const cargos = [];
   const f = form(`Salida y devolución de fianza · ${r.unidad} · ${info.titular}`, [
-    { html: `<div class="aviso-vencidas"><b>Devolución de fianza: ${eur(info.fianza)}</b><br>Cliente: <b>${esc(info.titular)}</b>. Indique cómo se devuelve según las indicaciones de Recepción 1 o Recepción 2.
+    { html: `<div class="aviso-vencidas"><b>Devolución de fianza: ${eur(info.fianza)}</b>${info.cobro ? ` <span class="muted">(cobrada el ${fdt(info.cobro.fecha)} · ${esc(info.formas_cobro[info.cobro.forma] || info.cobro.forma)})</span>` : ""}<br>Cliente: <b>${esc(info.titular)}</b>. Indique cómo se devuelve según las indicaciones de Recepción 1 o Recepción 2.
       Si es por <b>transferencia</b>, los datos se envían por correo y WhatsApp a la Dirección (${info.avisos.map(esc).join(" y ")}) para hacerla.</div>` },
     { k: "forma", t: "Forma de devolución", type: "select", req: true, options: kv(info.formas) },
     { html: `<fieldset><legend>Roturas y faltas (se descuentan a su precio de reposición)</legend>
@@ -3132,6 +3147,8 @@ const CAMPOS_PROVEEDOR = [
   { k: "email", t: "Correo electrónico", type: "email" }, { k: "telefono", t: "Teléfono" },
   { k: "persona_contacto", t: "Persona de contacto" }, { k: "actividad", t: "Actividad / gremio" },
   { k: "activo", t: "Proveedor en activo", type: "checkbox", def: true },
+  { k: "cae_vence", t: "Documentación CAE/PRL válida hasta (subcontratas)", type: "date" },
+  { k: "cae_nota", t: "CAE/PRL: qué documentación tiene (seguro RC, TC2, formación PRL…)" },
   { k: "notas", t: "Notas", type: "textarea", wide: true },
 ];
 const verProveedores = () => can("mantenimiento.ver") || can("documentos.ver");
@@ -3160,7 +3177,8 @@ V.proveedores = async (el) => {
   const load = async () => table($("#t", el), [
     { k: "nombre", t: "Nombre" }, { k: "nif", t: "CIF / DNI" }, { k: "tipo_persona_nombre", t: "Tipo" },
     { k: "actividad", t: "Actividad" }, { k: "municipio", t: "Municipio" }, { k: "telefono", t: "Teléfono" },
-    { k: "email", t: "Correo" }, { k: "activo", t: "Estado", f: (v) => (v ? "En activo" : '<span class="muted">Baja</span>') },
+    { k: "email", t: "Correo" }, { k: "cae_vence", t: "CAE/PRL", f: (v, p) => (v ? (p.cae_vencida ? `<span class="badge b-urgente">vencida ${fdate(v)}</span>` : `hasta ${fdate(v)}`) : '<span class="muted">—</span>') },
+    { k: "activo", t: "Estado", f: (v) => (v ? "En activo" : '<span class="muted">Baja</span>') },
   ], await get("/api/proveedores", { q: $("#q", el).value, solo_activos: !$("#baja", el).checked }), (p) => [
     [editar ? "Ficha" : "Ver", () => form(p.nombre, fields, p, editar ? guardar(p) : async () => {}, editar ? "Guardar" : "Cerrar")],
     editar && ["Borrar", async () => { if (confirm(`¿Borrar la ficha de ${p.nombre}? Las órdenes de trabajo conservan su nombre.`)) { await run(() => api("DELETE", `/api/proveedores/${p.id}`), "Ficha borrada"); S.proveedores = null; load(); } }, "danger"],
@@ -3343,8 +3361,8 @@ V.ordenes = async (el) => {
     table($("#t", el), [
       { k: "id", t: "Nº", f: otNum }, { k: "fecha_apertura", t: "Apertura", f: fdate }, { k: "asset_id", t: "Activo", f: (v) => esc(assetName(v)) },
       { k: "unidad", t: "Unidad", f: (v, w) => esc(v || w.zona_nombre || "Z. comunes") }, { k: "titulo", t: "Título" },
-      { k: "categoria", t: "Instalación" }, { k: "prioridad", t: "Prioridad", f: badge }, { k: "abierta_por_nombre", t: "Abierta por" },
-      { k: "asignado_a", t: "Asignado" }, { k: "envios", t: "Enviada", f: (v) => (v?.length ? `<span title="${esc(v.map((e) => `${fdt(e.fecha)} ${e.nombre} (${e.canal === "email" ? "correo" : "WhatsApp"})`).join("\n"))}">✉ ${esc([...new Set(v.map((e) => e.nombre))].join(", "))}</span>` : "") }, { k: "conf_mto_por_nombre", t: "Mantenimiento", f: (v, w) => check(v, w.conf_mto_fecha) },
+      { k: "categoria", t: "Instalación" }, { k: "prioridad", t: "Prioridad", f: (v, w) => badge(v) + (w.plazo ? `<br><span class="${w.plazo.vencido ? "badge b-urgente" : "muted peq"}" title="Plazo de respuesta: urgente 4 h, alta 24 h">${w.plazo.vencido ? "⏰ fuera de plazo" : "plazo"} ${fdt(w.plazo.limite).slice(0, -3)}</span>` : "") }, { k: "abierta_por_nombre", t: "Abierta por" },
+      { k: "asignado_a", t: "Asignado", f: (v, w) => esc(v || "") + (w.cae_vencida ? `<br><span class="badge b-urgente" title="Documentación CAE/PRL vencida: pídala antes de que trabaje">CAE vencida</span>` : "") }, { k: "envios", t: "Enviada", f: (v) => (v?.length ? `<span title="${esc(v.map((e) => `${fdt(e.fecha)} ${e.nombre} (${e.canal === "email" ? "correo" : "WhatsApp"})`).join("\n"))}">✉ ${esc([...new Set(v.map((e) => e.nombre))].join(", "))}</span>` : "") }, { k: "conf_mto_por_nombre", t: "Mantenimiento", f: (v, w) => check(v, w.conf_mto_fecha) },
       { k: "conf_limpieza_por_nombre", t: "Limpieza", f: (v, w) => (w.requiere_limpieza ? check(v, w.conf_limpieza_fecha) : '<span class="muted">no aplica</span>') },
       { k: "coste_real", t: "Coste", num: true, f: eur }, { k: "estado", t: "Estado", f: (v, w) => badge(v) + (w.alerta_nombre ? `<br><span class="badge ${w.alerta_tecnico === "escalar" ? "b-urgente" : "b-pendiente"}" title="Resultado del técnico sin atender">⚑ ${esc(w.alerta_nombre)}</span>` : "") + (w.tecnico?.fecha_propuesta && w.estado === "pendiente_visita" ? `<br><span class="muted peq">visita ${fdate(w.tecnico.fecha_propuesta)}</span>` : "") },
     ], rows, (w) => {
@@ -3359,6 +3377,7 @@ V.ordenes = async (el) => {
         puedeAsignarOT() && enTrabajo && ["Asignar", () => asignarOT(w, load), w.alerta_tecnico === "escalar" ? "primary" : ""],
         puedeEnviarOT() && enTrabajo && ["Enviar", () => enviarAsignado(w, load)],
         puedeEnviarOT() && enTrabajo && w.asignacion && ["Enviar a otros", () => enviarOT(w, load)],
+        puedeEnviarOT() && w.envios?.length && ["Revocar enlace", () => confirm(`¿Anular el enlace del técnico de la ${otNum(w.id)}? El enviado deja de funcionar; para seguir, envíe la orden de nuevo.`) && run(() => post(`/api/mantenimiento/ordenes/${w.id}/revocar-enlace`), "Enlace revocado").then(load), "danger"],
         can("mantenimiento.editar") && enTrabajo && ["Editar", async () => { const gente = await personalMto(w.asset_id); sugerirProveedores(bindAsignacion(form(`OT ${w.id}: ${w.titulo}`, [
           { k: "titulo", t: "Título", req: true, wide: true }, { k: "estado", t: "Estado", type: "select", options: list(["abierta", "asignada", "en_curso", "pendiente_material", "pendiente_visita", "escalada", "revisar"]) },
           { k: "prioridad", t: "Prioridad", type: "select", options: list(S.cat.prioridades) }, { k: "categoria", t: "Instalación", type: "select", options: list(S.cat.categorias_mto) },
@@ -4401,7 +4420,7 @@ V.perfil = async (el) => {
       <p><button class="btn" id="avSave">Guardar avisos</button></p>` : '<p class="muted">Su perfil no tiene avisos disponibles.</p>');
   if ($("#avSave", el)) $("#avSave", el).onclick = () => run(() => put("/api/auth/avisos", { avisos: [...el.querySelectorAll("[data-av]:checked")].map((c) => c.dataset.av) }), "Avisos guardados");
   $("#pw", el).onclick = () => form("Cambiar contraseña", [{ k: "actual", t: "Contraseña actual", type: "password", req: true }, { k: "nueva", t: "Nueva (mín. 10 caracteres)", type: "password", req: true }], {},
-    async (d) => { await post("/api/auth/password", d); toast("Contraseña cambiada"); });
+    async (d) => { const r = await post("/api/auth/password", d); nuevoToken(r); toast("Contraseña cambiada"); });
 };
 
 // ------------------------------------------------------------------ informe mensual a la presidencia
@@ -5576,7 +5595,8 @@ async function abrirGestion(destino, assetId, unitId) {
   } catch (e) { if (w) w.close(); toast(e.message); }
 }
 const CANAL_TXT = { directo: "Directo", booking: "Booking", airbnb: "Airbnb", expedia: "Expedia", web: "Web propia", agencia: "Agencia", otros: "Otros" };
-const EV_TXT = { "reserva.creada": "Reserva nueva", "reserva.modificada": "Reserva modificada", "reserva.cancelada": "Reserva cancelada", checkout: "Check-out", "incidencia.reportada": "Incidencia", "liquidacion.periodo": "Liquidación" };
+const EV_TXT = { "reserva.creada": "Reserva nueva", "reserva.modificada": "Reserva modificada", "reserva.cancelada": "Reserva cancelada", checkout: "Check-out", "incidencia.reportada": "Incidencia", "liquidacion.periodo": "Liquidación",
+  "reserva.ampliada": "Ampliación", "fianza.cobrada": "Fianza cobrada", "fianza.devolucion": "Fianza devuelta", "fianza.transferida": "Transferencia de fianza", "caja.cierre": "Cierre de caja", "incidencia.cerrada": "Incidencia cerrada", "kpi.diario": "Indicadores del día" };
 V.gestion = async (el) => {
   const d = await get("/api/gestion/estado");
   const c = d.cuenta || {};
@@ -5588,6 +5608,7 @@ V.gestion = async (el) => {
       <div class="kpi ${c.pendiente ? "mal" : ""}"><b>${c.pendiente || 0}</b><span>Pendientes</span></div>
       <div class="kpi ${c.aviso ? "mal" : ""}"><b>${c.aviso || 0}</b><span>Sin entregar tras varios intentos</span></div></div>
     ${d.configurado ? "" : '<p class="aviso-amarillo">Falta la clave PMS_EVENTOS_SECRET en el servidor: los avisos se guardan y se mandarán en cuanto esté puesta.</p>'}
+    ${d.v2 ? '<p class="muted">Avisos nuevos (fianzas, ampliaciones, cierres de caja, cierre de incidencias e indicadores diarios): activados.</p>' : `<p class="aviso-amarillo">Avisos nuevos (fianzas, ampliaciones, cierres de caja, cierre de incidencias e indicadores diarios): <b>en espera</b> hasta que gestión los sepa recibir (${d.v2_en_espera || 0} guardados). Se activan con PMS_GESTION_EVENTOS_V2=1 en el servidor y salen todos los guardados.</p>`}
     <div class="card"><h3>Comisión de cada canal (% del bruto)</h3><p class="muted">Se usa para calcular el neto de la liquidación mensual que recibe gestión. La diferencia real se ve al conciliar con el banco.</p><div id="gcom"></div></div>
     <div class="card"><h3>Liquidación mensual</h3><p class="muted">Si el activo tiene marcado «Mandar sola cada mes», el día 2 se manda la del mes anterior. Aquí se puede ver antes o mandar a mano (gestión no pisa una producción metida a mano sin enseñar las diferencias). Ojo: sale de las reservas del PMS; si no están todas, la cifra saldrá corta.</p>
       <div class="toolbar"><select id="gla">${d.activos.map((a) => `<option value="${a.id}">${esc(a.nombre)}</option>`).join("")}</select><input id="glp" type="month" value="${mesAnt}">
@@ -5608,10 +5629,47 @@ V.gestion = async (el) => {
     { k: "intentos", t: "Intentos" }], d.eventos);
 };
 
+// ---- caja de recepción: arqueo por turno y recepcionista
+V.caja = async (el) => {
+  const turisticos = can("reservas.editar") ? assetsOf("apartamentos_turisticos") : [];
+  let aid = turisticos.some((a) => a.id === Number(S.asset)) ? Number(S.asset) : turisticos[0]?.id;
+  el.innerHTML = `${aid ? `<div class="card"><h3>Mi turno</h3><div class="toolbar"><select id="ac">${turisticos.map((a) => `<option value="${a.id}" ${a.id === aid ? "selected" : ""}>${esc(a.nombre)}</option>`).join("")}</select></div><div id="tu"></div></div>` : ""}
+    <div class="card"><h3>Cierres de caja</h3><div class="toolbar"><input type="date" id="d"> <input type="date" id="h"></div><div id="ci"></div></div>`;
+  const formas = {};
+  const turno = async () => {
+    if (!$("#tu", el)) return;
+    const t = await get("/api/caja/turno", { asset_id: aid });
+    Object.assign(formas, t.formas);
+    $("#tu", el).innerHTML = `<p>Desde <b>${fdt(t.desde)}</b> (su último cierre o el inicio del día).</p>
+      <div class="kpis">${Object.entries(t.totales).map(([k, v]) => `<div class="kpi"><b>${eur(v)}</b><span>${esc(t.formas[k] || k)}</span></div>`).join("") || '<p class="muted">Sin cobros ni devoluciones en este turno.</p>'}</div>
+      <div id="mv"></div><div class="toolbar"><button class="btn primary" id="cerrar">Cerrar turno (arqueo)</button></div>`;
+    table($("#mv", el), [{ k: "hora", t: "Hora", f: fdt }, { k: "tipo", t: "Movimiento" }, { k: "ref", t: "Referencia" },
+      { k: "forma", t: "Forma", f: (v) => esc(t.formas[v] || v) }, { k: "importe", t: "Importe", num: true, f: eur }], t.movimientos);
+    $("#cerrar", el).onclick = () => form("Cierre de turno: arqueo de caja", [
+      { html: `<p>Efectivo que debería haber (cobros menos devoluciones en efectivo del turno): <b>${eur(t.efectivo_esperado)}</b>. Cuente el efectivo y anótelo; si deja fondo de caja, indíquelo.</p>` },
+      { k: "efectivo_contado", t: "Efectivo contado €", type: "number", step: "0.01", req: true },
+      { k: "fondo", t: "Fondo de caja que se queda €", type: "number", step: "0.01", def: 0 },
+      { k: "nota", t: "Motivo si no cuadra", type: "textarea", wide: true },
+    ], {}, async (d) => {
+      const c = await post("/api/caja/cierre", { asset_id: aid, ...clean(d) });
+      toast(Number(c.diferencia) ? `Turno cerrado con descuadre de ${eur(c.diferencia)}: avisada la Dirección` : "Turno cerrado: la caja cuadra");
+      turno(); cierres();
+    }, "Cerrar turno");
+  };
+  const cierres = async () => table($("#ci", el), [{ k: "hasta", t: "Cierre", f: fdt }, { k: "activo", t: "Activo" }, { k: "recepcionista", t: "Recepcionista" },
+    { k: "totales", t: "Cobrado", f: (v) => Object.entries(v || {}).map(([k, x]) => `${esc(formas[k] || k)} ${eur(x)}`).join(" · ") },
+    { k: "efectivo_esperado", t: "Efectivo esperado", num: true, f: eur }, { k: "efectivo_contado", t: "Contado", num: true, f: eur },
+    { k: "diferencia", t: "Diferencia", num: true, f: (v, c) => (Number(v) ? `<span class="badge b-urgente" title="${esc(c.nota || "")}">${eur(v)}</span>` : "✔") }],
+    await get("/api/caja/cierres", { asset_id: S.asset || undefined, desde: $("#d", el).value || undefined, hasta: $("#h", el).value || undefined }));
+  $("#d", el).onchange = cierres; $("#h", el).onchange = cierres;
+  if ($("#ac", el)) $("#ac", el).onchange = () => { aid = Number($("#ac", el).value); turno(); };
+  await turno(); cierres();
+};
+
 const MENU = [
   ["General", [["panel", "Panel de control", null], ["agenda", "Agenda", null], ["manual", "Manual de uso", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
   ["Personal", [["ausencias", "Vacaciones y ausencias", "activos.ver"], ["personal", "Fichas del personal", "personal"], ["jornada", "Registro de jornada", "gestpersonal"], ["mijornada", "Mi jornada (fichar)", null]]],
-  ["Apartamentos turísticos", [["plano", "Plano de apartamentos", "activos.ver"], ["hoy", "Llegadas / salidas", "reservas.ver"], ["limpieza", "Parte de limpieza", "limpieza.editar"], ["reservas", "Reservas", "reservas.ver"], ["planning", "Planning", "reservas.ver"], ["huespedes", "Huéspedes", "reservas.ver"], ["ses", "Parte de viajeros (SES)", "reservas.ver"], ["garajes", "Alquiler de garajes", "reservas.ver"]]],
+  ["Apartamentos turísticos", [["plano", "Plano de apartamentos", "activos.ver"], ["hoy", "Llegadas / salidas", "reservas.ver"], ["limpieza", "Parte de limpieza", "limpieza.editar"], ["reservas", "Reservas", "reservas.ver"], ["planning", "Planning", "reservas.ver"], ["huespedes", "Huéspedes", "reservas.ver"], ["ses", "Parte de viajeros (SES)", "reservas.ver"], ["garajes", "Alquiler de garajes", "reservas.ver"], ["caja", "Caja y cierres de turno", "caja"]]],
   ["Alquiler residencial", [["contratos", "Contratos", "alquiler.ver"], ["recibos", "Recibos y cobros", "alquiler.ver"], ["inquilinos", "Inquilinos", "alquiler.ver"], ["cobrosext", "Cobros de otro programa", "alquiler.ver"]]],
   ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["servicios", "Servicios", "activos.ver"], ["informes", "Informes Excel", "informes"], ["presidencia", "Informe a presidencia", "facturas.ver"]]],
   ["Documentos y gastos", [["docrecibidos", "Documentos recibidos", "documentos.ver"], ["gastos", "Cuenta de gastos", "documentos.ver"]]],
@@ -5624,7 +5682,8 @@ const allowed = (p) => !p || (p === "admin" ? S.me.admin_grupo : p === "informes
   : p === "personal" ? ["mantenimiento.ver", "limpieza.editar", "limpieza.confirmar_ot"].some(can)
   : p === "proveedores" ? verProveedores() : p === "pedidos" ? verPedidos() : p === "partes" ? verPartes()
   : p === "partesestado" ? canParteEstado() || can("mantenimiento.abrir")
-  : p === "gestpersonal" ? can("personal.autorizar") || can("partes.validar") : can(p));
+  : p === "gestpersonal" ? can("personal.autorizar") || can("partes.validar")
+  : p === "caja" ? can("reservas.editar") || can("finanzas.ver") : can(p));
 const TITLES = Object.fromEntries(MENU.flatMap(([, items]) => items.map(([id, t]) => [id, t])));
 const PERMISO_VISTA = Object.fromEntries(MENU.flatMap(([, items]) => items.map(([id, , p]) => [id, p])));
 const puedeIr = (vista) => vista in PERMISO_VISTA && allowed(PERMISO_VISTA[vista]);  // pantalla del menú visible
@@ -5716,7 +5775,7 @@ function forcePasswordChange() {
     { k: "repite", t: "Repita la nueva contraseña", type: "password", req: true },
   ], {}, async (d) => {
     if (d.nueva !== d.repite) throw new Error("Las contraseñas no coinciden");
-    await post("/api/auth/password", { actual: d.actual, nueva: d.nueva });
+    nuevoToken(await post("/api/auth/password", { actual: d.actual, nueva: d.nueva }));
     toast("Contraseña actualizada"); setTimeout(start, 0);
   }, "Cambiar contraseña");
   $("#fCancel", f).textContent = "Salir"; $("#fCancel", f).onclick = () => { $("#modal").close(); logout(); };
@@ -5774,9 +5833,12 @@ function vigilarResultadosOT() {
 }
 function pintarUsuario() {
   $("#userAvatar").textContent = iniciales(S.me.nombre); $("#userAvatar").title = S.me.nombre;
+  $("#gestionBtn").hidden = !S.me.gestion;  // solo superadministrador, Alfonso y Bárbara
   $("#userName").innerHTML = `${esc(S.me.nombre)}<small>${esc(S.me.colaborador ? S.me.colaborador.proveedor : rolDe(S.me))}</small>`;
 }
 function showLogin() { $("#app").classList.add("hidden"); $("#login").classList.remove("hidden"); }
+// al cambiar la contraseña se cierran las demás sesiones; esta sigue con el token nuevo
+function nuevoToken(r) { if (r && r.token) { S.token = r.token; localStorage.setItem("pms_token", S.token); } }
 function logout() { S.token = null; S.pila = []; localStorage.removeItem("pms_token"); showLogin(); }
 
 $("#loginForm").onsubmit = async (e) => {

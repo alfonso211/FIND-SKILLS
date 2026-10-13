@@ -107,7 +107,7 @@ def orders(abiertas: bool = False, c: Ctx = Depends(ctx), db: Session = Depends(
                     "ultimo": {"resultado": RESULTADOS_TECNICO[v.resultado], "enviado": v.enviado.isoformat(),
                                "tecnico": v.tecnico, "fecha_propuesta": v.fecha_propuesta.isoformat()
                                if v.fecha_propuesta else None} if v else None,
-                    "gestionar": None if w.estado in FINALIZADAS else f"/tecnico/{w.id}?{_token(w.id)}"})
+                    "gestionar": None if w.estado in FINALIZADAS else f"/tecnico/{w.id}?{_token(w)}"})
     return out
 
 

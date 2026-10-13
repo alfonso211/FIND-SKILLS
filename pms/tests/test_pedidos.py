@@ -14,7 +14,7 @@ def _recepcion(client, admin, ids, email, nombre, codigo):
         "asignaciones": [{"role_id": ids["roles"]["Recepción"], "asset_id": ids["assets"][codigo]["id"]}]})
     assert r.status_code == 201, r.text
     h = login(client, email, "Provisional1")
-    client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "PedidosPrueba2026"})
+    h["Authorization"] = "Bearer " + client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "PedidosPrueba2026"}).json()["token"]
     return login(client, email, "PedidosPrueba2026")
 
 

@@ -122,13 +122,19 @@ def public_save(rid: int, c: int, f: str, data: RevisionIn, db: Session = Depend
     r = _reserva(db, rid, c, f)
     if r.estado not in ("checkin", "checkout"):
         bad_request("Esta reserva ya no admite revisión")
+    from ..models import DepositRefund
+    if db.scalar(select(DepositRefund.id).where(DepositRefund.reservation_id == r.id)):
+        bad_request("Recepción ya ha cerrado la fianza de esta salida: comuníquele lo que haya encontrado")
     d = dotacion.de_reserva(db, r)
     por = {x["codigo"]: x for x in d["items"]}
-    items = []
+    items, vistos = [], set()
     for m in data.marcas:
         x = por.get(m.codigo.upper())
         if x is None:
             bad_request(f"Artículo desconocido: {m.codigo}")
+        if x["codigo"] in vistos:  # cada artículo una vez (si no, se cargaría dos veces en la fianza)
+            continue
+        vistos.add(x["codigo"])
         items.append({"codigo": x["codigo"], "articulo": x["articulo"], "zona": x["zona"], "estado": m.estado,
                       "cantidad": m.cantidad, "precio": x.get("precio")})
     r.revision = {"fecha": datetime.now().isoformat(timespec="minutes"), "nombre": data.nombre.strip(),
