@@ -34,13 +34,17 @@
 ## Dotación de los apartamentos
 - **La primera vez**: en *Reservas → Dotación habitual*, elija cada tipo de apartamento. Sale la lista estándar 3 llaves (salón, cocina, menaje, dormitorios, baño y auxiliares) ya rellena: **marque lo que hay y ajuste las cantidades**, sin escribir. Pulse **Guardar como dotación habitual**.
 - Si falta un artículo: escriba su nombre en **Otra dotación** y pulse **+ Otra dotación**. Queda en el catálogo para la próxima vez.
+- **Apartamento concreto** (con terraza, VIP…): en la misma pantalla elija el apartamento y pulse **Dotación propia**. Manda sobre la de su tipo; con **Quitar** vuelve a la de su tipo.
+- **Precios de reposición**: precio por unidad de cada artículo (IVA incluido). Vienen orientativos; ajústelos a lo que se paga.
+- **Hoja de revisión de salida**: PDF con la dotación del apartamento por zonas, con casillas **OK / Falta / Roto** y el precio de reposición. Está en la reserva (botón **Dotación**), en la salida y en el **Parte de limpieza → Hojas de revisión** (todas las salidas del día).
 - **Dotación especial** de una reserva: botón **Dotación** de la reserva. Quite, cambie cantidades o añada artículos (cuna, plancha extra…). Sale marcada como «dotación especial» en el anexo del contrato.
 
 ## Check-in y check-out
 - **Check-in** en la reserva cuando el cliente llega (exige el registro completo de ocupantes).
 - **Check-out** a la salida. Si la reserva tiene **fianza**, sale la **devolución de fianza**: cliente, importe y forma (**transferencia**, **efectivo** o **tarjeta**, según indiquen Recepción 1 o Recepción 2).
   - **Transferencia**: ponga el **IBAN** del cliente y la fecha. Los datos se envían por **correo** a Bárbara y a Alfonso, y se abren los botones de **WhatsApp** con el mismo texto. Queda en el registro de envíos y en el envío a INVERGESTION.
-  - Si no se devuelve todo (roturas, faltas), indique el **motivo**. Si no procede devolverla, elija **No procede**.
+  - **Roturas y faltas**: elija el artículo de la dotación y cuántos. Se descuentan de la fianza a su precio de reposición y el detalle va solo en el motivo.
+  - Si se retiene algo más, indique el **motivo**. Si no procede devolverla, elija **No procede**.
   - En *Reservas → Devoluciones de fianza* se ven todas; cuando la Dirección haga la transferencia, pulse **Transferencia hecha**.
 - Tras el check-out el apartamento pasa a **pendiente de limpieza**, sale en el **parte de limpieza** y se abre sola una **OT de revisión de salida** para mantenimiento.
 - **Parte de limpieza**: la limpieza de salida entra en el parte **al hacer el check-out**, no antes (el cliente puede ampliar la reserva). Haga el check-out en cuanto el cliente entregue las llaves. Cada mañana, **Imprimir PDF** o **Enviar** a limpieza (el Excel queda en Documentos recibidos). Antes de imprimir o enviar puede **ordenarlo** (↑ ↓), marcar algo como **urgente**, añadir una **nota** o **pasarlo a otro día** («Cambiar»). Añada las **limpiezas extra** del día. Para algo que no puede esperar: **⚡ Limpieza urgente** (va la primera y se imprime o envía al momento). Cuando limpieza avise, pulse **Hecha** en cada una; lo no validado pasa al día siguiente.

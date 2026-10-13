@@ -396,6 +396,14 @@ class ReservationIn(BaseModel):
         return v
 
 
+class CargoIn(BaseModel):
+    """Rotura o falta de la dotación descontada de la fianza a su precio de reposición."""
+    codigo: str | None = Field(default=None, max_length=12)
+    articulo: str = Field(min_length=1, max_length=160)
+    cantidad: int = Field(default=1, ge=1, le=999)
+    precio: float = Field(ge=0, le=100000)
+
+
 class DepositRefundIn(BaseModel):
     """Devolución de la fianza al hacer la salida (la indica Recepción 1 o Recepción 2)."""
     forma: Literal["transferencia", "efectivo", "tarjeta", "no_procede"]
@@ -404,6 +412,7 @@ class DepositRefundIn(BaseModel):
     iban: str | None = Field(default=None, max_length=40)
     fecha: date | None = None  # de la transferencia (prevista); por defecto, hoy
     nota: str | None = Field(default=None, max_length=1000)
+    cargos: list[CargoIn] = Field(default=[], max_length=100)  # roturas y faltas con su precio de reposición
 
 
 class CheckoutIn(BaseModel):

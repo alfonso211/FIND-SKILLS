@@ -1387,6 +1387,8 @@ class DepositRefund(Base):
     user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     avisada: Mapped[datetime | None] = mapped_column(DateTime)  # correo a la Dirección
     exportada: Mapped[datetime | None] = mapped_column(DateTime)  # incluida en un envío a INVERGESTION
+    # roturas y faltas descontadas con su precio de reposición: [{codigo, articulo, cantidad, precio, importe}]
+    cargos: Mapped[list | None] = mapped_column(JSON)
 
 
 # --------------------------------------------------------------------------- dotación
@@ -1413,4 +1415,26 @@ class DotacionArticulo(Base):
     zona: Mapped[str] = mapped_column(String(20))
     articulo: Mapped[str] = mapped_column(String(160))
     creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+
+
+class DotacionUnidad(Base):
+    """Dotación propia de un apartamento concreto (terraza, VIP…): manda sobre la habitual de su tipología."""
+    __tablename__ = "dotacion_unidades"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    unit_id: Mapped[int] = mapped_column(ForeignKey("unidades.id"), unique=True)
+    items: Mapped[list] = mapped_column(JSON)
+    actualizada: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+
+
+class DotacionPrecio(Base):
+    """Precio de reposición de un artículo en un activo (IVA incluido): se descuenta de la fianza si se rompe o falta."""
+    __tablename__ = "dotacion_precios"
+    __table_args__ = (UniqueConstraint("asset_id", "codigo"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
+    codigo: Mapped[str] = mapped_column(String(12))
+    precio: Mapped[float] = mapped_column(Numeric(10, 2))
+    actualizado: Mapped[datetime] = mapped_column(DateTime, default=_now)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))

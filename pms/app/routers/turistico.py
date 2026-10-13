@@ -435,12 +435,22 @@ def deposit_info(rid: int, scope: Scope = Depends(get_scope), db: Session = Depe
 
 def _registrar_devolucion(db: Session, scope: Scope, r: Reservation, f: DepositRefundIn) -> tuple[DepositRefund, dict]:
     total = fianzas.importe(r)
-    importe = total if f.importe is None else round(f.importe, 2)
+    cargos = [{"codigo": c.codigo, "articulo": c.articulo, "cantidad": c.cantidad, "precio": round(c.precio, 2),
+               "importe": round(c.cantidad * c.precio, 2)} for c in f.cargos]
+    suma = round(sum(c["importe"] for c in cargos), 2)
+    importe = (max(0.0, round(total - suma, 2)) if cargos else total) if f.importe is None else round(f.importe, 2)
     if f.forma == "no_procede":
         importe = 0.0
+    motivo = (f.retenido_motivo or "").strip()
+    if cargos:  # el detalle de roturas y faltas va en el motivo (correo, expediente y gestoría)
+        detalle = "Roturas/faltas: " + "; ".join(
+            f"{c['cantidad']} × {c['articulo']} ({c['precio']:.2f} €)" for c in cargos) + f" = {suma:.2f} €"
+        if suma > total:
+            detalle += f". Superan la fianza en {suma - total:.2f} €"
+        motivo = detalle + (f". {motivo}" if motivo else "")
     if importe > total:
         bad_request(f"No se puede devolver más que la fianza ({total:.2f} €)")
-    if importe < total and not (f.retenido_motivo or "").strip():
+    if importe < total and not motivo:
         bad_request("Indique el motivo por el que no se devuelve la fianza completa")
     iban = None
     if f.forma == "transferencia":
@@ -452,7 +462,7 @@ def _registrar_devolucion(db: Session, scope: Scope, r: Reservation, f: DepositR
         if not r.guest.iban:
             r.guest.iban = iban  # queda en la ficha del cliente
     d = DepositRefund(reservation_id=r.id, asset_id=r.unit.asset_id, contact_id=r.guest_id, titular=fianzas.titular(r),
-                      fianza=total, importe=importe, retenido_motivo=(f.retenido_motivo or "").strip() or None,
+                      fianza=total, importe=importe, retenido_motivo=motivo or None, cargos=cargos or None,
                       forma=f.forma, iban=iban, fecha=f.fecha or date.today(),
                       estado="pendiente" if f.forma == "transferencia" else "devuelta",
                       devuelta_fecha=None if f.forma == "transferencia" else (f.fecha or date.today()),
@@ -464,7 +474,7 @@ def _registrar_devolucion(db: Session, scope: Scope, r: Reservation, f: DepositR
         extra["avisos"] = fianzas.avisar(db, d, r, scope.user)
         extra["whatsapp"] = fianzas.whatsapp(db, d, r)
     audit(db, scope.user, "devolver_fianza", "reserva", r.id,
-          {"forma": f.forma, "fianza": total, "importe": importe, "devolucion": d.id})
+          {"forma": f.forma, "fianza": total, "importe": importe, "devolucion": d.id, "cargos": suma})
     return d, extra
 
 
@@ -1699,6 +1709,16 @@ def stay_kit(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(
     r = get_or_404(db, Reservation, rid)
     scope.require_asset("reservas.ver", r.unit.asset_id)
     return dotacion.de_reserva(db, r)
+
+
+@router.get("/reservas/{rid}/hoja-revision.pdf")
+def stay_check_sheet(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Hoja de revisión de salida del apartamento (dotación con casillas y precios de reposición)."""
+    r = get_or_404(db, Reservation, rid)
+    scope.require_asset("reservas.ver", r.unit.asset_id)
+    pdf = dotacion.hoja_pdf([dotacion.hoja_de_reserva(db, r)])
+    return Response(pdf, media_type="application/pdf", headers={
+        "Content-Disposition": f'inline; filename="Revision_salida_{r.unit.codigo}_{r.localizador or r.id}.pdf"'})
 
 
 @router.put("/reservas/{rid}/dotacion")

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from .. import dotacion as dot
 from ..database import get_db
-from ..models import Asset, DotacionArticulo, DotacionHabitual, Unit
+from ..models import Asset, DotacionArticulo, DotacionHabitual, DotacionPrecio, DotacionUnidad, Unit
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request, get_or_404
 
@@ -26,6 +26,15 @@ class HabitualIn(BaseModel):
     tipologia: str = Field(max_length=60)
     perfil: str = Field(max_length=10)
     items: list[Item]
+
+
+class UnidadIn(BaseModel):
+    items: list[Item]
+
+
+class PreciosIn(BaseModel):
+    asset_id: int
+    precios: dict[str, float | None]  # código -> € (IVA incluido); None = vuelve al orientativo
 
 
 class ArticuloIn(BaseModel):
@@ -55,6 +64,93 @@ def usual(asset_id: int, scope: Scope = Depends(get_scope), db: Session = Depend
                     "actualizada": h.actualizada.isoformat() if h else None,
                     "items": list(h.items) if h else dot.estandar(perfil)})
     return out
+
+
+@router.get("/unidades")
+def units(asset_id: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Apartamentos del activo y cuáles tienen dotación propia."""
+    scope.require_asset("reservas.ver", asset_id)
+    propias = {d.unit_id for d in db.scalars(select(DotacionUnidad).join(Unit, Unit.id == DotacionUnidad.unit_id)
+                                              .where(Unit.asset_id == asset_id))}
+    return [{"id": u.id, "codigo": u.codigo, "tipologia": u.tipologia, "propia": u.id in propias}
+            for u in db.scalars(select(Unit).where(Unit.asset_id == asset_id, Unit.uso == "apartamento")
+                                .order_by(Unit.codigo))]
+
+
+@router.get("/unidad/{uid}")
+def unit_kit(uid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    u = get_or_404(db, Unit, uid)
+    scope.require_asset("reservas.ver", u.asset_id)
+    items, fijada, origen = dot.base_con_origen(db, u)
+    return {"unit_id": u.id, "codigo": u.codigo, "tipologia": u.tipologia, "perfil": dot.perfil_de(u.tipologia),
+            "origen": origen, "fijada": fijada, "items": items}
+
+
+@router.put("/unidad/{uid}")
+def unit_kit_save(uid: int, data: UnidadIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Dotación propia de un apartamento concreto (terraza, VIP…): manda sobre la de su tipología."""
+    u = get_or_404(db, Unit, uid)
+    scope.require_asset("reservas.editar", u.asset_id)
+    items = dot.limpiar([i.model_dump() for i in data.items])
+    if not items:
+        bad_request("La dotación está vacía: marque al menos un artículo")
+    p = dot.propia(db, u.id)
+    if p is None:
+        p = DotacionUnidad(unit_id=u.id, items=items)
+        db.add(p)
+    p.items, p.user_id, p.actualizada = items, scope.user.id, func.now()
+    audit(db, scope.user, "dotacion_apartamento", "unidad", u.id, {"articulos": len(items)})
+    db.commit()
+    return unit_kit(uid, scope, db)
+
+
+@router.delete("/unidad/{uid}")
+def unit_kit_delete(uid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Quita la dotación propia: el apartamento vuelve a la habitual de su tipología."""
+    u = get_or_404(db, Unit, uid)
+    scope.require_asset("reservas.editar", u.asset_id)
+    p = dot.propia(db, u.id)
+    if p:
+        db.delete(p)
+        audit(db, scope.user, "quitar_dotacion_apartamento", "unidad", u.id)
+        db.commit()
+    return unit_kit(uid, scope, db)
+
+
+@router.get("/precios")
+def prices(asset_id: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Precio de reposición de cada artículo (el del activo o el orientativo) para descontarlo de la fianza."""
+    scope.require_asset("reservas.ver", asset_id)
+    propios = {p.codigo for p in db.scalars(select(DotacionPrecio).where(DotacionPrecio.asset_id == asset_id))}
+    pre = dot.precios(db, asset_id)
+    return [{"codigo": a["codigo"], "zona": a["zona"], "articulo": a["articulo"], "precio": pre.get(a["codigo"]),
+             "orientativo": dot.PRECIOS_REPOSICION.get(a["codigo"]), "fijado": a["codigo"] in propios}
+            for a in dot.articulos(db, asset_id)]
+
+
+@router.put("/precios")
+def prices_save(data: PreciosIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    scope.require_asset("reservas.editar", data.asset_id)
+    actuales = {p.codigo: p for p in db.scalars(select(DotacionPrecio).where(DotacionPrecio.asset_id == data.asset_id))}
+    cambios = 0
+    for cod, precio in data.precios.items():
+        cod = cod.strip().upper()[:12]
+        if precio is not None and (precio < 0 or precio > 100000):
+            bad_request(f"Precio no válido en {cod}")
+        p = actuales.get(cod)
+        if precio is None:
+            if p:
+                db.delete(p)
+                cambios += 1
+            continue
+        if p is None:
+            db.add(DotacionPrecio(asset_id=data.asset_id, codigo=cod, precio=round(precio, 2), user_id=scope.user.id))
+        else:
+            p.precio, p.user_id, p.actualizado = round(precio, 2), scope.user.id, func.now()
+        cambios += 1
+    audit(db, scope.user, "precios_reposicion", "activo", data.asset_id, {"cambios": cambios})
+    db.commit()
+    return prices(data.asset_id, scope, db)
 
 
 @router.put("/habitual")

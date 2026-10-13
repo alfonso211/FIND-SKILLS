@@ -12,9 +12,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import avisos, documentos, firma_contrato, limpiezas
+from .. import avisos, documentos, dotacion, firma_contrato, limpiezas
 from ..database import get_db
-from ..models import Asset, CleaningTask, EmailLog, ReceivedDocument, Unit
+from ..models import Asset, CleaningTask, EmailLog, ReceivedDocument, Reservation, Unit
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request, get_or_404
 from .personal import despachar, destinatarios
@@ -151,6 +151,29 @@ def report_pdf(asset_id: int, fecha: date | None = None, nota: str | None = None
     db.commit()
     return Response(contenido, media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{_nombre(a, f, "pdf")}"'})
+
+
+@router.get("/hojas-revision.pdf")
+def check_sheets_pdf(asset_id: int, fecha: date | None = None, scope: Scope = Depends(get_scope),
+                     db: Session = Depends(get_db)):
+    """Hojas de revisión de salida del día: las salidas ya hechas del parte y las previstas para ese día (para
+    revisar el apartamento antes de devolver la fianza). Una página por apartamento."""
+    a, f, filas = _datos(db, scope, asset_id, fecha)
+    rids = [t.reservation_id for t in db.scalars(select(CleaningTask).where(
+        CleaningTask.id.in_([x["id"] for x in filas if x["tipo"] == "salida"] or [-1]))) if t.reservation_id]
+    previstas = db.scalars(select(Reservation.id).join(Unit, Unit.id == Reservation.unit_id).where(
+        Unit.asset_id == a.id, Unit.uso != "garaje", Reservation.estado == "checkin", Reservation.fecha_salida == f))
+    vistos, hojas = set(), []
+    for rid in [*rids, *previstas]:
+        if rid in vistos:
+            continue
+        vistos.add(rid)
+        hojas.append(dotacion.hoja_de_reserva(db, db.get(Reservation, rid)))
+    if not hojas:
+        bad_request("No hay salidas ese día")
+    hojas.sort(key=lambda h: h["apartamento"])
+    return Response(dotacion.hoja_pdf(hojas), media_type="application/pdf", headers={
+        "Content-Disposition": f'inline; filename="Hojas_revision_{a.codigo}_{f.isoformat()}.pdf"'})
 
 
 @router.get("/parte.xlsx")
