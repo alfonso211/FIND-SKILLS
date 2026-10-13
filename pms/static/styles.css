@@ -730,3 +730,26 @@ tr.pareto-a td:first-child { font-weight: 700; }
 .intervencion { border: 1px solid var(--line); border-radius: var(--radio); padding: 10px 14px; margin-bottom: 10px; background: var(--panel); }
 .intervencion p { margin: 4px 0; }
 .firma-tecnico { max-width: 260px; max-height: 110px; border: 1px dashed var(--line); border-radius: 8px; background: #fff; margin-top: 6px; }
+
+/* CAPEX */
+.capex-cab { display: flex; flex-wrap: wrap; gap: 14px; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+.capex-kpis { display: flex; flex-wrap: wrap; gap: 8px; }
+.capex-kpis > div { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 6px 12px; min-width: 120px; }
+.capex-kpis small { display: block; color: var(--muted); font-size: 11px; }
+.capex-kpis b { font-size: 16px; }
+.capex-kpis .mal b { color: var(--bad); }
+.cx-grid input, .cx-grid textarea { width: 100%; font: inherit; font-size: 13px; padding: 3px 5px; border: 1px solid transparent; border-radius: 5px; background: transparent; }
+.cx-grid input:hover, .cx-grid textarea:hover { border-color: var(--line); }
+.cx-grid input:focus, .cx-grid textarea:focus { border-color: var(--brand); background: #fff; outline: none; }
+.cx-grid textarea { resize: vertical; min-height: 26px; }
+.cx-grid .cx-num { text-align: right; } .cx-grid .cx-cod { width: 84px; } .cx-grid .cx-ud { width: 52px; }
+.cx-grid .cx-cero { background: #fdecc8; }
+.cx-grid td { vertical-align: top; padding: 3px 6px; } .cx-desc { white-space: pre-line; font-size: 13px; }
+tr.cx-cap td { background: #f7f3ea; }
+tr.cx-sep th { background: #1a1a1c; color: #fff; }
+.cx-totales { display: flex; justify-content: flex-end; margin-top: 10px; }
+.cx-totales table { min-width: 380px; background: #fff; border: 1px solid var(--line); border-radius: 10px; }
+.cx-totales td { padding: 5px 12px; } .cx-totales tr.tot td { font-weight: 700; border-top: 1px solid var(--line); }
+.cx-cmp td, .cx-cmp th { font-size: 13px; white-space: nowrap; } .cx-cmp td:first-child { white-space: normal; min-width: 260px; }
+.cx-buscar { max-height: 55vh; overflow: auto; } .cx-buscar td { padding: 4px 6px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.cx-adj td { padding: 4px 8px; } .cx-adj select { min-width: 280px; }

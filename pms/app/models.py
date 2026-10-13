@@ -1133,3 +1133,192 @@ class TimeEntry(Base):
     editado_en: Mapped[datetime | None] = mapped_column(DateTime)
     motivo: Mapped[str | None] = mapped_column(String(300))
     creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+# --------------------------------------------------------------------------- CAPEX (inversiones y reformas)
+ESTADOS_CAPEX = {
+    "definicion": "En definición", "licitacion": "En licitación", "adjudicacion": "Comparativo y adjudicación",
+    "pendiente_aprobacion": "Pendiente de aprobación (Dirección General)", "adjudicado": "Adjudicado",
+    "cancelado": "Cancelado",
+}
+ETIQUETAS_DOC_CAPEX = {
+    "plano": "Plano (PDF / CAD)", "foto_previa": "Fotografía del estado previo", "pliego": "Pliego de condiciones",
+    "memoria": "Memoria / informe técnico", "licencia": "Licencia / declaración responsable", "otro": "Otro",
+}
+
+
+class CapexProject(Base):
+    """Proyecto de inversión (reforma, obra mayor) de un activo: mediciones y presupuesto base, documentación,
+    licitación a contratistas, comparativo, adjudicación y aprobación de la Dirección General (por encima del umbral)."""
+    __tablename__ = "capex_proyectos"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
+    unit_id: Mapped[int | None] = mapped_column(ForeignKey("unidades.id"))
+    codigo: Mapped[str] = mapped_column(String(20), unique=True)
+    titulo: Mapped[str] = mapped_column(String(200))
+    descripcion: Mapped[str | None] = mapped_column(Text)
+    ubicacion: Mapped[str | None] = mapped_column(String(200))  # zona común, planta… si no es una unidad
+    estado: Mapped[str] = mapped_column(String(24), default="definicion", index=True)
+    presupuesto_objetivo: Mapped[float | None] = mapped_column(Numeric(12, 2))
+    fecha_inicio: Mapped[date | None] = mapped_column(Date)
+    fecha_fin: Mapped[date | None] = mapped_column(Date)
+    gg_pct: Mapped[float] = mapped_column(Numeric(5, 2), default=13)  # gastos generales
+    bi_pct: Mapped[float] = mapped_column(Numeric(5, 2), default=6)  # beneficio industrial
+    iva_pct: Mapped[float] = mapped_column(Numeric(5, 2), default=21)
+    plantilla_id: Mapped[int | None] = mapped_column(ForeignKey("capex_plantillas.id"))
+    creado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    actualizado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class CapexItem(Base):
+    """Partida del presupuesto (mediciones): capítulo, código, descripción, unidad, cantidad y precio base."""
+    __tablename__ = "capex_partidas"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("capex_proyectos.id"), index=True)
+    capitulo: Mapped[str] = mapped_column(String(20))
+    capitulo_nombre: Mapped[str] = mapped_column(String(200))
+    codigo: Mapped[str | None] = mapped_column(String(40))
+    descripcion: Mapped[str] = mapped_column(Text)
+    unidad: Mapped[str | None] = mapped_column(String(20))
+    cantidad: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+    precio: Mapped[float] = mapped_column(Numeric(12, 2), default=0)  # precio unitario de ejecución material
+    orden: Mapped[int] = mapped_column(Integer, default=0)
+    origen: Mapped[str] = mapped_column(String(12), default="manual")  # manual | plantilla | base | bc3
+
+
+class CapexTemplate(Base):
+    """«CAPEX tipo» (reforma integral de baño, panelado de puertas…): capítulos y partidas estándar y documentos
+    base (planos, pliegos) que se cargan con un clic en un proyecto nuevo."""
+    __tablename__ = "capex_plantillas"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nombre: Mapped[str] = mapped_column(String(160), unique=True)
+    descripcion: Mapped[str | None] = mapped_column(Text)
+    partidas: Mapped[list] = mapped_column(JSON, default=list)
+    activa: Mapped[bool] = mapped_column(Boolean, default=True)
+    creado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class CapexDocument(Base):
+    """Documento del proyecto o de la plantilla (planos, fotos del estado previo, pliegos, licencias), cifrado.
+    Los marcados «licitacion» se adjuntan a la petición de ofertas."""
+    __tablename__ = "capex_documentos"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("capex_proyectos.id"), index=True)
+    template_id: Mapped[int | None] = mapped_column(ForeignKey("capex_plantillas.id"), index=True)
+    etiqueta: Mapped[str] = mapped_column(String(20))
+    nombre: Mapped[str] = mapped_column(String(160))
+    notas: Mapped[str | None] = mapped_column(String(300))
+    licitacion: Mapped[bool] = mapped_column(Boolean, default=True)
+    fichero: Mapped[str] = mapped_column(String(64))
+    mime: Mapped[str] = mapped_column(String(100))
+    tamano: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    subido: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+
+
+class PriceBase(Base):
+    """Base de precios de construcción importada de un fichero FIEBDC-3 (.bc3)."""
+    __tablename__ = "capex_bases_precios"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nombre: Mapped[str] = mapped_column(String(160))
+    fichero: Mapped[str | None] = mapped_column(String(160))
+    partidas: Mapped[int] = mapped_column(Integer, default=0)
+    importado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+
+
+class PriceItem(Base):
+    __tablename__ = "capex_precios"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    base_id: Mapped[int] = mapped_column(ForeignKey("capex_bases_precios.id"), index=True)
+    codigo: Mapped[str] = mapped_column(String(40), index=True)
+    unidad: Mapped[str | None] = mapped_column(String(20))
+    resumen: Mapped[str] = mapped_column(String(300))
+    texto: Mapped[str | None] = mapped_column(Text)
+    precio: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    capitulo: Mapped[str | None] = mapped_column(String(300))  # ruta de capítulos de la base
+
+
+class TenderProcess(Base):
+    """Petición de ofertas (licitación ciega: los contratistas no ven los precios base)."""
+    __tablename__ = "capex_licitaciones"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("capex_proyectos.id"), index=True)
+    fecha_limite: Mapped[date] = mapped_column(Date)
+    mensaje: Mapped[str | None] = mapped_column(Text)
+    estado: Mapped[str] = mapped_column(String(12), default="abierta")  # abierta | cerrada
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    creado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+
+
+class TenderInvite(Base):
+    """Contratista invitado: enlace con clave propia que caduca con el plazo y registro de aperturas."""
+    __tablename__ = "capex_invitaciones"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tender_id: Mapped[int] = mapped_column(ForeignKey("capex_licitaciones.id"), index=True)
+    supplier_id: Mapped[int] = mapped_column(ForeignKey("proveedores.id"), index=True)
+    email: Mapped[str | None] = mapped_column(String(160))
+    clave: Mapped[str] = mapped_column(String(64))
+    enviado: Mapped[datetime | None] = mapped_column(DateTime)
+    envio_error: Mapped[str | None] = mapped_column(String(300))
+    abierto_en: Mapped[datetime | None] = mapped_column(DateTime)
+    ultimo_acceso: Mapped[datetime | None] = mapped_column(DateTime)
+    aperturas: Mapped[int] = mapped_column(Integer, default=0)
+    descargas: Mapped[int] = mapped_column(Integer, default=0)
+    revocada: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class SupplierBid(Base):
+    """Oferta de un contratista: precio unitario por partida ({id de partida: precio})."""
+    __tablename__ = "capex_ofertas"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tender_id: Mapped[int] = mapped_column(ForeignKey("capex_licitaciones.id"), index=True)
+    invite_id: Mapped[int] = mapped_column(ForeignKey("capex_invitaciones.id"), unique=True)
+    supplier_id: Mapped[int] = mapped_column(ForeignKey("proveedores.id"), index=True)
+    precios: Mapped[dict] = mapped_column(JSON, default=dict)
+    notas: Mapped[str | None] = mapped_column(Text)
+    plazo_dias: Mapped[int | None] = mapped_column(Integer)  # plazo de ejecución ofertado
+    estado: Mapped[str] = mapped_column(String(12), default="borrador")  # borrador | enviada
+    origen: Mapped[str] = mapped_column(String(12), default="portal")  # portal | excel | recibida
+    enviada_en: Mapped[datetime | None] = mapped_column(DateTime)
+    actualizado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class CapexAward(Base):
+    """Adjudicación (obra completa o por capítulos a distintas contratas)."""
+    __tablename__ = "capex_adjudicaciones"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("capex_proyectos.id"), index=True)
+    bid_id: Mapped[int] = mapped_column(ForeignKey("capex_ofertas.id"))
+    supplier_id: Mapped[int] = mapped_column(ForeignKey("proveedores.id"))
+    capitulos: Mapped[list] = mapped_column(JSON, default=list)
+    pem: Mapped[float] = mapped_column(Numeric(12, 2))
+    importe: Mapped[float] = mapped_column(Numeric(12, 2))  # PEM + GG + BI (sin IVA)
+    estado: Mapped[str] = mapped_column(String(12), default="propuesta")  # propuesta | aprobada | rechazada | anulada
+    nota: Mapped[str | None] = mapped_column(String(500))
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    creado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+
+
+class CapexApproval(Base):
+    """Aprobación de la Dirección General por correo (botones Aprobar / Rechazar, sin entrar en el PMS) o desde el
+    PMS. Queda la marca de tiempo, la decisión, el comentario y desde dónde se decidió."""
+    __tablename__ = "capex_aprobaciones"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("capex_proyectos.id"), index=True)
+    email: Mapped[str] = mapped_column(String(160))
+    clave: Mapped[str] = mapped_column(String(64))
+    importe: Mapped[float] = mapped_column(Numeric(12, 2))
+    resumen: Mapped[dict] = mapped_column(JSON, default=dict)
+    estado: Mapped[str] = mapped_column(String(12), default="pendiente")  # pendiente | aprobada | rechazada | anulada
+    enviada_en: Mapped[datetime | None] = mapped_column(DateTime)
+    envio_error: Mapped[str | None] = mapped_column(String(300))
+    decidido_en: Mapped[datetime | None] = mapped_column(DateTime)
+    comentario: Mapped[str | None] = mapped_column(String(1000))
+    canal: Mapped[str | None] = mapped_column(String(12))  # correo | pms
+    ip: Mapped[str | None] = mapped_column(String(60))
+    user_agent: Mapped[str | None] = mapped_column(String(300))
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now)

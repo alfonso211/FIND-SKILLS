@@ -4729,6 +4729,415 @@ V.cobrosext = async (el) => {
 };
 
 // ------------------------------------------------------------------ navegación
+// ------------------------------------------------------------------ CAPEX (inversiones y reformas)
+// Proyecto → presupuesto (BC3, base de precios, plantillas) → documentos → licitación ciega → comparativo →
+// adjudicación (completa o por capítulos) → aprobación de la Dirección General por correo (> umbral).
+const num2 = (v) => (v == null ? "" : Number(v).toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+const pct = (v) => (v == null ? "" : `${v > 0 ? "+" : ""}${Number(v).toLocaleString("es-ES")} %`);
+const COLOR_EST_CAPEX = { definicion: "b-borrador", licitacion: "b-pendiente", adjudicacion: "b-pendiente", pendiente_aprobacion: "b-urgente", adjudicado: "b-vigente", cancelado: "b-anulado" };
+async function catCapex() { S.catCapex = S.catCapex || await get("/api/capex/catalogos"); return S.catCapex; }
+
+V.capex = async (el) => {
+  const id = Number(S.params?.get("id"));
+  if (id) return capexProyecto(el, id);
+  const C = await catCapex();
+  const gest = can("capex.gestionar");
+  el.innerHTML = `<div class="toolbar"><select id="est"><option value="abiertos">En curso</option><option value="">Todos</option>${Object.entries(C.estados).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select>
+    <span class="spacer"></span>${gest ? '<button class="btn primary" id="new">Nuevo proyecto</button>' : ""}</div>
+    <p class="muted">Inversiones y reformas: mediciones y presupuesto base, documentación, petición de ofertas a contratistas sin mostrar los precios base, comparativo y adjudicación. Por encima de ${eur(C.umbral)} (sin IVA) la adjudicación la aprueba la Dirección General por correo.</p><div id="t"></div>`;
+  const load = async () => table($("#t", el), [
+    { k: "codigo", t: "Código", f: (v) => `<b>${esc(v)}</b>` },
+    { k: "titulo", t: "Proyecto", f: (v, p) => `${esc(v)}<div class="muted peq">${esc(p.activo)}${p.unidad ? ` · ${esc(p.unidad)}` : ""}${p.ubicacion ? ` · ${esc(p.ubicacion)}` : ""}</div>` },
+    { k: "estado_nombre", t: "Estado", f: (v, p) => `<span class="badge ${COLOR_EST_CAPEX[p.estado] || ""}">${esc(v)}</span>` },
+    { k: "pbl", t: "PBL (sin IVA)", num: true, f: (v, p) => `${eur(v)}${p.presupuesto_objetivo ? `<div class="muted peq">objetivo ${eur(p.presupuesto_objetivo)} · ${pct(p.desviacion_objetivo)}</div>` : ""}` },
+    { k: "adjudicado", t: "Adjudicado", num: true, f: (v) => (v != null ? eur(v) : "") },
+    { k: "actualizado", t: "Actualizado", f: fdt },
+  ], await get("/api/capex", { asset_id: S.asset, estado: $("#est", el).value }), (p) => [["Abrir", () => go(`capex?id=${p.id}`), "primary"]]);
+  $("#est", el).onchange = load;
+  if ($("#new", el)) $("#new", el).onclick = async () => {
+    const plantillas = await get("/api/capex/plantillas/lista");
+    form("Nuevo proyecto CAPEX", [
+      { k: "asset_id", t: "Activo", type: "select", req: true, options: opts(S.assets) },
+      { k: "titulo", t: "Título (p. ej. Reforma integral baños planta 3)", req: true, wide: true },
+      { k: "plantilla_id", t: "Cargar una plantilla «CAPEX tipo» (capítulos, partidas y documentos base)", type: "select", options: plantillas.filter((t) => t.activa).map((t) => [t.id, `${t.nombre} · ${t.n_partidas} partidas`]), wide: true },
+      { k: "ubicacion", t: "Ubicación (planta, zona, unidades…)" }, { k: "presupuesto_objetivo", t: "Presupuesto objetivo € (sin IVA)", type: "number" },
+      { k: "fecha_inicio", t: "Inicio previsto", type: "date" }, { k: "fecha_fin", t: "Fin previsto", type: "date" },
+      { k: "gg_pct", t: "Gastos generales %", type: "number", def: 13 }, { k: "bi_pct", t: "Beneficio industrial %", type: "number", def: 6 },
+      { k: "iva_pct", t: "IVA %", type: "select", options: [[21, "21 %"], [10, "10 % (renovación de vivienda)"], [0, "Exento / no sujeto"]], def: 21 },
+      { k: "descripcion", t: "Descripción / alcance", type: "textarea", wide: true },
+    ], { asset_id: S.asset || (S.assets.length === 1 ? S.assets[0].id : "") }, async (d) => {
+      const p = await post("/api/capex", { ...clean(d), asset_id: Number(d.asset_id), plantilla_id: d.plantilla_id ? Number(d.plantilla_id) : null, iva_pct: Number(d.iva_pct ?? 21) });
+      toast(`Proyecto ${p.codigo} creado`); setTimeout(() => go(`capex?id=${p.id}`), 0);
+    }, "Crear");
+  };
+  load();
+};
+
+async function capexProyecto(el, id) {
+  const C = await catCapex();
+  let D, tab = S.capexTab = "presupuesto";
+  const cargar = async () => { D = await get(`/api/capex/${id}`); };
+  await cargar();
+  const pinta = () => {
+    const p = D.proyecto, t = D.totales, g = D.gestionar, def = p.estado === "definicion";
+    const pest = [["presupuesto", "📐 Presupuesto"], ["documentos", `📎 Documentos (${D.documentos.length})`], ["licitacion", "📨 Licitación"], ["comparativo", "📊 Comparativo y adjudicación"], ["aprobacion", `✅ Aprobación${D.aprobaciones.some((a) => a.estado === "pendiente") ? " (pendiente)" : ""}`]];
+    el.innerHTML = `<div class="capex-cab"><div><div class="muted peq"><a href="#capex" id="lista">← Proyectos CAPEX</a></div>
+        <h3 style="margin:2px 0">${esc(p.codigo)} · ${esc(p.titulo)} <span class="badge ${COLOR_EST_CAPEX[p.estado] || ""}">${esc(p.estado_nombre)}</span></h3>
+        <div class="muted">${esc(p.activo)}${p.unidad ? ` · ${esc(p.unidad)}` : ""}${p.ubicacion ? ` · ${esc(p.ubicacion)}` : ""}${p.fecha_inicio ? ` · ${fdate(p.fecha_inicio)} → ${fdate(p.fecha_fin)}` : ""}</div></div>
+      <div class="capex-kpis"><div><small>Ejecución material</small><b>${eur(t.pem)}</b></div><div><small>PBL (GG ${p.gg_pct} % + BI ${p.bi_pct} %)</small><b>${eur(t.pbl)}</b></div>
+        <div><small>Total con IVA ${p.iva_pct} %</small><b>${eur(t.total)}</b></div>
+        ${p.presupuesto_objetivo ? `<div class="${t.desviacion_objetivo > 0 ? "mal" : ""}"><small>Objetivo ${eur(p.presupuesto_objetivo)}</small><b>${pct(t.desviacion_objetivo)}</b></div>` : ""}
+        ${p.adjudicado != null ? `<div><small>Adjudicado</small><b>${eur(p.adjudicado)}</b></div>` : ""}</div></div>
+      <div class="toolbar"><div class="chips" style="margin:0">${pest.map(([k, l]) => `<button type="button" class="chip${k === tab ? " on" : ""}" data-tab="${k}">${l}</button>`).join("")}</div><span class="spacer"></span>
+        ${g ? `<button class="btn sm" id="datos">Datos del proyecto</button><button class="btn sm" id="plant">Guardar como plantilla</button>` : ""}
+        <button class="btn sm" id="xls">Excel</button>
+        ${g && ["licitacion", "cancelado"].includes(p.estado) && !D.licitaciones.some((l) => l.invitaciones.some((i) => i.oferta?.estado === "enviada")) ? '<button class="btn sm" id="adef">Volver a definición</button>' : ""}
+        ${g && !["adjudicado", "cancelado"].includes(p.estado) ? '<button class="btn sm danger" id="cancel">Cancelar</button>' : ""}
+        ${g && def && !D.licitaciones.length ? '<button class="btn sm danger" id="borrar">Borrar</button>' : ""}</div>
+      <div id="cx"></div>`;
+    $("#lista", el).onclick = (e) => { e.preventDefault(); go("capex"); };
+    el.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { tab = S.capexTab = b.dataset.tab; pinta(); }));
+    $("#xls", el).onclick = () => run(() => download("GET", `/api/capex/${id}/presupuesto.xlsx`));
+    if ($("#datos", el)) $("#datos", el).onclick = () => form(`Datos · ${p.codigo}`, [
+      { k: "titulo", t: "Título", req: true, wide: true }, { k: "ubicacion", t: "Ubicación" },
+      { k: "presupuesto_objetivo", t: "Presupuesto objetivo € (sin IVA)", type: "number" },
+      { k: "fecha_inicio", t: "Inicio previsto", type: "date" }, { k: "fecha_fin", t: "Fin previsto", type: "date" },
+      ...(def ? [{ k: "gg_pct", t: "Gastos generales %", type: "number" }, { k: "bi_pct", t: "Beneficio industrial %", type: "number" }] : []),
+      { k: "iva_pct", t: "IVA %", type: "number" }, { k: "descripcion", t: "Descripción / alcance", type: "textarea", wide: true },
+    ], p, async (d) => { await put(`/api/capex/${id}`, d); toast("Datos guardados"); await cargar(); pinta(); });
+    if ($("#plant", el)) $("#plant", el).onclick = () => form("Guardar como plantilla «CAPEX tipo»", [
+      { html: '<p class="muted">Guarda los capítulos, partidas y precios de este proyecto, y sus planos, pliegos y memorias, para cargarlos con un clic en proyectos nuevos.</p>' },
+      { k: "nombre", t: "Nombre (p. ej. Reforma integral baño)", req: true, wide: true }, { k: "descripcion", t: "Descripción", type: "textarea", wide: true },
+      { k: "con_cantidades", t: "Guardar también las cantidades (si no, se miden en cada proyecto)", type: "checkbox", def: true, wide: true },
+    ], {}, async (d) => { await post("/api/capex/plantillas/lista", { ...d, project_id: id }); toast("Plantilla guardada"); });
+    const estado = (estado, txt, motivo) => async () => {
+      let m = null;
+      if (motivo) { m = prompt(txt); if (m === null) return; } else if (!confirm(txt)) return;
+      await run(() => post(`/api/capex/${id}/estado`, { estado, motivo: m })); await cargar(); pinta();
+    };
+    if ($("#adef", el)) $("#adef", el).onclick = estado("definicion", "¿Volver a definición? Las invitaciones enviadas quedan cerradas y habrá que volver a pedir ofertas.");
+    if ($("#cancel", el)) $("#cancel", el).onclick = estado("cancelado", "Motivo de la cancelación:", true);
+    if ($("#borrar", el)) $("#borrar", el).onclick = async () => { if (confirm("¿Borrar el proyecto y sus documentos?")) { await run(() => api("DELETE", `/api/capex/${id}`), "Proyecto borrado"); go("capex"); } };
+    const recarga = async () => { await cargar(); tab = S.capexTab || tab; pinta(); };
+    ({ presupuesto: capexPresupuesto, documentos: capexDocumentos, licitacion: capexLicitacion, comparativo: capexComparativo, aprobacion: capexAprobacion })[tab]($("#cx", el), D, recarga, C);
+  };
+  pinta();
+}
+
+// ---- presupuesto: grid por capítulos (editable en definición)
+function capexPresupuesto(cx, D, recarga) {
+  const p = D.proyecto, ed = D.gestionar && p.estado === "definicion", t = D.totales;
+  const caps = t.capitulos;
+  const fila = (x) => ed
+    ? `<tr data-id="${x.id}"><td><input data-f="codigo" value="${esc(x.codigo || "")}" class="cx-cod"></td><td><textarea data-f="descripcion" rows="${Math.min(4, x.descripcion.split("\n").length)}">${esc(x.descripcion)}</textarea></td>
+       <td><input data-f="unidad" value="${esc(x.unidad || "")}" class="cx-ud"></td><td class="num"><input data-f="cantidad" type="number" step="any" min="0" value="${x.cantidad}" class="cx-num ${x.cantidad ? "" : "cx-cero"}"></td>
+       <td class="num"><input data-f="precio" type="number" step="0.01" min="0" value="${x.precio}" class="cx-num"></td><td class="num">${num2(x.importe)}</td>
+       <td class="acc"><button class="btn sm danger" data-del="${x.id}" title="Borrar partida">✕</button></td></tr>`
+    : `<tr><td>${esc(x.codigo || "")}</td><td class="cx-desc">${esc(x.descripcion)}</td><td>${esc(x.unidad || "")}</td><td class="num">${x.cantidad.toLocaleString("es-ES")}</td><td class="num">${num2(x.precio)}</td><td class="num">${num2(x.importe)}</td></tr>`;
+  cx.innerHTML = `${ed ? `<div class="toolbar"><button class="btn" id="bc3">Importar BC3 (Presto, Arquímedes…)</button><button class="btn" id="base">Añadir desde base de precios</button><button class="btn" id="pla">Cargar plantilla</button><button class="btn" id="cap">Nuevo capítulo</button><span class="spacer"></span><span class="muted peq">Los cambios se guardan solos al salir de cada casilla.</span></div>`
+    : `<p class="muted">${p.estado === "definicion" ? "Solo lectura." : "Las mediciones están cerradas: el proyecto ya se ha licitado (todas las ofertas son sobre lo mismo)."}</p>`}
+    ${caps.length ? `<div class="table-wrap no-encajar"><table class="cx-grid"><thead><tr><th style="width:90px">Código</th><th>Descripción</th><th style="width:60px">Ud</th><th class="num" style="width:100px">Cantidad</th><th class="num" style="width:100px">Precio €</th><th class="num" style="width:110px">Importe €</th>${ed ? '<th class="acc"></th>' : ""}</tr></thead><tbody>
+      ${caps.map((c) => `<tr class="cx-cap"><td colspan="5"><b>${esc(c.capitulo)} ${esc(c.nombre)}</b> <span class="muted peq">${c.partidas} partida(s)</span>
+        ${ed ? ` <button class="btn sm" data-ren="${esc(c.capitulo)}">Renombrar</button> <button class="btn sm" data-add="${esc(c.capitulo)}">+ Partida</button>` : ""}</td><td class="num"><b>${num2(c.importe)}</b></td>${ed ? "<td></td>" : ""}</tr>
+        ${D.partidas.filter((x) => x.capitulo === c.capitulo).map(fila).join("")}`).join("")}
+    </tbody></table></div>` : '<div class="empty" style="padding:20px">Sin partidas. Importe un BC3, cargue una plantilla, añada desde la base de precios o cree un capítulo.</div>'}
+    <div class="cx-totales"><table>
+      <tr><td>Presupuesto de ejecución material (PEM)</td><td class="num">${eur(t.pem)}</td></tr>
+      <tr><td>Gastos generales ${p.gg_pct} %</td><td class="num">${eur(t.gg)}</td></tr><tr><td>Beneficio industrial ${p.bi_pct} %</td><td class="num">${eur(t.bi)}</td></tr>
+      <tr class="tot"><td>Presupuesto base de licitación (PBL)</td><td class="num">${eur(t.pbl)}</td></tr>
+      <tr><td>IVA ${p.iva_pct} %</td><td class="num">${eur(t.iva)}</td></tr><tr class="tot"><td>Total con IVA</td><td class="num">${eur(t.total)}</td></tr></table></div>`;
+  if (!ed) return;
+  cx.querySelectorAll("tr[data-id] [data-f]").forEach((i) => (i.onchange = async () => {
+    const f = i.dataset.f, v = ["cantidad", "precio"].includes(f) ? Number(i.value || 0) : i.value;
+    try { await put(`/api/capex/partidas/${i.closest("tr").dataset.id}`, { [f]: v }); if (["cantidad", "precio"].includes(f)) recarga(); }
+    catch (e) { toast(e.message, true); }
+  }));
+  cx.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => { if (confirm("¿Borrar la partida?")) { await run(() => api("DELETE", `/api/capex/partidas/${b.dataset.del}`)); recarga(); } }));
+  cx.querySelectorAll("[data-ren]").forEach((b) => (b.onclick = () => { const c = caps.find((z) => z.capitulo === b.dataset.ren);
+    form("Renombrar capítulo", [{ k: "capitulo", t: "Número", req: true }, { k: "nombre", t: "Nombre", req: true, wide: true }], c,
+      async (d) => { await put(`/api/capex/${p.id}/capitulos/${encodeURIComponent(c.capitulo)}`, d); recarga(); }); }));
+  const nueva = (capitulo, nombre) => form(`Nueva partida · ${capitulo} ${nombre}`, [
+    { k: "codigo", t: "Código" }, { k: "unidad", t: "Unidad (m2, ml, ud…)" }, { k: "descripcion", t: "Descripción", type: "textarea", req: true, wide: true },
+    { k: "cantidad", t: "Cantidad", type: "number" }, { k: "precio", t: "Precio unitario € (ejecución material)", type: "number" },
+  ], {}, async (d) => { await post(`/api/capex/${p.id}/partidas`, { ...clean(d), capitulo, capitulo_nombre: nombre }); recarga(); });
+  cx.querySelectorAll("[data-add]").forEach((b) => (b.onclick = () => nueva(b.dataset.add, caps.find((z) => z.capitulo === b.dataset.add).nombre)));
+  $("#cap", cx).onclick = () => form("Nuevo capítulo", [{ k: "capitulo", t: "Número", req: true, def: String(caps.length + 1).padStart(2, "0") }, { k: "nombre", t: "Nombre (p. ej. DEMOLICIONES)", req: true, wide: true }], {},
+    async (d) => { setTimeout(() => nueva(d.capitulo, d.nombre), 0); });
+  $("#bc3", cx).onclick = () => form("Importar presupuesto BC3", [
+    { html: '<p class="muted">Fichero FIEBDC-3 (.bc3, o .zip que lo contenga) con mediciones, exportado de Presto, Arquímedes, Menfis… Se cargan los capítulos, las partidas, las cantidades y los precios.</p>' },
+    { html: '<label class="wide">Fichero *<input type="file" name="f" accept=".bc3,.zip" required></label>' },
+    { k: "reemplazar", t: "Sustituir las partidas actuales (si no, se añaden)", type: "checkbox", wide: true },
+  ], {}, async (d, f) => {
+    const fd = new FormData(); fd.append("fichero", f.elements.f.files[0]); fd.append("reemplazar", d.reemplazar ? "true" : "false");
+    const r = await upload(`/api/capex/${p.id}/importar-bc3`, fd); toast(`${r.partidas} partidas en ${r.capitulos} capítulos`); recarga();
+  }, "Importar");
+  $("#pla", cx).onclick = async () => {
+    const pl = (await get("/api/capex/plantillas/lista")).filter((x) => x.activa);
+    if (!pl.length) return toast("No hay plantillas: guarde un proyecto como plantilla o créela en «Plantillas CAPEX tipo»", true);
+    form("Cargar plantilla", [{ k: "plantilla_id", t: "Plantilla", type: "select", req: true, options: pl.map((x) => [x.id, `${x.nombre} · ${x.n_partidas} partidas · ${eur(x.pem)}`]), wide: true },
+      { html: '<p class="muted">Se añaden sus capítulos, partidas y documentos base. Después ajuste las mediciones de este proyecto.</p>' }], {},
+    async (d) => { const r = await post(`/api/capex/${p.id}/plantilla`, { plantilla_id: Number(d.plantilla_id) }); toast(`${r.partidas} partidas añadidas`); recarga(); }, "Cargar");
+  };
+  $("#base", cx).onclick = () => buscarPrecios(async (sel) => {
+    const capOps = caps.map((c) => [`${c.capitulo}|${c.nombre}`, `${c.capitulo} ${c.nombre}`]);
+    form(`Añadir ${sel.length} partida(s)`, [
+      ...(capOps.length ? [{ k: "cap", t: "Al capítulo", type: "select", options: capOps }] : []),
+      { k: "nuevo_num", t: "…o capítulo nuevo: número" }, { k: "nuevo_nombre", t: "Nombre del capítulo nuevo", wide: true },
+    ], {}, async (d) => {
+      const [capitulo, capitulo_nombre] = d.nuevo_num && d.nuevo_nombre ? [d.nuevo_num, d.nuevo_nombre] : (d.cap || "").split("|");
+      if (!capitulo) throw new Error("Elija un capítulo o indique uno nuevo");
+      await post(`/api/capex/${p.id}/partidas/desde-base`, { precio_ids: sel.map((x) => x.id), capitulo, capitulo_nombre });
+      toast("Partidas añadidas: indique sus cantidades"); recarga();
+    }, "Añadir");
+  });
+}
+
+// Buscador de la base de precios con selección múltiple (onElegir recibe las partidas marcadas)
+async function buscarPrecios(onElegir) {
+  const bases = await get("/api/capex/bases/lista");
+  if (!bases.length) return toast("No hay bases de precios: impórtela en CAPEX → Base de precios (BC3)", true);
+  const elegidas = new Map();
+  const f = form("Base de precios", [
+    { html: `<div class="toolbar"><select id="bpB">${bases.length > 1 ? '<option value="">Todas las bases</option>' : ""}${bases.map((b) => `<option value="${b.id}">${esc(b.nombre)}</option>`).join("")}</select>
+      <input id="bpQ" type="search" placeholder="Buscar: alicatado gres, demolición tabique, LAD010…" style="flex:1"></div><div id="bpR" class="cx-buscar"><p class="muted">Escriba al menos 3 letras.</p></div><p id="bpN" class="muted"></p>` },
+  ], {}, async () => { if (!elegidas.size) throw new Error("Marque alguna partida"); setTimeout(() => onElegir([...elegidas.values()]), 0); }, "Añadir las marcadas");
+  $("#modal").classList.add("ancho");
+  const busca = debounce(async () => {
+    const q = $("#bpQ", f).value.trim();
+    if (q.length < 3) return;
+    const r = await get("/api/capex/precios/buscar", { q, base_id: $("#bpB", f).value });
+    $("#bpR", f).innerHTML = r.length ? `<table><tbody>${r.map((x) => `<tr><td><input type="checkbox" data-p="${x.id}" ${elegidas.has(x.id) ? "checked" : ""}></td>
+      <td><b>${esc(x.codigo)}</b></td><td>${esc(x.resumen)}<div class="muted peq">${esc(x.capitulo || "")}</div></td><td>${esc(x.unidad || "")}</td><td class="num">${num2(x.precio)}</td></tr>`).join("")}</tbody></table>` : '<p class="muted">Sin resultados.</p>';
+    $("#bpR", f).querySelectorAll("[data-p]").forEach((c) => (c.onchange = () => { const x = r.find((z) => z.id === Number(c.dataset.p)); c.checked ? elegidas.set(x.id, x) : elegidas.delete(x.id); $("#bpN", f).textContent = `${elegidas.size} marcada(s)`; }));
+  }, 300);
+  $("#bpQ", f).oninput = busca; $("#bpB", f).onchange = busca; $("#bpQ", f).focus();
+}
+
+// ---- documentos del proyecto
+function capexDocumentos(cx, D, recarga, C) {
+  const g = D.gestionar;
+  cx.innerHTML = `${g ? '<div class="toolbar"><button class="btn primary" id="sub">Subir documentos</button><span class="spacer"></span><span class="muted peq">Los marcados «Va a licitación» se envían a los contratistas.</span></div>' : ""}<div id="dt"></div>`;
+  table($("#dt", cx), [
+    { k: "etiqueta_nombre", t: "Tipo" }, { k: "nombre", t: "Documento", f: (v, d) => `${esc(v)}${d.notas ? `<div class="muted peq">${esc(d.notas)}</div>` : ""}` },
+    { k: "tamano", t: "Tamaño", num: true, f: (v) => `${(v / 1048576).toFixed(1).replace(".", ",")} MB` },
+    { k: "licitacion", t: "Va a licitación", f: (v, d) => (g ? `<input type="checkbox" data-lic="${d.id}" ${v ? "checked" : ""}>` : v ? "Sí" : "") },
+    { k: "subido", t: "Subido", f: fdt },
+  ], D.documentos, (d) => [["Ver", () => (d.mime.startsWith("image/") || d.mime === "application/pdf" ? abrirFichero(`/api/capex/documentos/${d.id}`) : run(() => download("GET", `/api/capex/documentos/${d.id}`))), "primary"],
+    g && ["Borrar", async () => { if (confirm(`¿Borrar ${d.nombre}?`)) { await run(() => api("DELETE", `/api/capex/documentos/${d.id}`)); recarga(); } }, "danger"]]);
+  cx.querySelectorAll("[data-lic]").forEach((c) => (c.onchange = () => run(() => put(`/api/capex/documentos/${c.dataset.lic}`, { licitacion: c.checked }), "Guardado")));
+  if (g) $("#sub", cx).onclick = () => form("Subir documentos", [
+    { k: "etiqueta", t: "Tipo", type: "select", req: true, options: Object.entries(C.etiquetas) },
+    { html: '<label class="wide">Ficheros (PDF, fotos, planos DWG/DXF, Word, Excel) *<input type="file" name="f" multiple required></label>' },
+    { k: "notas", t: "Notas", wide: true }, { k: "licitacion", t: "Enviar a los contratistas con la petición de ofertas", type: "checkbox", def: true, wide: true },
+  ], {}, async (d, f) => {
+    const fd = new FormData(); [...f.elements.f.files].forEach((x) => fd.append("ficheros", x));
+    fd.append("etiqueta", d.etiqueta); fd.append("licitacion", d.licitacion ? "true" : "false"); if (d.notas) fd.append("notas", d.notas);
+    await upload(`/api/capex/${D.proyecto.id}/documentos`, fd); toast("Documentos subidos"); recarga();
+  }, "Subir");
+}
+
+// ---- licitación ciega
+function capexLicitacion(cx, D, recarga) {
+  const p = D.proyecto, g = D.gestionar, puede = g && ["definicion", "licitacion"].includes(p.estado);
+  const lic = D.licitaciones.at(-1);
+  const invs = D.licitaciones.flatMap((l) => l.invitaciones.map((i) => ({ ...i, licitacion: l })));
+  cx.innerHTML = `<div class="toolbar">${puede ? `<button class="btn primary" id="pedir">${lic && lic.estado === "abierta" ? "Invitar a más contratistas" : "Pedir ofertas"}</button>` : ""}
+    ${g && lic && lic.estado === "abierta" && invs.some((i) => i.oferta?.estado === "enviada") ? '<button class="btn" id="cerrar">Cerrar recepción y comparar</button>' : ""}<span class="spacer"></span>
+    ${lic ? `<span class="muted">Plazo: <b>${fdate(lic.fecha_limite)}</b> · ${lic.estado === "abierta" ? "abierta" : "cerrada"}</span>` : ""}</div>
+    <p class="muted">Licitación ciega: cada contratista recibe por correo un enlace personal (sin usuario) y una plantilla Excel protegida con las mediciones y <b>sin los precios base</b>. Puede escribir los precios en la web o devolver el Excel. Se registra cuándo abre el enlace y descarga la documentación.</p><div id="it"></div>`;
+  table($("#it", cx), [
+    { k: "proveedor", t: "Contratista", f: (v, i) => `<b>${esc(v)}</b><div class="muted peq">${esc(i.email || "sin correo")}</div>` },
+    { k: "enviado", t: "Invitación", f: (v, i) => (v ? `enviada ${fdt(v)}` : `<span class="error">${esc(i.envio_error || "no enviada")}</span>`) },
+    { k: "aperturas", t: "Seguimiento", f: (v, i) => (i.abierto_en ? `abierto ${v} vez/veces<div class="muted peq">1.ª ${fdt(i.abierto_en)} · ${i.descargas} descarga(s)</div>` : '<span class="muted">sin abrir</span>') },
+    { k: "oferta", t: "Oferta", f: (o) => (!o ? '<span class="muted">—</span>' : `<span class="badge ${o.estado === "enviada" ? "b-vigente" : "b-borrador"}">${o.estado === "enviada" ? "enviada" : "borrador"}</span> ${eur(o.pem)}<div class="muted peq">${o.enviada_en ? fdt(o.enviada_en) : ""}${o.faltan ? ` · faltan ${o.faltan} precio(s)` : ""}${o.origen !== "portal" ? ` · ${o.origen}` : ""}</div>`) },
+  ], invs, (i) => [
+    g && i.licitacion.estado === "abierta" && ["Reenviar", async () => { const r = await run(() => post(`/api/capex/invitaciones/${i.id}/reenviar`)); resultadoInvitaciones([r]); recarga(); }],
+    ["Excel ciego", () => run(() => download("GET", `/api/capex/invitaciones/${i.id}/excel`))],
+    g && ["licitacion", "adjudicacion"].includes(p.estado) && ["Subir su Excel", () => form(`Oferta recibida de ${i.proveedor}`, [
+      { html: '<p class="muted">Suba la plantilla Excel que el contratista ha devuelto por correo: se leen sus precios y queda como oferta enviada.</p><label class="wide">Fichero .xlsx *<input type="file" name="f" accept=".xlsx" required></label>' }], {},
+    async (d, f) => { const fd = new FormData(); fd.append("fichero", f.elements.f.files[0]); const r = await upload(`/api/capex/invitaciones/${i.id}/oferta-excel`, fd); toast(`${r.precios} precios leídos`); recarga(); }, "Subir")],
+  ]);
+  if ($("#cerrar", cx)) $("#cerrar", cx).onclick = async () => { if (confirm("¿Cerrar la recepción de ofertas y pasar al comparativo? Los contratistas ya no podrán modificarlas.")) { await run(() => post(`/api/capex/licitacion/${lic.id}/cerrar`)); S.capexTab = "comparativo"; recarga(); } };
+  if ($("#pedir", cx)) $("#pedir", cx).onclick = async () => {
+    const provs = (await get("/api/proveedores")).filter((s) => !invs.some((i) => i.supplier_id === s.id));
+    const docs = D.documentos.filter((d) => d.licitacion);
+    const plazo = new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10);
+    form(lic && lic.estado === "abierta" ? "Invitar a más contratistas" : "Pedir ofertas", [
+      { html: `<input type="search" id="fprov" placeholder="Filtrar por nombre o actividad" style="width:100%">` },
+      { k: "proveedor_ids", t: "Contratistas", type: "checks", options: provs.map((s) => [String(s.id), `${s.nombre}${s.actividad ? ` · ${s.actividad}` : ""}${s.email ? "" : " (sin correo)"}`]) },
+      { k: "fecha_limite", t: "Plazo de presentación", type: "date", req: true, def: lic?.fecha_limite || plazo },
+      { k: "mensaje", t: "Mensaje para los contratistas (visita de obra, condiciones…)", type: "textarea", wide: true, def: lic?.mensaje || "" },
+      { html: `<p class="muted">Se adjuntan: plantilla Excel ciega${docs.length ? ` y ${docs.length} documento(s): ${docs.map((d) => esc(d.nombre)).join(", ")}` : " (no hay documentos marcados para licitación)"}. Si pesan más de 15 MB, se descargan desde el enlace.</p>` },
+    ], {}, async (d) => {
+      if (!d.proveedor_ids.length) throw new Error("Marque al menos un contratista");
+      const r = await post(`/api/capex/${p.id}/licitacion`, { proveedor_ids: d.proveedor_ids.map(Number), fecha_limite: d.fecha_limite, mensaje: d.mensaje });
+      setTimeout(() => resultadoInvitaciones(r.enviados), 0); recarga();
+    }, "Enviar invitaciones");
+    $("#fprov").oninput = (e) => { const q = normaliza(e.target.value); document.querySelectorAll('#modalForm input[name="proveedor_ids"]').forEach((c) => (c.closest("label").style.display = normaliza(c.closest("label").textContent).includes(q) ? "" : "none")); };
+  };
+}
+function resultadoInvitaciones(res) {
+  form("Invitaciones", [{ html: `<ul class="envios">${res.map((r) => `<li><b>${esc(r.proveedor)}</b> · ${r.ok ? `correo enviado a ${esc(r.email)} ✓` : `<span class="error">${esc(r.error || "no enviado")}</span>`}
+    ${r.whatsapp ? ` <a class="btn sm" href="${esc(r.whatsapp)}" target="_blank" rel="noopener">Avisar por WhatsApp</a>` : ""}</li>`).join("")}</ul>` }], {}, async () => {}, "Cerrar");
+}
+
+// ---- comparativo (mapa de calor) y adjudicación
+async function capexComparativo(cx, D, recarga, C) {
+  const p = D.proyecto;
+  const R = await get(`/api/capex/${p.id}/comparativo`);
+  if (!R.ofertas.length) { cx.innerHTML = '<p class="muted">Todavía no hay ofertas enviadas.</p>'; return; }
+  const o = R.ofertas, col = (n) => `background:${R.colores[n] || "#fff"}`;
+  const celda = (c, extra = "") => (c.precio == null && c.importe == null ? `<td class="num" style="${col("sin_precio")}">—</td>`
+    : `<td class="num" style="${col(c.nivel)}" title="${esc(R.niveles[c.nivel] || "")}${c.desviacion != null ? ` · ${pct(c.desviacion)}` : ""}">${num2(c.precio ?? c.importe)}${extra}</td>`);
+  cx.innerHTML = `<div class="toolbar"><span class="aus-leyenda">${Object.entries(R.niveles).filter(([k]) => k !== "sin_base").map(([k, v]) => `<span class="aus-ley" style="${col(k)};border:1px solid #ddd">${esc(v)}</span>`).join("")}</span><span class="spacer"></span>
+    <button class="btn" id="pdf">PDF del comparativo</button></div>
+    <div class="table-wrap no-encajar"><table class="cx-cmp"><thead><tr><th>Resumen</th><th class="num">Base</th>${o.map((x) => `<th class="num">${esc(x.proveedor)}</th>`).join("")}</tr></thead><tbody>
+      <tr><td>Ejecución material</td><td class="num">${num2(R.base.pem)}</td>${o.map((x) => `<td class="num" style="${col(x.nivel)}">${num2(x.pem)}</td>`).join("")}</tr>
+      <tr><td><b>PBL (PEM + GG + BI)</b></td><td class="num"><b>${num2(R.base.pbl)}</b></td>${o.map((x) => `<td class="num"><b>${num2(x.pbl)}</b><div class="peq">${pct(x.desviacion)}</div></td>`).join("")}</tr>
+      <tr><td>Partidas sin precio · plazo</td><td></td>${o.map((x) => `<td class="num">${x.faltan ? `<span class="error">${x.faltan}</span>` : "0"} · ${x.plazo_dias ? `${x.plazo_dias} días` : "—"}</td>`).join("")}</tr>
+      ${o.some((x) => x.notas) ? `<tr><td>Observaciones</td><td></td>${o.map((x) => `<td class="peq">${esc(x.notas || "")}</td>`).join("")}</tr>` : ""}
+      <tr class="cx-sep"><th>Capítulo / partida (precio unitario)</th><th class="num">Base</th>${o.map((x) => `<th class="num">${esc(x.proveedor)}</th>`).join("")}</tr>
+      ${R.capitulos.map((c) => `<tr class="cx-cap"><td><b>${esc(c.capitulo)} ${esc(c.nombre)}</b></td><td class="num"><b>${num2(c.importe_base)}</b></td>${o.map((x) => { const v = c.ofertas[x.bid_id]; return `<td class="num" style="${col(v.nivel)}"><b>${num2(v.importe)}</b>${v.completo ? "" : " *"}${c.mejor === x.bid_id ? " ★" : ""}</td>`; }).join("")}</tr>
+        ${R.partidas.filter((f) => f.capitulo === c.capitulo).map((f) => `<tr><td class="peq">${esc(f.codigo || "")} ${esc(f.descripcion.split("\n")[0])}<span class="muted"> · ${f.cantidad.toLocaleString("es-ES")} ${esc(f.unidad || "")}</span></td><td class="num">${num2(f.precio_base)}</td>${o.map((x) => celda(f.ofertas[x.bid_id])).join("")}</tr>`).join("")}`).join("")}
+    </tbody></table></div><p class="muted peq">★ mejor oferta completa del capítulo · * faltan precios · pase el ratón por una casilla para ver la desviación.</p>
+    <div id="adj"></div>`;
+  $("#pdf", cx).onclick = () => abrirFichero(`/api/capex/${p.id}/comparativo.pdf`);
+  if (!D.gestionar || !["licitacion", "adjudicacion"].includes(p.estado)) {
+    $("#adj", cx).innerHTML = D.adjudicaciones.length ? `<h4>Adjudicación</h4><ul>${D.adjudicaciones.filter((a) => a.estado !== "anulada").map((a) => `<li><b>${esc(a.proveedor)}</b> · ${a.capitulos.length ? esc(a.capitulos.join(", ")) : "obra completa"} · ${eur(a.importe)} <span class="badge ${a.estado === "aprobada" ? "b-vigente" : a.estado === "rechazada" ? "b-anulado" : "b-pendiente"}">${esc(a.estado)}</span></li>`).join("")}</ul>` : "";
+    return;
+  }
+  // adjudicación: por cada capítulo, la contrata (por defecto la mejor oferta completa)
+  $("#adj", cx).innerHTML = `<fieldset><legend>Adjudicación (obra completa o por capítulos)</legend>
+    <div class="toolbar">${o.filter((x) => x.completa).map((x) => `<button type="button" class="btn sm" data-todo="${x.bid_id}">Todo a ${esc(x.proveedor)}</button>`).join("")}</div>
+    <table class="cx-adj">${R.capitulos.map((c) => `<tr><td>${esc(c.capitulo)} ${esc(c.nombre)}</td><td><select data-cap="${esc(c.capitulo)}"><option value="">— sin adjudicar —</option>${o.filter((x) => c.ofertas[x.bid_id].completo).map((x) => `<option value="${x.bid_id}" ${c.mejor === x.bid_id ? "selected" : ""}>${esc(x.proveedor)} · ${num2(c.ofertas[x.bid_id].importe)} €</option>`).join("")}</select></td></tr>`).join("")}</table>
+    <p>Importe a adjudicar (PEM + GG + BI, sin IVA): <b id="adjTot"></b> <span id="adjAviso"></span></p>
+    <label>Nota / justificación (va en el correo de aprobación)<textarea id="adjNota"></textarea></label>
+    <div class="toolbar"><button class="btn" id="reabrir">Reabrir licitación</button><span class="spacer"></span><button class="btn primary" id="adjudicar">Adjudicar</button></div></fieldset>`;
+  const sels = [...cx.querySelectorAll("[data-cap]")];
+  const calc = () => {
+    const pem = sels.reduce((s, x) => s + (x.value ? R.capitulos.find((c) => c.capitulo === x.dataset.cap).ofertas[x.value].importe : 0), 0);
+    const tot = Math.round(pem * (1 + (p.gg_pct + p.bi_pct) / 100) * 100) / 100;
+    $("#adjTot", cx).textContent = eur(tot);
+    $("#adjAviso", cx).innerHTML = tot > C.umbral ? `<span class="badge b-urgente">Supera ${eur(C.umbral)}: se enviará a la Dirección General para su aprobación</span>` : "";
+  };
+  sels.forEach((x) => (x.onchange = calc)); calc();
+  cx.querySelectorAll("[data-todo]").forEach((b) => (b.onclick = () => { sels.forEach((x) => (x.value = b.dataset.todo)); calc(); }));
+  $("#reabrir", cx).onclick = async () => { if (confirm("¿Reabrir la licitación para que los contratistas puedan modificar o enviar ofertas?")) { await run(() => post(`/api/capex/${p.id}/estado`, { estado: "licitacion" })); S.capexTab = "licitacion"; recarga(); } };
+  $("#adjudicar", cx).onclick = async () => {
+    const lotes = {};
+    sels.forEach((x) => { if (x.value) (lotes[x.value] = lotes[x.value] || []).push(x.dataset.cap); });
+    if (!Object.keys(lotes).length) return toast("Elija al menos un capítulo", true);
+    const sin = sels.filter((x) => !x.value).length;
+    if (!confirm(`¿Adjudicar por ${$("#adjTot", cx).textContent}?${sin ? `\n${sin} capítulo(s) quedan sin adjudicar.` : ""}`)) return;
+    const r = await run(() => post(`/api/capex/${p.id}/adjudicar`, { lotes: Object.entries(lotes).map(([b, caps]) => ({ bid_id: Number(b), capitulos: caps })), nota: $("#adjNota", cx).value || null }));
+    if (r.requiere_aprobacion) {
+      S.capexTab = "aprobacion";
+      form("Pendiente de aprobación", [{ html: `<p>La adjudicación (${eur(r.total)}) supera ${eur(C.umbral)} y se ha enviado a la Dirección General:</p><ul>${r.aprobacion.map((a) => `<li>${esc(a.email)}: ${a.ok ? "correo enviado ✓" : `<span class="error">${esc(a.error || "no enviado")}</span>`}</li>`).join("")}</ul><p class="muted">La obra queda bloqueada hasta que apruebe. Recibirá un correo con la decisión.</p>` }], {}, async () => {}, "Cerrar");
+    } else toast(`Adjudicado por ${eur(r.total)}`);
+    recarga();
+  };
+}
+
+// ---- aprobación de la Dirección General
+function capexAprobacion(cx, D, recarga, C) {
+  const p = D.proyecto, pend = D.aprobaciones.some((a) => a.estado === "pendiente");
+  cx.innerHTML = `<p class="muted">Las adjudicaciones de más de ${eur(C.umbral)} (sin IVA) las aprueba la Dirección General (${C.aprobadores.map(esc).join(", ")}) con los botones del correo, sin entrar en el PMS, o desde aquí. Queda la fecha y hora de la decisión.</p>
+    ${D.aprobar ? '<div class="toolbar"><button class="btn primary" id="si">Aprobar</button><button class="btn danger" id="no">Rechazar</button></div>' : ""}
+    ${D.gestionar && pend ? '<div class="toolbar"><button class="btn" id="re">Reenviar el correo de aprobación</button></div>' : ""}<div id="at"></div>`;
+  table($("#at", cx), [
+    { k: "email", t: "Dirección General" }, { k: "importe", t: "Importe", num: true, f: eur },
+    { k: "estado", t: "Estado", f: (v) => `<span class="badge ${v === "aprobada" ? "b-vigente" : v === "rechazada" ? "b-anulado" : v === "pendiente" ? "b-pendiente" : ""}">${esc(v)}</span>` },
+    { k: "enviada_en", t: "Correo", f: (v, a) => (v ? fdt(v) : `<span class="error">${esc(a.envio_error || "")}</span>`) },
+    { k: "decidido_en", t: "Decisión", f: (v, a) => (v ? `${fdt(v)} · ${a.canal === "correo" ? "desde el correo" : "desde el PMS"}${a.comentario ? `<div class="muted peq">${esc(a.comentario)}</div>` : ""}` : "") },
+  ], D.aprobaciones);
+  const decide = (decision) => form(decision === "aprobar" ? "Aprobar la adjudicación" : "Rechazar la adjudicación", [
+    { k: "comentario", t: decision === "aprobar" ? "Comentario (opcional)" : "Motivo del rechazo", type: "textarea", req: decision === "rechazar", wide: true }], {},
+  async (d) => { await post(`/api/capex/${p.id}/aprobacion`, { decision, comentario: d.comentario }); toast(decision === "aprobar" ? "Adjudicación aprobada" : "Adjudicación rechazada"); recarga(); }, decision === "aprobar" ? "Aprobar" : "Rechazar");
+  if ($("#si", cx)) { $("#si", cx).onclick = () => decide("aprobar"); $("#no", cx).onclick = () => decide("rechazar"); }
+  if ($("#re", cx)) $("#re", cx).onclick = async () => { const r = await run(() => post(`/api/capex/${p.id}/aprobacion/reenviar`)); toast(r.every((x) => x.ok) ? "Correo reenviado" : "No se ha podido enviar el correo", !r.every((x) => x.ok)); recarga(); };
+}
+
+// ---- plantillas «CAPEX tipo»
+V.capexplantillas = async (el) => {
+  const C = await catCapex();
+  el.innerHTML = `<div class="toolbar"><span class="spacer"></span><button class="btn primary" id="new">Nueva plantilla</button></div>
+    <p class="muted">Un «CAPEX tipo» (reforma integral de baño, panelado de puertas…) guarda capítulos, partidas estándar con su precio y documentos base (planos, pliegos). Al crear un proyecto se carga con un clic y solo hay que ajustar las mediciones. La forma más rápida de crearla: abrir un proyecto y pulsar «Guardar como plantilla».</p><div id="t"></div>`;
+  const load = async () => table($("#t", el), [
+    { k: "nombre", t: "Plantilla", f: (v, t) => `<b>${esc(v)}</b>${t.descripcion ? `<div class="muted peq">${esc(t.descripcion)}</div>` : ""}` },
+    { k: "capitulos", t: "Capítulos", f: (v) => esc(v.join(" · ")) }, { k: "n_partidas", t: "Partidas", num: true },
+    { k: "pem", t: "PEM tipo", num: true, f: eur }, { k: "documentos", t: "Docs.", num: true, f: (v) => v.length },
+    { k: "activa", t: "Estado", f: (v) => (v ? "Activa" : '<span class="muted">Archivada</span>') },
+  ], await get("/api/capex/plantillas/lista"), (t) => [
+    ["Partidas", () => editarPlantilla(t, load), "primary"],
+    ["Documentos", () => docsPlantilla(t, load, C)],
+    [t.activa ? "Archivar" : "Activar", async () => { await run(() => put(`/api/capex/plantillas/lista/${t.id}`, { activa: !t.activa })); load(); }],
+    ["Borrar", async () => { if (confirm(`¿Borrar la plantilla ${t.nombre}?`)) { await run(() => api("DELETE", `/api/capex/plantillas/lista/${t.id}`)); load(); } }, "danger"],
+  ]);
+  $("#new", el).onclick = () => form("Nueva plantilla", [{ k: "nombre", t: "Nombre", req: true, wide: true }, { k: "descripcion", t: "Descripción", type: "textarea", wide: true }], {},
+    async (d) => { const t = await post("/api/capex/plantillas/lista", d); load(); setTimeout(() => editarPlantilla(t, load), 0); }, "Crear");
+  load();
+};
+function editarPlantilla(t, reload) {
+  let filas = (t.partidas || []).map((x) => ({ ...x }));
+  const f = form(`Partidas · ${t.nombre}`, [{ html: `<div class="toolbar"><button type="button" class="btn sm" id="ptAdd">+ Partida</button><button type="button" class="btn sm" id="ptBase">Desde base de precios</button><span class="spacer"></span><span class="muted peq" id="ptTot"></span></div><div id="ptG"></div>` }], {},
+    async () => { await put(`/api/capex/plantillas/lista/${t.id}`, { partidas: filas.filter((x) => x.descripcion) }); toast("Plantilla guardada"); reload(); });
+  $("#modal").classList.add("ancho");
+  const pinta = () => {
+    $("#ptG", f).innerHTML = `<table class="cx-grid"><thead><tr><th>Cap.</th><th>Nombre capítulo</th><th>Código</th><th>Descripción</th><th>Ud</th><th class="num">Cant.</th><th class="num">Precio</th><th></th></tr></thead><tbody>
+      ${filas.map((x, i) => `<tr data-i="${i}"><td><input data-f="capitulo" value="${esc(x.capitulo || "")}" class="cx-ud"></td><td><input data-f="capitulo_nombre" value="${esc(x.capitulo_nombre || "")}"></td>
+        <td><input data-f="codigo" value="${esc(x.codigo || "")}" class="cx-cod"></td><td><textarea data-f="descripcion" rows="1">${esc(x.descripcion || "")}</textarea></td>
+        <td><input data-f="unidad" value="${esc(x.unidad || "")}" class="cx-ud"></td><td><input data-f="cantidad" type="number" step="any" value="${x.cantidad ?? 0}" class="cx-num"></td>
+        <td><input data-f="precio" type="number" step="0.01" value="${x.precio ?? 0}" class="cx-num"></td><td><button type="button" class="btn sm danger" data-x="${i}">✕</button></td></tr>`).join("")}</tbody></table>`;
+    $("#ptTot", f).textContent = `${filas.length} partida(s) · PEM ${eur(filas.reduce((s, x) => s + (Number(x.cantidad) || 0) * (Number(x.precio) || 0), 0))}`;
+    $("#ptG", f).querySelectorAll("[data-f]").forEach((i) => (i.onchange = () => { const x = filas[i.closest("tr").dataset.i]; x[i.dataset.f] = ["cantidad", "precio"].includes(i.dataset.f) ? Number(i.value || 0) : i.value; pinta(); }));
+    $("#ptG", f).querySelectorAll("[data-x]").forEach((b) => (b.onclick = () => { filas.splice(Number(b.dataset.x), 1); pinta(); }));
+  };
+  const ultimo = () => filas.at(-1) || { capitulo: "01", capitulo_nombre: "" };
+  $("#ptAdd", f).onclick = () => { filas.push({ capitulo: ultimo().capitulo, capitulo_nombre: ultimo().capitulo_nombre, descripcion: "", cantidad: 0, precio: 0 }); pinta(); };
+  $("#ptBase", f).onclick = () => {
+    const guardadas = filas;
+    buscarPrecios((sel) => { setTimeout(() => { filas = guardadas.concat(sel.map((x) => ({ capitulo: ultimo().capitulo, capitulo_nombre: ultimo().capitulo_nombre, codigo: x.codigo, descripcion: x.resumen, unidad: x.unidad, cantidad: 0, precio: x.precio })));
+      editarPlantilla({ ...t, partidas: filas }, reload); }, 0); });
+  };
+  pinta();
+}
+function docsPlantilla(t, reload, C) {
+  const f = form(`Documentos base · ${t.nombre}`, [
+    { html: t.documentos.length ? `<ul>${t.documentos.map((d) => `<li>${esc(d.etiqueta_nombre)}: <a href="#" data-ver="${d.id}">${esc(d.nombre)}</a> <button type="button" class="btn sm danger" data-del="${d.id}">Borrar</button></li>`).join("")}</ul>` : '<p class="muted">Sin documentos.</p>' },
+    { k: "etiqueta", t: "Tipo", type: "select", req: true, options: Object.entries(C.etiquetas) },
+    { html: '<label class="wide">Ficheros *<input type="file" name="f" multiple required></label>' },
+  ], {}, async (d, fm) => {
+    const fd = new FormData(); [...fm.elements.f.files].forEach((x) => fd.append("ficheros", x)); fd.append("etiqueta", d.etiqueta);
+    await upload(`/api/capex/plantillas/lista/${t.id}/documentos`, fd); toast("Documentos subidos"); reload();
+  }, "Subir");
+  f.querySelectorAll("[data-ver]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); abrirFichero(`/api/capex/documentos/${a.dataset.ver}`); }));
+  f.querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => { if (confirm("¿Borrar el documento?")) { await run(() => api("DELETE", `/api/capex/documentos/${b.dataset.del}`)); $("#modal").close(); reload(); } }));
+}
+
+// ---- base de precios FIEBDC-3
+V.capexprecios = async (el) => {
+  el.innerHTML = `<div class="toolbar"><input type="search" id="q" placeholder="Buscar en las bases: alicatado, demolición, LAD010…" style="flex:1"><span class="spacer"></span><button class="btn primary" id="imp">Importar base (.bc3 / .zip)</button></div>
+    <p class="muted">Bases de precios de construcción en formato FIEBDC-3 (.bc3). Las públicas se descargan gratis, por ejemplo la Base de Costes de la Construcción de Andalucía (BCCA) o la del IVE (Comunidad Valenciana); también vale cualquier .bc3 exportado de Presto o Arquímedes. Sus partidas se añaden a los proyectos desde «Añadir desde base de precios».</p>
+    <div id="b"></div><div id="r"></div>`;
+  const load = async () => table($("#b", el), [
+    { k: "nombre", t: "Base", f: (v) => `<b>${esc(v)}</b>` }, { k: "fichero", t: "Fichero" }, { k: "partidas", t: "Partidas", num: true }, { k: "importado", t: "Importada", f: fdt },
+  ], await get("/api/capex/bases/lista"), (b) => [["Borrar", async () => { if (confirm(`¿Borrar la base ${b.nombre}?`)) { await run(() => api("DELETE", `/api/capex/bases/lista/${b.id}`)); load(); } }, "danger"]]);
+  $("#imp", el).onclick = () => form("Importar base de precios", [
+    { k: "nombre", t: "Nombre (p. ej. BCCA 2025)", req: true, wide: true },
+    { html: '<label class="wide">Fichero .bc3 o .zip *<input type="file" name="f" accept=".bc3,.zip" required></label><p class="muted">Una base completa puede tardar un minuto en importarse.</p>' },
+  ], {}, async (d, f) => {
+    const fd = new FormData(); fd.append("fichero", f.elements.f.files[0]); fd.append("nombre", d.nombre);
+    toast("Importando…"); const r = await upload("/api/capex/bases/lista", fd); toast(`${r.partidas} partidas importadas`); load();
+  }, "Importar");
+  $("#q", el).oninput = debounce(async () => {
+    const q = $("#q", el).value.trim();
+    if (q.length < 3) { $("#r", el).innerHTML = ""; return; }
+    table($("#r", el), [{ k: "codigo", t: "Código", f: (v) => `<b>${esc(v)}</b>` }, { k: "resumen", t: "Partida", f: (v, x) => `${esc(v)}<div class="muted peq">${esc(x.capitulo || "")}</div>` },
+      { k: "unidad", t: "Ud" }, { k: "precio", t: "Precio €", num: true, f: num2 }], await get("/api/capex/precios/buscar", { q }));
+  }, 300);
+  load();
+};
+
 const MENU = [
   ["General", [["panel", "Panel de control", null], ["agenda", "Agenda", null], ["manual", "Manual de uso", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
   ["Personal", [["ausencias", "Vacaciones y ausencias", "activos.ver"], ["personal", "Fichas del personal", "personal"], ["jornada", "Registro de jornada", "gestpersonal"], ["mijornada", "Mi jornada (fichar)", null]]],
@@ -4737,6 +5146,7 @@ const MENU = [
   ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["servicios", "Servicios", "activos.ver"], ["informes", "Informes Excel", "informes"], ["presidencia", "Informe a presidencia", "facturas.ver"]]],
   ["Documentos y gastos", [["docrecibidos", "Documentos recibidos", "documentos.ver"], ["gastos", "Cuenta de gastos", "documentos.ver"]]],
   ["Mantenimiento", [["estado", "Partes de estado", "partesestado"], ["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["partestrabajo", "Parte de trabajo diario", "partes"], ["pedidos", "Pedidos de material", "pedidos"], ["productos", "Catálogo de productos", "pedidos"], ["proveedores", "Proveedores", "proveedores"]]],
+  ["Inversiones (CAPEX)", [["capex", "Proyectos CAPEX", "capex.ver"], ["capexplantillas", "Plantillas CAPEX tipo", "capex.gestionar"], ["capexprecios", "Base de precios (BC3)", "capex.gestionar"]]],
   ["Administración", [["legal", "Documentación legal", "legal.ver"], ["usuarios", "Usuarios", "admin"], ["roles", "Roles y permisos", "admin"], ["sociedades", "Sociedades", "admin"], ["avisos", "Avisos por correo", "admin"], ["auditoria", "Auditoría", "auditoria.ver"]]],
   ["", [["perfil", "Mi perfil", null]]],
 ];

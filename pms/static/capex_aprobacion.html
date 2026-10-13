@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/static/marca/favicon.png">
+<title>Aprobación de adjudicación · INVERPMS</title>
+<style>
+  :root { --ink: #18181b; --muted: #6f6a61; --line: #e8e3d8; --bg: #f6f4ef; --oro: #c9a45a; --oro-claro: #e6cf95; --negro: #0e0e10; --ok: #2e7d4f; --bad: #b3261e; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif; }
+  header { background: var(--negro); color: #fff; padding: 14px 18px; border-bottom: 3px solid var(--oro); }
+  header small { color: var(--oro-claro); letter-spacing: .08em; text-transform: uppercase; font-size: 11px; }
+  header h1 { margin: 2px 0 0; font-size: 19px; font-weight: 600; }
+  main { padding: 16px; max-width: 760px; margin: 0 auto; }
+  section { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; } th, td { padding: 6px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; color: var(--muted); } td.num { text-align: right; white-space: nowrap; }
+  .grande { font-size: 24px; font-weight: 700; } .muted { color: var(--muted); font-size: 13px; }
+  .error { color: var(--bad); font-weight: 600; } .ok { color: var(--ok); font-weight: 700; }
+  textarea { width: 100%; min-height: 80px; font: inherit; padding: 8px; border: 1px solid #cfc8b8; border-radius: 8px; }
+  .botones { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+  button { flex: 1; min-width: 160px; min-height: 54px; border: 0; border-radius: 10px; font: inherit; font-size: 17px; font-weight: 700; color: #fff; cursor: pointer; }
+  button.si { background: var(--ok); } button.no { background: var(--bad); } button:disabled { opacity: .5; }
+  button.sel { outline: 4px solid var(--oro); }
+  a { color: #8a6d2f; font-weight: 600; }
+</style>
+</head>
+<body>
+<header><small>INVERPMS · Aprobación de la Dirección General</small><h1 id="tit">Cargando…</h1></header>
+<main id="app"><p class="muted">Cargando…</p></main>
+<script>
+"use strict";
+const aid = location.pathname.split("/").filter(Boolean).pop();
+const q = new URLSearchParams(location.search), k = q.get("k") || "";
+const api = (r = "") => `/api/publico/capex-aprobacion/${aid}${r}?k=${encodeURIComponent(k)}`;
+const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const eur = (v) => (v == null ? "—" : v.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €");
+async function json(r) { const j = await r.json().catch(() => null); if (!r.ok) throw new Error(j?.detail || `Error ${r.status}`); return j; }
+let elegido = q.get("d") === "rechazar" ? "rechazar" : q.get("d") === "aprobar" ? "aprobar" : null;
+function pinta(d, msg = "") {
+  const r = d.resumen;
+  document.getElementById("tit").textContent = `${r.codigo} · ${r.titulo}`;
+  const resuelta = !d.pendiente;
+  document.getElementById("app").innerHTML = `
+    <section><p>${esc(r.activo)}${r.ubicacion ? ` · ${esc(r.ubicacion)}` : ""}</p>
+      <p>Propone: <b>${esc(r.propone)}</b> (Dirección Técnica)</p>
+      <p class="grande">${eur(r.total)} <span class="muted">sin IVA</span></p>
+      <p class="muted">Presupuesto base de licitación ${eur(r.pbl)}${r.objetivo ? ` · objetivo ${eur(r.objetivo)}` : ""} · umbral de aprobación ${eur(d.umbral)}</p></section>
+    <section><table><tr><th>Contratista</th><th>Alcance</th><th style="text-align:right">Importe</th></tr>
+      ${r.lotes.map((l) => `<tr><td><b>${esc(l.proveedor)}</b></td><td>${esc(l.capitulos.join(", "))}</td><td class="num">${eur(l.importe)}</td></tr>`).join("")}</table>
+      ${r.sin_adjudicar.length ? `<p class="muted">Sin adjudicar: ${esc(r.sin_adjudicar.join(", "))}</p>` : ""}
+      ${r.nota ? `<p>Nota: ${esc(r.nota)}</p>` : ""}</section>
+    <section><b>Ofertas recibidas</b><table>${r.ofertas.map((o) => `<tr><td>${esc(o.proveedor)}</td><td class="num">${eur(o.pbl)}</td>
+      <td class="num">${o.desviacion == null ? "—" : `${o.desviacion > 0 ? "+" : ""}${o.desviacion.toLocaleString("es-ES")} %`}</td><td class="muted">${o.completa ? "" : "incompleta"}${o.plazo_dias ? ` ${o.plazo_dias} días` : ""}</td></tr>`).join("")}</table>
+      <p><a href="${api("/comparativo.pdf")}" target="_blank" rel="noopener">Ver el cuadro comparativo (PDF)</a></p></section>
+    <section>${resuelta
+      ? `<p class="${d.estado === "aprobada" ? "ok" : "error"}">${d.estado === "aprobada" ? "✔ Adjudicación APROBADA" : d.estado === "rechazada" ? "✖ Adjudicación RECHAZADA" : "Esta solicitud ya no está pendiente (se ha resuelto o se ha sustituido por otra)."}${d.decidido_en ? ` el ${new Date(d.decidido_en).toLocaleString("es-ES")}` : ""}.</p>${d.comentario ? `<p>Comentario: ${esc(d.comentario)}</p>` : ""}<p class="muted">Ya puede cerrar esta página.</p>`
+      : `<p>Confirme su decisión${elegido ? "" : " pulsando un botón"}:</p>
+        <label>Comentario <span class="muted">(obligatorio si rechaza)</span><textarea id="com"></textarea></label>
+        <div class="botones"><button class="si ${elegido === "aprobar" ? "sel" : ""}" id="si">Aprobar</button><button class="no ${elegido === "rechazar" ? "sel" : ""}" id="no">Rechazar</button></div>
+        <p class="error" id="msg">${esc(msg)}</p><p class="muted">Queda registrada la fecha y hora de su decisión. Aprueba como ${esc(d.email)}.</p>`}</section>`;
+  if (resuelta) return;
+  const decide = async (decision) => {
+    const com = document.getElementById("com").value.trim();
+    if (decision === "rechazar" && !com) { document.getElementById("msg").textContent = "Indique el motivo del rechazo en el comentario."; return; }
+    if (!confirm(decision === "aprobar" ? `¿Aprobar la adjudicación por ${eur(r.total)}?` : "¿Rechazar la adjudicación?")) return;
+    document.querySelectorAll("button").forEach((b) => (b.disabled = true));
+    try {
+      const x = await json(await fetch(api(), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision, comentario: com || null }) }));
+      pinta({ ...d, pendiente: false, estado: x.estado, decidido_en: x.decidido_en, comentario: com || null });
+    } catch (e) { pinta(d, e.message); }
+  };
+  document.getElementById("si").onclick = () => decide("aprobar");
+  document.getElementById("no").onclick = () => decide("rechazar");
+  if (elegido === "rechazar") document.getElementById("com").focus();
+}
+fetch(api()).then(json).then((d) => pinta(d))
+  .catch((e) => { document.getElementById("tit").textContent = "Enlace no válido"; document.getElementById("app").innerHTML = `<section><p class="error">${esc(e.message)}</p></section>`; });
+</script>
+</body>
+</html>

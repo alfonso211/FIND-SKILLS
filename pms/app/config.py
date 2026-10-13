@@ -44,6 +44,11 @@ class Settings:
     borrar_usuarios: tuple[str, ...] = tuple(
         e.strip().lower() for e in (os.environ.get("PMS_BORRAR_USUARIOS") or "alfonso@inversiete.es,admin@inversiete.es")
         .split(",") if e.strip())
+    # CAPEX: adjudicaciones por encima del umbral (sin IVA) las aprueba la Dirección General por correo
+    capex_aprobadores: tuple[str, ...] = tuple(
+        e.strip().lower() for e in (os.environ.get("PMS_CAPEX_APROBADORES") or "barbara@inversiete.es").split(",")
+        if e.strip())
+    capex_umbral: float = float(os.environ.get("PMS_CAPEX_UMBRAL") or 30000)
 
 
 settings = Settings()
