@@ -381,3 +381,54 @@ def paquete(filas: list[dict]) -> bytes:
 def nombre_paquete(asset: Asset, dia: date) -> str:
     from .export_invergestion import codigo_activo
     return f"PRODUCTOS_PMS_{codigo_activo(asset)}_{dia:%Y%m%d}.zip"
+
+
+# --------------------------------------------------------------------------- reposición de la dotación
+REPOSICION = "Reposición de dotación"
+FAMILIA_ZONA = {"menaje": "MENAJE", "cocina": "MENAJE", "bano": "LENCERÍA Y AMENITIES",
+                "dormitorio": "LENCERÍA Y AMENITIES", "salon": "MOBILIARIO", "auxiliar": "LIMPIEZA Y CONSUMIBLES"}
+
+
+def _producto_dotacion(db: Session, user: User | None, asset: Asset, c: dict) -> Product:
+    """El artículo de la dotación en el catálogo de material (referencia DOT-<código>), dado de alta si no está."""
+    ref = f"DOT-{c['codigo']}"
+    p = db.scalar(select(Product).where(Product.referencia == ref))
+    if p is None:
+        precio = c.get("precio")
+        p = Product(referencia=ref, articulo=c["articulo"][:250], familia=FAMILIA_ZONA.get(c.get("zona"), "OTROS"),
+                    unidad="ud", precio=round(float(precio) / 1.21, 4) if precio else None, tipo_iva=21,
+                    origen="PMS", activo=True, asset_id=asset.id, user_id=user.id if user else None)
+        db.add(p)
+        db.flush()
+    return p
+
+
+def reponer(db: Session, user: User | None, asset: Asset, cargos: list[dict], origen: str) -> PurchaseOrder | None:
+    """Añade lo que falta o se ha roto al pedido de reposición del activo pendiente de autorizar (uno abierto que
+    se va sumando hasta que Recepción 1 lo autoriza); si no hay, lo crea. Devuelve el pedido."""
+    cargos = [c for c in cargos if c.get("codigo")]
+    if not cargos:
+        return None
+    p = db.scalar(select(PurchaseOrder).where(PurchaseOrder.asset_id == asset.id, PurchaseOrder.estado == "pendiente",
+                                              PurchaseOrder.notas.like(f"{REPOSICION}%")).order_by(PurchaseOrder.id))
+    nuevo = p is None
+    if nuevo:
+        hoy = date.today()
+        p = PurchaseOrder(numero=numero_pedido(db, asset, hoy), asset_id=asset.id, fecha=hoy, estado="pendiente",
+                          user_id=user.id if user else None,
+                          notas=f"{REPOSICION}: lo que falta o se rompe al dar la salida. Se va sumando hasta que "
+                                "Recepción 1 lo autoriza; elija entonces el proveedor.")
+        db.add(p)
+        db.flush()
+    for c in cargos:
+        prod = _producto_dotacion(db, user, asset, c)
+        linea = next((x for x in p.lineas if x.product_id == prod.id), None)
+        if linea is None:
+            p.lineas.append(PurchaseOrderLine(product_id=prod.id, orden=len(p.lineas), cantidad=c["cantidad"],
+                                              precio=prod.precio, tipo_iva=prod.tipo_iva, nota=origen[:200]))
+        else:
+            linea.cantidad = float(linea.cantidad) + c["cantidad"]
+            linea.nota = (f"{linea.nota}; {origen}" if linea.nota else origen)[:200]
+    db.flush()
+    p._nuevo = nuevo  # para avisar a Recepción 1 solo al crearlo
+    return p

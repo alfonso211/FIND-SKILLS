@@ -127,3 +127,72 @@ def a_dict(d: DepositRefund) -> dict:
     x["forma_texto"] = FORMAS_DEVOLUCION.get(d.forma, d.forma)
     x["retenido"] = round(float(d.fianza) - float(d.importe), 2)
     return x
+
+
+# --------------------------------------------------------------------------- recordatorio de cobro del exceso
+RECORDATORIOS_DIAS = (3, 10, 17)  # días desde la factura: como mucho tres recordatorios automáticos
+
+
+def factura_exceso(db: Session, d: DepositRefund):
+    from .models import Invoice
+    return db.scalar(select(Invoice).where(Invoice.codigo == d.factura_exceso)) if d.factura_exceso else None
+
+
+def _texto_recordatorio(d: DepositRefund, r: Reservation, f) -> str:
+    return (f"Le recordamos que tiene pendiente de pago la factura {f.codigo}, de {_euros(f.total)}, por la reposición "
+            f"de la dotación del apartamento {r.unit.codigo} de {r.unit.asset.nombre} que superó la fianza de su "
+            f"estancia ({r.fecha_entrada:%d/%m/%Y} – {r.fecha_salida:%d/%m/%Y}). Puede abonarla por transferencia o en "
+            f"la recepción, indicando el número de factura. Si ya la ha abonado, no tenga en cuenta este mensaje.")
+
+
+def recordatorio_exceso(db: Session, d: DepositRefund, clave: str) -> dict:
+    """Recordatorio al cliente de la factura del exceso pendiente: correo con la factura adjunta (si tiene correo) y
+    WhatsApp preparado con el mismo texto y el enlace de descarga. Queda en el registro de envíos."""
+    from .routers.facturas import _pdf, enlace
+    r = db.get(Reservation, d.reservation_id)
+    f = factura_exceso(db, d)
+    if f is None or f.cobro != "pendiente":
+        return {"ok": False, "error": "La factura del exceso no está pendiente de cobro"}
+    texto = _texto_recordatorio(d, r, f)
+    out: dict = {"ok": True, "factura": f.codigo}
+    g = r.guest
+    if g.email:
+        asunto = f"Recordatorio de pago · factura {f.codigo} · {r.unit.asset.nombre}"
+        try:
+            avisos.enviar(g.email, asunto, f"Estimado/a cliente:\n\n{texto}\n\nAtentamente,\n{r.unit.asset.nombre}",
+                          avisos._html("Recordatorio de pago", f"<p>Estimado/a cliente:</p><p>{escape(texto)}</p>"
+                                                               f"<p>Atentamente,<br>{escape(r.unit.asset.nombre)}</p>"),
+                          [(*_pdf(db, f), "application/pdf")])
+            ok, err = True, None
+        except Exception as ex:  # noqa: BLE001
+            ok, err = False, str(ex)[:300]
+        db.add(EmailLog(clave=clave, tipo="recordatorio_cobro", destinatario=g.email, asunto=asunto[:200], ok=ok,
+                        error=err))
+        out["email"] = {"destinatario": g.email, "ok": ok, "error": err}
+    movil = movil_whatsapp(g.telefono) if g.telefono else None
+    if movil:
+        extra = f" Descargue su factura: {enlace(f.id)}" if settings.url else ""
+        out["whatsapp"] = f"https://wa.me/{movil}?text={quote(texto + extra)}"
+    return out
+
+
+def recordatorios_exceso(db: Session, hoy=None) -> int:
+    """Recordatorios automáticos de las facturas de exceso sin cobrar a los 3, 10 y 17 días (una vez cada uno)."""
+    from datetime import date
+    from .models import Invoice
+    hoy = hoy or date.today()
+    enviados = 0
+    for d, f in db.execute(select(DepositRefund, Invoice).join(Invoice, Invoice.codigo == DepositRefund.factura_exceso)
+                           .where(Invoice.cobro == "pendiente")):
+        dias = (hoy - f.creada.date()).days
+        for n, limite in enumerate(RECORDATORIOS_DIAS, 1):
+            clave = f"recordatorio_exceso:{f.id}:{n}"
+            if dias < limite or db.scalar(select(EmailLog.id).where(EmailLog.clave == clave)):
+                continue
+            if not db.get(Reservation, d.reservation_id).guest.email:
+                break  # sin correo del cliente: solo el recordatorio manual por WhatsApp
+            recordatorio_exceso(db, d, clave)
+            enviados += 1
+            break  # uno por día como mucho
+    db.commit()
+    return enviados

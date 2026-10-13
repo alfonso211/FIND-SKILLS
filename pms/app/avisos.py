@@ -685,6 +685,9 @@ def _bucle() -> None:
                 from .informe_vacaciones import recordatorio_semanal
                 with SessionLocal() as db:
                     recordatorio_semanal(db, ahora.date())  # los lunes; una vez por semana y persona
+                from .fianzas import recordatorios_exceso
+                with SessionLocal() as db:
+                    recordatorios_exceso(db, ahora.date())  # facturas de roturas sin cobrar: 3, 10 y 17 días
             from .informe_vacaciones import enviar_pendientes
             with SessionLocal() as db:
                 enviar_pendientes(db, ahora.replace(tzinfo=None))  # calendario de vacaciones: cambios agrupados

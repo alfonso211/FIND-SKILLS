@@ -403,6 +403,7 @@ class CargoIn(BaseModel):
     cantidad: int = Field(default=1, ge=1, le=999)
     precio: float = Field(ge=0, le=100000)
     ot: bool = False  # roto y hay que reponerlo o repararlo: orden de trabajo a mantenimiento
+    pedido: bool = False  # menaje, ropa…: se añade al pedido de reposición del activo
 
 
 class DepositRefundIn(BaseModel):
