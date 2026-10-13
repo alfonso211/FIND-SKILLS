@@ -119,6 +119,13 @@
 - Las de Recepción 1 las aprueba dirección; las de mantenimiento, el director técnico.
 - **Resumen del año** (días aprobados por persona y tipo) y **Excel**.
 
+## Ficha del empleado y registro de jornada (Recepción 1)
+- **Personal → Fichas del personal → Editar**: complete la **ficha del empleado** (DNI, puesto, contrato, jornada, alta, días de vacaciones). En **Vacaciones** se ve lo que le queda; si una solicitud lo supera, sale un aviso en rojo.
+- **Docs.**: suba contrato, reconocimiento médico, formación… con su fecha de vencimiento.
+- **Enlace**: crea el enlace personal para fichar desde el móvil (botón WhatsApp). **Cambiar enlace** anula el anterior.
+- **Personal → Registro de jornada**: horas del mes, **Detalle** de cada día, **Corregir** si olvidó fichar (indique el motivo), **Registro manual**, **Informe PDF** para firmar y **Excel** del mes.
+- En el **Panel de control**, **Personal hoy**: quién falta, quién está dentro y quién no fichó la salida.
+
 ## Colaboradores (subcontratas)
 - En **Documentos recibidos**, el filtro **De colaboradores: por revisar** muestra lo que han subido las subcontratas desde su portal. **Aceptar** o **Rechazar** con el motivo (el colaborador lo ve). Una factura aceptada se anota como gasto con **Anotar gasto**, como siempre.
 - La **documentación de personal** (contratos, TC2, formación PRL…) solo la ven Recepción 1 y dirección.

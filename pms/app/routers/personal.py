@@ -5,14 +5,16 @@ from datetime import date, datetime
 from html import escape
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from .. import ausencias, avisos, firma_contrato, planos
+from .. import ausencias, avisos, documentos, empleados, firma_contrato, planos
+from ..config import settings
 from ..database import get_db
-from ..models import AREAS_PERSONAL, Asset, EmailLog, Reservation, StaffDispatch, StaffMember, Supplier, Unit
+from ..models import (AREAS_PERSONAL, TIPOS_CONTRATO, TIPOS_DOC_EMPLEADO, Asset, EmailLog, Reservation, StaffDispatch,
+                      StaffDocument, StaffMember, Supplier, TimeEntry, Unit, User)
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request, get_or_404
 
@@ -34,6 +36,20 @@ class StaffIn(BaseModel):
     avisar_urgentes: bool = False
     activo: bool = True
     notas: str | None = None
+    # ficha del empleado (los gestiona Recepción 1 del activo o dirección)
+    user_id: int | None = None
+    dni: str | None = Field(default=None, max_length=20)
+    puesto: str | None = Field(default=None, max_length=120)
+    tipo_contrato: str | None = None
+    fecha_alta: date | None = None
+    fecha_baja: date | None = None
+    jornada_semanal: float | None = Field(default=None, ge=0, le=60)
+    vacaciones_dias: int | None = Field(default=None, ge=0, le=60)
+    vacaciones_tipo: str | None = None
+
+
+CAMPOS_FICHA = ("user_id", "dni", "puesto", "tipo_contrato", "fecha_alta", "fecha_baja", "jornada_semanal",
+                "vacaciones_dias", "vacaciones_tipo")
 
 
 class SendIn(BaseModel):
@@ -48,12 +64,37 @@ class CleaningSendIn(SendIn):
     unit_ids: list[int] = Field(min_length=1, max_length=500)
 
 
-def _out(p: StaffMember, db: Session) -> dict:
-    d = p.to_dict()
+def _out(p: StaffMember, db: Session, scope: Scope | None = None) -> dict:
+    """Los datos laborales (DNI, contrato, vacaciones, usuario) solo los ve quien gestiona a la persona."""
+    d = p.to_dict(exclude=("fichaje_clave",))
     d["activo_nombre"] = db.get(Asset, p.asset_id).nombre if p.asset_id else "Todos los activos"
     d["area_nombre"] = AREAS_PERSONAL.get(p.area, p.area)
     d["whatsapp"] = bool(p.telefono and firma_contrato.movil_whatsapp(p.telefono))
+    d["propio"] = empleados.es_propio(p)
+    d["gestiona"] = bool(scope and empleados.puede_gestionar(db, scope, p))
+    if d["gestiona"]:
+        d["usuario"] = db.get(User, p.user_id).nombre if p.user_id else None
+        d["tipo_contrato_nombre"] = TIPOS_CONTRATO.get(p.tipo_contrato)
+        d["saldo"] = empleados.saldo(db, p) if d["propio"] else None
+        d["fichaje_enlace"] = bool(p.fichaje_clave)
+        d["fichado"] = bool(empleados.abierto(db, p))
+        d["documentos_vencen"] = sum(1 for x in db.scalars(select(StaffDocument.vence).where(
+            StaffDocument.staff_id == p.id, StaffDocument.vence.is_not(None))) if x <= date.today())
+    else:
+        for k in CAMPOS_FICHA:
+            d.pop(k, None)
     return d
+
+
+def _valida_ficha(db: Session, data: StaffIn) -> None:
+    if data.tipo_contrato and data.tipo_contrato not in TIPOS_CONTRATO:
+        bad_request(f"Tipo de contrato no válido. Opciones: {', '.join(TIPOS_CONTRATO)}")
+    if data.vacaciones_tipo and data.vacaciones_tipo not in ("laborables", "naturales"):
+        bad_request("Vacaciones: días laborables o naturales")
+    if data.fecha_alta and data.fecha_baja and data.fecha_baja < data.fecha_alta:
+        bad_request("La fecha de baja es anterior a la de alta")
+    if data.user_id:
+        get_or_404(db, User, data.user_id)
 
 
 def _visibles(scope: Scope) -> set[int] | None:
@@ -97,7 +138,7 @@ def list_staff(asset_id: int | None = None, area: str | None = None, solo_activo
         stmt = stmt.where(StaffMember.area == area)
     if solo_activos:
         stmt = stmt.where(StaffMember.activo)
-    return [_out(p, db) for p in db.scalars(stmt.order_by(StaffMember.area, StaffMember.nombre))]
+    return [_out(p, db, scope) for p in db.scalars(stmt.order_by(StaffMember.area, StaffMember.nombre))]
 
 
 @router.post("", status_code=201)
@@ -107,13 +148,18 @@ def create_staff(data: StaffIn, scope: Scope = Depends(get_scope), db: Session =
         get_or_404(db, Asset, data.asset_id)
     if data.area in PERMISO_AREA and not (data.email or data.telefono):
         bad_request("Indique al menos un correo electrónico o un teléfono")
-    p = StaffMember(**data.model_dump())
+    _valida_ficha(db, data)
+    valores = data.model_dump()
+    p = StaffMember(**{k: v for k, v in valores.items() if k not in CAMPOS_FICHA})
     enlazar_empresa(db, p)
+    if empleados.puede_gestionar(db, scope, p):
+        for k in CAMPOS_FICHA:
+            setattr(p, k, valores[k])
     db.add(p)
     db.flush()
     audit(db, scope.user, "crear", "personal", p.id, {"nombre": p.nombre, "area": p.area})
     db.commit()
-    return _out(p, db)
+    return _out(p, db, scope)
 
 
 @router.put("/{pid}")
@@ -125,25 +171,126 @@ def update_staff(pid: int, data: StaffIn, scope: Scope = Depends(get_scope), db:
         get_or_404(db, Asset, data.asset_id)
     if data.area in PERMISO_AREA and not (data.email or data.telefono):
         bad_request("Indique al menos un correo electrónico o un teléfono")
+    _valida_ficha(db, data)
     antes = p.to_dict()
+    ficha = empleados.puede_gestionar(db, scope, p)  # quien no gestiona la ficha no toca los datos laborales
     for k, v in data.model_dump().items():
-        setattr(p, k, v)
+        if k not in CAMPOS_FICHA or ficha:
+            setattr(p, k, v)
     enlazar_empresa(db, p)
-    audit(db, scope.user, "editar", "personal", pid, {k: v for k, v in p.to_dict().items() if antes.get(k) != v})
+    cambios = {k: v for k, v in p.to_dict().items() if antes.get(k) != v and k != "fichaje_clave"}
+    audit(db, scope.user, "editar", "personal", pid, {k: (str(v) if v is not None else None) for k, v in cambios.items()})
     db.commit()
-    return _out(p, db)
+    return _out(p, db, scope)
 
 
 @router.delete("/{pid}")
 def delete_staff(pid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     p = get_or_404(db, StaffMember, pid)
     _puede_editar(scope, db, p.area, p.asset_id)
+    if db.scalar(select(TimeEntry.id).where(TimeEntry.staff_id == pid).limit(1)) or \
+            db.scalar(select(StaffDocument.id).where(StaffDocument.staff_id == pid).limit(1)):
+        bad_request("Tiene registro de jornada o documentos (se conservan 4 años): desmarque «En activo» para darle de baja")
     audit(db, scope.user, "borrar", "personal", pid, {"nombre": p.nombre, "area": p.area})
     for e in db.scalars(select(StaffDispatch).where(StaffDispatch.staff_id == pid)):
         db.delete(e)
     db.delete(p)
     db.commit()
     return {"ok": True}
+
+
+# --------------------------------------------------------------------------- ficha del empleado
+def _gestionada(db: Session, scope: Scope, pid: int) -> StaffMember:
+    p = get_or_404(db, StaffMember, pid)
+    if not empleados.puede_gestionar(db, scope, p):
+        raise HTTPException(403, "La ficha del empleado la gestionan Recepción 1 del activo y la dirección")
+    return p
+
+
+@router.get("/catalogos")
+def staff_catalogs():
+    return {"areas": AREAS_PERSONAL, "contratos": TIPOS_CONTRATO, "documentos": TIPOS_DOC_EMPLEADO}
+
+
+@router.get("/{pid}/saldo")
+def vacation_balance(pid: int, anio: int | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    return empleados.saldo(db, _gestionada(db, scope, pid), anio)
+
+
+@router.get("/{pid}/documentos")
+def list_documents(pid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    _gestionada(db, scope, pid)
+    return [{**d.to_dict(exclude=("fichero", "sha256")), "tipo_nombre": TIPOS_DOC_EMPLEADO.get(d.tipo, d.tipo),
+             "vencido": bool(d.vence and d.vence < date.today())}
+            for d in db.scalars(select(StaffDocument).where(StaffDocument.staff_id == pid)
+                                .order_by(StaffDocument.tipo, StaffDocument.fecha.desc()))]
+
+
+@router.post("/{pid}/documentos", status_code=201)
+def upload_document(pid: int, ficheros: list[UploadFile] = File(...), tipo: str = Form(...),
+                    fecha: date | None = Form(None), vence: date | None = Form(None), notas: str | None = Form(None),
+                    scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    from .gastos import _fichero
+    p = _gestionada(db, scope, pid)
+    if tipo not in TIPOS_DOC_EMPLEADO:
+        bad_request("Tipo de documento no válido")
+    if fecha and vence and vence < fecha:
+        bad_request("El vencimiento es anterior a la fecha del documento")
+    datos, mime, nombre = _fichero(ficheros)
+    d = StaffDocument(staff_id=p.id, tipo=tipo, fecha=fecha, vence=vence, notas=(notas or "").strip()[:300] or None,
+                      nombre=f"{TIPOS_DOC_EMPLEADO[tipo]} · {p.nombre}"[:120] + "." + nombre.rsplit(".", 1)[-1],
+                      fichero=documentos.guardar(datos), mime=mime, tamano=len(datos), sha256=documentos.huella(datos),
+                      user_id=scope.user.id)
+    db.add(d)
+    db.flush()
+    audit(db, scope.user, "subir_documento", "personal", p.id, {"tipo": tipo, "documento": d.id})
+    db.commit()
+    return {"id": d.id}
+
+
+def _documento(db: Session, scope: Scope, did: int) -> StaffDocument:
+    d = get_or_404(db, StaffDocument, did)
+    _gestionada(db, scope, d.staff_id)
+    return d
+
+
+@router.get("/documentos/{did}")
+def view_document(did: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    d = _documento(db, scope, did)
+    audit(db, scope.user, "ver_documento", "personal", d.staff_id, {"documento": did})  # registro de accesos
+    db.commit()
+    return Response(documentos.leer(d.fichero), media_type=d.mime, headers={
+        "Content-Disposition": f'inline; filename="{empleados.nombre_fichero(d.nombre)}"', "Cache-Control": "private, no-store"})
+
+
+@router.delete("/documentos/{did}")
+def delete_document(did: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    d = _documento(db, scope, did)
+    audit(db, scope.user, "borrar_documento", "personal", d.staff_id, {"documento": did, "tipo": d.tipo})
+    fichero = d.fichero
+    db.delete(d)
+    db.commit()
+    documentos.borrar(fichero)
+    return {"ok": True}
+
+
+@router.post("/{pid}/enlace-fichaje")
+def time_link(pid: int, request: Request, nuevo: bool = False, scope: Scope = Depends(get_scope),
+              db: Session = Depends(get_db)):
+    """Enlace personal para fichar desde el móvil sin usuario del PMS. «nuevo» lo cambia (el anterior deja de valer)."""
+    p = _gestionada(db, scope, pid)
+    if not empleados.es_propio(p):
+        bad_request("Solo ficha el personal propio (no las subcontratas)")
+    if nuevo or not p.fichaje_clave:
+        p.fichaje_clave = empleados.clave_nueva()
+        audit(db, scope.user, "enlace_fichaje", "personal", p.id, {"nuevo": True})
+        db.commit()
+    base = (settings.url or str(request.base_url)).rstrip("/")
+    url = f"{base}/fichar/{p.id}?k={p.fichaje_clave}"
+    movil = firma_contrato.movil_whatsapp(p.telefono or "")
+    texto = (f"Hola {p.nombre.split()[0]}, este es tu enlace personal para registrar la jornada (entrada y salida): "
+             f"{url} . Guárdalo en la pantalla de inicio del móvil y no lo compartas.")
+    return {"url": url, "whatsapp": f"https://wa.me/{movil}?text={quote(texto)}" if movil else None}
 
 
 # --------------------------------------------------------------------------- envíos

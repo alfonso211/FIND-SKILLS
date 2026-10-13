@@ -11,12 +11,12 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from .. import ausencias as au
-from .. import avisos
+from .. import avisos, empleados
 from ..database import get_db
 from ..models import (COLECTIVOS_AUSENCIA, ESTADOS_AUSENCIA, TIPOS_AUSENCIA, Absence, Asset, EmailLog, StaffMember,
                       User)
 from ..security import Scope, audit, get_scope
-from ..utils import bad_request, get_or_404
+from ..utils import bad_request, get_or_404, scoped
 
 router = APIRouter(prefix="/api/ausencias", tags=["ausencias"])
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -56,6 +56,10 @@ def _out(db: Session, scope: Scope, x: Absence, nombres: dict[int, str]) -> dict
              puede_anular=au.puede_anular(db, scope, x))
     if not detalle:
         d.update(tipo="ausencia", motivo=None)
+    d["activo"] = db.get(Asset, x.asset_id).nombre
+    # vacaciones: saldo de la persona a la vista de quien decide (aviso si lo supera)
+    if x.tipo == "vacaciones" and x.estado in ("pendiente", "visto_bueno") and (d["puede_aprobar"] or d["puede_visto_bueno"]):
+        d["aviso_saldo"] = empleados.aviso_saldo(db, x)
     return d
 
 
@@ -155,10 +159,17 @@ def people(asset_id: int, scope: Scope = Depends(get_scope), db: Session = Depen
 
 
 @router.get("")
-def list_absences(asset_id: int, desde: date | None = None, hasta: date | None = None, estado: str | None = None,
-                  scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    _activo(db, scope, asset_id)
-    stmt = select(Absence).where(Absence.asset_id == asset_id)
+def list_absences(asset_id: int | None = None, desde: date | None = None, hasta: date | None = None,
+                  estado: str | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """De un activo o, sin activo, de todos los que ve el usuario (vista global de la dirección)."""
+    if asset_id:
+        _activo(db, scope, asset_id)
+        stmt = select(Absence).where(Absence.asset_id == asset_id)
+    else:
+        ids = scope.asset_ids("activos.ver")
+        if ids is not None and not ids:
+            raise HTTPException(403, "Sin activos")
+        stmt = scoped(select(Absence), Absence.asset_id, ids)
     if desde:
         stmt = stmt.where(Absence.hasta >= desde)
     if hasta:
@@ -216,6 +227,7 @@ def create_absence(data: AbsenceIn, scope: Scope = Depends(get_scope), db: Sessi
     db.commit()
     _avisos_nueva(db, x, a, scope.user.id)
     out = _uno(db, scope, x)
+    out["aviso_saldo"] = empleados.aviso_saldo(db, x)
     # coincidencias con otras personas del mismo colectivo (para organizar el servicio)
     out["coinciden"] = [o.persona for o in db.scalars(select(Absence).where(
         Absence.asset_id == a.id, Absence.colectivo == colectivo, Absence.id != x.id,
@@ -288,10 +300,12 @@ def cancel(xid: int, data: NotaIn, scope: Scope = Depends(get_scope), db: Sessio
 
 
 # --------------------------------------------------------------------------- resumen anual y Excel
-def _resumen(db: Session, scope: Scope, asset_id: int, anio: int) -> list[dict]:
+def _resumen(db: Session, scope: Scope, asset_id: int | None, anio: int) -> list[dict]:
     ini, fin = date(anio, 1, 1), date(anio, 12, 31)
-    filas = db.scalars(select(Absence).where(Absence.asset_id == asset_id, Absence.estado == "aprobada",
-                                             Absence.desde <= fin, Absence.hasta >= ini))
+    stmt = select(Absence).where(Absence.estado == "aprobada", Absence.desde <= fin, Absence.hasta >= ini)
+    stmt = stmt.where(Absence.asset_id == asset_id) if asset_id else scoped(stmt, Absence.asset_id,
+                                                                            scope.asset_ids("activos.ver"))
+    filas = db.scalars(stmt)
     por: dict[tuple, dict] = {}
     for x in filas:
         if not au.ve_detalle(db, scope, x) and x.tipo == "baja_medica":
@@ -311,27 +325,30 @@ def _resumen(db: Session, scope: Scope, asset_id: int, anio: int) -> list[dict]:
 
 
 @router.get("/resumen")
-def summary(asset_id: int, anio: int | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    _activo(db, scope, asset_id)
+def summary(asset_id: int | None = None, anio: int | None = None, scope: Scope = Depends(get_scope),
+            db: Session = Depends(get_db)):
+    if asset_id:
+        _activo(db, scope, asset_id)
     anio = anio or date.today().year
     return {"anio": anio, "tipos": TIPOS_AUSENCIA, "personas": _resumen(db, scope, asset_id, anio)}
 
 
 @router.get("/excel")
-def excel(asset_id: int, anio: int | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+def excel(asset_id: int | None = None, anio: int | None = None, scope: Scope = Depends(get_scope),
+          db: Session = Depends(get_db)):
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
-    a = _activo(db, scope, asset_id)
+    a = _activo(db, scope, asset_id) if asset_id else None
     anio = anio or date.today().year
     negrita, fondo = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="1A1A1C")
     wb = Workbook()
     ws = wb.active
     ws.title = "Ausencias"
     filas = list_absences(asset_id, date(anio, 1, 1), date(anio, 12, 31), None, scope, db)
-    ws.append(["Persona", "Colectivo", "Tipo", "Desde", "Hasta", "Días naturales", "Días laborables", "Estado",
-               "Aprueba", "Visto bueno R1", "Resuelta por", "Motivo / nota"])
+    ws.append(["Activo", "Persona", "Colectivo", "Tipo", "Desde", "Hasta", "Días naturales", "Días laborables",
+               "Estado", "Aprueba", "Visto bueno R1", "Resuelta por", "Motivo / nota"])
     for x in filas:
-        ws.append([x["persona"], x["colectivo_nombre"], x["tipo_nombre"], date.fromisoformat(x["desde"]),
+        ws.append([x["activo"], x["persona"], x["colectivo_nombre"], x["tipo_nombre"], date.fromisoformat(x["desde"]),
                    date.fromisoformat(x["hasta"]), x["dias_naturales"], x["dias_laborables"], x["estado_nombre"],
                    x["aprueba"], x["visto_bueno_nombre"] or "", x["resuelto_nombre"] or "",
                    " · ".join(t for t in (x["motivo"], x["nota"]) if t)])
@@ -346,9 +363,9 @@ def excel(asset_id: int, anio: int | None = None, scope: Scope = Depends(get_sco
         for col in hoja.columns:
             hoja.column_dimensions[col[0].column_letter].width = max(12, min(40, max(len(str(c.value or "")) for c in col) + 2))
     for fila in ws.iter_rows(min_row=2):
-        for c in fila[3:5]:
+        for c in fila[4:6]:
             c.number_format = "DD/MM/YYYY"
     buf = io.BytesIO()
     wb.save(buf)
     return Response(buf.getvalue(), media_type=XLSX, headers={
-        "Content-Disposition": f'attachment; filename="Ausencias_{a.codigo}_{anio}.xlsx"'})
+        "Content-Disposition": f'attachment; filename="Ausencias_{a.codigo if a else "todos"}_{anio}.xlsx"'})

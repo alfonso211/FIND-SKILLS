@@ -60,11 +60,13 @@ TIPOS = {
     "ot_tecnico": ("Órdenes de trabajo: resultado del técnico al momento (resuelta, pendiente de material, otra visita, "
                    "derivar a subcontrata…) y recordatorio diario de las que quedan en pausa hasta que se actúe",
                    "mantenimiento.cerrar"),
+    "personal": ("Personal: documentos del empleado que vencen en 30 días o ya vencidos (contrato, PRL, "
+                 "reconocimiento médico…) y fichajes sin salida (resumen diario)", "personal.autorizar"),
     "agenda": ("Agenda: tareas, reuniones y recordatorios que le envían, aviso antes de cada cita y su agenda del "
                "día en el resumen", None),
 }
 RESUMEN = ("hitos_normativos", "pagos_retenidos", "facturas_pendientes", "estancias_vencidas", "recibos_impagados", "contratos_vencen", "garajes_impagados",
-           "garajes_vencen", "revisiones_normativas", "partes_estado")
+           "garajes_vencen", "revisiones_normativas", "partes_estado", "personal")
 DIAS_ESTANCIAS = 3
 DIAS_GARAJES = 30
 DIAS_CONTRATOS, DIAS_REVISIONES = 90, 30
@@ -498,7 +500,20 @@ def _datos_resumen(db, dia: date) -> dict[str, list[tuple[int, list]]]:
     from .routers.partes_estado import fila_aviso
     partes = [(p.asset_id, fila_aviso(db, p)) for p in db.scalars(
         select(StatusReport).where(StatusReport.estado.in_(ABIERTOS)).order_by(StatusReport.creado))]
-    return {"partes_estado": partes, "hitos_normativos": normativos, "pagos_retenidos": retenidos, "facturas_pendientes": facturas, "estancias_vencidas": estancias, "recibos_impagados": recibos, "contratos_vencen": contratos,
+    from . import empleados
+    from .models import TIPOS_DOC_EMPLEADO
+    personal = []
+    for d in empleados.documentos_por_vencer(db, dia):
+        st = db.get(StaffMember, d.staff_id)
+        if st.activo:
+            dias_ = (d.vence - dia).days
+            personal.append((st.asset_id, [st.nombre, TIPOS_DOC_EMPLEADO.get(d.tipo, d.tipo), d.vence.strftime("%d/%m/%Y"),
+                                           f"VENCIDO hace {-dias_} días" if dias_ < 0 else f"vence en {dias_} días"]))
+    for t in empleados.olvidos(db, dia):
+        st = db.get(StaffMember, t.staff_id)
+        personal.append((st.asset_id, [st.nombre, "Fichaje sin salida", t.entrada.strftime("%d/%m/%Y %H:%M"),
+                                       "corregir en Registro de jornada"]))
+    return {"personal": personal, "partes_estado": partes, "hitos_normativos": normativos, "pagos_retenidos": retenidos, "facturas_pendientes": facturas, "estancias_vencidas": estancias, "recibos_impagados": recibos, "contratos_vencen": contratos,
             "garajes_impagados": garajes,
             "garajes_vencen": garajes_fin, "revisiones_normativas": revisiones}
 
@@ -527,6 +542,8 @@ SECCIONES = {
     "partes_estado": ("Partes de estado sin resolver: generar la orden de trabajo o descartarlos",
                       ["Activo", "Parte", "Ubicación", "Elemento · deficiencia", "Gravedad", "Desde", "Situación"],
                       "parte(s) de estado"),
+    "personal": ("Personal: documentos que vencen y fichajes sin salida", ["Empleado", "Asunto", "Fecha", "Situación"],
+                 "aviso(s) de personal"),
     "revisiones_normativas": ("Revisiones preventivas y normativas", ["Activo", "Revisión", "Normativa", "Mantenedor",
                                                                       "Fecha", "Plazo"], "revisión(es)"),
 }

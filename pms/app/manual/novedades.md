@@ -1,5 +1,13 @@
 # Novedades
 
+## 2026-10-13 · Versión 1.39 · Gestión del personal
+- **Acceso**: el grupo **Personal** sube al segundo lugar del menú: Vacaciones y ausencias, Fichas del personal, Registro de jornada y Mi jornada.
+- **Dirección**: con **Todos los activos**, las ausencias de todos los activos en una sola pantalla, con resumen y Excel.
+- **Saldo de vacaciones**: cada ficha muestra los días que le quedan. Si una solicitud lo supera, aviso en rojo.
+- **Ficha del empleado** (Recepción 1 y dirección): DNI, puesto, contrato, jornada, alta y baja, y **documentos** con vencimiento (contrato, reconocimiento médico, formación…).
+- **Registro de jornada**: el personal propio ficha entrada y salida desde **Mi jornada** o con su **enlace** en el móvil. Correcciones con motivo, informe PDF para firmar y Excel para la asesoría.
+- **Panel de control**: nueva tarjeta **Personal hoy**.
+
 ## 2026-10-13 · Versión 1.38 · Órdenes de trabajo desde el portal del colaborador
 - **Colaboradores (subcontratas)**: en su portal, botón **Gestionar** en cada orden abierta. Abre la misma pantalla que el enlace de WhatsApp (llegada, trabajos, material, estado al finalizar y firma), sin depender del mensaje. Nueva columna **Último resultado**.
 

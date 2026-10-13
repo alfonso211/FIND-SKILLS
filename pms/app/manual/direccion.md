@@ -71,6 +71,15 @@
 - **Personal → Vacaciones y ausencias**: dirección aprueba las de Recepción 1, Recepción 2 (después del visto bueno de Recepción 1) y oficinas. El aviso llega al Director General y al Director Técnico y **basta con que apruebe uno**; la presidencia no interviene. Las pendientes salen también en el **Panel de control**. Las de limpieza y conserjería las aprueba Recepción 1 (dirección también puede).
 - Las de **mantenimiento** solo las autoriza el **director técnico**: rol **Dirección Técnica** (permiso «personal.autorizar_mto»), que se suma a su rol de dirección. Se asigna en Administración → Usuarios.
 - **Resumen del año** y **Excel** con todas las ausencias y los días aprobados por persona.
+- Con **Todos los activos** arriba, la pantalla muestra las ausencias de todos los activos (con el nombre de cada uno), y el resumen y el Excel también.
+- Si una solicitud de vacaciones **supera el saldo** de la persona, sale el aviso en rojo antes de aprobarla.
+
+## Gestión del personal: ficha, saldo, documentos y jornada
+- **Personal → Fichas del personal → Editar**: ficha del empleado (DNI, puesto, contrato, jornada semanal, alta y baja, días de vacaciones del convenio y su usuario del PMS). Solo la ven Recepción 1 de su activo y la dirección.
+- **Saldo de vacaciones**: los días del convenio (22 laborables por defecto, o los que indique la ficha) prorrateados por la fecha de alta y de baja, menos las aprobadas. Se ve en la columna **Vacaciones**.
+- **Docs.**: contrato, nóminas, reconocimiento médico, formación PRL… cifrados y con vencimiento. Los que vencen en 30 días salen en el panel y en el resumen diario de correo.
+- **Registro de jornada** (art. 34.9 ET): el personal propio ficha desde **Mi jornada** (con usuario) o con su **Enlace** personal en el móvil. En **Personal → Registro de jornada**: horas del mes por persona, **Detalle**, **Corregir** (queda el original, quién y el motivo), **Registro manual**, **Informe PDF** para firmar y **Excel** para la asesoría. Se conserva 4 años.
+- **Panel de control**: tarjeta **Personal hoy** con quién falta, quién está dentro, olvidos de fichar la salida y documentos que vencen.
 
 ## Colaboradores (subcontratas)
 - **Alta**: en *Administración → Usuarios*, nuevo usuario con su correo, en **Colaborador externo de** elija su empresa (ficha de Proveedores) y dele el rol **Colaborador** en los activos donde trabaja. Un usuario por persona; desactívelo al terminar el contrato.

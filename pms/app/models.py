@@ -445,7 +445,10 @@ class WorkOrder(Base):
 
 
 AREAS_PERSONAL = {"mantenimiento": "Mantenimiento", "limpieza": "Limpieza", "conserjeria": "Conserjería",
+                  "recepcion": "Recepción", "administracion": "Administración y oficinas",
                   "otros": "Otros (por administración)"}
+TIPOS_CONTRATO = {"indefinido": "Indefinido", "fijo_discontinuo": "Fijo discontinuo", "temporal": "Temporal",
+                  "practicas": "Prácticas / formación", "autonomo": "Autónomo / subcontrata", "otro": "Otro"}
 
 
 class StaffMember(Base):
@@ -465,6 +468,17 @@ class StaffMember(Base):
     notas: Mapped[str | None] = mapped_column(Text)
     # empresa (ficha de Proveedores) a la que pertenece: la ve su colaborador en el portal
     supplier_id: Mapped[int | None] = mapped_column(ForeignKey("proveedores.id"), index=True)
+    # ficha del empleado (personal propio): datos laborales, vacaciones y registro de jornada
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), index=True)  # su usuario del PMS
+    dni: Mapped[str | None] = mapped_column(String(20))
+    puesto: Mapped[str | None] = mapped_column(String(120))
+    tipo_contrato: Mapped[str | None] = mapped_column(String(20))  # TIPOS_CONTRATO
+    fecha_alta: Mapped[date | None] = mapped_column(Date)
+    fecha_baja: Mapped[date | None] = mapped_column(Date)
+    jornada_semanal: Mapped[float | None] = mapped_column(Numeric(5, 2))  # horas de contrato por semana
+    vacaciones_dias: Mapped[int | None] = mapped_column(Integer)  # días de vacaciones al año (convenio)
+    vacaciones_tipo: Mapped[str | None] = mapped_column(String(12))  # laborables | naturales
+    fichaje_clave: Mapped[str | None] = mapped_column(String(40))  # enlace personal para fichar (revocable)
 
 
 # --------------------------------------------------------------------------- documentos recibidos y gastos
@@ -1072,4 +1086,50 @@ class WorkOrderVisit(Base):
     firma: Mapped[str | None] = mapped_column(String(64))  # fichero cifrado con la firma (PNG)
     enviado: Mapped[datetime | None] = mapped_column(DateTime)
     ip: Mapped[str | None] = mapped_column(String(45))
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+TIPOS_DOC_EMPLEADO = {
+    "contrato": "Contrato de trabajo", "nomina": "Nómina", "alta_ss": "Alta / baja en la Seguridad Social",
+    "dni": "DNI / NIE", "prl": "Formación PRL", "epi": "Entrega de EPI", "reconocimiento": "Reconocimiento médico",
+    "certificado": "Certificado / carné profesional", "otro": "Otro",
+}
+
+
+class StaffDocument(Base):
+    """Documento de la ficha del empleado (contrato, nóminas, PRL, EPI, reconocimiento médico…), cifrado fuera de la
+    base de datos. Con fecha de vencimiento se avisa antes de que caduque."""
+    __tablename__ = "documentos_personal"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    staff_id: Mapped[int] = mapped_column(ForeignKey("personal_servicio.id"), index=True)
+    tipo: Mapped[str] = mapped_column(String(20))
+    nombre: Mapped[str] = mapped_column(String(160))
+    fecha: Mapped[date | None] = mapped_column(Date)
+    vence: Mapped[date | None] = mapped_column(Date, index=True)
+    notas: Mapped[str | None] = mapped_column(String(300))
+    fichero: Mapped[str] = mapped_column(String(64))
+    mime: Mapped[str] = mapped_column(String(60))
+    tamano: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    subido: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+
+
+class TimeEntry(Base):
+    """Registro de jornada (RD-ley 8/2019): entrada y salida de cada día. Las correcciones guardan el registro
+    original, quién y por qué; se conservan 4 años."""
+    __tablename__ = "fichajes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    staff_id: Mapped[int] = mapped_column(ForeignKey("personal_servicio.id"), index=True)
+    entrada: Mapped[datetime] = mapped_column(DateTime, index=True)
+    salida: Mapped[datetime | None] = mapped_column(DateTime)
+    origen: Mapped[str] = mapped_column(String(12), default="pms")  # pms | enlace | manual
+    lat: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    lon: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    lat_salida: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    lon_salida: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    original: Mapped[dict | None] = mapped_column(JSON)  # antes de corregirlo
+    editado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    editado_en: Mapped[datetime | None] = mapped_column(DateTime)
+    motivo: Mapped[str | None] = mapped_column(String(300))
     creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
