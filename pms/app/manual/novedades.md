@@ -1,5 +1,11 @@
 # Novedades
 
+## 2026-10-15 · Versión 1.46 · Revisión en el móvil, OT por roturas, factura del exceso e informe de roturas
+- **Limpieza · revisión de salida en el móvil**: un enlace por apartamento, sin usuario. Limpieza marca lo que falta o está roto y Recepción lo ve cargado al dar la salida. Recepción 1 recibe un aviso por correo.
+- **Recepción · OT por roturas**: lo roto que hay que reponer o reparar abre una orden de trabajo a mantenimiento al dar la salida.
+- **Recepción y Dirección · exceso sobre la fianza**: se factura al cliente sin IVA, por ser una indemnización, y queda pendiente de cobro.
+- **Dirección · informe de roturas**: por artículo y por apartamento, con Excel.
+
 ## 2026-10-15 · Versión 1.45 · Hoja de revisión de salida, precios de reposición y dotación por apartamento
 - **Recepción y limpieza · hoja de revisión de salida**: PDF por apartamento con su dotación y casillas OK / Falta / Roto. En el parte de limpieza salen todas las del día.
 - **Recepción · roturas en la fianza**: al dar la salida se eligen los artículos rotos o que faltan y se descuentan solos de la fianza a su precio de reposición. El detalle llega a la Dirección y a la gestoría.

@@ -209,3 +209,54 @@ def test_precios_reposicion_cargos_y_hojas(client, admin, ids):
     hs = client.get(f"/api/limpieza/hojas-revision.pdf?asset_id={sae}", headers=admin)
     assert hs.status_code == 200 and hs.content.startswith(b"%PDF")
     assert client.delete(f"/api/dotacion/unidad/{u}", headers=admin).json()["origen"] != "apartamento"
+
+
+def test_revision_movil_ot_factura_exceso_e_informe(client, admin, ids):
+    from urllib.parse import parse_qs, urlparse
+    sfl = ids["assets"]["SFL"]["id"]
+    r = _reserva(client, admin, sfl, {"guest": {**COMPLETO, "documento_num": "55555555K", "nombre": "Exceso"}},
+                 "EX-1", dias=(-4, 0))
+    client.put(f"/api/turistico/reservas/{r['id']}", headers=admin, json={"estado": "checkin"})
+    client.post(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin, json={
+        "fecha_firma": HOY.isoformat(), "fianza": 50, "motivo": ["turismo"], "acreditacion": ["dni"],
+        "solo_guardar": True})
+    # enlace al móvil de limpieza (firmado, sin usuario): marca lo roto y lo que falta
+    e = client.get(f"/api/revision/reserva/{r['id']}/enlace", headers=admin).json()
+    assert "/revision/" in e["url"] and "wa.me" in e["whatsapp"]
+    dia = client.get(f"/api/revision/dia?asset_id={sfl}", headers=admin).json()
+    assert any(x["reserva_id"] == r["id"] for x in dia["salidas"])
+    u = urlparse(e["url"])
+    k = {a: b[0] for a, b in parse_qs(u.query).items()}
+    assert client.get(u.path).status_code == 200
+    assert client.get(f"/api/publico/revision/{r['id']}", params={**k, "f": "0" * 32}).status_code == 404
+    datos = client.get(f"/api/publico/revision/{r['id']}", params=k).json()
+    cods = [x["codigo"] for x in datos["items"]]
+    tv = next(c for c in cods if c == "SAL01")
+    avisos.BANDEJA.clear()
+    g = client.post(f"/api/publico/revision/{r['id']}", params=k, json={
+        "nombre": "Limpieza Prueba", "nota": "Mancha en el sofá",
+        "marcas": [{"codigo": tv, "estado": "roto"}, {"codigo": "MEN01", "estado": "falta", "cantidad": 2}]})
+    assert g.status_code == 200 and g.json()["incidencias"] == 2
+    assert any("Revisión de salida" in m["asunto"] for m in avisos.BANDEJA)  # aviso a Recepción 1
+    rev = client.get(f"/api/turistico/reservas/{r['id']}/dotacion", headers=admin)
+    assert client.get(f"/api/revision/reserva/{r['id']}/enlace", headers=admin).json()["revision"]["nombre"] == \
+        "Limpieza Prueba" and rev.status_code == 200
+    # salida: la TV rota abre OT a mantenimiento y lo que supera la fianza se factura (sin IVA, pendiente)
+    x = client.post(f"/api/turistico/reservas/{r['id']}/checkout", headers=admin, json={"fianza": {
+        "forma": "efectivo", "facturar_exceso": True, "cargos": [
+            {"codigo": tv, "articulo": "Smart TV", "precio": 450, "ot": True},
+            {"codigo": "MEN01", "articulo": "Platos llanos", "cantidad": 2, "precio": 4}]}})
+    assert x.status_code == 200, x.text
+    x = x.json()
+    assert x["devolucion"]["importe"] == 0 and len(x["ots"]) == 1 and x["factura_exceso"]["total"] == 408
+    ot = client.get(f"/api/mantenimiento/ordenes/{x['ots'][0]}", headers=admin)
+    assert ot.status_code != 200 or "Smart TV" in ot.text
+    f = client.get(f"/api/facturas/{x['factura_exceso']['id']}", headers=admin).json()
+    assert f["cobro"] == "pendiente" and "78.Tres" in (f["exencion"] or "") and float(f["cuota_iva"]) == 0
+    # informe de roturas del periodo (pantalla y Excel)
+    q = {"desde": (HOY - timedelta(days=1)).isoformat(), "hasta": (HOY + timedelta(days=3)).isoformat()}
+    inf = client.get("/api/turistico/informe-roturas", headers=admin, params=q).json()
+    tv_inf = next(a for a in inf["por_articulo"] if a["codigo"] == tv)
+    assert tv_inf["importe"] >= 450 and tv_inf["ots"] >= 1 and inf["facturado_exceso"] >= 408
+    xl = client.get("/api/turistico/informe-roturas", headers=admin, params={**q, "formato": "xlsx"})
+    assert xl.status_code == 200 and xl.content[:2] == b"PK"

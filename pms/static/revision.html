@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/static/marca/favicon.png">
+<title>Revisión de salida · INVERPMS</title>
+<style>
+  :root { --ink: #18181b; --muted: #6f6a61; --line: #e8e3d8; --bg: #f6f4ef; --oro: #c9a45a; --oro-claro: #e6cf95; --negro: #0e0e10; --ok: #2e7d4f; --bad: #b3261e; --warn: #b7791f; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.45 "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif; }
+  header { background: var(--negro); color: #fff; padding: 14px 16px; border-bottom: 3px solid var(--oro); position: sticky; top: 0; z-index: 2; }
+  header small { color: var(--oro-claro); letter-spacing: .08em; text-transform: uppercase; font-size: 11px; }
+  header h1 { margin: 2px 0 0; font-size: 20px; font-weight: 600; }
+  main { padding: 12px; max-width: 720px; margin: 0 auto; }
+  section { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; }
+  h2 { font-size: 15px; margin: 4px 0 8px; color: var(--negro); }
+  .fila { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
+  .fila:first-of-type { border-top: 0; }
+  .art { flex: 1 1 180px; } .art small { color: var(--muted); display: block; }
+  .btns { display: flex; gap: 6px; }
+  .btns button { min-width: 64px; min-height: 44px; border: 1px solid #cfc8b8; border-radius: 10px; background: #fff; font: inherit; font-size: 14px; font-weight: 600; }
+  .btns button.on[data-e=ok] { background: var(--ok); color: #fff; border-color: var(--ok); }
+  .btns button.on[data-e=falta] { background: var(--warn); color: #fff; border-color: var(--warn); }
+  .btns button.on[data-e=roto] { background: var(--bad); color: #fff; border-color: var(--bad); }
+  input, textarea { font: inherit; padding: 10px; border: 1px solid #cfc8b8; border-radius: 10px; width: 100%; }
+  input.cant { width: 70px; }
+  .enviar { width: 100%; min-height: 56px; border: 0; border-radius: 12px; background: var(--oro); color: var(--negro); font: inherit; font-size: 18px; font-weight: 700; }
+  .muted { color: var(--muted); font-size: 13px; } .error { color: var(--bad); font-weight: 600; } .okmsg { color: var(--ok); font-weight: 700; font-size: 18px; }
+</style>
+</head>
+<body>
+<header><small>INVERPMS · Revisión de salida</small><h1 id="tit">Cargando…</h1></header>
+<main id="app"><p class="muted">Cargando…</p></main>
+<script>
+"use strict";
+const rid = location.pathname.split("/").filter(Boolean).pop();
+const q = new URLSearchParams(location.search);
+const api = `/api/publico/revision/${rid}?c=${encodeURIComponent(q.get("c") || "")}&f=${encodeURIComponent(q.get("f") || "")}`;
+const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+async function json(r) { const j = await r.json().catch(() => null); if (!r.ok) throw new Error(j?.detail || `Error ${r.status}`); return j; }
+const estado = {}, cant = {};
+function pinta(d) {
+  document.getElementById("tit").textContent = `${d.apartamento} · ${d.activo}`;
+  (d.revision?.items || []).forEach((x) => { estado[x.codigo] = x.estado; cant[x.codigo] = x.cantidad; });
+  const zonas = Object.entries(d.zonas).map(([z, nz]) => {
+    const items = d.items.filter((x) => x.zona === z);
+    if (!items.length) return "";
+    return `<section><h2>${esc(nz)}</h2>${items.map((x) => `<div class="fila" data-c="${esc(x.codigo)}">
+      <div class="art">${esc(x.articulo)}<small>Debe haber: ${esc(x.cantidad)}</small></div>
+      <div class="btns"><button type="button" data-e="ok">OK</button><button type="button" data-e="falta">Falta</button><button type="button" data-e="roto">Roto</button></div>
+      <input class="cant" type="number" min="1" value="${cant[x.codigo] || 1}" aria-label="Unidades" style="display:none"></div>`).join("")}</section>`;
+  }).join("");
+  document.getElementById("app").innerHTML = `
+    ${d.revision ? `<section><p class="muted">Ya revisado por ${esc(d.revision.nombre)} el ${new Date(d.revision.fecha).toLocaleString("es-ES")}. Puede corregirlo y volver a enviar.</p></section>` : ""}
+    <section><p>Marque solo lo que <b>falta</b> o está <b>roto</b> (e indique cuántas unidades). Lo demás se da por bien.</p></section>
+    ${zonas}
+    <section><label>Observaciones (manchas, desperfectos, objetos olvidados)<textarea id="nota" rows="3">${esc(d.revision?.nota || "")}</textarea></label>
+      <p><label>Su nombre<input id="nombre" value="${esc(d.revision?.nombre || localStorage.getItem("pms_rev_nombre") || "")}" autocomplete="name"></label></p>
+      <button class="enviar" id="enviar">Enviar revisión a recepción</button><p class="error" id="msg"></p></section>`;
+  document.querySelectorAll(".fila").forEach((f) => {
+    const c = f.dataset.c, inp = f.querySelector(".cant");
+    const marca = () => { f.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.e === (estado[c] || "ok"))); inp.style.display = estado[c] ? "" : "none"; };
+    f.querySelectorAll("button").forEach((b) => (b.onclick = () => { if (b.dataset.e === "ok") delete estado[c]; else estado[c] = b.dataset.e; marca(); }));
+    inp.oninput = () => (cant[c] = Math.max(1, Number(inp.value) || 1));
+    marca();
+  });
+  document.getElementById("enviar").onclick = async () => {
+    const nombre = document.getElementById("nombre").value.trim(), msg = document.getElementById("msg");
+    if (nombre.length < 2) { msg.textContent = "Escriba su nombre."; return; }
+    try { localStorage.setItem("pms_rev_nombre", nombre); } catch (e) { /* sin almacenamiento */ }
+    const marcas = Object.entries(estado).map(([codigo, e]) => ({ codigo, estado: e, cantidad: cant[codigo] || 1 }));
+    document.getElementById("enviar").disabled = true;
+    try {
+      const r = await json(await fetch(api, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nombre, nota: document.getElementById("nota").value, marcas }) }));
+      document.getElementById("app").innerHTML = `<section><p class="okmsg">✔ Revisión enviada a recepción</p><p>${r.incidencias ? `${r.incidencias} artículo(s) marcados.` : "Todo correcto."} Ya puede cerrar esta página.</p></section>`;
+      window.scrollTo(0, 0);
+    } catch (e) { msg.textContent = e.message; document.getElementById("enviar").disabled = false; }
+  };
+}
+fetch(api).then(json).then(pinta).catch((e) => { document.getElementById("tit").textContent = "Enlace no válido"; document.getElementById("app").innerHTML = `<section><p class="error">${esc(e.message)}</p></section>`; });
+</script>
+</body>
+</html>

@@ -20,6 +20,9 @@ from .utils import bad_request
 
 IVA_GENERAL = Decimal("21")
 IVA_ALOJAMIENTO = Decimal("10")  # alojamiento en apartamentos turísticos (art. 91.Uno.2.2º Ley 37/1992)
+# Lo que se cobra al cliente por roturas o faltas de la dotación es una indemnización por daños, no un servicio
+EXENCION_INDEMNIZACION = ("Operación no sujeta a IVA: indemnización por daños y reposición de la dotación del "
+                          "apartamento (art. 78.Tres.1º de la Ley 37/1992 del IVA).")
 EXENCION_ARRENDAMIENTO = ("Operación exenta de IVA: arrendamiento de vivienda y, en su caso, de garajes y anexos "
                           "arrendados conjuntamente con ella (art. 20.Uno.23º Ley 37/1992)")
 FORMAS_PAGO = {"efectivo": "Efectivo", "tarjeta": "Tarjeta", "transferencia": "Transferencia",
@@ -145,7 +148,7 @@ def emitir(db: Session, user: User | None, *, company: Company, serie: str, asse
            contact_id: int | None, lineas: list[dict] | None, fecha_operacion: date,
            forma_pago: str | None = None, charge_id: int | None = None, reservation_id: int | None = None,
            rectifica: Invoice | None = None, motivo: str | None = None, fecha: date | None = None,
-           cobro: str = "cobrada") -> Invoice:
+           cobro: str = "cobrada", exencion: str | None = None) -> Invoice:
     emisor = datos_emisor(company)
     # Criterio de la gestoría: toda factura emitida lleva como fecha de expedición el último día del mes en que se
     # emite, sea cual sea el día (PDF, libro de facturas y exportaciones). El día real del cobro o del servicio
@@ -170,7 +173,7 @@ def emitir(db: Session, user: User | None, *, company: Company, serie: str, asse
                 motivo=motivo, company_id=company.id, asset_id=asset_id, emisor=emisor, contact_id=contact_id,
                 cliente=cliente, fecha_expedicion=fecha, fecha_operacion=fecha_operacion, concepto=concepto,
                 lineas=lineas, base_imponible=base, tipo_iva=next(iter(tipos)) if len(tipos) == 1 else None,
-                cuota_iva=cuota, total=total, exencion=EXENCION_ARRENDAMIENTO if 0 in tipos else None,
+                cuota_iva=cuota, total=total, exencion=exencion or (EXENCION_ARRENDAMIENTO if 0 in tipos else None),
                 forma_pago=forma_pago, charge_id=charge_id, reservation_id=reservation_id,
                 huella=huella(emisor["nif"], codigo, fecha, total, cuota, anterior), huella_anterior=anterior,
                 user_id=user.id if user else None, cobro=cobro)

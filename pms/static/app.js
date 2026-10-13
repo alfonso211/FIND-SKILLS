@@ -1417,15 +1417,18 @@ async function salidaReserva(r, reload, preguntar = false) {
     { html: `<fieldset><legend>Roturas y faltas (se descuentan a su precio de reposición)</legend>
       <div class="toolbar"><select data-art><option value="">Elija el artículo de la dotación…</option>${dot.items.map((x, i) => `<option value="${i}">${esc(x.articulo)}${x.precio ? ` · ${eur(x.precio)}` : ""}</option>`).join("")}<option value="otro">Otro (escribir)…</option></select>
       <input data-cant type="number" min="1" value="1" style="width:5em"><button type="button" class="btn sm" data-add>+ Añadir</button>
-      <button type="button" class="btn sm" data-hoja>Hoja de revisión (PDF)</button></div><div data-cargos></div></fieldset>` },
+      <button type="button" class="btn sm" data-hoja>Hoja de revisión (PDF)</button><button type="button" class="btn sm" data-movil>Revisión en el móvil de limpieza</button></div>
+      ${info.revision ? `<p class="cli-ok">✔ Revisado por <b>${esc(info.revision.nombre)}</b> (${new Date(info.revision.fecha).toLocaleString("es-ES")}): lo marcado ya está cargado abajo.${info.revision.nota ? ` Nota: ${esc(info.revision.nota)}` : ""}</p>` : ""}
+      <div data-cargos></div><label class="check" data-exc style="display:none"><input type="checkbox" name="facturar_exceso" checked> Facturar al cliente lo que supera la fianza (sin IVA: indemnización; queda pendiente de cobro)</label></fieldset>` },
     { k: "importe", t: "Importe a devolver €", type: "number", def: info.fianza, step: "0.01" },
     { k: "retenido_motivo", t: "Motivo si se retiene algo más (las roturas de la lista ya van detalladas)", type: "textarea", wide: true },
     { k: "iban", t: "IBAN de la cuenta del cliente", def: info.iban || "", wide: true },
     { k: "fecha", t: "Fecha de la transferencia / devolución", type: "date", def: today() },
     { k: "nota", t: "Nota para la Dirección", type: "textarea", wide: true },
   ], {}, async (d) => {
-    const x = await post(`/api/turistico/reservas/${r.id}/checkout`, { fianza: { ...clean({ ...d, importe: d.forma === "no_procede" ? 0 : d.importe }), cargos } });
-    toast(`Salida realizada · fianza: ${x.devolucion.forma_texto}`);
+    const facturar_exceso = f.elements.facturar_exceso.checked;
+    const x = await post(`/api/turistico/reservas/${r.id}/checkout`, { fianza: { ...clean({ ...d, importe: d.forma === "no_procede" ? 0 : d.importe }), cargos, facturar_exceso } });
+    toast(`Salida realizada · fianza: ${x.devolucion.forma_texto}${x.ots ? ` · ${x.ots.length} OT a mantenimiento` : ""}${x.factura_exceso ? ` · factura ${x.factura_exceso.codigo} (${eur(x.factura_exceso.total)}, pendiente de cobro)` : ""}`);
     reload && reload();
     if (x.whatsapp) setTimeout(() => avisoFianza(x), 0);
   }, "Dar la salida");
@@ -1440,9 +1443,12 @@ async function salidaReserva(r, reload, preguntar = false) {
   f.elements.forma.onchange = sync; f.elements.importe.oninput = sync; sync();
   const pintaCargos = () => {
     const suma = Math.round(cargos.reduce((t, c) => t + c.cantidad * c.precio, 0) * 100) / 100;
-    $("[data-cargos]", f).innerHTML = cargos.length ? `<ul class="envios">${cargos.map((c, i) => `<li>${c.cantidad} × ${esc(c.articulo)} · ${eur(c.precio)} = <b>${eur(c.cantidad * c.precio)}</b> <button type="button" class="btn sm" data-quita="${i}">Quitar</button></li>`).join("")}</ul>
+    $("[data-cargos]", f).innerHTML = cargos.length ? `<ul class="envios">${cargos.map((c, i) => `<li>${c.cantidad} × ${esc(c.articulo)} · ${eur(c.precio)} = <b>${eur(c.cantidad * c.precio)}</b>
+        <label class="check" title="Orden de trabajo a mantenimiento para reponerlo o repararlo"><input type="checkbox" data-ot="${i}" ${c.ot ? "checked" : ""}> OT mantenimiento</label> <button type="button" class="btn sm" data-quita="${i}">Quitar</button></li>`).join("")}</ul>
       <p>Total cargos: <b>${eur(suma)}</b>${suma > info.fianza ? ` <span class="error">supera la fianza en ${eur(suma - info.fianza)}</span>` : ""}</p>` : '<p class="muted">Sin roturas ni faltas.</p>';
     f.querySelectorAll("[data-quita]").forEach((b) => (b.onclick = () => { cargos.splice(Number(b.dataset.quita), 1); pintaCargos(); }));
+    f.querySelectorAll("[data-ot]").forEach((b) => (b.onchange = () => (cargos[b.dataset.ot].ot = b.checked)));
+    $("[data-exc]", f).style.display = suma > info.fianza ? "" : "none";
     f.elements.importe.value = Math.max(0, Math.round((info.fianza - suma) * 100) / 100);
     sync();
   };
@@ -1463,7 +1469,32 @@ async function salidaReserva(r, reload, preguntar = false) {
     pintaCargos();
   };
   $("[data-hoja]", f).onclick = () => abrirFichero(`/api/turistico/reservas/${r.id}/hoja-revision.pdf`);
+  $("[data-movil]", f).onclick = async () => {
+    const e = await run(() => get(`/api/revision/reserva/${r.id}/enlace`));
+    window.open(e.whatsapp, "_blank", "noopener");
+  };
+  // lo que limpieza marcó en el móvil llega ya cargado; lo roto de valor abre OT a mantenimiento por defecto
+  (info.revision?.items || []).forEach((x) => cargos.push({ codigo: x.codigo, articulo: x.articulo, cantidad: x.cantidad, precio: x.precio ?? 0,
+    ot: x.estado === "roto" && x.zona !== "menaje" && (x.precio ?? 0) >= 20 }));
   pintaCargos();
+}
+async function informeRoturas() {
+  const mes = today().slice(0, 8) + "01";
+  const f = cerrarSolo(form("Informe de roturas y faltas", [
+    { k: "desde", t: "Desde", type: "date", def: mes }, { k: "hasta", t: "Hasta", type: "date", def: today() },
+    { html: `<div class="toolbar"><button type="button" class="btn" data-ver>Ver</button><button type="button" class="btn primary" data-xls>Excel</button></div><div data-r></div>` }], {}, async () => {}));
+  $("#modal").classList.add("ancho");
+  const q = () => ({ desde: f.elements.desde.value, hasta: f.elements.hasta.value, asset_id: S.asset });
+  const ver = async () => {
+    const x = await run(() => get("/api/turistico/informe-roturas", q()));
+    $("[data-r]", f).innerHTML = `<p>${x.salidas} salida(s) con fianza · <b>${x.con_cargos}</b> con roturas o faltas · total <b>${eur(x.total)}</b>${x.facturado_exceso ? ` · facturado por exceso ${eur(x.facturado_exceso)}` : ""}</p>
+      <h4>Por artículo</h4><div data-a></div><h4>Por apartamento</h4><div data-p></div>`;
+    table($("[data-a]", f), [{ k: "articulo", t: "Artículo" }, { k: "veces", t: "Veces", num: true }, { k: "unidades", t: "Unidades", num: true }, { k: "importe", t: "Importe", num: true, f: eur }, { k: "ots", t: "OT", num: true }], x.por_articulo);
+    table($("[data-p]", f), [{ k: "activo", t: "Activo" }, { k: "unidad", t: "Apto." }, { k: "tipologia", t: "Tipología" }, { k: "salidas", t: "Salidas", num: true }, { k: "unidades", t: "Unidades", num: true }, { k: "importe", t: "Importe", num: true, f: eur }], x.por_apartamento);
+  };
+  $("[data-ver]", f).onclick = ver;
+  $("[data-xls]", f).onclick = () => run(() => download("GET", "/api/turistico/informe-roturas?" + new URLSearchParams(clean({ ...q(), formato: "xlsx" }))));
+  ver();
 }
 function avisoFianza(x) {
   const env = x.avisos || [];
@@ -1485,8 +1516,10 @@ async function devolucionesFianza() {
       ["Transferencia hecha", () => run(() => post(`/api/turistico/fianzas/${x.id}/devuelta`, {}), "Fianza devuelta").then(pinta)],
       ["Reenviar aviso", async () => avisoFianza(await run(() => post(`/api/turistico/fianzas/${x.id}/avisar`)))]] : []);
   };
-  const f = cerrarSolo(form("Devoluciones de fianza", [{ html: `<p class="muted">Registradas al dar la salida. Las transferencias las hace la Dirección; cuando esté hecha, márquela. Todas van en el envío a INVERGESTION (gestoría).</p><div data-t></div>` }], {}, async () => {}));
+  const f = cerrarSolo(form("Devoluciones de fianza", [{ html: `<p class="muted">Registradas al dar la salida. Las transferencias las hace la Dirección; cuando esté hecha, márquela. Todas van en el envío a INVERGESTION (gestoría).</p>
+    <div class="toolbar"><span class="spacer"></span><button type="button" class="btn" data-roturas>Informe de roturas</button></div><div data-t></div>` }], {}, async () => {}));
   $("#modal").classList.add("ancho");
+  $("[data-roturas]", f).onclick = () => informeRoturas();
   pinta();
 }
 
@@ -3423,7 +3456,7 @@ V.limpieza = async (el) => {
   S.limpieza.asset = cur.id;
   el.innerHTML = `<div class="toolbar">${pool.length > 1 ? `<select id="la">${pool.map((a) => `<option value="${a.id}" ${a.id === cur.id ? "selected" : ""}>${esc(a.nombre)}</option>`).join("")}</select>` : `<strong>${esc(cur.nombre)}</strong>`}
     <label>Día<input type="date" id="lf" value="${S.limpieza.fecha || today()}"></label><button class="btn" id="lhoy">Hoy</button><button class="btn" id="lman">Mañana</button>
-    <span class="spacer"></span><button class="btn danger" id="lurg">⚡ Limpieza urgente</button><button class="btn" id="lextra">＋ Limpieza extra</button><button class="btn" id="lpdf">Imprimir PDF</button><button class="btn" id="lhoja" title="Una hoja por apartamento con su dotación para revisar antes de devolver la fianza">Hojas de revisión</button><button class="btn" id="lxls">Excel</button><button class="btn primary" id="lenv">Enviar</button></div>
+    <span class="spacer"></span><button class="btn danger" id="lurg">⚡ Limpieza urgente</button><button class="btn" id="lextra">＋ Limpieza extra</button><button class="btn" id="lpdf">Imprimir PDF</button><button class="btn" id="lhoja" title="Una hoja por apartamento con su dotación para revisar antes de devolver la fianza">Hojas de revisión</button><button class="btn" id="lmovil" title="Enlaces para revisar las salidas en el móvil">Revisión en el móvil</button><button class="btn" id="lxls">Excel</button><button class="btn primary" id="lenv">Enviar</button></div>
     <div class="kpis" id="lk"></div><div id="lt"></div>
     <p class="muted">Antes de imprimir o enviar, recepción puede <b>ordenar</b> el parte (↑ ↓), marcar algo como <b>urgente</b>, añadir una nota o <b>pasarlo a otro día</b> («Cambiar»). Limpieza avisa al terminar y recepción pulsa <b>Hecha</b>: sale del parte (si es de salida, el apartamento queda disponible). Lo que no se valida sigue en el parte del día siguiente. Al imprimir o enviar, el Excel del día queda en Documentos recibidos.</p>`;
   let p;
@@ -3498,6 +3531,14 @@ V.limpieza = async (el) => {
   ], {}, async (d) => { await post("/api/limpieza/extra", { ...clean(d), asset_id: cur.id, unit_id: Number(d.unit_id) }); toast("Limpieza extra añadida"); load(); }, "Añadir");
   $("#lpdf", el).onclick = () => run(() => download("GET", `/api/limpieza/parte.pdf?asset_id=${cur.id}&fecha=${fecha()}`));
   $("#lhoja", el).onclick = () => abrirFichero(`/api/limpieza/hojas-revision.pdf?asset_id=${cur.id}&fecha=${fecha()}`);
+  $("#lmovil", el).onclick = async () => {
+    const x = await run(() => get("/api/revision/dia", { asset_id: cur.id, fecha: fecha() }));
+    const f = cerrarSolo(form("Revisión de salidas en el móvil", [{ html: x.salidas.length ? `<p>Limpieza abre cada enlace en el móvil y marca lo que falta o está roto. Al dar la salida, Recepción lo ve ya cargado para descontarlo de la fianza.</p>
+      <ul class="envios">${x.salidas.map((s, i) => `<li><b>${esc(s.unidad)}</b> · ${s.estado === "checkin" ? "salida prevista" : "salida hecha"} · ${s.hecha ? "✔ revisado" : "pendiente"} <button type="button" class="btn sm" data-copia="${i}">Copiar enlace</button></li>`).join("")}</ul>
+      <div class="toolbar"><button type="button" class="btn primary" data-wa>Enviar todos por WhatsApp</button></div>` : '<p class="muted">No hay salidas ese día.</p>' }], {}, async () => {}));
+    f.querySelectorAll("[data-copia]").forEach((b) => (b.onclick = () => navigator.clipboard.writeText(x.salidas[b.dataset.copia].url).then(() => toast("Enlace copiado"))));
+    if ($("[data-wa]", f)) $("[data-wa]", f).onclick = () => window.open(x.whatsapp, "_blank", "noopener");
+  };
   $("#lxls", el).onclick = () => run(() => download("GET", `/api/limpieza/parte.xlsx?asset_id=${cur.id}&fecha=${fecha()}`));
   $("#lenv", el).onclick = async () => {
     const gente = await get("/api/personal", { asset_id: cur.id, area: "limpieza", solo_activos: true }).catch(() => []);

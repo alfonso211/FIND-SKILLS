@@ -14,6 +14,8 @@
 
 ## Devoluciones de fianza
 - Cuando Recepción da la salida con fianza **por transferencia**, llega un **correo** con cliente, apartamento, importe, IBAN y fecha (y Recepción puede enviarlo también por **WhatsApp**). Hecha la transferencia, se marca en *Reservas → Devoluciones de fianza*.
+- Lo que **supera la fianza** se factura al cliente sin IVA (indemnización por daños, art. 78.Tres.1º LIVA) y queda **pendiente de cobro** en Facturas emitidas.
+- **Informe de roturas** (en *Reservas → Devoluciones de fianza*): qué se rompe o falta más, en qué apartamentos y su coste, con Excel.
 - Todas las devoluciones van en la exportación a **INVERGESTION** (FIANZAS_*.csv) para la gestoría. Los avisos quedan en *Administración → Avisos* (registro de envíos).
 
 ## Facturación
