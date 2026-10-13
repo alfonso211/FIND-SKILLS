@@ -1,5 +1,11 @@
 # Novedades
 
+## 2026-10-15 · Versión 1.45 · Hoja de revisión de salida, precios de reposición y dotación por apartamento
+- **Recepción y limpieza · hoja de revisión de salida**: PDF por apartamento con su dotación y casillas OK / Falta / Roto. En el parte de limpieza salen todas las del día.
+- **Recepción · roturas en la fianza**: al dar la salida se eligen los artículos rotos o que faltan y se descuentan solos de la fianza a su precio de reposición. El detalle llega a la Dirección y a la gestoría.
+- **Recepción · precios de reposición**: orientativos y editables por activo.
+- **Recepción · dotación propia de un apartamento** (terraza, VIP…), que manda sobre la de su tipo.
+
 ## 2026-10-15 · Versión 1.44 · Fianzas, expediente del cliente, lista negra, dotación y ampliación de reserva
 - **Recepción · salida con fianza**: al hacer el check-out sale la **devolución de fianza** con el cliente, el importe y la forma (transferencia, efectivo o tarjeta).
   - Por transferencia, IBAN y fecha se envían por **correo y WhatsApp** a Bárbara y a Alfonso.

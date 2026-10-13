@@ -169,3 +169,43 @@ def test_dotacion_habitual_especial_y_anexo(client, admin, ids):
     re = client.get(f"/api/turistico/reservas/{rid}/contrato/{h['id']}", headers=admin)
     assert "Cuna de viaje (dotación especial)" in [cell.text for tb in docx.Document(io.BytesIO(re.content)).tables
                                                    for row in tb.rows for cell in row.cells]
+
+
+def test_precios_reposicion_cargos_y_hojas(client, admin, ids):
+    sae = ids["assets"]["SAE"]["id"]
+    # precios: orientativos y propios del activo
+    pre = {p["codigo"]: p for p in client.get(f"/api/dotacion/precios?asset_id={sae}", headers=admin).json()}
+    assert pre["MEN04"]["precio"] == 2.5 and not pre["MEN04"]["fijado"]
+    pre = {p["codigo"]: p for p in client.put("/api/dotacion/precios", headers=admin, json={
+        "asset_id": sae, "precios": {"MEN04": 3, "SAL02": 30}}).json()}
+    assert pre["MEN04"]["precio"] == 3 and pre["MEN04"]["fijado"] and pre["MEN04"]["orientativo"] == 2.5
+    # dotación propia de un apartamento concreto: manda sobre la de su tipo; al quitarla vuelve la habitual
+    r = _reserva(client, admin, sae, {"guest": {**COMPLETO, "documento_num": "44444444A", "nombre": "Rompe"}}, "RP-1")
+    u = r["unit_id"]
+    assert client.get(f"/api/dotacion/unidad/{u}", headers=admin).json()["origen"] in ("tipologia", "estandar")
+    propia = client.put(f"/api/dotacion/unidad/{u}", headers=admin, json={"items": [
+        {"codigo": "MEN04", "zona": "menaje", "articulo": "Vasos de agua / refresco", "cantidad": "8"},
+        {"codigo": "SAL02", "zona": "salon", "articulo": "Mando a distancia TV con funda", "cantidad": "1"},
+        {"codigo": "TERR1", "zona": "auxiliar", "articulo": "Mesa de terraza", "cantidad": "1"}]}).json()
+    assert propia["origen"] == "apartamento" and len(propia["items"]) == 3
+    assert any(x["propia"] for x in client.get(f"/api/dotacion/unidades?asset_id={sae}", headers=admin).json())
+    d = client.get(f"/api/turistico/reservas/{r['id']}/dotacion", headers=admin).json()
+    assert d["origen"] == "apartamento" and {x["codigo"]: x["precio"] for x in d["items"]}["MEN04"] == 3
+    # hoja de revisión de salida (de la reserva y las del día en limpieza)
+    h = client.get(f"/api/turistico/reservas/{r['id']}/hoja-revision.pdf", headers=admin)
+    assert h.status_code == 200 and h.content.startswith(b"%PDF")
+    client.put(f"/api/turistico/reservas/{r['id']}", headers=admin, json={"estado": "checkin"})
+    client.post(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin, json={
+        "fecha_firma": HOY.isoformat(), "fianza": 100, "motivo": ["turismo"], "acreditacion": ["dni"],
+        "solo_guardar": True})
+    # salida con roturas: se descuentan de la fianza a su precio y el detalle va en el motivo
+    x = client.post(f"/api/turistico/reservas/{r['id']}/checkout", headers=admin, json={"fianza": {
+        "forma": "efectivo", "cargos": [{"codigo": "MEN04", "articulo": "Vasos de agua / refresco", "cantidad": 2,
+                                         "precio": 3}, {"codigo": "SAL02", "articulo": "Mando TV", "precio": 30}]}})
+    assert x.status_code == 200, x.text
+    dv = x.json()["devolucion"]
+    assert dv["importe"] == 64 and dv["retenido"] == 36 and "2 × Vasos de agua" in dv["retenido_motivo"]
+    assert len(dv["cargos"]) == 2
+    hs = client.get(f"/api/limpieza/hojas-revision.pdf?asset_id={sae}", headers=admin)
+    assert hs.status_code == 200 and hs.content.startswith(b"%PDF")
+    assert client.delete(f"/api/dotacion/unidad/{u}", headers=admin).json()["origen"] != "apartamento"

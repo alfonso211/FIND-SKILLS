@@ -129,6 +129,24 @@ _TABLA = [
     ("AUX10", "auxiliar", "Botiquín de primeros auxilios", "1", "1", "1", "1"),
 ]
 
+# Precio de reposición orientativo por unidad (€, IVA incluido, gama media de hostelería). Cada activo los ajusta en
+# «Precios de reposición»; las instalaciones fijas (enchufes, plato de ducha, climatización, cerradura) no llevan.
+PRECIOS_REPOSICION = {
+    "SAL01": 450, "SAL02": 25, "SAL03": 180, "SAL04": 45, "SAL05": 650, "SAL06": 80, "SAL07": 45, "SAL08": 30,
+    "SAL09": 60,
+    "COC01": 250, "COC02": 150, "COC03": 450, "COC04": 120, "COC05": 350, "COC06": 400, "COC07": 400, "COC08": 90,
+    "COC09": 25, "COC10": 25, "COC11": 30, "COC12": 20,
+    "MEN01": 4, "MEN02": 4, "MEN03": 3.5, "MEN04": 2.5, "MEN05": 4, "MEN06": 4, "MEN07": 5, "MEN08": 5,
+    "MEN09": 2, "MEN10": 2.5, "MEN11": 2, "MEN12": 1.5, "MEN13": 3, "MEN14": 25, "MEN15": 30, "MEN16": 35,
+    "MEN17": 12, "MEN18": 10, "MEN19": 15, "MEN20": 6, "MEN21": 8, "MEN22": 4, "MEN23": 10, "MEN24": 15,
+    "MEN25": 35, "MEN26": 6,
+    "DOR01": 450, "DOR02": 250, "DOR03": 70, "DOR04": 350, "DOR05": 300, "DOR06": 2, "DOR07": 120, "DOR08": 20,
+    "DOR09": 25, "DOR10": 45, "DOR11": 70, "DOR12": 25,
+    "BAN02": 60, "BAN03": 25, "BAN04": 35, "BAN05": 15, "BAN06": 12, "BAN07": 20, "BAN08": 15, "BAN09": 15,
+    "BAN10": 8, "BAN11": 10, "BAN12": 30,
+    "AUX03": 60, "AUX04": 25, "AUX05": 20, "AUX06": 10, "AUX07": 120, "AUX08": 40, "AUX09": 15, "AUX10": 25,
+}
+
 CATALOGO = [{"codigo": c, "zona": z, "articulo": a, "cantidades": dict(zip(PERFILES, cant))}
             for c, z, a, *cant in _TABLA]
 POR_CODIGO = {x["codigo"]: x for x in CATALOGO}
@@ -162,6 +180,22 @@ def _db():  # imports locales: este módulo también se usa sin base de datos (c
     return select, DotacionArticulo, DotacionHabitual
 
 
+def precios(db, asset_id: int) -> dict[str, float]:
+    """Precio de reposición de cada artículo en el activo: el fijado por el activo o el orientativo."""
+    from sqlalchemy import select
+    from .models import DotacionPrecio
+    out = {k: float(v) for k, v in PRECIOS_REPOSICION.items()}
+    out.update({p.codigo: float(p.precio) for p in db.scalars(select(DotacionPrecio).where(
+        DotacionPrecio.asset_id == asset_id))})
+    return out
+
+
+def propia(db, unit_id: int):
+    from sqlalchemy import select
+    from .models import DotacionUnidad
+    return db.scalar(select(DotacionUnidad).where(DotacionUnidad.unit_id == unit_id))
+
+
 def articulos(db, asset_id: int | None) -> list[dict]:
     """Catálogo para elegir: el maestro 3 llaves y los artículos creados con «Otra dotación» (del activo o comunes)."""
     select, Art, _ = _db()
@@ -184,11 +218,19 @@ def habitual(db, asset_id: int, tipologia: str | None):
 
 
 def base_unidad(db, unit) -> tuple[list[dict], bool]:
-    """(dotación habitual de la unidad, si Recepción ya la ha fijado). Si no, la estándar de su perfil."""
+    """(dotación habitual de la unidad, si Recepción ya la ha fijado): la propia del apartamento, si la tiene; si no,
+    la de su tipología; y si tampoco, la estándar de su perfil."""
+    return base_con_origen(db, unit)[:2]
+
+
+def base_con_origen(db, unit) -> tuple[list[dict], bool, str]:
+    p = propia(db, unit.id)
+    if p:
+        return list(p.items), True, "apartamento"
     h = habitual(db, unit.asset_id, unit.tipologia)
     if h:
-        return list(h.items), True
-    return estandar(perfil_de(unit.tipologia)), False
+        return list(h.items), True, "tipologia"
+    return estandar(perfil_de(unit.tipologia)), False, "estandar"
 
 
 def limpiar(items: list[dict]) -> list[dict]:
@@ -210,7 +252,8 @@ def limpiar(items: list[dict]) -> list[dict]:
 def de_reserva(db, r) -> dict:
     """Dotación que se entrega en una reserva: la habitual con los cambios (añadir / quitar / otra cantidad) y la
     dotación especial (artículos añadidos)."""
-    base, fijada = base_unidad(db, r.unit)
+    base, fijada, origen = base_con_origen(db, r.unit)
+    pre = precios(db, r.unit.asset_id)
     d = r.dotacion or {}
     cambios = d.get("cambios") or {}
     final = []
@@ -226,7 +269,9 @@ def de_reserva(db, r) -> dict:
     final += [{**x, "especial": True} for x in extra if x["codigo"] not in codigos]
     orden = list(ZONAS)
     final.sort(key=lambda x: (orden.index(x["zona"]) if x["zona"] in orden else 99, x["codigo"]))
-    return {"habitual": base, "habitual_fijada": fijada, "perfil": perfil_de(r.unit.tipologia),
+    for x in final:
+        x["precio"] = pre.get(x["codigo"])
+    return {"habitual": base, "habitual_fijada": fijada, "origen": origen, "perfil": perfil_de(r.unit.tipologia),
             "tipologia": r.unit.tipologia, "cambios": cambios, "extra": extra, "items": final,
             "especial": bool(cambios or extra)}
 
@@ -285,3 +330,86 @@ def anexo(contenido: bytes, items: list[dict], titulo: str, subtitulo: str) -> b
     out = io.BytesIO()
     doc.save(out)
     return out.getvalue()
+
+
+def hoja_pdf(hojas: list[dict]) -> bytes:
+    """Hoja de revisión de salida: una página por apartamento con su dotación por zonas y las casillas OK / Falta /
+    Roto, el precio de reposición y las firmas. `hojas`: [{empresa, activo, apartamento, lineas: [texto], items}]."""
+    from io import BytesIO
+
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    from . import marca
+    negro, linea, fondo = colors.HexColor(marca.NEGRO), colors.HexColor("#ddd6c8"), colors.HexColor("#f7f3ea")
+    ss = getSampleStyleSheet()
+    n = ParagraphStyle("n", parent=ss["Normal"], fontName="Helvetica", fontSize=8.5, leading=10.5)
+    b = ParagraphStyle("b", parent=n, fontName="Helvetica-Bold")
+    tit = ParagraphStyle("t", parent=n, fontName="Helvetica-Bold", fontSize=14, leading=18, textColor=negro)
+    zona = ParagraphStyle("z", parent=n, fontName="Helvetica-Bold", fontSize=9, textColor=colors.white)
+
+    def esc(t):
+        return str(t or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=14 * mm, rightMargin=14 * mm, topMargin=12 * mm,
+                            bottomMargin=12 * mm, title="Hoja de revisión de salida", creator=marca.NOMBRE)
+    anchos = [72 * mm, 30 * mm, 13 * mm, 13 * mm, 13 * mm, 16 * mm, 25 * mm]
+
+    def caja():  # casilla vacía para marcar a mano
+        return Table([[""]], colWidths=[3.6 * mm], rowHeights=[3.6 * mm],
+                     style=[("BOX", (0, 0), (-1, -1), 0.7, negro)])
+    historia = []
+    for i, h in enumerate(hojas):
+        if i:
+            historia.append(PageBreak())
+        historia += [Paragraph(f"HOJA DE REVISIÓN DE SALIDA · {esc(h['apartamento'])}", tit),
+                     Paragraph(esc(h["empresa"]) + " · " + esc(h["activo"]), b)]
+        historia += [Paragraph(esc(x), n) for x in h["lineas"]]
+        historia.append(Spacer(1, 4))
+        filas = [[Paragraph(x, b) for x in ("Artículo", "Cantidad", "OK", "Falta", "Roto", "Nº", "Reposición €")]]
+        estilo = [("GRID", (0, 0), (-1, -1), 0.4, linea), ("BACKGROUND", (0, 0), (-1, 0), fondo),
+                  ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 1.5),
+                  ("BOTTOMPADDING", (0, 0), (-1, -1), 2), ("ALIGN", (2, 1), (4, -1), "CENTER")]
+        for z, nz in ZONAS.items():
+            del_z = [x for x in h["items"] if x["zona"] == z]
+            if not del_z:
+                continue
+            filas.append([Paragraph(esc(nz), zona), "", "", "", "", "", ""])
+            k = len(filas) - 1
+            estilo += [("SPAN", (0, k), (-1, k)), ("BACKGROUND", (0, k), (-1, k), negro)]
+            for x in del_z:
+                p = x.get("precio")
+                filas.append([Paragraph(esc(x["articulo"]) + (" <i>(especial)</i>" if x.get("especial") else ""), n),
+                              Paragraph(esc(x["cantidad"]), n), caja(), caja(), caja(), "",
+                              Paragraph(f"{p:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if p else "—",
+                                        n)])
+        t = Table(filas, colWidths=anchos, repeatRows=1)
+        t.setStyle(TableStyle(estilo))
+        historia += [t, Spacer(1, 6),
+                     Paragraph("Observaciones (manchas, desperfectos, objetos olvidados): "
+                               "_______________________________________________________________", n),
+                     Spacer(1, 10),
+                     Table([[Paragraph("Revisado por (limpieza / gobernanta):<br/><br/>Fecha y firma:", n),
+                             Paragraph("Recepción (cargos en la fianza):<br/><br/>Fecha y firma:", n)]],
+                           colWidths=[91 * mm, 91 * mm],
+                           style=[("BOX", (0, 0), (0, 0), 0.4, linea), ("BOX", (1, 0), (1, 0), 0.4, linea),
+                                  ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 14)])]
+    doc.build(historia)
+    return buf.getvalue()
+
+
+def hoja_de_reserva(db, r) -> dict:
+    """Datos de la hoja de revisión de una reserva (su dotación, con la especial y los precios)."""
+    u = r.unit
+    g = r.guest
+    return {"empresa": u.asset.company.nombre, "activo": u.asset.nombre,
+            "apartamento": f"{u.codigo}" + (f" ({u.tipologia})" if u.tipologia else ""),
+            "lineas": [f"Reserva {r.localizador or r.id} · {g.nombre} {g.apellidos or ''}".strip()
+                       + f" · Estancia {r.fecha_entrada:%d/%m/%Y} – {r.fecha_salida:%d/%m/%Y}",
+                       "Marque cada artículo. Lo que falte o esté roto se descuenta de la fianza a su precio de "
+                       "reposición; indique el número de unidades en «Nº»."],
+            "items": de_reserva(db, r)["items"]}

@@ -1408,17 +1408,23 @@ async function salidaReserva(r, reload, preguntar = false) {
     if (preguntar && !confirm(`¿Dar la salida a ${r.huesped} (${r.unidad})?`)) return;
     return run(() => post(`/api/turistico/reservas/${r.id}/checkout`), "Salida realizada").then(reload);
   }
+  const dot = await get(`/api/turistico/reservas/${r.id}/dotacion`).catch(() => ({ items: [] }));
+  const cargos = [];
   const f = form(`Salida y devolución de fianza · ${r.unidad} · ${info.titular}`, [
     { html: `<div class="aviso-vencidas"><b>Devolución de fianza: ${eur(info.fianza)}</b><br>Cliente: <b>${esc(info.titular)}</b>. Indique cómo se devuelve según las indicaciones de Recepción 1 o Recepción 2.
       Si es por <b>transferencia</b>, los datos se envían por correo y WhatsApp a la Dirección (${info.avisos.map(esc).join(" y ")}) para hacerla.</div>` },
     { k: "forma", t: "Forma de devolución", type: "select", req: true, options: kv(info.formas) },
+    { html: `<fieldset><legend>Roturas y faltas (se descuentan a su precio de reposición)</legend>
+      <div class="toolbar"><select data-art><option value="">Elija el artículo de la dotación…</option>${dot.items.map((x, i) => `<option value="${i}">${esc(x.articulo)}${x.precio ? ` · ${eur(x.precio)}` : ""}</option>`).join("")}<option value="otro">Otro (escribir)…</option></select>
+      <input data-cant type="number" min="1" value="1" style="width:5em"><button type="button" class="btn sm" data-add>+ Añadir</button>
+      <button type="button" class="btn sm" data-hoja>Hoja de revisión (PDF)</button></div><div data-cargos></div></fieldset>` },
     { k: "importe", t: "Importe a devolver €", type: "number", def: info.fianza, step: "0.01" },
-    { k: "retenido_motivo", t: "Motivo si no se devuelve todo (roturas, faltas…)", type: "textarea", wide: true },
+    { k: "retenido_motivo", t: "Motivo si se retiene algo más (las roturas de la lista ya van detalladas)", type: "textarea", wide: true },
     { k: "iban", t: "IBAN de la cuenta del cliente", def: info.iban || "", wide: true },
     { k: "fecha", t: "Fecha de la transferencia / devolución", type: "date", def: today() },
     { k: "nota", t: "Nota para la Dirección", type: "textarea", wide: true },
   ], {}, async (d) => {
-    const x = await post(`/api/turistico/reservas/${r.id}/checkout`, { fianza: clean({ ...d, importe: d.forma === "no_procede" ? 0 : d.importe }) });
+    const x = await post(`/api/turistico/reservas/${r.id}/checkout`, { fianza: { ...clean({ ...d, importe: d.forma === "no_procede" ? 0 : d.importe }), cargos } });
     toast(`Salida realizada · fianza: ${x.devolucion.forma_texto}`);
     reload && reload();
     if (x.whatsapp) setTimeout(() => avisoFianza(x), 0);
@@ -1427,10 +1433,37 @@ async function salidaReserva(r, reload, preguntar = false) {
     const forma = f.elements.forma.value, tr = forma === "transferencia", np = forma === "no_procede";
     f.elements.iban.closest("label").style.display = tr ? "" : "none"; f.elements.iban.required = tr;
     f.elements.importe.closest("label").style.display = np ? "none" : "";
-    const parcial = np || Number(f.elements.importe.value) < info.fianza;
+    const sumaCargos = cargos.reduce((t, c) => t + c.cantidad * c.precio, 0);  // su detalle lo pone el PMS
+    const parcial = np || Number(f.elements.importe.value) < info.fianza - sumaCargos - 0.004;
     f.elements.retenido_motivo.closest("label").style.display = parcial ? "" : "none"; f.elements.retenido_motivo.required = parcial;
   };
   f.elements.forma.onchange = sync; f.elements.importe.oninput = sync; sync();
+  const pintaCargos = () => {
+    const suma = Math.round(cargos.reduce((t, c) => t + c.cantidad * c.precio, 0) * 100) / 100;
+    $("[data-cargos]", f).innerHTML = cargos.length ? `<ul class="envios">${cargos.map((c, i) => `<li>${c.cantidad} × ${esc(c.articulo)} · ${eur(c.precio)} = <b>${eur(c.cantidad * c.precio)}</b> <button type="button" class="btn sm" data-quita="${i}">Quitar</button></li>`).join("")}</ul>
+      <p>Total cargos: <b>${eur(suma)}</b>${suma > info.fianza ? ` <span class="error">supera la fianza en ${eur(suma - info.fianza)}</span>` : ""}</p>` : '<p class="muted">Sin roturas ni faltas.</p>';
+    f.querySelectorAll("[data-quita]").forEach((b) => (b.onclick = () => { cargos.splice(Number(b.dataset.quita), 1); pintaCargos(); }));
+    f.elements.importe.value = Math.max(0, Math.round((info.fianza - suma) * 100) / 100);
+    sync();
+  };
+  $("[data-add]", f).onclick = () => {
+    const v = $("[data-art]", f).value, cant = Math.max(1, Number($("[data-cant]", f).value) || 1);
+    if (!v) return toast("Elija el artículo", true);
+    if (v === "otro") {
+      const art = prompt("Artículo roto o que falta:"); if (!art) return;
+      const precio = Number(String(prompt("Precio de reposición € (IVA incluido):") || "").replace(",", "."));
+      if (!(precio >= 0)) return toast("Precio no válido", true);
+      cargos.push({ articulo: art, cantidad: cant, precio });
+    } else {
+      const x = dot.items[Number(v)];
+      let precio = x.precio;
+      if (precio == null) { precio = Number(String(prompt(`Precio de reposición de «${x.articulo}» €:`) || "").replace(",", ".")); if (!(precio >= 0)) return toast("Precio no válido", true); }
+      cargos.push({ codigo: x.codigo, articulo: x.articulo, cantidad: cant, precio });
+    }
+    pintaCargos();
+  };
+  $("[data-hoja]", f).onclick = () => abrirFichero(`/api/turistico/reservas/${r.id}/hoja-revision.pdf`);
+  pintaCargos();
 }
 function avisoFianza(x) {
   const env = x.avisos || [];
@@ -1501,8 +1534,24 @@ async function dotacionHabitual() {
   const [cat, tips] = await Promise.all([catalogoDotacion(aid), run(() => get("/api/dotacion/habitual", { asset_id: aid }))]);
   const f = cerrarSolo(form(`Dotación habitual · ${assetName(aid)}`, [
     { html: `<p>Lista de dotación de cada tipo de apartamento (catálogo 3 llaves). Recepción la revisa <b>una vez</b> y queda como <b>dotación habitual</b>: es la que se imprime o envía con el contrato al pulsar «Dotación habitual». Marque lo que hay, ajuste las cantidades y, si falta algo, use «Otra dotación».</p>
-      <div class="toolbar">${tips.map((t, i) => `<button type="button" class="btn sm ${t.fijada ? "" : "primary"}" data-tip="${i}">${esc(t.tipologia || "Sin tipología")} · ${t.unidades} apto. ${t.fijada ? "✔" : "(por revisar)"}</button>`).join("")}</div><div data-ed></div>` }], {}, async () => {}));
+      <div class="toolbar">${tips.map((t, i) => `<button type="button" class="btn sm ${t.fijada ? "" : "primary"}" data-tip="${i}">${esc(t.tipologia || "Sin tipología")} · ${t.unidades} apto. ${t.fijada ? "✔" : "(por revisar)"}</button>`).join("")}</div>
+      <div class="toolbar"><label>Apartamento concreto (terraza, VIP…)<select data-uni><option value="">Elija…</option></select></label><button type="button" class="btn sm" data-propia>Dotación propia</button>
+      <span class="spacer"></span><button type="button" class="btn sm" data-precios>Precios de reposición</button></div><div data-ed></div>` }], {}, async () => {}));
   $("#modal").classList.add("ancho");
+  const unis = await get("/api/dotacion/unidades", { asset_id: aid }).catch(() => []);
+  $("[data-uni]", f).insertAdjacentHTML("beforeend", unis.map((u) => `<option value="${u.id}">${esc(u.codigo)}${u.tipologia ? ` · ${esc(u.tipologia)}` : ""}${u.propia ? " · ✔ propia" : ""}</option>`).join(""));
+  $("[data-precios]", f).onclick = () => preciosReposicion(aid);
+  $("[data-propia]", f).onclick = async () => {
+    const uid = $("[data-uni]", f).value;
+    if (!uid) return toast("Elija el apartamento", true);
+    const d = await run(() => get(`/api/dotacion/unidad/${uid}`));
+    const ed = $("[data-ed]", f);
+    ed.innerHTML = `<fieldset><legend>Apartamento ${esc(d.codigo)} · ${d.origen === "apartamento" ? "dotación propia" : `parte de la ${d.origen === "tipologia" ? "habitual de su tipo" : "estándar 3 llaves"}`}</legend>
+      <div data-lista></div><div class="toolbar"><button type="button" class="btn primary" data-gu>Guardar dotación propia</button>${d.origen === "apartamento" ? '<button type="button" class="btn danger" data-qu>Quitar: volver a la de su tipo</button>' : ""}</div></fieldset>`;
+    const leer = dotacionEditor($("[data-lista]", ed), cat, d.items, d.perfil, aid);
+    $("[data-gu]", ed).onclick = () => run(() => put(`/api/dotacion/unidad/${uid}`, { items: leer() }), `Dotación propia de ${d.codigo} guardada`);
+    if ($("[data-qu]", ed)) $("[data-qu]", ed).onclick = () => run(() => api("DELETE", `/api/dotacion/unidad/${uid}`), "Vuelve a la dotación de su tipo").then(() => (ed.innerHTML = ""));
+  };
   f.querySelectorAll("[data-tip]").forEach((b) => (b.onclick = () => {
     const t = tips[b.dataset.tip];
     const ed = $("[data-ed]", f);
@@ -1520,10 +1569,25 @@ async function dotacionHabitual() {
     };
   }));
 }
+async function preciosReposicion(aid) {
+  const l = await run(() => get("/api/dotacion/precios", { asset_id: aid }));
+  const zonas = (await catalogoDotacion(aid)).zonas;
+  const f = form(`Precios de reposición · ${assetName(aid)}`, [
+    { html: `<p>Precio por unidad (IVA incluido) que se descuenta de la fianza si el artículo se rompe o falta. Los que no ha cambiado son <b>orientativos</b> (gama media de hostelería); ajústelos a lo que pagan ustedes. Deje vacío para volver al orientativo.</p>
+      ${Object.entries(zonas).map(([z, nz]) => `<details><summary><b>${esc(nz)}</b></summary><div class="table-wrap no-encajar"><table class="dot"><tbody>${l.filter((x) => x.zona === z).map((x) =>
+        `<tr><td>${esc(x.articulo)}</td><td><input data-pre="${esc(x.codigo)}" type="number" step="0.01" min="0" value="${x.fijado ? x.precio : ""}" placeholder="${x.orientativo ?? "—"}" style="width:7em"> €</td><td class="muted">${x.fijado ? "propio" : "orientativo"}</td></tr>`).join("")}</tbody></table></div></details>`).join("")}` }],
+  {}, async () => {
+    const precios = {};
+    f.querySelectorAll("[data-pre]").forEach((i) => { const x = l.find((y) => y.codigo === i.dataset.pre); const v = i.value === "" ? null : Number(i.value); if (v !== (x.fijado ? x.precio : null)) precios[i.dataset.pre] = v; });
+    await put("/api/dotacion/precios", { asset_id: aid, precios });
+    toast("Precios de reposición guardados");
+  }, "Guardar precios");
+  $("#modal").classList.add("ancho");
+}
 async function dotacionReserva(r) {
   const [d, cat] = await Promise.all([run(() => get(`/api/turistico/reservas/${r.id}/dotacion`)), catalogoDotacion(r.asset_id)]);
   const f = form(`Dotación · ${r.unidad} · ${r.huesped}`, [
-    { html: `<p>Parte de la <b>dotación habitual</b> del apartamento${d.habitual_fijada ? "" : ' <span class="badge b-pendiente">aún no revisada por Recepción: se usa la estándar 3 llaves</span>'}. Quite, cambie cantidades o añada artículos: es la <b>dotación especial</b> de esta reserva. Se imprime con el contrato marcando «Dotación habitual (Anexo I)».</p><div data-lista></div>` }],
+    { html: `<div class="toolbar"><button type="button" class="btn sm" data-hoja>Hoja de revisión de salida (PDF)</button></div><p>Parte de la <b>dotación ${d.origen === "apartamento" ? "propia de este apartamento" : "habitual"}</b>${d.habitual_fijada ? "" : ' <span class="badge b-pendiente">aún no revisada por Recepción: se usa la estándar 3 llaves</span>'}. Quite, cambie cantidades o añada artículos: es la <b>dotación especial</b> de esta reserva. Se imprime con el contrato marcando «Dotación habitual (Anexo I)».</p><div data-lista></div>` }],
   {}, async () => {
     const elegidos = leer(), base = Object.fromEntries(d.habitual.map((x) => [x.codigo, x]));
     const cambios = {}, extra = [];
@@ -1534,6 +1598,7 @@ async function dotacionReserva(r) {
   }, "Guardar dotación");
   $("#modal").classList.add("ancho");
   const leer = dotacionEditor($("[data-lista]", f), cat, d.items, d.perfil, r.asset_id);
+  $("[data-hoja]", f).onclick = () => abrirFichero(`/api/turistico/reservas/${r.id}/hoja-revision.pdf`);
 }
 
 // ---- escaneo de documentos de identidad
@@ -3358,7 +3423,7 @@ V.limpieza = async (el) => {
   S.limpieza.asset = cur.id;
   el.innerHTML = `<div class="toolbar">${pool.length > 1 ? `<select id="la">${pool.map((a) => `<option value="${a.id}" ${a.id === cur.id ? "selected" : ""}>${esc(a.nombre)}</option>`).join("")}</select>` : `<strong>${esc(cur.nombre)}</strong>`}
     <label>Día<input type="date" id="lf" value="${S.limpieza.fecha || today()}"></label><button class="btn" id="lhoy">Hoy</button><button class="btn" id="lman">Mañana</button>
-    <span class="spacer"></span><button class="btn danger" id="lurg">⚡ Limpieza urgente</button><button class="btn" id="lextra">＋ Limpieza extra</button><button class="btn" id="lpdf">Imprimir PDF</button><button class="btn" id="lxls">Excel</button><button class="btn primary" id="lenv">Enviar</button></div>
+    <span class="spacer"></span><button class="btn danger" id="lurg">⚡ Limpieza urgente</button><button class="btn" id="lextra">＋ Limpieza extra</button><button class="btn" id="lpdf">Imprimir PDF</button><button class="btn" id="lhoja" title="Una hoja por apartamento con su dotación para revisar antes de devolver la fianza">Hojas de revisión</button><button class="btn" id="lxls">Excel</button><button class="btn primary" id="lenv">Enviar</button></div>
     <div class="kpis" id="lk"></div><div id="lt"></div>
     <p class="muted">Antes de imprimir o enviar, recepción puede <b>ordenar</b> el parte (↑ ↓), marcar algo como <b>urgente</b>, añadir una nota o <b>pasarlo a otro día</b> («Cambiar»). Limpieza avisa al terminar y recepción pulsa <b>Hecha</b>: sale del parte (si es de salida, el apartamento queda disponible). Lo que no se valida sigue en el parte del día siguiente. Al imprimir o enviar, el Excel del día queda en Documentos recibidos.</p>`;
   let p;
@@ -3432,6 +3497,7 @@ V.limpieza = async (el) => {
     { k: "nota", t: "Qué hay que hacer", wide: true },
   ], {}, async (d) => { await post("/api/limpieza/extra", { ...clean(d), asset_id: cur.id, unit_id: Number(d.unit_id) }); toast("Limpieza extra añadida"); load(); }, "Añadir");
   $("#lpdf", el).onclick = () => run(() => download("GET", `/api/limpieza/parte.pdf?asset_id=${cur.id}&fecha=${fecha()}`));
+  $("#lhoja", el).onclick = () => abrirFichero(`/api/limpieza/hojas-revision.pdf?asset_id=${cur.id}&fecha=${fecha()}`);
   $("#lxls", el).onclick = () => run(() => download("GET", `/api/limpieza/parte.xlsx?asset_id=${cur.id}&fecha=${fecha()}`));
   $("#lenv", el).onclick = async () => {
     const gente = await get("/api/personal", { asset_id: cur.id, area: "limpieza", solo_activos: true }).catch(() => []);
