@@ -1,5 +1,17 @@
 # Novedades
 
+## 2026-10-15 · Versión 1.44 · Fianzas, expediente del cliente, lista negra, dotación y ampliación de reserva
+- **Recepción · salida con fianza**: al hacer el check-out sale la **devolución de fianza** con el cliente, el importe y la forma (transferencia, efectivo o tarjeta).
+  - Por transferencia, IBAN y fecha se envían por **correo y WhatsApp** a Bárbara y a Alfonso.
+  - Queda en el registro de envíos y va a la gestoría en la exportación a **INVERGESTION** (FIANZAS_*.csv).
+- **Recepción · expediente del cliente**: en la ficha, **Expediente completo** con estancias, contratos, facturas, fianzas, alquileres y documentos.
+- **Recepción · lista negra**: Recepción 1, Recepción 2 y Dirección anotan el motivo. Si el cliente vuelve a reservar, sale el aviso.
+- **Recepción · dotación**:
+  - Lista estándar 3 llaves para fijar la **dotación habitual** de cada tipo de apartamento, sin escribir.
+  - **Dotación especial** por reserva y **Otra dotación** para artículos nuevos.
+  - La casilla **Dotación habitual** del contrato imprime o envía el **Anexo I**.
+- **Todos · ampliación de reserva**: los apartamentos turísticos no renuevan. En pantallas, avisos, informes y manuales ahora pone **ampliación de reserva**. El botón que solo cambia la fecha se llama **Corregir salida**.
+
 ## 2026-10-14 · Versión 1.43 · Calendario de vacaciones solo en días laborables
 - **Todos**: el calendario de vacaciones agrupado solo se envía en **días laborables**, sin fines de semana ni festivos de Madrid, de 8:00 a 20:00. Lo que cambie el fin de semana llega el lunes a primera hora.
 
@@ -112,7 +124,7 @@
 - **Recepción**: en las fichas repetidas (mismo nombre), **No es la misma persona** quita el aviso sin unirlas. También desde la propia ficha del cliente.
 
 ## 2026-10-08 · Versión 1.21 · Tarifas estándar en la reserva
-- **Recepción**: al reservar o renovar, el **precio a pagar** sale solo según el tipo de apartamento y las noches (1-6, 7-13 con -10 %, 14-29 con -19 % y 30 noches a precio cerrado), **en naranja**. Se puede cambiar, pero siempre hay que marcar **«Acepto el precio»** para continuar.
+- **Recepción**: al reservar o ampliar la reserva, el **precio a pagar** sale solo según el tipo de apartamento y las noches (1-6, 7-13 con -10 %, 14-29 con -19 % y 30 noches a precio cerrado), **en naranja**. Se puede cambiar, pero siempre hay que marcar **«Acepto el precio»** para continuar.
 
 ## 2026-10-08 · Versión 1.20 · Sin reinicios falsos
 - **Todos**: corregido un fallo del vigilante que reiniciaba el PMS unos segundos después de volver a usarlo tras un rato sin uso (salía como «cuelgue» en el mantenimiento). Podía notarse como un corte breve al entrar.
@@ -142,7 +154,7 @@
 - **Recepción y limpieza**: **orden de limpieza urgente** durante el día, que se imprime o se envía al momento.
 
 ## 2026-10-07 · Versión 1.12 · Limpieza de salida solo tras el check-out
-- **Recepción y limpieza**: la limpieza por salida entra en el parte **cuando recepción hace el check-out**. Ya no se prevé por la fecha de salida, porque el cliente puede renovar.
+- **Recepción y limpieza**: la limpieza por salida entra en el parte **cuando recepción hace el check-out**. Ya no se prevé por la fecha de salida, porque el cliente puede ampliar la reserva.
 
 ## 2026-10-07 · Versión 1.11 · Parte de limpieza y revisión de salida
 - **Recepción**: en la reserva se añaden los **servicios extra** (plaza extra, toallas… del catálogo o escritos) y la **limpieza contratada** con su día y periodicidad; todo pasa a la **factura de la estancia** («Facturar extras» si se pide después).
@@ -166,7 +178,7 @@
 ## 2026-10-07 · Versión 1.7 · Informe mensual a la presidencia
 - **Recepción 1**: el primer día laborable de cada mes recibe el aviso para preparar el **informe a la presidencia** del mes anterior (**Facturación e informes → Informe a presidencia**).
 - **Recepción 1**: el informe se **revisa en pantalla**, se marca como comprobado y se envía en **PDF** por **correo** o **WhatsApp**; el **Excel** queda guardado en los documentos del activo.
-- **Dirección**: el informe incluye producción por tipo de estancia (menos de 1 semana, 1 semana, 2 semanas, 1 mes, renovaciones), servicios, gastos por proveedor con CAPEX/OPEX, **resultado con semáforo** (rojo, naranja, verde) y el **resumen mensual** del año anterior y del año en curso.
+- **Dirección**: el informe incluye producción por tipo de estancia (menos de 1 semana, 1 semana, 2 semanas, 1 mes, ampliaciones de reserva), servicios, gastos por proveedor con CAPEX/OPEX, **resultado con semáforo** (rojo, naranja, verde) y el **resumen mensual** del año anterior y del año en curso.
 - **Dirección**: en la ficha de cada activo se puede indicar quién envía el informe, los correos y el WhatsApp de destino.
 
 ## 2026-10-07 · Versión 1.6 · Menú sin desplazamiento
@@ -204,7 +216,7 @@
 - **Todos**: nuevo apartado **Manual de uso** en el menú, con el manual de cada puesto y las novedades de cada actualización (también en PDF).
 - **Todos**: si el programa se bloquea, **se recupera solo** en 1-3 minutos; si está muy ocupado, pide **reintentar** en lugar de quedarse parado.
 - **Recepción**: el **lector de documentos** es más rápido y fiable (DNI, NIE/TIE y pasaporte; webcam y móvil). Muestra los segundos que lleva leyendo.
-- **Recepción**: **facturar sin cobrar** en reservas y renovaciones; aviso diario de **facturas pendientes de cobro** y botones **Cobrada / Deshacer cobro**.
+- **Recepción**: **facturar sin cobrar** en reservas y ampliaciones de reserva; aviso diario de **facturas pendientes de cobro** y botones **Cobrada / Deshacer cobro**.
 - **Todos**: las **facturas emitidas** llevan fecha del **último día del mes** de emisión.
 - **Dirección y recepción**: las **facturas recibidas** guardan su **vencimiento**; las vencidas sin pagar se marcan en rojo.
 - **Dirección**: **expediente del contrato de vivienda** (Babilonia 35), **importación de SYADE** y **exportación a INVERGESTION**.

@@ -1,14 +1,17 @@
 """Sociedades, activos, unidades y terceros."""
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
-from .. import avisos, limpiezas, marca, nif, registro_viajeros
+from .. import avisos, clientes, fianzas, limpiezas, marca, nif, registro_viajeros
 from ..database import get_db
 from ..facturacion import FORMAS_PAGO
-from ..models import (ESTADOS_UNIDAD, MODALIDADES, USOS_UNIDAD, Asset, Company, Contact, ContactDistinct,
-                      ContactDocument, Invoice, Lease, Reservation, ReservationGuest, Unit, User)
+from ..models import (ESTADOS_UNIDAD, MODALIDADES, USOS_UNIDAD, AccommodationContract, Asset, Company, Contact,
+                      ContactDistinct, ContactDocument, DepositRefund, Invoice, Lease, Reservation, ReservationGuest,
+                      Unit, User)
 from ..schemas import AssetIn, AssetUpdate, CompanyIn, ContactIn, UnitBulk, UnitIn, UnitUpdate
 from ..security import PERMISOS, Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
@@ -508,7 +511,110 @@ def contact_detail(cid: int, scope: Scope = Depends(get_scope), db: Session = De
     if fin is None or (c.asset_id and c.asset_id in fin):
         from .historico import del_cliente  # import local: historico no depende de este módulo
         d["historico"] = del_cliente(db, c)
+    d["lista_negra_avisos"] = clientes.lista_negra(db, c)  # también las de otras fichas con su documento
     return d
+
+
+@router.get("/terceros/{cid}/expediente")
+def contact_file(cid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Todo lo del cliente en un sitio: estancias (como titular u ocupante), contratos, facturas, fianzas y
+    alquileres, para gestionar cliente y apartamento sin buscar en otras pantallas."""
+    c = get_or_404(db, Contact, cid)
+    _visible(db, scope, c, "ver")
+    rids = set(db.scalars(select(Reservation.id).where(Reservation.guest_id == cid)))
+    rids |= set(db.scalars(select(ReservationGuest.reservation_id).where(ReservationGuest.contact_id == cid)))
+    reservas = []
+    devs = {d.reservation_id: d for d in db.scalars(select(DepositRefund).where(
+        DepositRefund.reservation_id.in_(rids or {-1})))}
+    for r, u, a in db.execute(select(Reservation, Unit, Asset).join(Unit, Unit.id == Reservation.unit_id)
+                              .join(Asset, Asset.id == Unit.asset_id).where(Reservation.id.in_(rids or {-1}))
+                              .order_by(Reservation.fecha_entrada.desc())):
+        if not scope.can_asset("reservas.ver", u.asset_id):
+            continue
+        dv = devs.get(r.id)
+        reservas.append({
+            "id": r.id, "localizador": r.localizador, "activo": a.nombre, "asset_id": a.id, "unidad": u.codigo,
+            "uso": u.uso, "tipologia": u.tipologia, "entrada": r.fecha_entrada.isoformat(),
+            "salida": r.fecha_salida.isoformat(), "estado": r.estado, "titular": r.guest_id == cid,
+            "importe_total": float(r.importe_total or 0), "importe_pagado": float(r.importe_pagado or 0),
+            "fianza": fianzas.importe(r), "devolucion": fianzas.a_dict(dv) if dv else None,
+            "dotacion": bool(r.dotacion), "amplia": r.renueva_id})
+    vis = {x["id"] for x in reservas}
+    contratos = [{"id": k.id, "reserva_id": k.reservation_id, "creado": k.creado.isoformat(),
+                  "firmado": k.firmado.isoformat() if k.firmado else None, "envios": len(k.envios or [])}
+                 for k in db.scalars(select(AccommodationContract).where(
+                     AccommodationContract.reservation_id.in_(vis or {-1})).order_by(AccommodationContract.id.desc()))
+                 if k.firmado or k.fichero is None]
+    for x in contratos:
+        x["localizador"] = next((r["localizador"] for r in reservas if r["id"] == x["reserva_id"]), None)
+    facturas = []
+    for f in db.scalars(select(Invoice).where(or_(Invoice.contact_id == cid, Invoice.reservation_id.in_(vis or {-1})))
+                        .order_by(Invoice.id.desc()).limit(500)):
+        if scope.can_asset("facturas.ver", f.asset_id) or scope.can_asset("reservas.ver", f.asset_id):
+            facturas.append({"id": f.id, "codigo": f.codigo, "fecha": f.creada.date().isoformat(), "tipo": f.tipo,
+                             "total": float(f.total), "cobro": f.cobro, "reserva_id": f.reservation_id})
+    alquileres = []
+    for l, u, a in db.execute(select(Lease, Unit, Asset).join(Unit, Unit.id == Lease.unit_id)
+                              .join(Asset, Asset.id == Unit.asset_id).where(Lease.tenant_id == cid)
+                              .order_by(Lease.fecha_inicio.desc())):
+        if scope.can_asset("alquiler.ver", u.asset_id):
+            alquileres.append({"id": l.id, "referencia": l.referencia, "activo": a.nombre, "unidad": u.codigo,
+                               "inicio": l.fecha_inicio.isoformat(),
+                               "fin": l.fecha_fin.isoformat() if l.fecha_fin else None,
+                               "renta": float(l.renta_mensual), "estado": l.estado})
+    return {"reservas": reservas, "contratos": contratos, "facturas": facturas, "alquileres": alquileres,
+            "fianzas": [x["devolucion"] | {"localizador": x["localizador"], "unidad": x["unidad"]}
+                        for x in reservas if x["devolucion"]],
+            "lista_negra": clientes.lista_negra(db, c)}
+
+
+class ListaNegraIn(BaseModel):
+    activa: bool
+    motivo: str | None = Field(default=None, max_length=2000)
+
+
+@router.put("/terceros/{cid}/lista-negra")
+def blacklist(cid: int, data: ListaNegraIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Recepción 1, Recepción 2 o la Dirección incluyen (con el motivo) o quitan al cliente de la lista negra."""
+    c = get_or_404(db, Contact, cid)
+    _visible(db, scope, c, "ver")
+    if not (scope.can_asset("reservas.editar", c.asset_id) if c.asset_id else scope.has_any("reservas.editar")):
+        raise HTTPException(403, "Solo Recepción o la Dirección pueden anotar la lista negra")
+    if data.activa and not (data.motivo or "").strip():
+        bad_request("Indique el motivo: es lo que se verá si el cliente vuelve a reservar")
+    c.lista_negra = data.activa
+    if data.activa:
+        c.lista_negra_motivo = data.motivo.strip()
+        c.lista_negra_fecha = datetime.now()
+        c.lista_negra_user_id = scope.user.id
+    audit(db, scope.user, "lista_negra" if data.activa else "quitar_lista_negra", "tercero", cid,
+          {"motivo": data.motivo} if data.activa else None)
+    db.commit()
+    return contact_detail(cid, scope, db)
+
+
+@router.get("/lista-negra")
+def blacklist_list(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Clientes en lista negra de los activos del usuario."""
+    cond = _contact_filter(scope, "huesped", "ver")
+    stmt = select(Contact, User.nombre, Asset.nombre).outerjoin(User, User.id == Contact.lista_negra_user_id)\
+        .outerjoin(Asset, Asset.id == Contact.asset_id).where(Contact.lista_negra.is_(True))
+    if cond is not None:
+        stmt = stmt.where(cond)
+    return [{"id": c.id, "nombre": f"{c.nombre} {c.apellidos or ''}".strip(), "documento_num": c.documento_num,
+             "activo": a, "motivo": c.lista_negra_motivo, "autor": n,
+             "fecha": c.lista_negra_fecha.isoformat() if c.lista_negra_fecha else None}
+            for c, n, a in db.execute(stmt.order_by(Contact.lista_negra_fecha.desc()))]
+
+
+@router.get("/lista-negra/comprobar")
+def blacklist_check(contact_id: int | None = None, documento: str | None = None, scope: Scope = Depends(get_scope),
+                    db: Session = Depends(get_db)):
+    """Aviso al reservar: si el cliente (o su documento) está en la lista negra, el motivo."""
+    if not scope.has_any("reservas.ver"):
+        raise HTTPException(403, "Sin permiso")
+    c = db.get(Contact, contact_id) if contact_id else None
+    return clientes.lista_negra(db, c, documento)
 
 
 @router.post("/terceros", status_code=201)

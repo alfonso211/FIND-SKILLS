@@ -160,6 +160,11 @@ class Contact(Base):
     municipio_ine: Mapped[str | None] = mapped_column(String(5))  # código INE del municipio (residentes en España)
     iban: Mapped[str | None] = mapped_column(String(40))
     notas: Mapped[str | None] = mapped_column(Text)
+    # Lista negra: Recepción 1, Recepción 2 o Dirección anotan el motivo; sale al volver a reservar
+    lista_negra: Mapped[bool] = mapped_column(Boolean, default=False)
+    lista_negra_motivo: Mapped[str | None] = mapped_column(Text)
+    lista_negra_fecha: Mapped[datetime | None] = mapped_column(DateTime)
+    lista_negra_user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
 
 
 class ContactDistinct(Base):
@@ -268,6 +273,9 @@ class Reservation(Base):
     extras: Mapped[list | None] = mapped_column(JSON)
     # Limpieza contratada: {inicio, periodicidad, cada, texto, fechas}. Ver app/limpiezas.py
     limpieza: Mapped[dict | None] = mapped_column(JSON)
+    # Dotación entregada: {habitual: bool, cambios: {codigo: cantidad («—» = se quita)}, extra: [{codigo, zona,
+    # articulo, cantidad}]}. Ver app/dotacion.py
+    dotacion: Mapped[dict | None] = mapped_column(JSON)
     unit: Mapped[Unit] = relationship()
     guest: Mapped[Contact] = relationship()
     ocupantes: Mapped[list["ReservationGuest"]] = relationship(order_by="ReservationGuest.orden",
@@ -1350,3 +1358,59 @@ class VacationChange(Base):
     creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     revision_id: Mapped[int | None] = mapped_column(ForeignKey("vacaciones_revisiones.id"), index=True)
+
+
+# --------------------------------------------------------------------------- fianzas
+FORMAS_DEVOLUCION = {"transferencia": "Transferencia bancaria", "efectivo": "Efectivo", "tarjeta": "Tarjeta bancaria",
+                     "no_procede": "No procede (fianza retenida)"}
+
+
+class DepositRefund(Base):
+    """Devolución de la fianza de una reserva al hacer la salida. Recepción 1 o 2 indican la forma; si es por
+    transferencia se avisa a la Dirección para hacerla. Entra en la exportación a INVERGESTION (gestoría)."""
+    __tablename__ = "fianzas_devoluciones"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    reservation_id: Mapped[int] = mapped_column(ForeignKey("reservas.id"), unique=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("terceros.id"), index=True)
+    titular: Mapped[str] = mapped_column(String(200))
+    fianza: Mapped[float] = mapped_column(Numeric(10, 2))
+    importe: Mapped[float] = mapped_column(Numeric(10, 2))  # lo que se devuelve
+    retenido_motivo: Mapped[str | None] = mapped_column(Text)  # si se devuelve menos (roturas, daños…)
+    forma: Mapped[str] = mapped_column(String(20))  # transferencia | efectivo | tarjeta | no_procede
+    iban: Mapped[str | None] = mapped_column(String(40))
+    fecha: Mapped[date] = mapped_column(Date)  # de la devolución (prevista si es transferencia)
+    estado: Mapped[str] = mapped_column(String(20), default="pendiente")  # pendiente | devuelta
+    devuelta_fecha: Mapped[date | None] = mapped_column(Date)
+    nota: Mapped[str | None] = mapped_column(Text)
+    creada: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    avisada: Mapped[datetime | None] = mapped_column(DateTime)  # correo a la Dirección
+    exportada: Mapped[datetime | None] = mapped_column(DateTime)  # incluida en un envío a INVERGESTION
+
+
+# --------------------------------------------------------------------------- dotación
+class DotacionHabitual(Base):
+    """Dotación habitual de los apartamentos de una tipología en un activo (la rellena Recepción la primera vez).
+    `items`: [{codigo, zona, articulo, cantidad}] tomados del catálogo 3 llaves (app/dotacion.py) o artículos propios."""
+    __tablename__ = "dotacion_habitual"
+    __table_args__ = (UniqueConstraint("asset_id", "tipologia"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
+    tipologia: Mapped[str] = mapped_column(String(60))
+    perfil: Mapped[str] = mapped_column(String(10))  # estudio | 1d | 2d | vip
+    items: Mapped[list] = mapped_column(JSON)
+    actualizada: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+
+
+class DotacionArticulo(Base):
+    """Artículo nuevo creado con «Otra dotación»: queda en el catálogo del activo para no volver a escribirlo."""
+    __tablename__ = "dotacion_articulos"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("activos.id"), index=True)
+    codigo: Mapped[str] = mapped_column(String(12), unique=True)
+    zona: Mapped[str] = mapped_column(String(20))
+    articulo: Mapped[str] = mapped_column(String(160))
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))

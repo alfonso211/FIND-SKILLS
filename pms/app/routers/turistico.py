@@ -14,13 +14,13 @@ from sqlalchemy.orm import Session, aliased
 
 from ..config import settings
 from ..database import get_db
-from .. import (avisos, clientes, contratos, documentos, encuesta_ine, firma_contrato, importacion, importacion_ocupacion,
-               limpiezas, nif, planos, recibos, registro_viajeros, tarifas)
+from .. import (avisos, clientes, contratos, documentos, dotacion, encuesta_ine, fianzas, firma_contrato, importacion,
+               importacion_ocupacion, limpiezas, nif, planos, recibos, registro_viajeros, tarifas)
 from ..facturacion import (IVA_ALOJAMIENTO, IVA_GENERAL, datos_cliente, dinero, emitir, estancia_facturada, linea,
                            lineas_servicios, serie_activo)
-from ..models import (MODALIDADES_RESERVA, AccommodationContract, Asset, Contact, Invoice, Lease, Reservation,
-                      ReservationGuest, Unit, User, WorkOrder)
-from ..schemas import (AccommodationContractIn, ExtrasPaymentIn, LimpiezaPlanIn, OccupantIn, Payment, RenewalIn,
+from ..models import (FORMAS_DEVOLUCION, MODALIDADES_RESERVA, AccommodationContract, Asset, Contact, DepositRefund, Invoice, Lease,
+                      Reservation, ReservationGuest, Unit, User, WorkOrder)
+from ..schemas import (AccommodationContractIn, CheckoutIn, DepositRefundIn, ExtrasPaymentIn, LimpiezaPlanIn, OccupantIn, Payment, RenewalIn,
                        ReservationIn, ReservationUpdate, SendContractIn, ServiceLine, SignatureIn, UnpaidInvoiceIn)
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
@@ -189,10 +189,16 @@ def create_reservation(data: ReservationIn, scope: Scope = Depends(get_scope), d
         db.flush()
     else:
         bad_request("Indique guest_id o los datos del huésped")
+    negra = clientes.lista_negra(db, guest)
+    if negra and not data.lista_negra_aceptada:
+        db.rollback()
+        raise HTTPException(409, "LISTA NEGRA: " + " · ".join(
+            f"{x['motivo']} ({x['activo'] or 'grupo'}, {x['autor'] or '—'}, {(x['fecha'] or '')[:10]})" for x in negra))
     if data.documentos:
         adjuntar_pendientes(db, scope.user, data.documentos, guest)
     r = Reservation(**data.model_dump(exclude={"guest", "guest_id", "documentos", "importe_pagado", "forma_pago",
-                                               "facturar_pendiente", "extras", "limpieza", "precio_aceptado"}),
+                                               "facturar_pendiente", "extras", "limpieza", "precio_aceptado",
+                                               "lista_negra_aceptada"}),
                     guest_id=guest.id, importe_pagado=0)
     if not (r.localizador or "").strip():
         r.localizador = nuevo_localizador(db, asset)
@@ -207,7 +213,7 @@ def create_reservation(data: ReservationIn, scope: Scope = Depends(get_scope), d
     audit(db, scope.user, "crear", "reserva", r.id,
           {"unidad": unit.codigo, "entrada": str(r.fecha_entrada), "salida": str(r.fecha_salida),
            "importe": float(data.importe_total), "tarifa_estandar": estandar["total"] if estandar else None,
-           "precio_aceptado": data.precio_aceptado})
+           "precio_aceptado": data.precio_aceptado, **({"lista_negra_aceptada": True} if negra else {})})
     facturas = []
     if data.importe_pagado:  # pagado al reservar: se registra el cobro y se factura (estancia y servicios aparte)
         facturas = _cobrar(db, scope, r, Payment(importe=data.importe_pagado, forma_pago=data.forma_pago))
@@ -405,12 +411,77 @@ def checkin(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(g
     return _res_out(r)
 
 
+@router.get("/reservas/{rid}")
+def reservation_detail(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    r = get_or_404(db, Reservation, rid)
+    scope.require_asset("reservas.ver", r.unit.asset_id)
+    return _res_out(r)
+
+
+def _devolucion(db: Session, r: Reservation) -> DepositRefund | None:
+    return db.scalar(select(DepositRefund).where(DepositRefund.reservation_id == r.id))
+
+
+@router.get("/reservas/{rid}/fianza")
+def deposit_info(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Lo que se muestra al hacer la salida: fianza, cliente, IBAN de su ficha y la devolución si ya se registró."""
+    r = get_or_404(db, Reservation, rid)
+    scope.require_asset("reservas.ver", r.unit.asset_id)
+    d = _devolucion(db, r)
+    return {"fianza": fianzas.importe(r), "titular": fianzas.titular(r), "iban": r.guest.iban,
+            "procede": fianzas.importe(r) > 0 and d is None, "devolucion": fianzas.a_dict(d) if d else None,
+            "formas": FORMAS_DEVOLUCION, "avisos": list(settings.fianza_avisos)}
+
+
+def _registrar_devolucion(db: Session, scope: Scope, r: Reservation, f: DepositRefundIn) -> tuple[DepositRefund, dict]:
+    total = fianzas.importe(r)
+    importe = total if f.importe is None else round(f.importe, 2)
+    if f.forma == "no_procede":
+        importe = 0.0
+    if importe > total:
+        bad_request(f"No se puede devolver más que la fianza ({total:.2f} €)")
+    if importe < total and not (f.retenido_motivo or "").strip():
+        bad_request("Indique el motivo por el que no se devuelve la fianza completa")
+    iban = None
+    if f.forma == "transferencia":
+        iban = "".join((f.iban or r.guest.iban or "").split()).upper()
+        if not iban:
+            bad_request("Indique el IBAN de la cuenta del cliente para la transferencia")
+        if not fianzas.iban_valido(iban):
+            bad_request("El IBAN no es correcto: revise los dígitos")
+        if not r.guest.iban:
+            r.guest.iban = iban  # queda en la ficha del cliente
+    d = DepositRefund(reservation_id=r.id, asset_id=r.unit.asset_id, contact_id=r.guest_id, titular=fianzas.titular(r),
+                      fianza=total, importe=importe, retenido_motivo=(f.retenido_motivo or "").strip() or None,
+                      forma=f.forma, iban=iban, fecha=f.fecha or date.today(),
+                      estado="pendiente" if f.forma == "transferencia" else "devuelta",
+                      devuelta_fecha=None if f.forma == "transferencia" else (f.fecha or date.today()),
+                      nota=f.nota, user_id=scope.user.id)
+    db.add(d)
+    db.flush()
+    extra: dict = {}
+    if f.forma == "transferencia" and importe > 0:
+        extra["avisos"] = fianzas.avisar(db, d, r, scope.user)
+        extra["whatsapp"] = fianzas.whatsapp(db, d, r)
+    audit(db, scope.user, "devolver_fianza", "reserva", r.id,
+          {"forma": f.forma, "fianza": total, "importe": importe, "devolucion": d.id})
+    return d, extra
+
+
 @router.post("/reservas/{rid}/checkout")
-def checkout(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+def checkout(rid: int, data: CheckoutIn | None = None, scope: Scope = Depends(get_scope),
+             db: Session = Depends(get_db)):
+    """Salida del apartamento. Si la reserva tiene fianza hay que indicar cómo se devuelve (o que no procede)."""
     r = get_or_404(db, Reservation, rid)
     scope.require_asset("reservas.editar", r.unit.asset_id)
     if r.estado != "checkin":
         bad_request("Solo se puede hacer check-out de una reserva con check-in")
+    extra: dict = {}
+    if fianzas.importe(r) > 0 and _devolucion(db, r) is None:
+        if not data or not data.fianza:
+            raise HTTPException(409, "La reserva tiene fianza: indique cómo se devuelve antes de hacer la salida")
+        d, extra = _registrar_devolucion(db, scope, r, data.fianza)
+        extra["devolucion"] = fianzas.a_dict(d)
     r.estado = "checkout"
     r.unit.estado = "pendiente_limpieza"
     revision_salida(db, r, scope.user)  # orden de trabajo a mantenimiento para revisar el apartamento
@@ -421,7 +492,7 @@ def checkout(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(
             g.unit.estado = "disponible"
     audit(db, scope.user, "checkout", "reserva", rid)
     db.commit()
-    return _res_out(r)
+    return {**_res_out(r), **extra}
 
 
 @router.post("/reservas/{rid}/cancelar")
@@ -1053,7 +1124,7 @@ def cerrar_renovadas(db: Session) -> None:
 
 @router.get("/reservas/{rid}/renovacion")
 def renewal_info(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    """Propuesta de renovación: mismas noches a partir de la salida actual y datos que faltan del cliente."""
+    """Propuesta de ampliación de reserva: mismas noches a partir de la salida actual y datos que faltan del cliente."""
     r = get_or_404(db, Reservation, rid)
     scope.require_asset("reservas.ver", r.unit.asset_id)
     noches = max(1, (r.fecha_salida - r.fecha_entrada).days)
@@ -1070,17 +1141,17 @@ def renew_stay(rid: int, data: RenewalIn, scope: Scope = Depends(get_scope), db:
     factura) que empieza el día de la salida actual. Exige antes los datos del cliente y ocupantes completos."""
     r = _reserva_editable(db, scope, rid)
     if r.estado not in ACTIVAS:
-        bad_request("Solo se renuevan estancias en curso o reservas confirmadas")
+        bad_request("Solo se amplían estancias en curso o reservas confirmadas")
     if db.scalar(select(Reservation.id).where(Reservation.renueva_id == r.id, Reservation.estado.in_(ACTIVAS))):
-        bad_request("Esta estancia ya está renovada: renueve la última renovación")
+        bad_request("Esta reserva ya está ampliada: amplíe la última ampliación")
     if data.fecha_salida <= r.fecha_salida:
         bad_request(f"La nueva salida debe ser posterior a la actual ({r.fecha_salida:%d/%m/%Y})")
     if data.precio_aceptado is False:
-        bad_request("Revise el precio de la renovación y marque «Acepto el precio» para continuar")
+        bad_request("Revise el precio de la ampliación y marque «Acepto el precio» para continuar")
     if r.unit.uso != "garaje":
         pendiente = _registro_incompleto(r)
         if pendiente:
-            bad_request("Antes de renovar, complete los datos que faltan: " + "; ".join(pendiente))
+            bad_request("Antes de ampliar la reserva, complete los datos que faltan: " + "; ".join(pendiente))
     if _conflict(db, r.unit_id, r.fecha_salida, data.fecha_salida, exclude_id=r.id):
         bad_request(f"El apartamento {r.unit.codigo} ya está reservado entre el {r.fecha_salida:%d/%m/%Y} y el "
                     f"{data.fecha_salida:%d/%m/%Y}")
@@ -1092,7 +1163,7 @@ def renew_stay(rid: int, data: RenewalIn, scope: Scope = Depends(get_scope), db:
                         fecha_entrada=r.fecha_salida, fecha_salida=data.fecha_salida, adultos=r.adultos, ninos=r.ninos,
                         importe_total=data.importe_total, importe_pagado=0,
                         estado="checkin" if alojado and r.fecha_salida <= hoy else "confirmada", renueva_id=r.id,
-                        datos_contrato=datos or None, notas=data.notas or f"Renovación de la reserva {r.localizador or r.id}")
+                        datos_contrato=datos or None, notas=data.notas or f"Ampliación de la reserva {r.localizador or r.id}")
     for o in r.ocupantes:
         nueva.ocupantes.append(ReservationGuest(contact_id=o.contact_id, titular=o.titular, parentesco=o.parentesco,
                                                 orden=o.orden))
@@ -1101,11 +1172,11 @@ def renew_stay(rid: int, data: RenewalIn, scope: Scope = Depends(get_scope), db:
         for g in _garajes_asociados(db, r):
             if _conflict(db, g.unit_id, r.fecha_salida, data.fecha_salida, exclude_id=g.id):
                 bad_request(f"La plaza de garaje {g.unit.codigo} está ocupada en las nuevas fechas: "
-                            "renueve sin garaje o cambie de plaza")
+                            "amplíe la reserva sin garaje o cambie de plaza")
             db.add(Reservation(unit_id=g.unit_id, guest_id=r.guest_id, localizador=f"{loc}-G", canal=g.canal,
                                fecha_entrada=r.fecha_salida, fecha_salida=data.fecha_salida, adultos=1, ninos=0,
                                importe_total=0, importe_pagado=0, estado=nueva.estado, renueva_id=g.id,
-                               notas=f"Plaza de garaje de la renovación {loc}"))
+                               notas=f"Plaza de garaje de la ampliación {loc}"))
     db.flush()
     cerrar_renovadas(db)  # si la estancia anterior (y su plaza) ya terminó, queda cerrada
     audit(db, scope.user, "renovar", "reserva", r.id, {"renovacion": nueva.id, "localizador": loc,
@@ -1124,7 +1195,7 @@ def renew_stay(rid: int, data: RenewalIn, scope: Scope = Depends(get_scope), db:
 
 # --------------------------------------------------------------------------- estancias vencidas
 def vencidas_q(asset_ids: set[int] | None, dia: date):
-    """Alojados (check-in hecho) cuya fecha de salida ya pasó: hay que renovar la estancia o dar la salida."""
+    """Alojados (check-in hecho) cuya fecha de salida ya pasó: hay que ampliar la reserva o dar la salida."""
     stmt = select(Reservation).join(Unit).where(Reservation.estado == "checkin", Reservation.fecha_salida < dia,
                                                 Unit.uso != "garaje", ~_renovada())
     return scoped(stmt, Unit.asset_id, asset_ids)
@@ -1162,7 +1233,7 @@ def overdue_stays(asset_id: int | None = None, dias: int = Query(3, ge=0, le=30)
             txt = (f"Hola {r.guest.nombre}, le escribimos de {a.nombre}. Su estancia en el apartamento {r.unit.codigo} "
                    + (f"finalizó el {r.fecha_salida:%d/%m/%Y}" if r.fecha_salida < hoy
                       else f"finaliza el {r.fecha_salida:%d/%m/%Y}")
-                   + ". Por favor, pase por recepción o contéstenos para renovarla o preparar la salida. Gracias.")
+                   + ". Por favor, pase por recepción o contéstenos para ampliar su reserva o preparar la salida. Gracias.")
             d["whatsapp"] = f"https://wa.me/{movil}?text={quote(txt)}"
         return d
     return {"vencidas": [fila(r) for r in db.scalars(q_venc.order_by(Reservation.fecha_salida, Unit.codigo))],
@@ -1240,6 +1311,26 @@ def _datos_plantilla(r: Reservation, c: AccommodationContractIn) -> dict:
     return d
 
 
+def _rellenar(ruta, r: Reservation, data: AccommodationContractIn) -> tuple[bytes, list[str]]:
+    """El contrato relleno y, si se ha pulsado «Dotación habitual», el Anexo I con la dotación del apartamento."""
+    contenido, pendientes = contratos.rellenar(ruta, _datos_plantilla(r, data))
+    if data.dotacion and data.dotacion_items:
+        contenido = dotacion.anexo(
+            contenido, data.dotacion_items, "ANEXO I · INVENTARIO Y DOTACIÓN DEL APARTAMENTO",
+            f"{r.unit.asset.nombre} · Apartamento {r.unit.codigo}"
+            f"{' (' + r.unit.tipologia + ')' if r.unit.tipologia else ''} · Reserva {r.localizador or r.id} · "
+            f"Estancia {r.fecha_entrada:%d/%m/%Y} – {r.fecha_salida:%d/%m/%Y}")
+    return contenido, pendientes
+
+
+def _con_dotacion(db: Session, r: Reservation, data: AccommodationContractIn) -> None:
+    """Al pulsar «Dotación habitual» se fija la lista que va con el contrato (y se guarda para reimprimirlo igual)."""
+    if data.dotacion:
+        data.dotacion_items = dotacion.de_reserva(db, r)["items"]
+    else:
+        data.dotacion_items = None
+
+
 def _contrato_reserva(rid: int, perm: str, scope: Scope, db: Session) -> tuple[Reservation, object]:
     r = get_or_404(db, Reservation, rid)
     scope.require_asset(perm, r.unit.asset_id)
@@ -1296,7 +1387,8 @@ def contract_print(rid: int, data: AccommodationContractIn, scope: Scope = Depen
     """Guarda los datos del contrato en la reserva y, salvo `solo_guardar`, genera el .docx para imprimir.
     Si falta algún dato o casilla no se imprime (el cliente solo debe firmar), salvo `permitir_huecos`."""
     r, ruta = _contrato_reserva(rid, "reservas.editar", scope, db)
-    contenido, pendientes = contratos.rellenar(ruta, _datos_plantilla(r, data))
+    _con_dotacion(db, r, data)
+    contenido, pendientes = _rellenar(ruta, r, data)
     faltan = contratos.faltan(pendientes)
     if not data.motivo:
         faltan.append("Motivo de la estancia (marque al menos una casilla)")
@@ -1331,7 +1423,7 @@ def contract_reprint(rid: int, cid: int, scope: Scope = Depends(get_scope), db: 
     c = get_or_404(db, AccommodationContract, cid)
     if c.reservation_id != rid:
         bad_request("El contrato no pertenece a esta reserva")
-    contenido, _ = contratos.rellenar(ruta, _datos_plantilla(r, AccommodationContractIn(**c.datos)))
+    contenido, _ = _rellenar(ruta, r, AccommodationContractIn(**c.datos))
     return _descarga(contenido, r)
 
 
@@ -1423,13 +1515,14 @@ def contract_sign_prepare(rid: int, data: AccommodationContractIn, scope: Scope 
     r, ruta = _contrato_reserva(rid, "reservas.editar", scope, db)
     if not firma_contrato.disponible():
         bad_request("El servidor no tiene instalado el conversor a PDF (LibreOffice): imprima el contrato")
+    _con_dotacion(db, r, data)
     _guardar_datos_contrato(r, data)
     faltan = _faltan_contrato(r, data, contratos.rellenar(ruta, _datos_plantilla(r, data))[1])
     faltan += _registro_incompleto(r)
     db.commit()
     if faltan:
         bad_request("Para firmar en la tablet el contrato debe estar completo: " + "; ".join(faltan))
-    contenido, _ = contratos.rellenar(ruta, _datos_plantilla(r, data))
+    contenido, _ = _rellenar(ruta, r, data)
     try:
         pdf = firma_contrato.a_pdf(contenido)
     except RuntimeError as e:
@@ -1464,7 +1557,7 @@ def contract_sign(rid: int, cid: int, data: SignatureIn, request: Request, scope
     except ValueError as e:
         bad_request(str(e))
     datos = AccommodationContractIn(**c.datos)
-    contenido, _ = contratos.rellenar(ruta, _datos_plantilla(r, datos))
+    contenido, _ = _rellenar(ruta, r, datos)
     try:
         firmado = firma_contrato.a_pdf(firma_contrato.insertar_firma(contenido, firma))
     except RuntimeError as e:
@@ -1538,3 +1631,84 @@ def public_contract(token: str, db: Session = Depends(get_db)):
     return Response(documentos.leer(c.fichero), media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{_nombre_pdf(r)}"',
                              "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex"})
+
+
+# --------------------------------------------------------------------------- devoluciones de fianza
+class DevueltaIn(BaseModel):
+    fecha: date | None = None
+
+
+@router.get("/fianzas")
+def deposits(estado: str | None = None, asset_id: int | None = None, scope: Scope = Depends(get_scope),
+             db: Session = Depends(get_db)):
+    """Devoluciones de fianza registradas al hacer la salida (las transferencias pendientes primero)."""
+    ids = scope.asset_ids("reservas.ver")
+    stmt = select(DepositRefund, Reservation, Unit, Asset).join(Reservation, Reservation.id == DepositRefund.reservation_id)\
+        .join(Unit, Unit.id == Reservation.unit_id).join(Asset, Asset.id == Unit.asset_id)
+    if ids is not None:
+        stmt = stmt.where(DepositRefund.asset_id.in_(ids or {-1}))
+    if asset_id:
+        stmt = stmt.where(DepositRefund.asset_id == asset_id)
+    if estado:
+        stmt = stmt.where(DepositRefund.estado == estado)
+    out = []
+    for d, r, u, a in db.execute(stmt.order_by(DepositRefund.estado.desc(), DepositRefund.id.desc()).limit(500)):
+        out.append({**fianzas.a_dict(d), "activo": a.nombre, "unidad": u.codigo,
+                    "localizador": r.localizador, "salida": r.fecha_salida.isoformat()})
+    return out
+
+
+def _fianza(db: Session, scope: Scope, fid: int) -> tuple[DepositRefund, Reservation]:
+    d = get_or_404(db, DepositRefund, fid)
+    scope.require_asset("reservas.editar", d.asset_id)
+    return d, db.get(Reservation, d.reservation_id)
+
+
+@router.post("/fianzas/{fid}/devuelta")
+def deposit_done(fid: int, data: DevueltaIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Transferencia hecha: la devolución queda cerrada."""
+    d, r = _fianza(db, scope, fid)
+    d.estado = "devuelta"
+    d.devuelta_fecha = data.fecha or date.today()
+    audit(db, scope.user, "fianza_devuelta", "reserva", r.id, {"devolucion": d.id})
+    db.commit()
+    return fianzas.a_dict(d)
+
+
+@router.post("/fianzas/{fid}/avisar")
+def deposit_notify(fid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Vuelve a enviar a la Dirección los datos de la transferencia (correo) y prepara los WhatsApp."""
+    d, r = _fianza(db, scope, fid)
+    if d.forma != "transferencia":
+        bad_request("Solo se avisa de las devoluciones por transferencia")
+    envios = fianzas.avisar(db, d, r, scope.user)
+    db.commit()
+    return {"avisos": envios, "whatsapp": fianzas.whatsapp(db, d, r)}
+
+
+# --------------------------------------------------------------------------- dotación entregada en la reserva
+class DotacionReservaIn(BaseModel):
+    # código -> cantidad distinta de la habitual («—» = no se entrega)
+    cambios: dict[str, str] = {}
+    # dotación especial: artículos añadidos [{codigo, zona, articulo, cantidad}]
+    extra: list[dict] = []
+
+
+@router.get("/reservas/{rid}/dotacion")
+def stay_kit(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    r = get_or_404(db, Reservation, rid)
+    scope.require_asset("reservas.ver", r.unit.asset_id)
+    return dotacion.de_reserva(db, r)
+
+
+@router.put("/reservas/{rid}/dotacion")
+def stay_kit_save(rid: int, data: DotacionReservaIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Dotación especial de la reserva: quitar o cambiar artículos de la habitual y añadir otros."""
+    r = get_or_404(db, Reservation, rid)
+    scope.require_asset("reservas.editar", r.unit.asset_id)
+    cambios = {k.strip().upper()[:12]: str(v).strip()[:80] for k, v in data.cambios.items() if k.strip()}
+    extra = dotacion.limpiar(data.extra)
+    r.dotacion = {"cambios": cambios, "extra": extra} if (cambios or extra) else None
+    audit(db, scope.user, "dotacion_reserva", "reserva", r.id, {"cambios": len(cambios), "extra": len(extra)})
+    db.commit()
+    return dotacion.de_reserva(db, r)

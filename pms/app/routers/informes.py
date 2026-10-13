@@ -319,7 +319,7 @@ def _cobros(db, scope, wb, desde, hasta, asset_id):
     _hoja(wb, "Pendientes de cobro", ["Activo", "Factura", "Fecha factura", "Cliente", "NIF", "Teléfono", "Email",
                                       "Apartamento", "Localizador", "Estancia", "Total", "Días pendiente", "Antigüedad"],
           filas, {2: FECHA, 10: EUR, 11: ENTERO}, totales=[10],
-          nota=f"Facturas emitidas sin cobrar a {hasta:%d/%m/%Y} (renovaciones y reservas que pagan por transferencia). "
+          nota=f"Facturas emitidas sin cobrar a {hasta:%d/%m/%Y} (ampliaciones de reserva y reservas que pagan por transferencia). "
                "Recepción las revisa a diario y las marca cobradas al recibir el pago.")
     usuarios = dict(db.execute(select(User.id, User.nombre)).all())
     cobradas = []

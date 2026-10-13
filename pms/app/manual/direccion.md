@@ -12,6 +12,10 @@
   - **Comprobar** avisa de las facturas recibidas cuya fecha coincide con el día en que se registraron: revise que sea la de la factura.
   - Todos los documentos van en **PDF** (las fotos se convierten) con el nombre exacto de la columna archivo_pdf.
 
+## Devoluciones de fianza
+- Cuando Recepción da la salida con fianza **por transferencia**, llega un **correo** con cliente, apartamento, importe, IBAN y fecha (y Recepción puede enviarlo también por **WhatsApp**). Hecha la transferencia, se marca en *Reservas → Devoluciones de fianza*.
+- Todas las devoluciones van en la exportación a **INVERGESTION** (FIANZAS_*.csv) para la gestoría. Los avisos quedan en *Administración → Avisos* (registro de envíos).
+
 ## Facturación
 - **Facturas emitidas**: listado con filtros (pendientes de cobro, cobradas), PDF y **libro de facturas** para la gestoría.
 - **Fecha de factura: último día del mes** de emisión (criterio de la gestoría).

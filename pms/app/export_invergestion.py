@@ -27,8 +27,8 @@ from sqlalchemy.orm import Session
 
 from . import documentos, factura_pdf, nif
 from .facturacion import desglose, dinero, lineas_de
-from .models import (Asset, Charge, Contact, Expense, Invoice, Lease, ReceivedDocument, Reservation, Supplier,
-                     Unit)
+from .models import (Asset, Charge, Contact, DepositRefund, Expense, Invoice, Lease, ReceivedDocument, Reservation,
+                     Supplier, Unit)
 
 ACTIVOS = {"SFL": "SFLORIDA", "SAE": "SAEROPUERTO", "BAB35": "BABILONIA35"}
 
@@ -42,6 +42,13 @@ COLUMNAS_RECIBIDAS = [
     "tipo_factura", "numero_rectificada", "fecha_factura", "fecha_recepcion", "concepto", "categoria", "unidad",
     "base", "tipo_iva", "cuota_iva", "inversion_sujeto_pasivo", "retencion", "total", "forma_pago", "dias_pago",
     "fecha_vencimiento", "importe_pagado", "fecha_pago", "estado", "archivo_pdf"]
+# Devoluciones de fianza registradas al hacer la salida (no son facturas: la fianza no lleva IVA)
+COLUMNAS_FIANZAS = [
+    "activo", "nif_emisor", "reserva_id", "localizador", "unidad", "cliente_nombre", "cliente_nif", "fecha_entrada",
+    "fecha_salida", "fianza", "importe_devuelto", "importe_retenido", "motivo_retencion", "forma_devolucion",
+    "iban", "fecha_devolucion", "estado"]
+FORMAS_FIANZA = {"transferencia": "TRANSFERENCIA", "efectivo": "EFECTIVO", "tarjeta": "TARJETA",
+                 "no_procede": "RETENIDA"}
 OBLIGATORIAS_EMITIDAS = ["activo", "nif_emisor", "serie", "numero", "tipo_factura", "fecha_expedicion",
                          "cliente_nombre", "cliente_nif", "concepto", "base", "tipo_iva", "cuota_iva", "total",
                          "forma_pago", "importe_cobrado", "estado", "archivo_pdf"]
@@ -339,6 +346,38 @@ def _pdfs_recibidas(ficheros: list[tuple]) -> tuple[dict[str, bytes], list[str]]
     return out, errores
 
 
+def fianzas(db: Session, asset_ids: set[int], desde: date, hasta: date) -> tuple[list[dict], list, list[str]]:
+    """(filas, [], avisos). Las devoluciones registradas o hechas en el periodo."""
+    ini, fin = datetime.combine(desde, time.min), datetime.combine(hasta, time.max)
+    filas, avisos = [], []
+    for d, r, u, a, c in db.execute(
+            select(DepositRefund, Reservation, Unit, Asset, Contact)
+            .join(Reservation, Reservation.id == DepositRefund.reservation_id).join(Unit, Unit.id == Reservation.unit_id)
+            .join(Asset, Asset.id == DepositRefund.asset_id).join(Contact, Contact.id == DepositRefund.contact_id)
+            .where(DepositRefund.asset_id.in_(asset_ids or {-1}),
+                   or_(and_(DepositRefund.creada >= ini, DepositRefund.creada <= fin),
+                       and_(DepositRefund.devuelta_fecha >= desde, DepositRefund.devuelta_fecha <= hasta)))
+            .order_by(DepositRefund.id)):
+        filas.append({
+            "activo": codigo_activo(a), "nif_emisor": nif.normalizar(a.company.cif) or "",
+            "reserva_id": r.id, "localizador": r.localizador or "", "unidad": u.codigo, "cliente_nombre": d.titular,
+            "cliente_nif": nif.normalizar(c.documento_num) or "", "fecha_entrada": fecha(r.fecha_entrada),
+            "fecha_salida": fecha(r.fecha_salida), "fianza": importe(d.fianza), "importe_devuelto": importe(d.importe),
+            "importe_retenido": importe(dinero(d.fianza) - dinero(d.importe)), "motivo_retencion": d.retenido_motivo or "",
+            "forma_devolucion": FORMAS_FIANZA.get(d.forma, d.forma.upper()), "iban": d.iban or "",
+            "fecha_devolucion": fecha(d.devuelta_fecha or d.fecha),
+            "estado": "DEVUELTA" if d.estado == "devuelta" else "PENDIENTE"})
+        if d.estado != "devuelta":
+            avisos.append(f"Fianza de {u.codigo} ({r.localizador or r.id}): transferencia pendiente de hacer")
+    return filas, [], avisos
+
+
+def marcar_fianzas(db: Session, filas: list[dict]) -> None:
+    ids = [f["reserva_id"] for f in filas]
+    for d in db.scalars(select(DepositRefund).where(DepositRefund.reservation_id.in_(ids or [-1]))):
+        d.exportada = datetime.now()
+
+
 def documentos_ilegibles(ficheros: list[tuple]) -> list[str]:
     """Documentos escaneados que no se pueden leer: la exportación no se generaría (falta su PDF)."""
     out, vistos = [], set()
@@ -361,6 +400,10 @@ def paquete(db: Session, datos: dict, activo: str, desde: date, hasta: date, pdf
     errores: list[str] = []
     csvs: dict[str, tuple[bytes, int]] = {}
     for tipo, (cod, filas, adjuntos, _) in datos.items():
+        if tipo == "fianzas":  # solo si hay devoluciones en el periodo
+            if filas:
+                csvs[nombre_fichero("FIANZAS", cod, desde, hasta, "csv")] = (a_csv(COLUMNAS_FIANZAS, filas), len(filas))
+            continue
         if pdf:
             if tipo == "emitidas":
                 ficheros.update(_pdfs_emitidas(db, adjuntos))

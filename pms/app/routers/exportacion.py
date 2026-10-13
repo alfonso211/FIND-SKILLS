@@ -1,4 +1,4 @@
-"""Exportación a INVERGESTION: facturas emitidas y recibidas en CSV, con sus PDF en un .zip junto a cada CSV."""
+"""Exportación a INVERGESTION: facturas emitidas y recibidas en CSV, con sus PDF, y las devoluciones de fianza."""
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -43,17 +43,26 @@ def _datos(db: Session, scope: Scope, desde: date, hasta: date, activo: str | No
     if "recibidas" in tipos and scope.has_any("documentos.ver"):
         ids, cod = _activos(db, scope, "documentos.ver", activo)
         out["recibidas"] = (cod, *ex.recibidas(db, ids, desde, hasta))
+    if "fianzas" in tipos and scope.has_any("facturas.ver"):  # devoluciones de fianza (para la gestoría)
+        ids, cod = _activos(db, scope, "facturas.ver", activo)
+        out["fianzas"] = (cod, *ex.fianzas(db, ids, desde, hasta))
     if not out:
         raise HTTPException(403, "Sin permiso para exportar facturas")
     return out
 
 
 @router.get("/invergestion/comprobar")
-def check(desde: date, hasta: date, activo: str | None = None, tipos: str = "emitidas,recibidas",
+def check(desde: date, hasta: date, activo: str | None = None, tipos: str = "emitidas,recibidas,fianzas",
           scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     """Lo que se va a enviar y lo que INVERGESTION rechazaría (campos obligatorios, NIF, cuadre)."""
     out = {}
     for tipo, (cod, filas, ficheros, avisos) in _datos(db, scope, desde, hasta, activo, tipos).items():
+        if tipo == "fianzas":
+            out[tipo] = {"devoluciones": len(filas), "filas": len(filas), "ficheros": 0, "facturas": 0,
+                         "total": round(sum(float(f["importe_devuelto"]) for f in filas), 2),
+                         "avisos": avisos[:200], "n_avisos": len(avisos),
+                         "csv": ex.nombre_fichero("FIANZAS", cod, desde, hasta, "csv")}
+            continue
         claves = {(f.get("nif_emisor") or f.get("proveedor_nif"), f.get("serie"), f["numero"]) for f in filas}
         out[tipo] = {"facturas": len(claves), "filas": len(filas), "ficheros": len(ficheros),
                      "total": round(sum(float(f["total"]) for f in {(f.get("nif_emisor") or f.get("proveedor_nif"),
@@ -71,7 +80,7 @@ def check(desde: date, hasta: date, activo: str | None = None, tipos: str = "emi
 
 
 @router.get("/invergestion")
-def export(desde: date, hasta: date, activo: str | None = None, tipos: str = "emitidas,recibidas",
+def export(desde: date, hasta: date, activo: str | None = None, tipos: str = "emitidas,recibidas,fianzas",
            pdf: bool = True, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     """Un solo ZIP: CSV en la raíz, manifest.json y los PDF en pdf/emitidas/ y pdf/recibidas/. Si a alguna fila le
     falta su PDF, no se genera (409) y se dice cuál."""
@@ -81,6 +90,8 @@ def export(desde: date, hasta: date, activo: str | None = None, tipos: str = "em
         contenido = ex.paquete(db, datos, cod, desde, hasta, pdf)
     except ex.PaqueteIncompleto as e:
         raise HTTPException(409, f"Exportación no generada: faltan PDF en el paquete. {e}") from e
+    if "fianzas" in datos:
+        ex.marcar_fianzas(db, datos["fianzas"][1])
     audit(db, scope.user, "exportar_invergestion", "facturas", None,
           {"desde": str(desde), "hasta": str(hasta), "activo": cod, "tipos": tipos, "pdf": pdf,
            **{t: len(v[1]) for t, v in datos.items()}})

@@ -753,3 +753,11 @@ tr.cx-sep th { background: #1a1a1c; color: #fff; }
 .cx-cmp td, .cx-cmp th { font-size: 13px; white-space: nowrap; } .cx-cmp td:first-child { white-space: normal; min-width: 260px; }
 .cx-buscar { max-height: 55vh; overflow: auto; } .cx-buscar td { padding: 4px 6px; border-bottom: 1px solid var(--line); font-size: 13px; }
 .cx-adj td { padding: 4px 8px; } .cx-adj select { min-width: 280px; }
+/* lista negra de clientes */
+.aviso-negra { background: #2a0d0d; color: #fff; border-left: 6px solid #e53935; border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; }
+.aviso-negra b { color: #ffb4ab; letter-spacing: .04em; }
+.aviso-negra ul { margin: 6px 0 0 18px; padding: 0; }
+/* dotación: lista por zonas con casilla y cantidad */
+table.dot td { padding: 3px 6px; }
+table.dot input[data-cant] { width: 11em; }
+details > summary { cursor: pointer; padding: 6px 0; }
