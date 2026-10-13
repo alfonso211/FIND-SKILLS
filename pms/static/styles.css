@@ -120,8 +120,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .badge { display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #eee9de; color: var(--ink); }
 .b-disponible, .b-pagado, .b-vigente, .b-cerrada, .b-checkout, .b-baja { background: #e3f3e9; color: var(--ok); }
 .b-trabajo_realizado, .b-ocupada, .b-checkin, .b-confirmada, .b-en_curso, .b-asignada, .b-media { background: #e3edf9; color: var(--info); }
-.b-pendiente_cierre, .b-pendiente_limpieza, .b-pendiente, .b-parcial, .b-abierta, .b-pendiente_material, .b-alta, .b-borrador { background: #fbf1dc; color: var(--warn); }
-.b-mantenimiento, .b-bloqueada, .b-fuera_servicio, .b-cancelada, .b-no_show, .b-urgente, .b-anulado, .b-rescindido { background: #fbe6e4; color: var(--bad); }
+.b-pendiente_cierre, .b-pendiente_limpieza, .b-pendiente, .b-parcial, .b-abierta, .b-pendiente_material, .b-pendiente_visita, .b-revisar, .b-alta, .b-borrador { background: #fbf1dc; color: var(--warn); }
+.b-mantenimiento, .b-bloqueada, .b-fuera_servicio, .b-cancelada, .b-no_show, .b-urgente, .b-escalada, .b-anulado, .b-rescindido { background: #fbe6e4; color: var(--bad); }
 
 .planning { font-size: 11px; }
 .planning td, .planning th { padding: 3px 4px; text-align: center; border-right: 1px solid var(--line-2); }
@@ -725,3 +725,8 @@ tr.pareto-a td:first-child { font-weight: 700; }
   .pe-grid { grid-template-columns: repeat(2, 1fr); }
   .pe-grid.grande { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* intervenciones del técnico (enlace de la OT) */
+.intervencion { border: 1px solid var(--line); border-radius: var(--radio); padding: 10px 14px; margin-bottom: 10px; background: var(--panel); }
+.intervencion p { margin: 4px 0; }
+.firma-tecnico { max-width: 260px; max-height: 110px; border: 1px dashed var(--line); border-radius: 8px; background: #fff; margin-top: 6px; }

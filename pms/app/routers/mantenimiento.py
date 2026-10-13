@@ -1,11 +1,12 @@
 """Mantenimiento correctivo y preventivo (órdenes de trabajo y planes periódicos)."""
 import hashlib
 import hmac
+from html import escape
 import time
 from datetime import date, datetime, timedelta
 from urllib.parse import quote
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -16,16 +17,18 @@ from .. import adjuntos, avisos, documentos, firma_contrato, parte_pdf, planos
 from . import personal
 from ..config import settings
 from ..database import get_db
-from ..models import (Asset, EmailLog, PreventivePlan, StaffMember, Supplier, Unit, User, WorkOrder,
-                      WorkOrderAttachment)
+from ..models import (RESULTADOS_TECNICO, Asset, EmailLog, PreventivePlan, StaffMember, Supplier, Unit, User,
+                      WorkOrder, WorkOrderAttachment, WorkOrderVisit)
 from ..schemas import PlanIn, PlanUpdate, WorkOrderIn, WorkOrderUpdate
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
 
 router = APIRouter(prefix="/api/mantenimiento", tags=["mantenimiento"])
 
-# Estados editables a mano por mantenimiento
-ESTADOS_TRABAJO = ("abierta", "asignada", "en_curso", "pendiente_material")
+# Estados editables a mano por mantenimiento (los tres últimos los fija también el técnico desde su enlace)
+ESTADOS_TRABAJO = ("abierta", "asignada", "en_curso", "pendiente_material", "pendiente_visita", "escalada", "revisar")
+# Resultados del técnico que dejan la OT en pausa: se recuerdan cada día hasta que alguien actúa
+PAUSADAS = ("pendiente_material", "otra_visita", "escalar", "otro")
 # Estados que fija el flujo de confirmaciones
 ABIERTAS = ESTADOS_TRABAJO + ("trabajo_realizado", "pendiente_cierre")
 ESTADOS_OT = set(ABIERTAS) | {"cerrada", "cancelada"}
@@ -56,6 +59,11 @@ PLANTILLA_PREVENTIVO = [
 TIPOS_PREVENTIVOS = ("preventivo", "normativo")
 
 
+def atendida(w: WorkOrder) -> None:
+    """Recepción o dirección han actuado sobre el resultado del técnico: deja de avisarse y de recordarse."""
+    w.alerta_tecnico = w.alerta_fecha = None
+
+
 def requiere_limpieza(w: WorkOrder) -> bool:
     """Las OT preventivas/normativas de zonas comunes (sin unidad) no pasan por limpieza."""
     return not (w.unit_id is None and w.tipo in TIPOS_PREVENTIVOS)
@@ -75,6 +83,16 @@ def _wo_out(w: WorkOrder, db: Session, n_adjuntos: int | None = None) -> dict:
     for campo in ("abierta_por", "conf_mto_por", "conf_limpieza_por", "cerrada_por"):
         uid = getattr(w, campo)
         d[campo + "_nombre"] = db.get(User, uid).nombre if uid else None
+    ultima = db.scalar(select(WorkOrderVisit).where(WorkOrderVisit.work_order_id == w.id,
+                                                    WorkOrderVisit.enviado.is_not(None))
+                       .order_by(WorkOrderVisit.enviado.desc()).limit(1))
+    d["tecnico"] = {"nombre": ultima.tecnico, "empresa": ultima.empresa, "resultado": ultima.resultado,
+                    "resultado_nombre": RESULTADOS_TECNICO.get(ultima.resultado), "enviado": ultima.enviado.isoformat(),
+                    "fecha_propuesta": ultima.fecha_propuesta.isoformat() if ultima.fecha_propuesta else None} \
+        if ultima else None
+    if w.conf_mto_fecha and not w.conf_mto_por and ultima:  # confirmado por el técnico desde su enlace
+        d["conf_mto_por_nombre"] = f"{ultima.tecnico} (enlace)"
+    d["alerta_nombre"] = RESULTADOS_TECNICO.get(w.alerta_tecnico)
     return d
 
 
@@ -154,8 +172,10 @@ def create_order(data: WorkOrderIn, tareas: BackgroundTasks, scope: Scope = Depe
         if unit.asset_id != data.asset_id:
             bad_request("La unidad no pertenece al activo indicado")
     valores = data.model_dump(exclude={"parte_estado_id"})
-    if not gestiona:
-        for campo in CAMPOS_GESTION:
+    # recepción (cierra OT) también asigna a personal propio o subcontrata; tipo y coste son de mantenimiento
+    asigna = gestiona or scope.can_asset("mantenimiento.cerrar", data.asset_id)
+    for campo in CAMPOS_GESTION:
+        if not gestiona and (campo in ("coste_estimado", "tipo") or not asigna):
             valores.pop(campo, None)
     w = WorkOrder(**valores, abierta_por=scope.user.id)
     _asignar(db, w)
@@ -177,6 +197,40 @@ def create_order(data: WorkOrderIn, tareas: BackgroundTasks, scope: Scope = Depe
     return _wo_out(w, db)
 
 
+class AsignarIn(BaseModel):
+    asignacion: Literal["propio", "subcontrata"]
+    personal_id: int | None = None
+    proveedor_id: int | None = None
+    proveedor: str | None = Field(default=None, max_length=160)
+    fecha_prevista: date | None = None
+
+
+@router.post("/ordenes/{wid}/asignar")
+def assign_order(wid: int, data: AsignarIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Recepción o dirección técnica asignan la OT a personal propio o a una subcontrata (también para derivarla
+    cuando el personal propio lo pide)."""
+    w = _open_order(db, wid)
+    if not (scope.can_asset("mantenimiento.editar", w.asset_id) or scope.can_asset("mantenimiento.cerrar", w.asset_id)):
+        raise HTTPException(403, "Sin permiso para asignar órdenes de trabajo")
+    if w.conf_mto_fecha:
+        bad_request("El trabajo ya está confirmado: si hay que rehacerlo, rechácelo antes")
+    w.asignacion, w.personal_id, w.proveedor_id = data.asignacion, data.personal_id, data.proveedor_id
+    w.proveedor = (data.proveedor or "").strip() or None
+    if data.asignacion == "propio" and not data.personal_id:
+        bad_request("Elija la persona de mantenimiento")
+    if data.asignacion == "subcontrata" and not (data.proveedor_id or w.proveedor):
+        bad_request("Elija la subcontrata")
+    _asignar(db, w)
+    if data.fecha_prevista:
+        w.fecha_prevista = data.fecha_prevista
+    if w.estado in ("escalada", "revisar", "abierta"):
+        w.estado = "asignada"
+    atendida(w)
+    audit(db, scope.user, "asignar", "orden_trabajo", wid, {"asignado": w.asignado_a, "asignacion": w.asignacion})
+    db.commit()
+    return _wo_out(w, db)
+
+
 @router.put("/ordenes/{wid}")
 def update_order(wid: int, data: WorkOrderUpdate, tareas: BackgroundTasks, scope: Scope = Depends(get_scope),
                  db: Session = Depends(get_db)):
@@ -189,6 +243,8 @@ def update_order(wid: int, data: WorkOrderUpdate, tareas: BackgroundTasks, scope
     ch = apply(w, data)
     if {"asignacion", "personal_id", "proveedor_id", "proveedor"} & set(ch):
         _asignar(db, w)
+    if {"estado", "fecha_prevista", "asignacion", "personal_id", "proveedor_id", "proveedor"} & set(ch):
+        atendida(w)
     audit(db, scope.user, "editar", "orden_trabajo", wid, ch)
     db.commit()
     if "prioridad" in ch and w.prioridad == "urgente":
@@ -292,21 +348,34 @@ def parte(db: Session, w: WorkOrder) -> bytes:
                                           WorkOrderAttachment.mime == "image/jpeg")
         .order_by(WorkOrderAttachment.id).limit(4))]
     abierta = db.get(User, w.abierta_por).nombre if w.abierta_por else None
+    # la última intervención enviada por el técnico rellena la parte 2 (con su firma) y el cierre, la conformidad
+    v = db.scalar(select(WorkOrderVisit).where(WorkOrderVisit.work_order_id == w.id, WorkOrderVisit.enviado.is_not(None))
+                  .order_by(WorkOrderVisit.enviado.desc()).limit(1))
+    intervencion = None
+    if v:
+        intervencion = {"empresa": v.empresa, "tecnico": v.tecnico, "llegada": v.llegada, "salida": v.salida,
+                        "trabajos": v.trabajos, "materiales": v.materiales or [], "observaciones": v.observaciones,
+                        "resultado": RESULTADOS_TECNICO.get(v.resultado), "firma": documentos.leer(v.firma) if v.firma else None}
+    conformidad = (f"{db.get(User, w.cerrada_por).nombre} · {w.conformidad_en:%d/%m/%Y %H:%M} (usuario del PMS)"
+                   if w.conformidad_en and w.cerrada_por else None)
     pdf = parte_pdf.generar(w, asset, asset.company, db.get(Unit, w.unit_id) if w.unit_id else None, abierta, fotos,
                             w.categoria.replace("_", " ").capitalize(),
-                            planos.zonas(asset.codigo).get(w.zona) if w.zona else None)
+                            planos.zonas(asset.codigo).get(w.zona) if w.zona else None, intervencion, conformidad)
     return pdf
 
 
 @router.post("/ordenes/{wid}/enviar")
-def send_order(wid: int, data: personal.SendIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+def send_order(wid: int, data: personal.SendIn, request: Request, scope: Scope = Depends(get_scope),
+               db: Session = Depends(get_db)):
     """Envía la OT a las personas de mantenimiento elegidas: por correo, con el parte en PDF (fotos de la avería y
     hoja para anotar el trabajo); por WhatsApp, el resumen. Si la OT estaba abierta pasa a «asignada»."""
     w = _open_order(db, wid)
     if not (scope.can_asset("mantenimiento.editar", w.asset_id) or scope.can_asset("mantenimiento.cerrar", w.asset_id)):
         raise HTTPException(403, "Sin permiso para enviar órdenes de trabajo en este activo")
     personas = personal.destinatarios(db, data.personal_ids, w.asset_id, data.canal)
-    asunto, texto, html = mensaje_ot(db, w, data.nota)
+    asunto, texto, html = mensaje_ot(db, w, data.nota, enlace_tecnico(w.id, str(request.base_url)))
+    if data.canal == "whatsapp":
+        texto = mensaje_whatsapp(db, w, str(request.base_url), data.nota)
     adj = [(f"Parte_OT-{w.id:05d}.pdf", parte(db, w), "application/pdf")] if data.canal == "email" else None
     res = personal.despachar(db, personas, data.canal, f"ot_enviada:{w.id}", asunto, texto, html, adj)
     personal.registrar_envio_ot(w, res, scope.user.nombre)
@@ -321,19 +390,26 @@ def send_order(wid: int, data: personal.SendIn, scope: Scope = Depends(get_scope
 
 
 # --------------------------------------------------------------------------- envío a quien la tiene asignada
-DIAS_ENLACE = 15
+DIAS_ENLACE = 30
 
 
 def _firma(wid: int, caduca: int) -> str:
     return hmac.new(settings.secret_key.encode(), f"ot:{wid}:{caduca}".encode(), hashlib.sha256).hexdigest()[:32]
 
 
-def enlace_parte(wid: int) -> str | None:
-    """Enlace de descarga del parte en PDF para WhatsApp (firmado, caduca a los 15 días)."""
-    if not settings.url:
-        return None
+def _token(wid: int) -> str:
     caduca = int(time.time()) + DIAS_ENLACE * 86400
-    return f"{settings.url}/api/publico/ot/{wid}?c={caduca}&f={_firma(wid, caduca)}"
+    return f"c={caduca}&f={_firma(wid, caduca)}"
+
+
+def token_valido(wid: int, c: int, f: str) -> bool:
+    return c >= time.time() and hmac.compare_digest(f, _firma(wid, c))
+
+
+def enlace_tecnico(wid: int, base: str | None = None) -> str | None:
+    """Enlace único y firmado a la pantalla del técnico (móvil, sin usuario ni contraseña)."""
+    base = settings.url or base
+    return f"{base.rstrip('/')}/tecnico/{wid}?{_token(wid)}" if base else None
 
 
 publico = APIRouter(prefix="/api/publico", tags=["público"])
@@ -341,7 +417,7 @@ publico = APIRouter(prefix="/api/publico", tags=["público"])
 
 @publico.get("/ot/{wid}")
 def public_sheet(wid: int, c: int, f: str, db: Session = Depends(get_db)):
-    if c < time.time() or not hmac.compare_digest(f, _firma(wid, c)):
+    if not token_valido(wid, c, f):
         raise HTTPException(404, "Enlace no válido o caducado. Pida la orden de trabajo de nuevo.")
     w = get_or_404(db, WorkOrder, wid)
     return Response(parte(db, w), media_type="application/pdf",
@@ -388,16 +464,16 @@ def _destino(nombre: str, email: str | None, telefono: str | None, canales, asun
 
 
 @router.post("/ordenes/{wid}/enviar-asignado")
-def send_assigned(wid: int, data: EnvioAsignadoIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+def send_assigned(wid: int, data: EnvioAsignadoIn, request: Request, scope: Scope = Depends(get_scope),
+                  db: Session = Depends(get_db)):
     """Envía la OT a quien la tiene asignada: personal propio (WhatsApp y/o correo) o la subcontrata (correo con el
     parte en PDF y/o WhatsApp con enlace al PDF, según los datos de su ficha de proveedor). Con copia al personal de
     mantenimiento propio para que sepa qué trabajos se van a hacer."""
     w = _open_order(db, wid)
     if not (scope.can_asset("mantenimiento.editar", w.asset_id) or scope.can_asset("mantenimiento.cerrar", w.asset_id)):
         raise HTTPException(403, "Sin permiso para enviar órdenes de trabajo en este activo")
-    asunto, texto, html = mensaje_ot(db, w, data.nota)
-    url = enlace_parte(w.id)
-    texto_wa = texto + (f"\n\nParte en PDF: {url}" if url else "")
+    asunto, texto, html = mensaje_ot(db, w, data.nota, enlace_tecnico(w.id, str(request.base_url)))
+    texto_wa = mensaje_whatsapp(db, w, str(request.base_url), data.nota)
     adj = [(f"Parte_OT-{w.id:05d}.pdf", parte(db, w), "application/pdf")]
     clave = f"ot_enviada:{w.id}"
     if w.asignacion == "propio":
@@ -434,7 +510,20 @@ def send_assigned(wid: int, data: EnvioAsignadoIn, scope: Scope = Depends(get_sc
     return {"enviados": res, "orden": _wo_out(w, db)}
 
 
-def mensaje_ot(db: Session, w: WorkOrder, nota: str | None = None) -> tuple[str, str, str]:
+def mensaje_whatsapp(db: Session, w: WorkOrder, base: str | None, nota: str | None = None) -> str:
+    """«INVERSIETE S.A.: Tiene una nueva orden de trabajo OT-00021 en Suite Florida. Acceda aquí para gestionarla:
+    <enlace>» (la sociedad gestora del activo, el número de OT y el activo cambian en cada orden)."""
+    a = db.get(Asset, w.asset_id)
+    lugar = personal._lugar(db, w.asset_id, w.unit_id, w.zona)
+    texto = (f"{a.company.nombre}: Tiene una nueva orden de trabajo OT-{w.id:05d} en {a.nombre}"
+             f"{' · URGENTE' if w.prioridad == 'urgente' else ''}. {lugar}: {w.titulo}.")
+    if nota:
+        texto += f" Nota: {nota}."
+    enlace = enlace_tecnico(w.id, base)
+    return texto + (f" Acceda aquí para gestionarla: {enlace}" if enlace else "")
+
+
+def mensaje_ot(db: Session, w: WorkOrder, nota: str | None = None, enlace: str | None = None) -> tuple[str, str, str]:
     a = db.get(Asset, w.asset_id)
     lugar = personal._lugar(db, w.asset_id, w.unit_id, w.zona)
     filas = [("Orden", f"OT-{w.id:05d}"), ("Activo", a.nombre), ("Ubicación", lugar), ("Avería / trabajo", w.titulo),
@@ -447,10 +536,18 @@ def mensaje_ot(db: Session, w: WorkOrder, nota: str | None = None) -> tuple[str,
     if nota:
         filas.append(("Nota", nota))
     asunto = f"{'URGENTE · ' if w.prioridad == 'urgente' else ''}OT-{w.id:05d} · {a.nombre} · {lugar}: {w.titulo}"[:200]
-    texto = "\n".join(f"{k}: {v}" for k, v in filas) + "\n\nAl terminar, avise a recepción indicando el trabajo realizado."
-    html = avisos._html(f"Orden de trabajo OT-{w.id:05d}", avisos._tabla([], [[k, v] for k, v in filas])
-                        + "<p>Se adjunta el parte en PDF. Al terminar, avise a recepción indicando el trabajo "
-                          "realizado.</p>")
+    enlace = enlace or enlace_tecnico(w.id)
+    if enlace:
+        texto = "\n".join(f"{k}: {v}" for k, v in filas) + (
+            f"\n\nAcceda aquí para gestionarla (llegada, trabajos, materiales y firma): {enlace}")
+        pie = (f'<p><a href="{escape(enlace)}" style="background:#c9a45a;color:#0e0e10;padding:10px 18px;'
+               'border-radius:8px;text-decoration:none;font-weight:600">Gestionar la orden de trabajo</a></p>'
+               "<p>Desde el móvil, sin usuario ni contraseña: indique llegada y salida, trabajos, materiales, el "
+               "estado al finalizar y firme. Se adjunta además el parte en PDF como respaldo.</p>")
+    else:
+        texto = "\n".join(f"{k}: {v}" for k, v in filas) + "\n\nAl terminar, avise a recepción indicando el trabajo realizado."
+        pie = "<p>Se adjunta el parte en PDF. Al terminar, avise a recepción indicando el trabajo realizado.</p>"
+    html = avisos._html(f"Orden de trabajo OT-{w.id:05d}", avisos._tabla([], [[k, v] for k, v in filas]) + pie)
     return asunto, texto, html
 
 
@@ -464,7 +561,7 @@ def confirm_work(wid: int, data: ConfirmWork, scope: Scope = Depends(get_scope),
     """Mantenimiento da el trabajo por realizado."""
     w = _open_order(db, wid)
     scope.require_asset("mantenimiento.editar", w.asset_id)
-    if w.conf_mto_por:
+    if w.conf_mto_fecha:
         bad_request("El trabajo ya está confirmado por mantenimiento")
     w.solucion = data.solucion
     if data.coste_real is not None:
@@ -483,7 +580,7 @@ def confirm_cleaning(wid: int, scope: Scope = Depends(get_scope), db: Session = 
     scope.require_asset("limpieza.confirmar_ot", w.asset_id)
     if not requiere_limpieza(w):
         bad_request("Las OT preventivas de zonas comunes no requieren confirmación de limpieza")
-    if not w.conf_mto_por:
+    if not w.conf_mto_fecha:
         bad_request("Mantenimiento aún no ha confirmado el trabajo")
     if w.conf_limpieza_por:
         bad_request("Ya está confirmada por limpieza")
@@ -505,10 +602,11 @@ def reject_work(wid: int, data: Reject, scope: Scope = Depends(get_scope), db: S
     puede_limpieza = requiere_limpieza(w) and scope.can_asset("limpieza.confirmar_ot", w.asset_id)
     if not (puede_limpieza or scope.can_asset("mantenimiento.cerrar", w.asset_id)):
         raise HTTPException(403, "Sin permiso para rechazar el trabajo")
-    if not w.conf_mto_por:
+    if not w.conf_mto_fecha:
         bad_request("No hay trabajo confirmado que rechazar")
     w.conf_mto_por = w.conf_mto_fecha = w.conf_limpieza_por = w.conf_limpieza_fecha = None
     w.estado = "en_curso"
+    atendida(w)
     w.descripcion = f"{w.descripcion or ''}\n[Rechazada {date.today():%d/%m/%Y} por {scope.user.nombre}] {data.motivo}".strip()
     audit(db, scope.user, "rechazar", "orden_trabajo", wid, data.model_dump())
     db.commit()
@@ -544,13 +642,15 @@ def close_order(wid: int, data: CloseOrder, scope: Scope = Depends(get_scope), d
         w.estado = "cancelada"
         w.solucion = f"{w.solucion or ''}\n[Cancelada] {data.motivo}".strip()
     else:
-        if not w.conf_mto_por:
+        if not w.conf_mto_fecha:
             bad_request("Falta la confirmación de mantenimiento")
         if requiere_limpieza(w) and not w.conf_limpieza_por:
             bad_request("Falta la confirmación de limpieza")
         w.estado = "cerrada"
+        w.conformidad_en = datetime.now()  # conformidad de la propiedad: usuario y fecha de quien cierra
     w.fecha_cierre = date.today()
     w.cerrada_por = scope.user.id
+    atendida(w)
     _release_unit(db, w, cancelada=data.cancelar)
     from .partes_estado import cerrar_partes
     cerrar_partes(db, w, data.motivo)

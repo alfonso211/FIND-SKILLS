@@ -69,7 +69,13 @@
   - **Descartar**: indique el motivo. Si el parte crítico había dejado la vivienda fuera de servicio, vuelve a estar disponible.
   - Al **cerrar la OT**, el parte queda **resuelto**. Si la OT se cancela, el parte queda descartado.
   - **Códigos QR**: hoja con el QR de cada vivienda y zona común para pegar en la puerta o en el cuarto de instalaciones; al escanearlo con el móvil se abre el parte de esa ubicación.
-- Cuando mantenimiento (y limpieza, si hace falta) la confirman, la OT queda **pendiente de cierre**: revísela y pulse **Cerrar OT**.
+- **Asignar**: elija **personal propio** o **subcontrata** (y la fecha prevista). Después, **Enviar**: por WhatsApp o correo le llega al técnico un enlace para gestionarla desde el móvil, sin usuario (por correo, además, el parte en PDF).
+- Cuando el técnico envía el resultado suena un aviso en el PMS, le llega un correo y sale en el **Panel de control**:
+  - **Resuelta**: limpieza revisa la unidad y usted da la conformidad.
+  - **Pendiente de material** / **Requiere otra visita** / **Otro**: la orden queda en pausa y se le recuerda **cada día por correo** hasta que la reprograme (Asignar → fecha prevista), la reasigne o cambie su estado.
+  - **Derivar a subcontrata** (en rojo): el personal propio no puede hacerla. Pulse **Asignar**, elija la subcontrata y envíela.
+- **Intervenciones**: tiempos, trabajos, material, estado y firma del técnico.
+- **Conformidad y cierre**: cuando está **pendiente de cierre**, revise el trabajo, marque la conformidad de la propiedad y ciérrela. Queda registrada con su usuario, fecha y hora en el parte PDF.
 
 ## Documentos recibidos
 - Las facturas y cartas que lleguen: **Documentos recibidos → Subir documento** (foto o PDF), con la **fecha de la factura** y su **vencimiento**.

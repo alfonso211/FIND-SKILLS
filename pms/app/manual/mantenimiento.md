@@ -4,10 +4,10 @@
 - **Órdenes de trabajo**: todas las averías de su activo. Las **urgentes** le llegan además por **correo al momento**.
 - Recorrido de una OT:
   1. **Abierta**: la abre recepción (o la dirección), normalmente a partir de un **parte de estado** suyo o de limpieza, con sus fotos.
-  2. **Asignada / En curso / Pendiente de material**: cambie el estado con **Editar** (asignar técnico, proveedor, coste previsto, fecha prevista).
-  3. **Trabajo realizado**: al terminar, pulse **Trabajo realizado**, describa la solución, el **coste real** y añada **fotos** del resultado.
+  2. **Asignada**: recepción o dirección la asignan a **personal propio** o a una **subcontrata** y la **envían**: llega un enlace por WhatsApp o correo.
+  3. El técnico la gestiona **desde el móvil** con ese enlace (ver abajo). También puede hacerlo desde el PMS con **Trabajo realizado**.
   4. Si el trabajo fue en un apartamento, **limpieza lo revisa** («Unidad OK») o lo devuelve si no está bien.
-  5. **Pendiente de cierre**: recepción la cierra.
+  5. **Pendiente de cierre**: recepción da la **conformidad de la propiedad** y la cierra.
 - **Asignado a**: elija **Personal propio** (la persona de Personal → Fichas del personal) o **Subcontrata** (escriba y elija de **Proveedores**). Al guardar, se ofrece **enviar la orden**:
   - Personal propio: por **WhatsApp** (y por correo si se marca).
   - Subcontrata: por **correo** con el parte en PDF y/o por **WhatsApp** con enlace al PDF, según los datos de su ficha de proveedor (marque uno o ambos).
@@ -16,6 +16,15 @@
 - **Parte PDF**: hoja de la OT para imprimir o firmar.
 - Si la OT **bloquea el apartamento**, este no se puede reservar hasta cerrarla.
 - **Revisión de salida**: con cada check-out se abre sola una OT «Revisión de salida · Apartamento …» (instalaciones, electrodomésticos, fontanería, climatización, iluminación, cerraduras y desperfectos). Revise el apartamento y ciérrela como cualquier OT; si hay algo que reparar, anótelo.
+
+## La orden en el móvil (enlace de la OT)
+- Al enviarle una orden le llega por **WhatsApp** o **correo** un mensaje: «Tiene una nueva orden de trabajo OT-xxxxx en … Acceda aquí para gestionarla: enlace». Ábralo en el móvil: **no hace falta usuario ni contraseña**.
+- En esa pantalla:
+  1. **Iniciar trabajo** al llegar (anota la hora de llegada).
+  2. **Trabajos realizados / diagnóstico**, **material** (añada una línea por material, con cantidad), observaciones y fotos.
+  3. **Estado al finalizar** (obligatorio): **Resuelta**; **Pendiente de material**; **Requiere otra visita** (proponga la fecha); **Notificar a subcontrata** (solo personal propio, si la avería supera su capacidad: gas, certificaciones, maquinaria); **Otro** (explique el motivo).
+  4. **Firme** con el dedo y pulse **Enviar resultado**. La hora de salida se anota sola.
+- Recepción recibe el aviso al momento. Si vuelve otro día (material o segunda visita), use el mismo enlace.
 
 ## Parte de estado (al revisar una vivienda o zona común)
 - Ya **no se abren órdenes de trabajo**: se registra un **parte de estado** y recepción genera la OT y la encarga.

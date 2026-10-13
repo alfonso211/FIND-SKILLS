@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Orden de trabajo</title>
+<style>
+  :root { --ink: #18181b; --muted: #6f6a61; --line: #e8e3d8; --bg: #f6f4ef; --oro: #c9a45a; --oro-claro: #e6cf95;
+    --negro: #0e0e10; --ok: #2e7d4f; --bad: #b3261e; --warn: #dd7a12; --radio: 14px; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.4 "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif; }
+  header { background: var(--negro); color: #fff; padding: 14px 16px; }
+  header small { color: var(--oro-claro); letter-spacing: .08em; text-transform: uppercase; font-size: 11px; }
+  header h1 { margin: 2px 0 0; font-size: 20px; }
+  main { padding: 12px 16px 40px; max-width: 640px; margin: 0 auto; }
+  section { background: #fff; border: 1px solid var(--line); border-radius: var(--radio); padding: 14px; margin-bottom: 12px; }
+  h2 { font-size: 15px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .dato { margin: 2px 0; } .dato b { color: var(--muted); font-weight: 600; font-size: 13px; display: block; }
+  .urgente { color: var(--bad); font-weight: 700; }
+  label { display: block; font-weight: 600; font-size: 14px; margin: 10px 0 4px; }
+  input, textarea, select { width: 100%; font: inherit; padding: 11px 12px; border: 1px solid #d7d0c2; border-radius: 10px; background: #fff; }
+  textarea { min-height: 90px; resize: vertical; }
+  .fila { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 48px; padding: 10px 16px;
+    border-radius: 12px; border: 1px solid #d7d0c2; background: #fff; font: inherit; font-weight: 600; cursor: pointer; color: var(--ink); }
+  .btn.primario { background: linear-gradient(135deg, #e3c887, #c9a45a 45%, #a9843c); border-color: #a9843c; width: 100%; font-size: 18px; min-height: 56px; }
+  .btn.ancho { width: 100%; }
+  .btn:disabled { opacity: .55; }
+  .mat { display: grid; grid-template-columns: 1fr 90px 44px; gap: 6px; margin-bottom: 6px; }
+  .mat .btn { min-height: 44px; padding: 0; }
+  .estados { display: grid; gap: 8px; }
+  .estado { display: flex; gap: 10px; align-items: center; padding: 12px; border: 2px solid var(--line); border-radius: 12px; cursor: pointer; font-weight: 600; }
+  .estado input { width: auto; margin: 0; transform: scale(1.3); }
+  .estado.on { border-color: var(--oro); background: #fffaf0; }
+  .estado.rojo.on { border-color: var(--bad); background: #fdf0ef; }
+  canvas { width: 100%; height: 180px; border: 2px dashed #c8bfae; border-radius: 12px; background: #fff; touch-action: none; display: block; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .error { color: var(--bad); font-weight: 600; }
+  .ok { color: var(--ok); }
+  .fotos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+  .fotos img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+  .hidden { display: none !important; }
+  .tiempos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .hecho { text-align: center; padding: 30px 16px; } .hecho h2 { color: var(--ok); font-size: 22px; text-transform: none; }
+</style>
+</head>
+<body>
+<header><small id="soc">Orden de trabajo</small><h1 id="tit">Cargando…</h1></header>
+<main id="app"><p class="muted">Cargando la orden de trabajo…</p></main>
+<script>
+"use strict";
+const wid = location.pathname.split("/").filter(Boolean).pop();
+const q = new URLSearchParams(location.search);
+const tok = `c=${encodeURIComponent(q.get("c") || "")}&f=${encodeURIComponent(q.get("f") || "")}`;
+const api = (p) => `/api/publico/ot/${wid}${p}${p.includes("?") ? "&" : "?"}${tok}`;
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const hora = (iso) => (iso ? new Date(iso).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "—");
+async function pide(p, opts = {}) {
+  const r = await fetch(api(p), opts);
+  const j = await r.json().catch(() => null);
+  if (!r.ok) throw new Error((j && (typeof j.detail === "string" ? j.detail : j.detail?.[0]?.msg)) || `Error ${r.status}`);
+  return j;
+}
+const BORRADOR = `pms_ot_${wid}`;
+function guardaBorrador() { try { localStorage.setItem(BORRADOR, JSON.stringify(leeForm())); } catch {} }
+function leeBorrador() { try { return JSON.parse(localStorage.getItem(BORRADOR) || "null"); } catch { return null; } }
+
+let D = null, llegada = null;
+async function carga() {
+  try { D = await pide("/datos"); } catch (e) { $("#tit").textContent = "Enlace no válido"; $("#app").innerHTML = `<section><p class="error">${esc(e.message)}</p></section>`; return; }
+  const o = D.ot;
+  document.title = `${o.codigo} · ${o.activo}`;
+  $("#soc").textContent = `${o.sociedad} · ${o.activo}`;
+  $("#tit").textContent = `${o.codigo} · ${o.ubicacion}`;
+  const cab = `<section><h2>Orden de trabajo</h2>
+    <p class="dato"><b>Trabajo</b>${esc(o.titulo)} ${o.prioridad === "urgente" ? '<span class="urgente">· URGENTE</span>' : ""}</p>
+    ${o.descripcion ? `<p class="dato"><b>Descripción</b>${esc(o.descripcion).replace(/\n/g, "<br>")}</p>` : ""}
+    <p class="dato"><b>Ubicación</b>${esc(o.ubicacion)} · ${esc(o.activo)}${o.direccion ? `<br><span class="muted">${esc(o.direccion)}</span>` : ""}</p>
+    ${o.fecha_prevista ? `<p class="dato"><b>Fecha prevista</b>${new Date(o.fecha_prevista).toLocaleDateString("es-ES")}</p>` : ""}
+    ${D.fotos.length ? `<div class="fotos">${D.fotos.map((id) => `<a href="${api(`/foto/${id}`)}" target="_blank"><img src="${api(`/foto/${id}`)}" alt="Foto de la avería"></a>`).join("")}</div>` : ""}
+    <p><a href="/api/publico/ot/${wid}?${tok}" target="_blank">Parte en PDF</a></p></section>`;
+  if (D.finalizada) {
+    $("#app").innerHTML = cab + `<section class="hecho"><h2>✔ Trabajo enviado</h2><p>${D.ultima ? `${esc(D.ultima.tecnico)} · ${esc(D.ultima.resultado_nombre)} · ${new Date(D.ultima.enviado).toLocaleString("es-ES")}` : "Esta orden ya está terminada o cerrada."}</p><p class="muted">Si hay algo más, avise a recepción.</p></section>`;
+    return;
+  }
+  const b = leeBorrador() || {};
+  const p = D.en_curso || D.propuesta;
+  llegada = D.en_curso?.llegada || b.llegada || null;
+  $("#app").innerHTML = cab + `
+  ${D.ultima ? `<section><p class="muted">Última intervención: ${esc(D.ultima.tecnico)} · <b>${esc(D.ultima.resultado_nombre)}</b> (${new Date(D.ultima.enviado).toLocaleString("es-ES")}). Si vuelve a intervenir, rellene de nuevo.</p></section>` : ""}
+  <form id="f" novalidate>
+  <section><h2>1. Datos de la intervención</h2>
+    <label>Empresa<input name="empresa" required maxlength="160" value="${esc(b.empresa || p.empresa || "")}"></label>
+    <label>Nombre del técnico<input name="tecnico" required maxlength="120" value="${esc(b.tecnico || p.tecnico || "")}"></label>
+    <div class="tiempos" style="margin-top:12px">
+      <button type="button" class="btn" id="ini">▶ Iniciar trabajo</button>
+      <div><span class="muted">Llegada</span><br><b id="hl">${hora(llegada)}</b></div></div>
+    <details style="margin-top:8px"><summary class="muted">Corregir horas a mano</summary>
+      <div class="fila"><label>Llegada<input type="datetime-local" name="llegada"></label><label>Salida<input type="datetime-local" name="salida"></label></div>
+      <p class="muted">Si no las corrige, la salida es la hora a la que pulse «Enviar resultado».</p></details>
+  </section>
+  <section><h2>2. Trabajos y material</h2>
+    <label>Trabajos realizados / diagnóstico<textarea name="trabajos" required maxlength="4000">${esc(b.trabajos || "")}</textarea></label>
+    <label>Material empleado</label><div id="mats"></div>
+    <button type="button" class="btn ancho" id="addMat">+ Añadir material</button>
+    <label>Observaciones<textarea name="observaciones" maxlength="2000">${esc(b.observaciones || "")}</textarea></label>
+    <label class="btn ancho" style="margin-top:10px">📷 Añadir fotos del trabajo<input type="file" id="fotos" accept="image/*" capture="environment" multiple hidden></label>
+    <p class="muted" id="fmsg"></p>
+  </section>
+  <section><h2>3. Estado al finalizar</h2>
+    <div class="estados">${Object.entries(D.resultados).filter(([k]) => k !== "escalar" || D.permite_escalar).map(([k, t]) => `<label class="estado${k === "escalar" ? " rojo" : ""}"><input type="radio" name="resultado" value="${k}"${b.resultado === k ? " checked" : ""}> ${esc(k === "escalar" ? "Notificar a subcontrata (supera nuestra capacidad)" : t)}</label>`).join("")}</div>
+    <div id="cVisita" class="hidden"><label>Fecha propuesta para la siguiente visita<input type="date" name="fecha_propuesta"></label></div>
+    <div id="cOtro" class="hidden"><label>Describa el resultado o el motivo técnico del bloqueo<textarea name="justificacion" maxlength="2000"></textarea></label></div>
+  </section>
+  <section><h2>4. Firma del técnico</h2>
+    <canvas id="firma" aria-label="Firme aquí con el dedo"></canvas>
+    <div style="display:flex;justify-content:space-between;margin-top:6px"><span class="muted">Firme con el dedo dentro del recuadro</span><button type="button" class="btn" id="borrar" style="min-height:36px">Borrar</button></div>
+  </section>
+  <p class="error" id="err"></p>
+  <button type="submit" class="btn primario" id="env">Enviar resultado</button>
+  </form>`;
+  const mats = $("#mats");
+  const filaMat = (m = {}) => {
+    const d = document.createElement("div"); d.className = "mat";
+    d.innerHTML = `<input placeholder="Material" maxlength="160" value="${esc(m.material || "")}"><input placeholder="Cant." maxlength="30" value="${esc(m.cantidad || "")}"><button type="button" class="btn" aria-label="Quitar">✕</button>`;
+    d.querySelector("button").onclick = () => { d.remove(); guardaBorrador(); };
+    mats.appendChild(d);
+  };
+  (b.materiales && b.materiales.length ? b.materiales : [{}]).forEach(filaMat);
+  $("#addMat").onclick = () => filaMat();
+  const f = $("#f");
+  const pintaEstado = () => {
+    const r = f.resultado.value;
+    f.querySelectorAll(".estado").forEach((l) => l.classList.toggle("on", l.querySelector("input").checked));
+    $("#cVisita").classList.toggle("hidden", r !== "otra_visita");
+    $("#cOtro").classList.toggle("hidden", r !== "otro");
+  };
+  f.querySelectorAll("input[name=resultado]").forEach((i) => (i.onchange = pintaEstado)); pintaEstado();
+  f.addEventListener("input", guardaBorrador);
+  $("#ini").onclick = async () => {
+    try {
+      const r = await pide("/iniciar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ empresa: f.empresa.value, tecnico: f.tecnico.value }) });
+      llegada = r.llegada; $("#hl").textContent = hora(llegada); $("#ini").textContent = "✔ Trabajo iniciado"; $("#ini").disabled = true; guardaBorrador();
+    } catch (e) { $("#err").textContent = e.message; }
+  };
+  if (llegada) { $("#ini").textContent = "✔ Trabajo iniciado"; $("#ini").disabled = true; }
+  let fotosPend = [];
+  $("#fotos").onchange = (e) => { fotosPend = [...fotosPend, ...e.target.files].slice(0, 6); $("#fmsg").textContent = `${fotosPend.length} foto(s) para enviar`; };
+  // firma táctil
+  const cv = $("#firma"), ctx = cv.getContext("2d");
+  let trazos = 0, pintando = false;
+  const ajusta = () => { const r = cv.getBoundingClientRect(), k = window.devicePixelRatio || 1; cv.width = r.width * k; cv.height = r.height * k; ctx.scale(k, k); ctx.lineWidth = 2.4; ctx.lineCap = "round"; ctx.strokeStyle = "#0e0e10"; trazos = 0; };
+  ajusta();
+  const pto = (e) => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  cv.onpointerdown = (e) => { pintando = true; cv.setPointerCapture(e.pointerId); ctx.beginPath(); ctx.moveTo(...pto(e)); };
+  cv.onpointermove = (e) => { if (!pintando) return; ctx.lineTo(...pto(e)); ctx.stroke(); trazos++; };
+  cv.onpointerup = cv.onpointercancel = () => { pintando = false; };
+  $("#borrar").onclick = () => { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height); ajusta(); };
+  f.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const err = $("#err"); err.textContent = "";
+    const d = leeForm();
+    const falta = !d.empresa ? "Indique la empresa" : !d.tecnico ? "Indique el nombre del técnico" : d.trabajos.length < 3 ? "Describa los trabajos realizados o el diagnóstico"
+      : !d.resultado ? "Marque el estado al finalizar" : d.resultado === "otra_visita" && !d.fecha_propuesta ? "Proponga la fecha de la siguiente visita"
+      : d.resultado === "otro" && (d.justificacion || "").length < 5 ? "Describa el resultado o el motivo del bloqueo" : trazos < 5 ? "Firme en el recuadro" : "";
+    if (falta) { err.textContent = falta; return; }
+    const boton = $("#env"); boton.disabled = true; boton.textContent = "Enviando…";
+    try {
+      if (fotosPend.length) {
+        const fd = new FormData(); fotosPend.forEach((x) => fd.append("ficheros", x));
+        await pide("/fotos", { method: "POST", body: fd });
+      }
+      const r = await pide("/finalizar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...d, firma: cv.toDataURL("image/png") }) });
+      try { localStorage.removeItem(BORRADOR); } catch {}
+      $("#app").innerHTML = `<section class="hecho"><h2>✔ Resultado enviado</h2><p><b>${esc(r.resultado)}</b></p><p class="muted">Recepción ha recibido el aviso. Gracias.</p></section>`;
+      window.scrollTo(0, 0);
+    } catch (e) { err.textContent = e.message; boton.disabled = false; boton.textContent = "Enviar resultado"; }
+  };
+}
+function leeForm() {
+  const f = $("#f"); if (!f) return {};
+  const v = (n) => (f[n] ? f[n].value.trim() : "");
+  const sel = f.querySelector("input[name=resultado]:checked");
+  return { empresa: v("empresa"), tecnico: v("tecnico"), trabajos: v("trabajos"), observaciones: v("observaciones") || null,
+    materiales: [...document.querySelectorAll("#mats .mat")].map((m) => ({ material: m.children[0].value.trim(), cantidad: m.children[1].value.trim() || null })).filter((m) => m.material),
+    resultado: sel ? sel.value : "", fecha_propuesta: v("fecha_propuesta") || null, justificacion: v("justificacion") || null,
+    llegada: v("llegada") || llegada || null, salida: v("salida") || null };
+}
+carga();
+</script>
+</body>
+</html>
