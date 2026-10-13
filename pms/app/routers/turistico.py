@@ -538,7 +538,11 @@ def checkout(rid: int, data: CheckoutIn | None = None, scope: Scope = Depends(ge
         extra["devolucion"] = fianzas.a_dict(d)
     r.estado = "checkout"
     r.unit.estado = "pendiente_limpieza"
-    revision_salida(db, r, scope.user)  # orden de trabajo a mantenimiento para revisar el apartamento
+    # Decisión 5 (13/10/2026): ya no se abre una orden «Revisión de salida» en cada salida. La limpieza de salida es la
+    # tarea ligera; si limpieza encuentra algo, «Hecha con incidencia» abre la orden (y se avisa a gestión).
+    from ..gestion import bloqueado_por_gestion
+    if bloqueado_por_gestion(db, r.unit_id):  # avería con huésped dentro: queda cerrado al salir
+        r.unit.estado = "bloqueada"
     limpiezas.salida_realizada(db, r)  # la limpieza de salida entra en el parte de hoy
     for g in _garajes_asociados(db, r):  # la plaza de garaje sale con el apartamento
         g.estado = "checkout"

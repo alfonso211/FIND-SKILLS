@@ -790,12 +790,14 @@ async function fichaApartamento(uid, recarga, cargada = null) {
     d.puede.gasto && ["gasto", "Factura recibida", "Subir una factura o ticket imputado a esta vivienda"],
     d.puede.incidencia && ["incidencia", "Incidencia", "Abrir una incidencia o parte de trabajo con fotos"],
     d.puede.parte_estado && ["estado", "Parte de estado", "Señalar una deficiencia al revisar la vivienda"],
+    ["gestion", "Gestión", "Abrir esta vivienda en INVERGESTION (órdenes de trabajo, costes)"],
   ].filter(Boolean) : [
     d.puede.reservar && ["reserva", "Reserva", garaje ? "Por días o semanas (huésped o cliente)" : "Nueva reserva en este apartamento"],
     d.puede.alquilar && !d.alquiler && ["alquiler", "Alquiler mensual", "Cliente externo: recibo cada mes y factura al 21 %"],
     d.puede.bloquear && (d.estado === "bloqueado" ? ["desbloquear", "Bloqueado", bloqueoVigente ? `Motivo: ${bloqueoVigente.motivo}. Pulse para desbloquear` : "Pulse para desbloquear"] : ["bloqueo", "Bloqueado", "Sacarlo de venta indicando el motivo"]),
     d.puede.incidencia && ["incidencia", "Incidencia", "Abrir una incidencia (avería) con fotos"],
     d.puede.parte_estado && ["estado", "Parte de estado", "Señalar una deficiencia al revisar el apartamento"],
+    !garaje && ["gestion", "Gestión", "Abrir este apartamento en INVERGESTION (órdenes de trabajo, costes)"],
   ].filter(Boolean);
   const f = cerrarSolo(form(garaje ? `Plaza de garaje ${u.codigo} · ${u.bloque || ""}` : vivienda ? `Vivienda ${u.codigo} · ${assetName(u.asset_id)}` : `Apartamento ${u.codigo} · ${u.tipologia || ""}`, [
     { html: `${vivienda ? cabVivienda : `<p><span class="estado-ap pc-${d.estado}">${ESTADO_TXT[d.estado]}</span> ${u.bloque ? esc(u.bloque) + " · " : ""}planta ${esc(u.planta || "")}${u.capacidad ? ` · ${u.capacidad} plazas` : ""}${d.limpieza ? ' · <span class="badge b-pendiente_limpieza">pendiente de limpieza</span>' : ""}</p>${actual}`}
@@ -822,6 +824,7 @@ async function fichaApartamento(uid, recarga, cargada = null) {
     if (acc === "reserva") newReservation(recarga, fija);
     if (acc === "alquiler") alquilarGaraje(recarga, fija);
     if (acc === "incidencia") newWorkOrder(u.asset_id, u.id).then(recarga);
+    if (acc === "gestion") abrirGestion("unidad", u.asset_id, u.id);
     if (acc === "estado") { $("#modal").close(); irParteEstado(u.asset_id, u.id); }
     if (acc === "situacion") pedirSituacion(d, recarga);
     if (acc === "contrato") {
@@ -3496,6 +3499,15 @@ V.limpieza = async (el) => {
         toast("Parte actualizado"); load();
       })],
       ["✔ Hecha", () => run(() => post(`/api/limpieza/${x.id}/hecha`), `Limpieza de ${x.codigo} validada`).then(load), "primary"],
+      ["Hecha con incidencia", () => form(`Incidencia en ${x.codigo}`, [
+        { html: '<p class="muted">Se valida la limpieza y se abre una orden de trabajo a mantenimiento (también llega a gestión).</p>' },
+        { k: "incidencia", t: "¿Qué hay que reparar?", type: "textarea", req: true, wide: true },
+        { k: "prioridad", t: "Prioridad", type: "select", req: true, options: [["baja", "Baja"], ["media", "Media"], ["alta", "Alta"], ["urgente", "Urgente"]] },
+        { k: "bloquea", t: "No se puede alquilar hasta repararlo", type: "checkbox" },
+      ], { prioridad: "media" }, async (d) => {
+        const r = await post(`/api/limpieza/${x.id}/hecha`, { incidencia: d.incidencia, prioridad: d.prioridad, bloquea: !!d.bloquea });
+        toast(`Limpieza validada · abierta la OT-${String(r.orden_trabajo).padStart(5, "0")}`); load();
+      }, "Validar y abrir la orden")],
       x.tipo === "extra" && ["Quitar", () => confirm(`¿Quitar la limpieza extra de ${x.codigo}?`) && run(() => api("DELETE", `/api/limpieza/${x.id}`), "Limpieza extra quitada").then(load), "danger"],
     ] : [["Deshacer", () => run(() => post(`/api/limpieza/${x.id}/deshacer`), "Vuelve a estar pendiente").then(load)]]);
   };
@@ -5554,6 +5566,48 @@ V.capexprecios = async (el) => {
   load();
 };
 
+// ------------------------------------------------------------------ INVERGESTION (fase 4, 13/10/2026)
+// Abre gestión en una pestaña nueva. La dirección (con el pase firmado, de un solo uso) la da el servidor.
+async function abrirGestion(destino, assetId, unitId) {
+  const w = window.open("about:blank", "_blank");
+  try {
+    const r = await get("/api/gestion/pase", { destino, asset_id: assetId, unit_id: unitId });
+    if (w) { w.opener = null; w.location.href = r.url; } else location.href = r.url;
+  } catch (e) { if (w) w.close(); toast(e.message); }
+}
+const CANAL_TXT = { directo: "Directo", booking: "Booking", airbnb: "Airbnb", expedia: "Expedia", web: "Web propia", agencia: "Agencia", otros: "Otros" };
+const EV_TXT = { "reserva.creada": "Reserva nueva", "reserva.modificada": "Reserva modificada", "reserva.cancelada": "Reserva cancelada", checkout: "Check-out", "incidencia.reportada": "Incidencia", "liquidacion.periodo": "Liquidación" };
+V.gestion = async (el) => {
+  const d = await get("/api/gestion/estado");
+  const c = d.cuenta || {};
+  const mesAnt = (() => { const x = new Date(); x.setDate(0); return iso(x).slice(0, 7); })();
+  el.innerHTML = `<div class="kpis">
+      <div class="kpi ${d.configurado ? "" : "mal"}"><b>${d.configurado ? "Conectada" : "Sin clave"}</b><span>Avisos a gestión</span></div>
+      <div class="kpi ${d.sso ? "" : "mal"}"><b>${d.sso ? "Directo" : "Con contraseña"}</b><span>Botón «Gestión»</span></div>
+      <div class="kpi"><b>${c.enviado || 0}</b><span>Avisos entregados</span></div>
+      <div class="kpi ${c.pendiente ? "mal" : ""}"><b>${c.pendiente || 0}</b><span>Pendientes</span></div>
+      <div class="kpi ${c.aviso ? "mal" : ""}"><b>${c.aviso || 0}</b><span>Sin entregar tras varios intentos</span></div></div>
+    ${d.configurado ? "" : '<p class="aviso-amarillo">Falta la clave PMS_EVENTOS_SECRET en el servidor: los avisos se guardan y se mandarán en cuanto esté puesta.</p>'}
+    <div class="card"><h3>Comisión de cada canal (% del bruto)</h3><p class="muted">Se usa para calcular el neto de la liquidación mensual que recibe gestión. La diferencia real se ve al conciliar con el banco.</p><div id="gcom"></div></div>
+    <div class="card"><h3>Liquidación mensual</h3><p class="muted">Si el activo tiene marcado «Mandar sola cada mes», el día 2 se manda la del mes anterior. Aquí se puede ver antes o mandar a mano (gestión no pisa una producción metida a mano sin enseñar las diferencias). Ojo: sale de las reservas del PMS; si no están todas, la cifra saldrá corta.</p>
+      <div class="toolbar"><select id="gla">${d.activos.map((a) => `<option value="${a.id}">${esc(a.nombre)}</option>`).join("")}</select><input id="glp" type="month" value="${mesAnt}">
+      <button class="btn" id="glv">Ver</button><button class="btn primary" id="gle">Mandar a gestión</button></div><div id="glr"></div></div>
+    <div class="card"><h3>Últimos avisos a gestión</h3><div class="toolbar"><button class="btn" id="grt">Reintentar ahora los pendientes</button></div><div id="gev"></div></div>`;
+  $("#gcom", el).innerHTML = `<div style="overflow-x:auto"><table class="tabla"><thead><tr><th>Activo</th>${d.canales.map((k) => `<th class="num">${CANAL_TXT[k] || k}</th>`).join("")}<th>Mandar sola cada mes</th><th></th></tr></thead><tbody>${d.activos.map((a) => `<tr data-a="${a.id}"><td>${esc(a.nombre)}</td>${d.canales.map((k) => `<td class="num"><input type="number" step="0.1" min="0" max="50" style="width:70px" data-k="${k}" value="${a.comisiones[k] ?? ""}"></td>`).join("")}<td><input type="checkbox" data-auto ${a.comisiones._auto ? "checked" : ""}></td><td><button class="btn sm" data-g>Guardar</button></td></tr>`).join("")}</tbody></table></div>`;
+  $("#gcom", el).querySelectorAll("[data-g]").forEach((b) => (b.onclick = () => { const tr = b.closest("tr"); const com = {};
+    tr.querySelectorAll("input[data-k]").forEach((i) => { if (i.value !== "") com[i.dataset.k] = Number(i.value); });
+    run(() => api("PUT", `/api/gestion/activos/${tr.dataset.a}/comisiones`, { comisiones: com, auto: $("[data-auto]", tr).checked }), "Comisiones guardadas"); }));
+  const pinta = (l) => { $("#glr", el).innerHTML = `<p><b>${esc(l.activo)} · ${esc(l.periodo)}</b> · ${l.reservas} reservas · ${l.noches_ocupadas} noches de ${l.noches_disponibles} (${l.ocupacion ?? 0} %)</p>`; const t = document.createElement("div"); $("#glr", el).appendChild(t);
+    table(t, [{ k: "canal", t: "Canal", f: (v) => CANAL_TXT[v] || v }, { k: "reservas", t: "Reservas" }, { k: "noches", t: "Noches" }, { k: "bruto", t: "Bruto", f: eur }, { k: "iva", t: "IVA", f: eur }, { k: "comision_pct", t: "% com." }, { k: "comision", t: "Comisión", f: eur }, { k: "neto", t: "Neto", f: eur }], l.canales); };
+  const lq = () => ({ asset_id: Number($("#gla", el).value), periodo: $("#glp", el).value });
+  $("#glv", el).onclick = () => run(() => post("/api/gestion/liquidacion/previa", lq())).then((l) => l && pinta(l));
+  $("#gle", el).onclick = () => confirm("¿Mandar la liquidación de ese mes a gestión?") && run(() => post("/api/gestion/liquidacion/enviar", lq()), "Liquidación en la cola de envío").then(() => go("gestion"));
+  $("#grt", el).onclick = () => run(() => post("/api/gestion/cola/reintentar"), "Reintento lanzado").then(() => go("gestion"));
+  table($("#gev", el), [{ k: "creado", t: "Fecha", f: fdt }, { k: "tipo", t: "Aviso", f: (v) => EV_TXT[v] || v }, { k: "resumen", t: "Detalle" },
+    { k: "estado", t: "Estado", f: (v, x) => `${badge(v === "enviado" ? "entregado" : v === "aviso" ? "sin entregar" : "pendiente")}${x.error && v !== "enviado" ? `<div class="peq" style="color:#a15c00">${esc(x.error)}</div>` : ""}` },
+    { k: "intentos", t: "Intentos" }], d.eventos);
+};
+
 const MENU = [
   ["General", [["panel", "Panel de control", null], ["agenda", "Agenda", null], ["manual", "Manual de uso", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
   ["Personal", [["ausencias", "Vacaciones y ausencias", "activos.ver"], ["personal", "Fichas del personal", "personal"], ["jornada", "Registro de jornada", "gestpersonal"], ["mijornada", "Mi jornada (fichar)", null]]],
@@ -5563,7 +5617,7 @@ const MENU = [
   ["Documentos y gastos", [["docrecibidos", "Documentos recibidos", "documentos.ver"], ["gastos", "Cuenta de gastos", "documentos.ver"]]],
   ["Mantenimiento", [["estado", "Partes de estado", "partesestado"], ["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["partestrabajo", "Parte de trabajo diario", "partes"], ["pedidos", "Pedidos de material", "pedidos"], ["productos", "Catálogo de productos", "pedidos"], ["proveedores", "Proveedores", "proveedores"]]],
   ["Inversiones (CAPEX)", [["capex", "Proyectos CAPEX", "capex.ver"], ["capexplantillas", "Plantillas CAPEX tipo", "capex.gestionar"], ["capexprecios", "Base de precios (BC3)", "capex.gestionar"]]],
-  ["Administración", [["legal", "Documentación legal", "legal.ver"], ["usuarios", "Usuarios", "admin"], ["roles", "Roles y permisos", "admin"], ["sociedades", "Sociedades", "admin"], ["avisos", "Avisos por correo", "admin"], ["auditoria", "Auditoría", "auditoria.ver"]]],
+  ["Administración", [["gestion", "Pasarela con gestión", "admin"], ["legal", "Documentación legal", "legal.ver"], ["usuarios", "Usuarios", "admin"], ["roles", "Roles y permisos", "admin"], ["sociedades", "Sociedades", "admin"], ["avisos", "Avisos por correo", "admin"], ["auditoria", "Auditoría", "auditoria.ver"]]],
   ["", [["perfil", "Mi perfil", null]]],
 ];
 const allowed = (p) => !p || (p === "admin" ? S.me.admin_grupo : p === "informes" ? ["reservas.ver", "alquiler.ver", "finanzas.ver", "mantenimiento.ver"].some(can)
@@ -5732,6 +5786,7 @@ $("#loginForm").onsubmit = async (e) => {
   catch (err) { $("#loginError").textContent = err.message; }
 };
 $("#logoutBtn").onclick = logout;
+$("#gestionBtn").onclick = () => abrirGestion("inicio");
 $("#menuBtn").onclick = () => $(".sidebar").classList.toggle("open");
 $("#backBtn").onclick = volver;
 $("#assetFilter").onchange = (e) => { setAsset(e.target.value); go(location.hash.slice(1)); };

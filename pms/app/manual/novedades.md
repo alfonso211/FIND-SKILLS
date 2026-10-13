@@ -1,5 +1,11 @@
 # Novedades
 
+## 2026-10-15 · Versión 1.48 · Pasarela con INVERGESTION (gestión)
+- **Recepción · salida sin OT automática**: el check-out ya no abre la OT de revisión de salida. En el parte de limpieza, **Hecha con incidencia** abre la OT cuando hay algo que reparar (y llega a gestión). Las OT por roturas y el pedido de reposición al dar la salida siguen igual.
+- **Recepción · apartamentos cerrados desde gestión**: una avería grave registrada en gestión bloquea el apartamento en el PMS y lo reabre al cerrarla. Las reservas no se cancelan: llega un correo con las que hay que reubicar.
+- **Todos · botón «Gestión»**: arriba y en la ficha del apartamento, abre INVERGESTION en otra pestaña.
+- **Dirección · Pasarela con gestión**: avisos a gestión con reintentos, comisión por canal y liquidación mensual.
+
 ## 2026-10-15 · Versión 1.47 · Pedido de reposición automático y recordatorio de cobro
 - **Recepción · pedido de reposición**: lo que falta o se rompe de menaje y ropa de cama y baño se suma solo al pedido de reposición del activo. Recepción 1 lo autoriza y elige el proveedor.
 - **Recepción · recordatorio de cobro**:

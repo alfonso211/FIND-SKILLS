@@ -93,6 +93,8 @@ class Asset(Base):
     ses_codigo_establecimiento: Mapped[str | None] = mapped_column(String(20))
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
     notas: Mapped[str | None] = mapped_column(Text)
+    # Comisión de cada canal en % del bruto (booking, airbnb…) para la liquidación mensual que se manda a gestión
+    comisiones_canal: Mapped[dict | None] = mapped_column(JSON)
     company: Mapped[Company] = relationship(foreign_keys=[company_id])
     propietaria: Mapped[Company | None] = relationship(foreign_keys=[propietaria_id])
 
@@ -310,6 +312,24 @@ class UnitBlock(Base):
     levantado: Mapped[datetime | None] = mapped_column(DateTime)
     levantado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     nota_levantado: Mapped[str | None] = mapped_column(String(300))
+    # «gestion:<orden>» si lo puso INVERGESTION por una orden de trabajo: solo se levanta al cerrarla allí
+    origen: Mapped[str | None] = mapped_column(String(80), index=True)
+
+
+class GestionEvento(Base):
+    """Cola de avisos del PMS a INVERGESTION (reservas, check-outs, incidencias y liquidaciones). Se escribe en la
+    misma transacción que el cambio y un hilo la envía con reintentos (ver app/gestion.py)."""
+    __tablename__ = "gestion_cola"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    id_evento: Mapped[str] = mapped_column(String(80), unique=True)
+    tipo: Mapped[str] = mapped_column(String(40), index=True)
+    datos: Mapped[dict] = mapped_column(JSON)
+    estado: Mapped[str] = mapped_column(String(20), default="pendiente", index=True)  # pendiente | enviado | aviso
+    intentos: Mapped[int] = mapped_column(Integer, default=0)
+    proximo: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    enviado: Mapped[datetime | None] = mapped_column(DateTime)
+    ultimo_error: Mapped[str | None] = mapped_column(String(400))
 
 
 class ContactDocument(Base):

@@ -121,12 +121,8 @@ def test_salida_revision_y_validacion(client, admin, ids):
     p = client.get("/api/limpieza/parte", headers=admin, params={"asset_id": sae}).json()
     assert not any(x["unit_id"] == u["id"] for x in p["limpiezas"])  # sale hoy, pero sin check-out no hay limpieza
     assert client.post(f"/api/turistico/reservas/{r.json()['id']}/checkout", headers=admin).status_code == 200
-    titulo = f"Revisión de salida · Apartamento {u['codigo']}"
-    with SessionLocal() as db:
-        ots = db.query(WorkOrder).filter(WorkOrder.unit_id == u["id"], WorkOrder.titulo == titulo).all()
-        assert len(ots) == 1 and ots[0].tipo == "preventivo"
-        from app.routers.turistico import revision_salida
-        assert revision_salida(db, db.get(Reservation, r.json()["id"]), None) is None  # no se duplica
+    with SessionLocal() as db:  # decisión 5: el check-out ya no abre una orden «Revisión de salida»
+        assert not db.query(WorkOrder).filter(WorkOrder.unit_id == u["id"], WorkOrder.titulo.like("Revisión de salida%")).count()
     p = client.get("/api/limpieza/parte", headers=admin, params={"asset_id": sae}).json()
     sal = next(x for x in p["limpiezas"] if x["unit_id"] == u["id"])
     assert sal["tipo"] == "salida" and sal["motivo"] == "Salida realizada"
