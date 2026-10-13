@@ -19,8 +19,16 @@
 - Si todo está bien y limpio, en **Órdenes de trabajo** pulse **Unidad OK**.
 - Si no está bien, **devuélvala a mantenimiento** indicando el motivo.
 
-## Avisar de una avería
-- Si ve algo roto: **Órdenes de trabajo → Nueva OT** (o desde el plano), con una **foto**. Si es urgente, márquelo.
+## Parte de estado (al revisar una vivienda o zona común)
+- Ya **no se abren órdenes de trabajo**: se registra un **parte de estado** y recepción genera la OT y la encarga.
+- **Mantenimiento → Partes de estado → Nuevo parte** (o escanee el **código QR** de la puerta con el móvil; también desde el plano, botón **Parte de estado**):
+  1. **Ubicación**: escriba el número de la vivienda o elija la zona común.
+  2. **Estancia**: cocina, baño, dormitorio…
+  3. **Elemento**: abra la familia (arquitectura, instalaciones, electrodomésticos, mobiliario, operaciones) y pulse el elemento.
+  4. **Deficiencia** de la lista, **gravedad** (🟢 leve, 🟠 media: antes de la próxima entrada, 🔴 crítica) y **foto obligatoria**. Observaciones solo si hace falta.
+- Pulse **Generar parte**. Se avisa a recepción al momento. Las averías técnicas van a mantenimiento y las de limpieza a limpieza.
+- **Crítica**: la vivienda queda **fuera de servicio** (no se puede reservar) hasta que se cierre su orden de trabajo.
+- En **Partes** ve los suyos y en qué situación están (pendiente, con OT, resuelto o descartado).
 
 ## Pedidos de material
 - **Mantenimiento → Pedidos de material → Nuevo pedido**: elija el activo y el proveedor. En «Productos» escriba parte de la referencia, el artículo, la marca o el proveedor: salen las sugerencias del catálogo; púlsela para añadirla. Indique la **cantidad** (el precio sale del catálogo y se puede cambiar).

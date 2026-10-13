@@ -14,7 +14,8 @@ from .migraciones import migrar
 from .routers import (admin, agenda, alquiler, auth, buscar, documentos, estructura, expedientes, exportacion, facturas,
                       garajes, gastos, historico, informes, mantenimiento, manual, panel, personal, plano, presidencia,
                       proveedores, turistico)
-from .routers import ausencias, cobros_alquiler, colaborador, documentacion_legal, limpieza, partes_trabajo, pedidos
+from .routers import (ausencias, cobros_alquiler, colaborador, documentacion_legal, limpieza, partes_estado,
+                      partes_trabajo, pedidos)
 from .seed import seed
 
 STATIC = BASE_DIR / "static"
@@ -39,7 +40,7 @@ app = FastAPI(title="INVERPMS", version="0.1.0", lifespan=lifespan)
 for r in (auth, estructura, alquiler, garajes, gastos, turistico, plano, facturas, mantenimiento, personal, proveedores,
           informes, admin, panel, documentos, buscar, agenda, expedientes, historico, exportacion, manual, presidencia,
           limpieza, pedidos, partes_trabajo, ausencias, colaborador, documentacion_legal,
-          cobros_alquiler):
+          cobros_alquiler, partes_estado):
     app.include_router(r.router)
 app.include_router(colaborador.revision)
 app.include_router(facturas.router_servicios)

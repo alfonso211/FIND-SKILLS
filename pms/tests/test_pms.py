@@ -308,11 +308,11 @@ def test_staff_per_asset(client, admin, ids):
         "unit_id": u["id"], "guest": {"nombre": "x"}, "fecha_entrada": d(1), "fecha_salida": d(2)}).status_code == 403
     assert client.get("/api/turistico/reservas", headers=lim_sf).json() == []
 
-    # mantenimiento: OT en su activo sí, en el otro no
+    # mantenimiento no abre OT (las genera recepción desde su parte de estado); el parte, solo en su activo
     assert client.post("/api/mantenimiento/ordenes", headers=mto_sa, json={
-        "asset_id": sae, "titulo": "Revisión bomba ACS", "categoria": "acs"}).status_code == 201
-    assert client.post("/api/mantenimiento/ordenes", headers=mto_sa, json={
-        "asset_id": sfl, "titulo": "x"}).status_code == 403
+        "asset_id": sae, "titulo": "Revisión bomba ACS", "categoria": "acs"}).status_code == 403
+    assert client.get("/api/partes-estado/ubicaciones", headers=mto_sa, params={"asset_id": sae}).status_code == 200
+    assert client.get("/api/partes-estado/ubicaciones", headers=mto_sa, params={"asset_id": sfl}).status_code == 403
 
 
 def test_login_lockout(client):
@@ -322,7 +322,8 @@ def test_login_lockout(client):
 
 
 def test_work_order_flow_by_role(client, admin, ids):
-    """Abren recepción/limpieza/mantenimiento; confirma mantenimiento, luego limpieza; cierra solo recepción."""
+    """Abre recepción (limpieza y mantenimiento avisan con un parte de estado); confirma mantenimiento, luego
+    limpieza; cierra solo recepción."""
     sfl = ids["assets"]["SFL"]["id"]
     rol = ids["roles"]
     rec = _new_user(client, admin, "rec.ot@inversiete.es", [{"role_id": rol["Recepción"], "asset_id": sfl}])
@@ -330,16 +331,16 @@ def test_work_order_flow_by_role(client, admin, ids):
     mto = _new_user(client, admin, "mto.ot@inversiete.es", [{"role_id": rol["Técnico Mantenimiento"], "asset_id": sfl}])
     unit = client.get(f"/api/unidades?asset_id={sfl}&q=P4-2B", headers=admin).json()[0]
 
-    # los tres pueden abrir; quien solo abre no fija datos de gestión
-    for h in (rec, lim, mto):
+    # abre recepción (no fija datos de gestión); limpieza y mantenimiento no abren órdenes de trabajo
+    for h, codigo in ((rec, 201), (lim, 403), (mto, 403)):
         r = client.post("/api/mantenimiento/ordenes", headers=h, json={
             "asset_id": sfl, "unit_id": unit["id"], "titulo": "Grifo gotea", "categoria": "fontaneria",
             "proveedor": "X", "coste_estimado": 999})
-        assert r.status_code == 201, r.text
-    ot = client.post("/api/mantenimiento/ordenes", headers=lim, json={
+        assert r.status_code == codigo, r.text
+    ot = client.post("/api/mantenimiento/ordenes", headers=rec, json={
         "asset_id": sfl, "unit_id": unit["id"], "titulo": "Persiana rota", "bloquea_unidad": True,
         "coste_estimado": 999}).json()
-    assert ot["coste_estimado"] is None and ot["abierta_por_nombre"] == "lim.ot"
+    assert ot["coste_estimado"] is None and ot["abierta_por_nombre"] == "rec.ot"
     assert client.get(f"/api/unidades?asset_id={sfl}&q=P4-2B", headers=admin).json()[0]["estado"] == "mantenimiento"
     base = f"/api/mantenimiento/ordenes/{ot['id']}"
 
@@ -377,7 +378,7 @@ def test_preventive_common_areas_skip_cleaning(client, admin, ids):
     lim = _new_user(client, admin, "lim.prev@inversiete.es", [{"role_id": rol["Gobernanta / Limpieza"], "asset_id": sae}])
     mto = _new_user(client, admin, "mto.prev@inversiete.es", [{"role_id": rol["Técnico Mantenimiento"], "asset_id": sae}])
     # preventiva de zonas comunes: mantenimiento confirma -> recepción cierra, sin limpieza
-    w = client.post("/api/mantenimiento/ordenes", headers=mto, json={
+    w = client.post("/api/mantenimiento/ordenes", headers=admin, json={
         "asset_id": sae, "tipo": "preventivo", "categoria": "pci", "titulo": "Revisión trimestral extintores"}).json()
     assert w["requiere_limpieza"] is False
     base = f"/api/mantenimiento/ordenes/{w['id']}"
@@ -389,7 +390,7 @@ def test_preventive_common_areas_skip_cleaning(client, admin, ids):
     assert client.post(f"{base}/cerrar", headers=rec, json={}).json()["estado"] == "cerrada"
     # preventiva en una unidad y correctiva en zonas comunes sí requieren limpieza
     unit = client.get(f"/api/unidades?asset_id={sae}&q=A-250", headers=admin).json()[0]
-    assert client.post("/api/mantenimiento/ordenes", headers=mto, json={
+    assert client.post("/api/mantenimiento/ordenes", headers=admin, json={
         "asset_id": sae, "unit_id": unit["id"], "tipo": "preventivo", "titulo": "Limpieza filtros split"}).json()["requiere_limpieza"]
     assert client.post("/api/mantenimiento/ordenes", headers=rec, json={
         "asset_id": sae, "titulo": "Fuga en pasillo planta 2"}).json()["requiere_limpieza"]

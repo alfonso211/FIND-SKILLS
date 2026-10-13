@@ -20,7 +20,9 @@ const badge = (v) => (v == null || v === "" ? "" : `<span class="badge b-${esc(v
 const assetName = (id) => S.assets.find((a) => a.id === id)?.nombre ?? id;
 const PLURAL = { vivienda: "viviendas", apartamento: "apartamentos", garaje: "garajes", trastero: "trasteros", local: "locales", oficina: "oficinas" };
 const plural = (u) => PLURAL[u] || u;
-const canOpenOT = () => can("mantenimiento.abrir") || can("mantenimiento.editar");
+const canOpenOT = () => can("mantenimiento.abrir");  // mantenimiento y limpieza avisan con un parte de estado
+const canParteEstado = () => can("partes_estado.crear");
+const irParteEstado = (aid, uid, zona) => go(`estado?a=${aid}${uid ? `&u=${uid}` : ""}${zona != null ? `&z=${encodeURIComponent(zona)}` : ""}`);
 const assetsOf = (mod) => S.assets.filter((a) => !mod || a.modalidad === mod);
 
 // ------------------------------------------------------------------ API
@@ -276,6 +278,13 @@ V.panel = async (el) => {
   if (ip.length) avisos.push(`<div class="aviso-hito"><h4>📊 Informe a presidencia de ${esc(ip[0].periodo)}: pendiente</h4>
     <p>${ip.map((x) => `${esc(x.activo)} (lo envía ${esc(x.responsable)})`).join(" · ")}. Revíselo y envíelo por correo o WhatsApp.</p>
     <button class="btn sm primary" id="verPresidencia" data-a="${ip[0].asset_id}">Preparar informe</button></div>`);
+  const pe = (p.partes_estado || []).filter((x) => !S.asset || String(x.asset_id) === String(S.asset));
+  if (pe.length) {
+    const pend = pe.filter((x) => x.estado === "pendiente"), crit = pe.filter((x) => x.gravedad === "critica");
+    avisos.push(`<div class="aviso-hito${crit.length ? " aviso-cobro" : ""}"><h4>🛠️ Partes de estado sin resolver: ${pe.length}${pend.length ? ` · ${pend.length} esperan orden de trabajo` : ""}${crit.length ? ` · ${crit.length} crítico(s)` : ""}</h4>
+    <p>${pe.slice(0, 6).map((x) => `${esc(x.codigo)} ${esc(x.ubicacion)}: ${esc(x.elemento)} · ${esc(x.deficiencia)} (${esc(x.estado_nombre.toLowerCase())})`).join(" · ")}${pe.length > 6 ? " …" : ""}</p>
+    <button class="btn sm primary" id="verPartesEstado">Revisar</button></div>`);
+  }
   const ap = (p.ausencias_pendientes || []).filter((x) => !S.asset || String(x.asset_id) === String(S.asset));
   if (ap.length) avisos.push(`<div class="aviso-hito"><h4>🗓️ Ausencias que esperan su decisión: ${ap.length}</h4>
     <p>${ap.map((x) => `${esc(x.persona)} (${fdate(x.desde)}${x.hasta !== x.desde ? ` a ${fdate(x.hasta)}` : ""})`).join(" · ")}.</p>
@@ -344,6 +353,7 @@ V.panel = async (el) => {
   if ($("#verRetenidas", el)) $("#verRetenidas", el).onclick = () => go("gastos");
   if ($("#verPresidencia", el)) $("#verPresidencia", el).onclick = (e) => { S.presidencia = { asset: e.currentTarget.dataset.a }; go("presidencia"); };
   if ($("#verAusencias", el)) $("#verAusencias", el).onclick = () => go("ausencias");
+  if ($("#verPartesEstado", el)) $("#verPartesEstado", el).onclick = () => go("estado?ver=lista");
   pintarMinis(el).catch((e) => el.querySelectorAll(".minis").forEach((m) => (m.innerHTML = `<p class="error">${esc(e.message)}</p>`)));
   bindBuscador($("#busq", el), $("#busqRes", el));
   agendaWidget($("#agp", el), false, true);
@@ -506,6 +516,7 @@ function pintaBusqueda(res, d, recargar) {
         conPlanoActivo(u.asset_id) && ["Plano", () => { S.plano = { asset: u.asset_id }; go("plano"); }],
         u.modalidad === "apartamentos_turisticos" && can("reservas.editar") && ["Reservar", () => newReservation(recargar, { id: u.id, codigo: u.codigo, asset_id: u.asset_id, uso: u.uso })],
         canOpenOT() && ["Abrir OT", () => newWorkOrder(u.asset_id, u.id)],
+        !canOpenOT() && canParteEstado() && ["Parte de estado", () => irParteEstado(u.asset_id, u.id)],
       ]],
     ["contratos", "Contratos de alquiler", [{ k: "referencia", t: "Ref." }, { k: "unidad", t: "Unidad" }, { k: "inquilino", t: "Inquilino" },
       { k: "fecha_inicio", t: "Inicio", f: fdate }, { k: "fecha_fin", t: "Fin", f: fdate }, { k: "renta_mensual", t: "Renta", num: true, f: eur }, { k: "estado", t: "Estado", f: badge }],
@@ -759,11 +770,13 @@ async function fichaApartamento(uid, recarga, cargada = null) {
     d.puede.contrato && sit.clave === "alquilada" && ["contrato", pc && !pc.lease_id ? "Crear contrato" : "Contrato", pc ? "Completar los datos del contrato" : "Expediente del contrato de alquiler"],
     d.puede.gasto && ["gasto", "Factura recibida", "Subir una factura o ticket imputado a esta vivienda"],
     d.puede.incidencia && ["incidencia", "Incidencia", "Abrir una incidencia o parte de trabajo con fotos"],
+    d.puede.parte_estado && ["estado", "Parte de estado", "Señalar una deficiencia al revisar la vivienda"],
   ].filter(Boolean) : [
     d.puede.reservar && ["reserva", "Reserva", garaje ? "Por días o semanas (huésped o cliente)" : "Nueva reserva en este apartamento"],
     d.puede.alquilar && !d.alquiler && ["alquiler", "Alquiler mensual", "Cliente externo: recibo cada mes y factura al 21 %"],
     d.puede.bloquear && (d.estado === "bloqueado" ? ["desbloquear", "Bloqueado", bloqueoVigente ? `Motivo: ${bloqueoVigente.motivo}. Pulse para desbloquear` : "Pulse para desbloquear"] : ["bloqueo", "Bloqueado", "Sacarlo de venta indicando el motivo"]),
     d.puede.incidencia && ["incidencia", "Incidencia", "Abrir una incidencia (avería) con fotos"],
+    d.puede.parte_estado && ["estado", "Parte de estado", "Señalar una deficiencia al revisar el apartamento"],
   ].filter(Boolean);
   const f = cerrarSolo(form(garaje ? `Plaza de garaje ${u.codigo} · ${u.bloque || ""}` : vivienda ? `Vivienda ${u.codigo} · ${assetName(u.asset_id)}` : `Apartamento ${u.codigo} · ${u.tipologia || ""}`, [
     { html: `${vivienda ? cabVivienda : `<p><span class="estado-ap pc-${d.estado}">${ESTADO_TXT[d.estado]}</span> ${u.bloque ? esc(u.bloque) + " · " : ""}planta ${esc(u.planta || "")}${u.capacidad ? ` · ${u.capacidad} plazas` : ""}${d.limpieza ? ' · <span class="badge b-pendiente_limpieza">pendiente de limpieza</span>' : ""}</p>${actual}`}
@@ -790,6 +803,7 @@ async function fichaApartamento(uid, recarga, cargada = null) {
     if (acc === "reserva") newReservation(recarga, fija);
     if (acc === "alquiler") alquilarGaraje(recarga, fija);
     if (acc === "incidencia") newWorkOrder(u.asset_id, u.id).then(recarga);
+    if (acc === "estado") { $("#modal").close(); irParteEstado(u.asset_id, u.id); }
     if (acc === "situacion") pedirSituacion(d, recarga);
     if (acc === "contrato") {
       const l = (d.contratos || []).find((x) => ["vigente", "borrador"].includes(x.estado));
@@ -816,7 +830,7 @@ async function zonaComun(assetId, zona, recarga) {
   const z = await run(() => get(`/api/plano/${assetId}/zonas/${encodeURIComponent(zona)}`));
   const ots = z.incidencias || [];
   const f = cerrarSolo(form(`Zona común · ${z.nombre}`, [
-    { html: `${z.puede.incidencia ? '<div class="acciones-ap"><button type="button" class="accion-ap" data-nueva><span class="caja">☐</span><b>Incidencia</b><small>Abrir una incidencia en esta zona común</small></button></div>' : ""}
+    { html: `${z.puede.incidencia || z.puede.parte_estado ? `<div class="acciones-ap">${z.puede.incidencia ? '<button type="button" class="accion-ap" data-nueva><span class="caja">☐</span><b>Incidencia</b><small>Abrir una incidencia en esta zona común</small></button>' : ""}${z.puede.parte_estado ? '<button type="button" class="accion-ap" data-estado><span class="caja">☐</span><b>Parte de estado</b><small>Señalar una deficiencia de esta zona común</small></button>' : ""}</div>` : ""}
       <div class="buscador"><input type="search" placeholder="Buscar en las incidencias de esta zona…" data-q></div><div class="resultados" data-res></div>` },
   ], {}, async () => {}));
   const pinta = () => {
@@ -830,6 +844,7 @@ async function zonaComun(assetId, zona, recarga) {
   $("[data-q]", f).oninput = pinta; pinta();
   const nueva = $("[data-nueva]", f);
   if (nueva) nueva.onclick = () => newWorkOrder(assetId, null, { zona: z.zona, nombre: z.nombre }).then(recarga);
+  if ($("[data-estado]", f)) $("[data-estado]", f).onclick = () => { $("#modal").close(); irParteEstado(assetId, null, z.zona); };
 }
 
 V.activos = async (el) => {
@@ -902,6 +917,7 @@ V.unidades = async (el) => {
       can("activos.editar") && ["Editar", () => form(`Unidad ${u.codigo}`, fields, u, async (d) => { await put(`/api/unidades/${u.id}`, d); toast("Guardado"); load(); })],
       can("activos.editar") && ["vivienda", "apartamento"].includes(u.uso) && ["Ficha alquiler", () => fichaAlquiler(u)],
       canOpenOT() && ["Avería", () => newWorkOrder(u.asset_id, u.id).then(load)],
+      canParteEstado() && ["Parte de estado", () => irParteEstado(u.asset_id, u.id)],
     ]);
   };
   $("#q", el).oninput = debounce(load); $("#est", el).onchange = load; $("#uso", el).onchange = load;
@@ -2839,7 +2855,7 @@ function enviarAsignado(w, reload) {
     setTimeout(() => resultadoEnvio(`${otNum(w.id)} enviada`, r.enviados.map((x) => (x.copia ? { ...x, nombre: `${x.nombre} (copia)` } : x))), 0);
   }, "Enviar");
 }
-async function newWorkOrder(assetId, unitId, zona) {  // zona: {zona, nombre} de una zona común del plano
+async function newWorkOrder(assetId, unitId, zona, parte) {  // zona: {zona, nombre} de una zona común del plano
   const aid = assetId || await pickAsset();
   const units = zona ? [] : await get("/api/unidades", { asset_id: aid });
   const titulo = zona ? `Nueva incidencia · ${zona.nombre}` : unitId ? `Nueva incidencia · ${units.find((u) => u.id === unitId)?.codigo ?? ""}` : `Nueva orden de trabajo · ${assetName(aid)}`;
@@ -2854,9 +2870,9 @@ async function newWorkOrder(assetId, unitId, zona) {  // zona: {zona, nombre} de
       { k: "coste_estimado", t: "Coste estimado €", type: "number" }, { k: "fecha_prevista", t: "Fecha prevista", type: "date" }] : []),
     ...(zona ? [] : [{ k: "bloquea_unidad", t: "Bloquear unidad (fuera de venta hasta cierre)", type: "checkbox", wide: true }]),
     { k: "descripcion", t: "Descripción de la avería", type: "textarea", wide: true },
-    { html: fotosHtml("Fotos de la avería (opcional)") },
-  ], { unit_id: unitId }, async (d, f) => {
-    const w = await post("/api/mantenimiento/ordenes", clean({ ...(can("mantenimiento.editar") ? datosAsignacion(d) : d), asset_id: aid, unit_id: d.unit_id ? Number(d.unit_id) : null, zona: zona?.zona }));
+    { html: parte ? `<p class="muted">Se genera desde el parte de estado <b>${esc(parte.codigo)}</b>: sus fotos se adjuntan solas.</p>` : fotosHtml("Fotos de la avería (opcional)") },
+  ], { unit_id: unitId, ...(parte ? parte.ot_propuesta : {}) }, async (d, f) => {
+    const w = await post("/api/mantenimiento/ordenes", clean({ ...(can("mantenimiento.editar") ? datosAsignacion(d) : d), asset_id: aid, unit_id: d.unit_id ? Number(d.unit_id) : null, zona: zona?.zona, parte_estado_id: parte?.id }));
     const n = await subirFotos(f, w.id, "averia");
     toast(`Orden de trabajo OT-${String(w.id).padStart(5, "0")} creada` + (n ? ` con ${n} foto(s)` : "") + (w.prioridad === "urgente" ? ". Se ha avisado por correo." : ""));
     resolve();
@@ -3436,6 +3452,192 @@ V.gastos = async (el) => {
   if ($("#sin", el)) { $("#sin", el).onclick = () => editarGasto(null, load); $("#doc", el).onclick = () => subirDocumento(load); }
   load();
 };
+
+// ---- partes de estado (mantenimiento y limpieza revisan una vivienda o zona común; recepción genera la OT)
+V.estado = async (el) => {
+  const crea = canParteEstado(), gestiona = can("mantenimiento.abrir");
+  const pestanas = [crea && ["nuevo", "➕ Nuevo parte"], ["lista", "📋 Partes"], gestiona && ["kpis", "📈 Panel técnico"]].filter(Boolean);
+  const params = S.params || new URLSearchParams();
+  let tab = params.get("ver") || (params.has("a") || params.has("u") ? "nuevo" : crea && !gestiona ? "nuevo" : "lista");
+  if (!pestanas.some(([k]) => k === tab)) tab = pestanas[0][0];
+  el.innerHTML = `<div class="toolbar"><div class="chips" style="margin:0">${pestanas.map(([k, t]) => `<button type="button" class="chip" data-tab="${k}">${t}</button>`).join("")}</div>
+    <span class="spacer"></span>${gestiona ? '<button class="btn" id="qr">🔳 Códigos QR</button>' : ""}</div><div id="pe"></div>`;
+  const cuerpo = $("#pe", el);
+  const pinta = () => {
+    el.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+    ({ nuevo: parteNuevo, lista: partesLista, kpis: partesKpis })[tab](cuerpo, params);
+  };
+  el.querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; params.delete("u"); params.delete("z"); pinta(); }));
+  if ($("#qr", el)) $("#qr", el).onclick = async () => { const aid = S.asset || await pickAsset(); run(() => download("GET", `/api/partes-estado/qr.pdf?asset_id=${aid}`)); };
+  pinta();
+};
+
+const GRAVEDAD_TXT = { leve: ["🟢", "Leve"], media: ["🟠", "Media"], critica: ["🔴", "Crítica"] };
+
+// Alta en 4 pasos + foto: ubicación (QR o buscador) → estancia → elemento → deficiencia, gravedad y foto
+async function parteNuevo(cuerpo, params) {
+  const cat = S.catEstado || (S.catEstado = await get("/api/partes-estado/catalogo"));
+  const activos = S.assets;
+  let aid = Number(params.get("a")) || Number(S.asset) || (activos.length === 1 ? activos[0].id : null);
+  const sel = {};
+  let ubic = null, gps = null;
+  if (navigator.geolocation) navigator.geolocation.getCurrentPosition((p) => { gps = p.coords; }, () => {}, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+  const paso = (n, html) => `<div class="pe-pasos">${["Ubicación", "Estancia", "Elemento", "Deficiencia"].map((t, i) => `<span class="${i < n ? "hecho" : i === n ? "actual" : ""}">${i + 1}. ${t}</span>`).join("")}</div>
+    ${sel.lugar ? `<p class="pe-ruta"><b>${esc(sel.lugar)}</b>${sel.estanciaNombre ? ` › ${esc(sel.estanciaNombre)}` : ""}${sel.elementoNombre ? ` › ${esc(sel.elementoNombre)}` : ""} <button type="button" class="btn sm" data-atras>← Atrás</button></p>` : ""}${html}`;
+  const atras = () => { const b = cuerpo.querySelector("[data-atras]"); if (b) b.onclick = () => { if (sel.elemento) { delete sel.elemento; delete sel.elementoNombre; paso3(); } else if (sel.estancia) { delete sel.estancia; delete sel.estanciaNombre; paso2(); } else { Object.keys(sel).forEach((k) => delete sel[k]); paso1(); } }; };
+  // 1. ubicación
+  const paso1 = async () => {
+    if (!aid) {
+      cuerpo.innerHTML = paso(0, `<p>Elija el activo:</p><div class="pe-grid">${activos.map((a) => `<button type="button" class="pe-btn" data-a="${a.id}">${esc(a.nombre)}</button>`).join("")}</div>`);
+      cuerpo.querySelectorAll("[data-a]").forEach((b) => (b.onclick = () => { aid = Number(b.dataset.a); paso1(); }));
+      return;
+    }
+    ubic = await get("/api/partes-estado/ubicaciones", { asset_id: aid });
+    const uq = Number(params.get("u")), zq = params.get("z");
+    if (uq) { const u = ubic.unidades.find((x) => x.id === uq); params.delete("u"); if (u) return elegirUnidad(u); }
+    if (zq !== null) { params.delete("z"); return elegirZona(zq); }
+    cuerpo.innerHTML = paso(0, `<p class="muted">Escanee el código QR de la puerta o busque la unidad. Activo: <b>${esc(ubic.activo)}</b>${activos.length > 1 ? ' <button type="button" class="btn sm" data-cambia>Cambiar</button>' : ""}</p>
+      <input type="search" class="pe-busca" placeholder="Nº de apartamento o vivienda (p. ej. 412)" data-busca autocomplete="off">
+      <div class="pe-grid" data-res></div>
+      <h4>Zonas comunes</h4><div class="pe-grid">${[{ zona: "", nombre: "Zonas comunes (general)" }, ...ubic.zonas].map((z) => `<button type="button" class="pe-btn zc" data-z="${esc(z.zona)}">${esc(z.nombre)}</button>`).join("")}</div>`);
+    const res = cuerpo.querySelector("[data-res]");
+    const busca = () => {
+      const q = normaliza(cuerpo.querySelector("[data-busca]").value);
+      const vis = q ? ubic.unidades.filter((u) => normaliza(u.codigo).includes(q)).slice(0, 24) : [];
+      res.innerHTML = vis.map((u) => `<button type="button" class="pe-btn" data-u="${u.id}"><b>${esc(u.codigo)}</b><small>${esc(u.descripcion || "")}</small></button>`).join("") || (q ? '<p class="muted">Sin coincidencias.</p>' : "");
+      res.querySelectorAll("[data-u]").forEach((b) => (b.onclick = () => elegirUnidad(ubic.unidades.find((u) => u.id === Number(b.dataset.u)))));
+    };
+    cuerpo.querySelector("[data-busca]").oninput = busca;
+    cuerpo.querySelectorAll("[data-z]").forEach((b) => (b.onclick = () => elegirZona(b.dataset.z)));
+    if (cuerpo.querySelector("[data-cambia]")) cuerpo.querySelector("[data-cambia]").onclick = () => { aid = null; paso1(); };
+    cuerpo.querySelector("[data-busca]").focus();
+  };
+  const elegirUnidad = (u) => {
+    Object.assign(sel, { unit_id: u.id, zona: null, lugar: `${u.codigo}${u.descripcion ? " · " + u.descripcion : ""}`, tipologia: u.tipologia });
+    if (u.tipologia) return paso2();
+    cuerpo.innerHTML = paso(0, `<p>¿Qué distribución tiene <b>${esc(u.codigo)}</b>?</p><div class="pe-grid">${["T0", "T1", "T2"].map((t) => `<button type="button" class="pe-btn" data-t="${t}">${esc(cat.tipologias[t])}</button>`).join("")}</div>`);
+    cuerpo.querySelectorAll("[data-t]").forEach((b) => (b.onclick = () => { sel.tipologia = b.dataset.t; paso2(); }));
+    atras();
+  };
+  const elegirZona = (z) => {
+    const nombre = z ? ubic.zonas.find((x) => x.zona === z)?.nombre || z : "";
+    Object.assign(sel, { unit_id: null, zona: z || null, tipologia: "ZC", lugar: `Zonas comunes${nombre ? " · " + nombre : ""}` });
+    paso2();
+  };
+  // 2. estancia
+  const paso2 = () => {
+    cuerpo.innerHTML = paso(1, `<div class="pe-grid grande">${cat.estancias[sel.tipologia].map((e) => `<button type="button" class="pe-btn" data-e="${e.clave}">${esc(e.nombre)}</button>`).join("")}</div>`);
+    cuerpo.querySelectorAll("[data-e]").forEach((b) => (b.onclick = () => { const e = cat.estancias[sel.tipologia].find((x) => x.clave === b.dataset.e); Object.assign(sel, { estancia: e.clave, estanciaNombre: e.nombre }); paso3(); }));
+    atras();
+  };
+  // 3. familias (acordeón) y elemento
+  const paso3 = () => {
+    const e = cat.estancias[sel.tipologia].find((x) => x.clave === sel.estancia);
+    cuerpo.innerHTML = paso(2, e.elementos.map((f, i) => `<details class="pe-familia"${i === 0 ? " open" : ""}><summary>${esc(f.nombre)}</summary>
+      <div class="pe-grid">${f.elementos.map((x) => `<button type="button" class="pe-btn" data-el="${x.clave}">${esc(x.nombre)}</button>`).join("")}</div></details>`).join(""));
+    cuerpo.querySelectorAll("details").forEach((d) => (d.ontoggle = () => { if (d.open) cuerpo.querySelectorAll("details").forEach((o) => o !== d && (o.open = false)); }));
+    cuerpo.querySelectorAll("[data-el]").forEach((b) => (b.onclick = () => { Object.assign(sel, { elemento: b.dataset.el, elementoNombre: b.textContent }); paso4(); }));
+    atras();
+  };
+  // 4. cierre rápido: deficiencia, gravedad, foto obligatoria, observaciones
+  const paso4 = () => {
+    cuerpo.innerHTML = paso(3, `<form class="pe-cierre" data-f>
+      <label>Deficiencia<select name="deficiencia" required><option value="">Elija…</option>${cat.deficiencias.map((g) => `<optgroup label="${esc(g.nombre)}">${g.opciones.map((o) => `<option value="${o.clave}">${esc(o.nombre)}</option>`).join("")}</optgroup>`).join("")}</select></label>
+      <div class="pe-gravedad" role="group" aria-label="Gravedad">${Object.entries(GRAVEDAD_TXT).map(([k, [ic, t]]) => `<button type="button" class="pe-grav g-${k}" data-g="${k}" title="${esc(cat.gravedades[k])}">${ic} ${t}</button>`).join("")}</div>
+      <p class="muted peq" data-gtxt>Elija la gravedad.</p>
+      <label class="btn pe-foto">📷 Hacer foto (obligatoria)<input type="file" accept="image/*" capture="environment" multiple name="fotos" hidden></label>
+      <span class="muted" data-fmsg>Ninguna foto</span>
+      <label>Observaciones (opcional)<textarea name="observaciones" rows="2" maxlength="2000"></textarea></label>
+      <p class="error" data-err></p>
+      <button type="submit" class="btn primary pe-enviar">Generar parte</button></form>`);
+    const f = cuerpo.querySelector("[data-f]");
+    let fotos = [];
+    f.fotos.onchange = () => { fotos = [...fotos, ...f.fotos.files].slice(0, 6); cuerpo.querySelector("[data-fmsg]").textContent = fotos.length ? `${fotos.length} foto(s)` : "Ninguna foto"; };
+    f.querySelectorAll("[data-g]").forEach((b) => (b.onclick = () => {
+      sel.gravedad = b.dataset.g;
+      f.querySelectorAll("[data-g]").forEach((x) => x.classList.toggle("on", x === b));
+      cuerpo.querySelector("[data-gtxt]").textContent = cat.gravedades[sel.gravedad];
+    }));
+    f.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const err = cuerpo.querySelector("[data-err]");
+      if (!f.deficiencia.value) return (err.textContent = "Elija la deficiencia");
+      if (!sel.gravedad) return (err.textContent = "Elija la gravedad");
+      if (!fotos.length) return (err.textContent = "La foto es obligatoria");
+      const fd = new FormData();
+      Object.entries({ asset_id: aid, unit_id: sel.unit_id, zona: sel.zona, tipologia: sel.tipologia, estancia: sel.estancia, elemento: sel.elemento,
+        deficiencia: f.deficiencia.value, gravedad: sel.gravedad, observaciones: f.observaciones.value.trim(),
+        lat: gps?.latitude, lon: gps?.longitude, precision: gps?.accuracy }).forEach(([k, v]) => v != null && v !== "" && fd.append(k, v));
+      for (const x of fotos) fd.append("fotos", await reducirFoto(x));
+      const boton = f.querySelector(".pe-enviar"); boton.disabled = true; boton.textContent = "Enviando…";
+      try { hecho(await upload("/api/partes-estado", fd)); } catch (e) { err.textContent = e.message; boton.disabled = false; boton.textContent = "Generar parte"; }
+    };
+    atras();
+  };
+  const hecho = (p) => {
+    cuerpo.innerHTML = `<div class="pe-hecho"><h3>✔ Parte ${esc(p.codigo)} enviado a recepción</h3>
+      <p><b>${esc(p.ubicacion)}</b> › ${esc(p.estancia_nombre)} › ${esc(p.elemento_nombre)}: ${esc(p.deficiencia_nombre)}</p>
+      <p>${GRAVEDAD_TXT[p.gravedad].join(" ")} · ${esc(p.departamento_nombre)} · prioridad propuesta ${badge(p.prioridad)}</p>
+      ${p.bloquea_unidad ? '<p class="error"><b>La unidad queda fuera de servicio</b> hasta que se cierre su orden de trabajo.</p>' : ""}
+      ${(p.alertas || []).map((a) => `<p class="aviso-amarillo">${esc(a)}</p>`).join("")}
+      <button type="button" class="btn primary" data-otro>Otro parte en ${esc(p.ubicacion)}</button> <button type="button" class="btn" data-nuevo>Otra ubicación</button></div>`;
+    cuerpo.querySelector("[data-otro]").onclick = () => { delete sel.estancia; delete sel.estanciaNombre; delete sel.elemento; delete sel.elementoNombre; delete sel.gravedad; paso2(); };
+    cuerpo.querySelector("[data-nuevo]").onclick = () => { Object.keys(sel).forEach((k) => delete sel[k]); paso1(); };
+  };
+  await paso1();
+}
+
+// Recepción: pendientes de decidir (generar OT o descartar) y abiertos hasta resolverse
+async function partesLista(cuerpo) {
+  cuerpo.innerHTML = `<div class="toolbar"><select data-estado><option value="abiertos">Sin resolver</option><option value="pendiente">Pendientes de recepción</option>
+    <option value="ot_generada">Con orden de trabajo</option><option value="resuelto">Resueltos</option><option value="descartado">Descartados</option><option value="">Todos</option></select></div><div data-t></div>`;
+  const load = async () => {
+    const v = cuerpo.querySelector("[data-estado]").value;
+    const filas = await get("/api/partes-estado", { asset_id: S.asset, ...(v === "abiertos" ? { abiertos: true } : { estado: v }) });
+    table(cuerpo.querySelector("[data-t]"), [
+      { k: "codigo", t: "Parte", f: (v, p) => `<b>${esc(v)}</b><br><span class="muted peq">${fdt(p.creado)}</span>` },
+      { k: "ubicacion", t: "Ubicación", f: (v, p) => `${esc(v)}<br><span class="muted peq">${esc(p.estancia_nombre)}</span>` },
+      { k: "elemento_nombre", t: "Elemento · deficiencia", f: (v, p) => `${esc(v)}: <b>${esc(p.deficiencia_nombre)}</b>${p.observaciones ? `<br><span class="muted peq">${esc(p.observaciones)}</span>` : ""}${(p.alertas || []).length ? `<br><span class="peq aviso">⚠ ${esc(p.alertas[0])}</span>` : ""}` },
+      { k: "gravedad", t: "Gravedad", f: (v, p) => `${GRAVEDAD_TXT[v].join(" ")}${p.bloquea_unidad ? '<br><span class="badge b-urgente">fuera de servicio</span>' : ""}` },
+      { k: "departamento_nombre", t: "Para", f: (v, p) => `${esc(v)}<br>${badge(p.prioridad)}` },
+      { k: "estado_nombre", t: "Situación", f: (v, p) => `${esc(v)}${p.ot ? `<br>${otNum(p.ot.id)} ${badge(p.ot.estado)}` : ""}${p.motivo_descarte ? `<br><span class="muted peq">${esc(p.motivo_descarte)}</span>` : ""}` },
+      { k: "usuario", t: "Registró" },
+    ], filas, (p) => [
+      ["Fotos", () => p.fotos.forEach((f) => abrirFichero(`/api/partes-estado/fotos/${f.id}`))],
+      p.lat != null && ["GPS", () => window.open(`https://www.openstreetmap.org/?mlat=${p.lat}&mlon=${p.lon}#map=19/${p.lat}/${p.lon}`, "_blank")],
+      p.puede_gestionar && p.estado === "pendiente" && ["Generar OT", () => newWorkOrder(p.asset_id, p.unit_id, p.zona ? { zona: p.zona, nombre: p.ubicacion } : null, p).then(load), "primary"],
+      p.puede_gestionar && p.estado === "pendiente" && ["Descartar", () => form(`Descartar ${p.codigo}`, [{ k: "motivo", t: "Motivo", req: true, wide: true }], {},
+        async (d) => { await post(`/api/partes-estado/${p.id}/descartar`, d); toast("Parte descartado"); load(); }, "Descartar")],
+    ]);
+  };
+  cuerpo.querySelector("[data-estado]").onchange = load;
+  load();
+}
+
+// Panel técnico de la dirección: Pareto de fallos, tiempo medio de reparación e intervenciones por unidad y mes
+async function partesKpis(cuerpo) {
+  const hoyIso = new Date().toISOString().slice(0, 10), haceAnio = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
+  cuerpo.innerHTML = `<div class="toolbar"><label>Desde <input type="date" data-d value="${haceAnio}"></label><label>Hasta <input type="date" data-h value="${hoyIso}"></label></div><div data-k></div>`;
+  const horas = (m) => (m.horas == null ? "—" : m.horas < 48 ? `${m.horas} h` : `${(m.horas / 24).toFixed(1)} días`);
+  const load = async () => {
+    const k = await get("/api/partes-estado/kpis", { asset_id: S.asset, desde: cuerpo.querySelector("[data-d]").value, hasta: cuerpo.querySelector("[data-h]").value });
+    const tarj = [[k.total, "Partes (sin descartados)"], [horas(k.mttr.global), `Tiempo medio de reparación (${k.mttr.global.resueltos} resueltos)`],
+      [horas(k.mttr.mantenimiento), "MTTR mantenimiento"], [horas(k.mttr.limpieza), "MTTR limpieza"], [horas(k.mttr.critica), "MTTR críticos"],
+      [k.por_estado.pendiente + k.por_estado.ot_generada, "Sin resolver"]];
+    cuerpo.querySelector("[data-k]").innerHTML = `<div class="cards">${tarj.map(([v, t]) => `<div class="card kpi"><b>${esc(String(v))}</b><span>${esc(t)}</span></div>`).join("")}</div>
+      <h3>Frecuencia de fallos por elemento (Pareto)</h3>
+      ${k.pareto.length ? `<div class="table-wrap"><table><thead><tr><th>Elemento</th><th>Familia</th><th class="num">Partes</th><th>%</th><th class="num">Acumulado</th></tr></thead><tbody>
+        ${k.pareto.map((r) => `<tr${r.acumulado - r.pct < 80 ? ' class="pareto-a"' : ""}><td>${esc(r.elemento)}</td><td>${esc(r.familia)}</td><td class="num">${r.partes}</td>
+          <td><div class="barra"><span style="width:${r.pct}%"></span></div> ${r.pct} %</td><td class="num">${r.acumulado} %</td></tr>`).join("")}</tbody></table></div>
+        <p class="muted peq">En negrita, los elementos que suman el 80 % de los fallos: ahí está la mayor parte del coste.</p>` : '<p class="muted">Sin partes en el periodo.</p>'}
+      <h3>Intervenciones técnicas por unidad y mes</h3>
+      ${k.intervenciones.filas.length ? `<div class="table-wrap"><table><thead><tr><th>Ubicación</th>${k.intervenciones.meses.map((m) => `<th class="num">${m.slice(5)}/${m.slice(2, 4)}</th>`).join("")}<th class="num">Total</th></tr></thead><tbody>
+        ${k.intervenciones.filas.map((f) => `<tr><td>${esc(f.ubicacion)}</td>${f.meses.map((n) => `<td class="num">${n || ""}</td>`).join("")}<td class="num"><b>${f.total}</b></td></tr>`).join("")}</tbody></table></div>` : '<p class="muted">Sin intervenciones técnicas en el periodo.</p>'}
+      <h3>Por familia y deficiencia</h3><p>${k.familias.map(([n, c]) => `${esc(n)}: <b>${c}</b>`).join(" · ") || "—"}</p><p>${k.deficiencias.map(([n, c]) => `${esc(n)}: <b>${c}</b>`).join(" · ") || "—"}</p>`;
+  };
+  cuerpo.querySelectorAll("input").forEach((i) => (i.onchange = load));
+  load();
+}
 
 // ---- administración
 V.usuarios = async (el) => {
@@ -4281,14 +4483,15 @@ const MENU = [
   ["Alquiler residencial", [["contratos", "Contratos", "alquiler.ver"], ["recibos", "Recibos y cobros", "alquiler.ver"], ["inquilinos", "Inquilinos", "alquiler.ver"], ["cobrosext", "Cobros de otro programa", "alquiler.ver"]]],
   ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["servicios", "Servicios", "activos.ver"], ["informes", "Informes Excel", "informes"], ["presidencia", "Informe a presidencia", "facturas.ver"]]],
   ["Documentos y gastos", [["docrecibidos", "Documentos recibidos", "documentos.ver"], ["gastos", "Cuenta de gastos", "documentos.ver"]]],
-  ["Mantenimiento", [["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["partestrabajo", "Parte de trabajo diario", "partes"], ["pedidos", "Pedidos de material", "pedidos"], ["productos", "Catálogo de productos", "pedidos"], ["proveedores", "Proveedores", "proveedores"]]],
+  ["Mantenimiento", [["estado", "Partes de estado", "partesestado"], ["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["partestrabajo", "Parte de trabajo diario", "partes"], ["pedidos", "Pedidos de material", "pedidos"], ["productos", "Catálogo de productos", "pedidos"], ["proveedores", "Proveedores", "proveedores"]]],
   ["Personal", [["ausencias", "Vacaciones y ausencias", "activos.ver"], ["personal", "Fichas del personal", "personal"]]],
   ["Administración", [["legal", "Documentación legal", "legal.ver"], ["usuarios", "Usuarios", "admin"], ["roles", "Roles y permisos", "admin"], ["sociedades", "Sociedades", "admin"], ["avisos", "Avisos por correo", "admin"], ["auditoria", "Auditoría", "auditoria.ver"]]],
   ["", [["perfil", "Mi perfil", null]]],
 ];
 const allowed = (p) => !p || (p === "admin" ? S.me.admin_grupo : p === "informes" ? ["reservas.ver", "alquiler.ver", "finanzas.ver", "mantenimiento.ver"].some(can)
   : p === "personal" ? ["mantenimiento.ver", "limpieza.editar", "limpieza.confirmar_ot"].some(can)
-  : p === "proveedores" ? verProveedores() : p === "pedidos" ? verPedidos() : p === "partes" ? verPartes() : can(p));
+  : p === "proveedores" ? verProveedores() : p === "pedidos" ? verPedidos() : p === "partes" ? verPartes()
+  : p === "partesestado" ? canParteEstado() || can("mantenimiento.abrir") : can(p));
 const TITLES = Object.fromEntries(MENU.flatMap(([, items]) => items.map(([id, t]) => [id, t])));
 const PERMISO_VISTA = Object.fromEntries(MENU.flatMap(([, items]) => items.map(([id, , p]) => [id, p])));
 const puedeIr = (vista) => vista in PERMISO_VISTA && allowed(PERMISO_VISTA[vista]);  // pantalla del menú visible
@@ -4343,6 +4546,8 @@ function volver() {
   go(S.pila.pop() || (S.me.colaborador ? "colaborador" : "panel"));
 }
 async function go(view) {
+  const [vista, qs] = String(view || "").split("?");
+  view = vista; S.params = new URLSearchParams(qs || "");
   if (S.me.colaborador) view = ["colaborador", "perfil"].includes(view) ? view : "colaborador";
   else view = TITLES[view] && view !== "colaborador" && allowed(MENU.flatMap(([, i]) => i).find(([id]) => id === view)[2]) ? view : "panel";
   if (location.hash !== "#" + view) history.replaceState(null, "", "#" + view);

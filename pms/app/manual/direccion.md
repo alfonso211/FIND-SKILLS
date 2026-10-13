@@ -29,6 +29,10 @@
 
 - **Anular un contrato** hecho por error o que no sigue adelante: **Anular** en el contrato (o en **Editar** → **Anular contrato**), con su motivo. Con recibos cobrados no se anula: se rescinde o se da por finalizado. Con facturas, primero la rectificativa.
 
+## Partes de estado y panel técnico
+- Mantenimiento y limpieza señalan las deficiencias con **partes de estado** (listas encadenadas, foto obligatoria, GPS) y recepción genera la orden de trabajo. Los **críticos** dejan la unidad fuera de servicio y le llegan también por correo.
+- **Mantenimiento → Partes de estado → Panel técnico**: **Pareto** de los elementos que más fallan (en negrita, el 80 %), **tiempo medio de reparación** (del parte al cierre de la OT; global, por departamento y de los críticos) e **intervenciones técnicas por unidad y mes** para controlar el coste de cada vivienda.
+
 ## Pedidos de material y catálogo
 - **Mantenimiento → Pedidos de material**: los de Dirección y Recepción 1 quedan autorizados; los demás los autoriza Recepción 1 (Dirección también puede). Se envían al proveedor en PDF y se marcan como recibidos.
 - **Catálogo de productos**: referencia, artículo, familia, unidad, precio sin IVA, marca, referencia y nombre del proveedor.

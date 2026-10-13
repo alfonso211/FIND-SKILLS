@@ -259,8 +259,8 @@ def floor_plan(asset_id: int, fecha: date | None = None, scope: Scope = Depends(
             "columnas": p["columnas"], "filas": p["filas"], "plantas": plantas,
             "puede": {"reservar": scope.can_asset("reservas.editar", asset_id),
                       "bloquear": _puede_bloquear(scope, asset_id),
-                      "incidencia": scope.can_asset("mantenimiento.abrir", asset_id)
-                      or scope.can_asset("mantenimiento.editar", asset_id),
+                      "incidencia": scope.can_asset("mantenimiento.abrir", asset_id),
+                      "parte_estado": scope.can_asset("partes_estado.crear", asset_id),
                       "ver_reservas": ve_res, "ver_mantenimiento": ve_mto}}
 
 
@@ -296,8 +296,8 @@ def unit_sheet(uid: int, scope: Scope = Depends(get_scope), db: Session = Depend
                      "alquilar": u.uso == "garaje" and u.asset.modalidad in MODALIDADES_RESERVA
                      and scope.can_asset("reservas.editar", u.asset_id),
                      "bloquear": _puede_bloquear(scope, u.asset_id),
-                     "incidencia": scope.can_asset("mantenimiento.abrir", u.asset_id)
-                     or scope.can_asset("mantenimiento.editar", u.asset_id)}}
+                     "incidencia": scope.can_asset("mantenimiento.abrir", u.asset_id),
+                     "parte_estado": scope.can_asset("partes_estado.crear", u.asset_id)}}
     if scope.can_asset("reservas.ver", u.asset_id):
         out["actual"] = e["reserva"]
         filas = db.execute(select(Reservation, Contact).join(Contact, Contact.id == Reservation.guest_id)
@@ -362,8 +362,8 @@ def common_area(asset_id: int, zona: str, scope: Scope = Depends(get_scope), db:
     if not nombre:
         raise HTTPException(404, "Zona común no encontrada")
     out = {"zona": zona, "nombre": nombre,
-           "puede": {"incidencia": scope.can_asset("mantenimiento.abrir", asset_id)
-                     or scope.can_asset("mantenimiento.editar", asset_id)}}
+           "puede": {"incidencia": scope.can_asset("mantenimiento.abrir", asset_id),
+                     "parte_estado": scope.can_asset("partes_estado.crear", asset_id)}}
     if scope.can_asset("mantenimiento.ver", asset_id):
         out["incidencias"] = _ots(db, (WorkOrder.asset_id == asset_id) & (WorkOrder.zona == zona))
     return out

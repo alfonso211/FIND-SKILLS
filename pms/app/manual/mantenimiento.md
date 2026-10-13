@@ -3,7 +3,7 @@
 ## Órdenes de trabajo (OT)
 - **Órdenes de trabajo**: todas las averías de su activo. Las **urgentes** le llegan además por **correo al momento**.
 - Recorrido de una OT:
-  1. **Abierta**: la abre recepción, limpieza o usted (con fotos).
+  1. **Abierta**: la abre recepción (o la dirección), normalmente a partir de un **parte de estado** suyo o de limpieza, con sus fotos.
   2. **Asignada / En curso / Pendiente de material**: cambie el estado con **Editar** (asignar técnico, proveedor, coste previsto, fecha prevista).
   3. **Trabajo realizado**: al terminar, pulse **Trabajo realizado**, describa la solución, el **coste real** y añada **fotos** del resultado.
   4. Si el trabajo fue en un apartamento, **limpieza lo revisa** («Unidad OK») o lo devuelve si no está bien.
@@ -16,6 +16,17 @@
 - **Parte PDF**: hoja de la OT para imprimir o firmar.
 - Si la OT **bloquea el apartamento**, este no se puede reservar hasta cerrarla.
 - **Revisión de salida**: con cada check-out se abre sola una OT «Revisión de salida · Apartamento …» (instalaciones, electrodomésticos, fontanería, climatización, iluminación, cerraduras y desperfectos). Revise el apartamento y ciérrela como cualquier OT; si hay algo que reparar, anótelo.
+
+## Parte de estado (al revisar una vivienda o zona común)
+- Ya **no se abren órdenes de trabajo**: se registra un **parte de estado** y recepción genera la OT y la encarga.
+- **Mantenimiento → Partes de estado → Nuevo parte** (o escanee el **código QR** de la puerta con el móvil; también desde el plano, botón **Parte de estado**):
+  1. **Ubicación**: escriba el número de la vivienda o elija la zona común.
+  2. **Estancia**: cocina, baño, dormitorio…
+  3. **Elemento**: abra la familia (arquitectura, instalaciones, electrodomésticos, mobiliario, operaciones) y pulse el elemento.
+  4. **Deficiencia** de la lista, **gravedad** (🟢 leve, 🟠 media: antes de la próxima entrada, 🔴 crítica) y **foto obligatoria**. Observaciones solo si hace falta.
+- Pulse **Generar parte**. Se avisa a recepción al momento. Las averías técnicas van a mantenimiento y las de limpieza a limpieza.
+- **Crítica**: la vivienda queda **fuera de servicio** (no se puede reservar) hasta que se cierre su orden de trabajo.
+- En **Partes** ve los suyos y en qué situación están (pendiente, con OT, resuelto o descartado).
 
 ## Plan preventivo
 - **Plan preventivo**: revisiones periódicas y normativas (PCI, ascensores, legionela, BT…).

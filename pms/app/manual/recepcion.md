@@ -64,6 +64,11 @@
 
 ## Averías e incidencias
 - **Órdenes de trabajo → Nueva OT** (o desde el plano): describa la avería y **adjunte fotos**. Si es urgente, márquelo: mantenimiento recibe un correo al momento.
+- **Partes de estado** (Mantenimiento → Partes de estado): mantenimiento y limpieza ya no abren OT; registran un parte y le llega un **correo al momento**. El parte sale en el **Panel de control** hasta que se resuelve.
+  - **Generar OT**: abre la orden con todo relleno (título, gremio, prioridad propuesta, descripción y fotos del parte). Asígnela y envíela a quien corresponda.
+  - **Descartar**: indique el motivo. Si el parte crítico había dejado la vivienda fuera de servicio, vuelve a estar disponible.
+  - Al **cerrar la OT**, el parte queda **resuelto**. Si la OT se cancela, el parte queda descartado.
+  - **Códigos QR**: hoja con el QR de cada vivienda y zona común para pegar en la puerta o en el cuarto de instalaciones; al escanearlo con el móvil se abre el parte de esa ubicación.
 - Cuando mantenimiento (y limpieza, si hace falta) la confirman, la OT queda **pendiente de cierre**: revísela y pulse **Cerrar OT**.
 
 ## Documentos recibidos

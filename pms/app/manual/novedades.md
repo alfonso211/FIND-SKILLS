@@ -1,5 +1,11 @@
 # Novedades
 
+## 2026-10-13 · Versión 1.36 · Partes de estado
+- **Mantenimiento y limpieza**: ya no abren órdenes de trabajo. Al revisar una vivienda o zona común registran un **parte de estado** desde el móvil, en 4 pasos y con foto obligatoria: ubicación (o código QR), estancia, elemento, y deficiencia con su gravedad.
+- **Recepción**: el parte le llega por correo y al Panel de control hasta resolverlo. Con **Generar OT** la orden sale rellena con sus fotos; también puede **descartarlo**. Al cerrar la OT, el parte queda resuelto.
+- **Crítico**: la vivienda queda fuera de servicio hasta que se cierra su orden de trabajo.
+- **Dirección**: nuevo **Panel técnico** con el Pareto de fallos, el tiempo medio de reparación y las intervenciones por unidad y mes. Hoja de **códigos QR** para las puertas.
+
 ## 2026-10-13 · Versión 1.35 · Lector de documentos (MRZ)
 - **Recepción**: en el escaneo del documento hay un cuadro nuevo, **Lector de documentos**, para usar un lector MRZ conectado al ordenador. Al pasar el DNI, la TIE o el pasaporte, la ficha se rellena sola y validada en un segundo, sin fotos ni reflejos. Con la casilla «En este equipo hay lector», el cuadro queda listo nada más abrir la ficha.
 
