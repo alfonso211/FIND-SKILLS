@@ -72,6 +72,7 @@
 - Las de **mantenimiento** solo las autoriza el **director técnico**: rol **Dirección Técnica** (permiso «personal.autorizar_mto»), que se suma a su rol de dirección. Se asigna en Administración → Usuarios.
 - **Resumen del año** y **Excel** con todas las ausencias y los días aprobados por persona.
 - Con **Todos los activos** arriba, la pantalla muestra las ausencias de todos los activos (con el nombre de cada uno), y el resumen y el Excel también.
+- Las solicitudes pendientes salen arriba, sean del mes que sean, con **Autorizar**, **Desestimar** (motivo obligatorio) y **Anular** (solicitud con un error o que no procede; motivo obligatorio). Cada decisión se comunica por correo al trabajador y a Recepción del activo; si el trabajador no tiene correo, se abre el WhatsApp con el mensaje escrito. Queda todo registrado: las anuladas no se borran, se ven con el filtro *Anuladas*.
 - Si una solicitud de vacaciones **supera el saldo** de la persona, sale el aviso en rojo antes de aprobarla.
 
 ## Gestión del personal: ficha, saldo, documentos y jornada

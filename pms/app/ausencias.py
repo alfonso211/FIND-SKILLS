@@ -27,6 +27,13 @@ def recepcion_1(db: Session, a: Asset) -> User | None:
     return responsable(db, a)
 
 
+def recepcion(db: Session, a: Asset) -> list[User]:
+    """Usuarios de Recepción del activo (Recepción 1 y 2), para comunicarles las ausencias resueltas."""
+    from .models import Assignment, Role
+    ids = select(Assignment.user_id).join(Role).where(Assignment.asset_id == a.id, Role.nombre == "Recepción")
+    return list(db.scalars(select(User).where(User.activo, User.id.in_(ids))))
+
+
 def es_r1(db: Session, scope, a: Asset) -> bool:
     r1 = recepcion_1(db, a)
     return r1 is not None and r1.id == scope.user.id

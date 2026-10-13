@@ -72,22 +72,30 @@ def _uno(db: Session, scope: Scope, x: Absence) -> dict:
     return _out(db, scope, x, _nombres(db, [x]))
 
 
-def _avisar(db: Session, usuarios: list[User], asunto: str, texto: str, excluir: int | None = None) -> None:
-    """Aviso por correo (si está configurado); un fallo no impide guardar la solicitud."""
+def _avisar(db: Session, usuarios: list, asunto: str, texto: str, excluir: int | None = None) -> list[str]:
+    """Aviso por correo (si está configurado); un fallo no impide guardar la solicitud. `usuarios`: User o correos
+    sueltos (personal sin usuario del PMS). Devuelve a quién se ha enviado."""
     if not avisos.configurado():
-        return
-    for u in {u.id: u for u in usuarios}.values():
-        if u.id == excluir or not u.email:
-            continue
+        return []
+    destinos: dict[str, int | None] = {}
+    for u in usuarios:
+        email, uid = (u, None) if isinstance(u, str) else (u.email, u.id)
+        if email and (uid is None or uid != excluir):
+            destinos.setdefault(email.strip().lower(), uid)
+    enviados = []
+    for email, uid in destinos.items():
         ok, error = True, None
         try:
-            avisos.enviar(u.email, asunto, texto, avisos._html(asunto, f"<p>{escape(texto)}</p>"))
+            avisos.enviar(email, asunto, texto, avisos._html(asunto, f"<p>{escape(texto)}</p>"))
         except Exception as e:  # noqa: BLE001
             ok, error = False, str(e)[:300]
         # queda en Administración → Avisos por correo (para comprobar a quién llegó)
-        db.add(EmailLog(clave="ausencia", tipo="ausencia", user_id=u.id, destinatario=u.email, asunto=asunto[:200],
+        db.add(EmailLog(clave="ausencia", tipo="ausencia", user_id=uid, destinatario=email, asunto=asunto[:200],
                         ok=ok, error=error))
+        if ok:
+            enviados.append(email)
     db.commit()
+    return enviados
 
 
 def _texto(x: Absence, a: Asset, tipo_visible: bool = True) -> str:
@@ -235,10 +243,34 @@ def create_absence(data: AbsenceIn, scope: Scope = Depends(get_scope), db: Sessi
     return out
 
 
-def _resolver_aviso(db: Session, x: Absence, a: Asset, que: str) -> None:
+def _trabajador(db: Session, x: Absence) -> tuple[str | None, str | None]:
+    """Correo y móvil de la persona de la ausencia (su usuario del PMS o su ficha del personal)."""
     u = db.get(User, x.user_id) if x.user_id else None
-    if u is not None:
-        _avisar(db, [u], f"Su ausencia: {que}", _texto(x, a) + f" Estado: {que}." + (f" {x.nota}" if x.nota else ""))
+    p = empleados.ficha_de_ausencia(db, x)
+    if u is None and p is not None and p.user_id:
+        u = db.get(User, p.user_id)
+    return (u.email if u else None) or (p.email if p else None), p.telefono if p else None
+
+
+def _comunicar(db: Session, scope: Scope, x: Absence, a: Asset, que: str) -> dict:
+    """Comunica la resolución al trabajador y a Recepción del activo. Si el trabajador no tiene correo pero sí móvil,
+    devuelve el WhatsApp con el mensaje escrito."""
+    from urllib.parse import quote
+
+    from ..firma_contrato import movil_whatsapp
+    rango = f"el {x.desde:%d/%m/%Y}" if x.desde == x.hasta else f"del {x.desde:%d/%m/%Y} al {x.hasta:%d/%m/%Y}"
+    tipo = TIPOS_AUSENCIA.get(x.tipo, x.tipo).split(" (")[0].lower() if x.tipo != "baja_medica" else "ausencia"
+    motivo = f" Motivo: {x.nota}" if x.nota else ""
+    quien = scope.user.nombre
+    email, movil = _trabajador(db, x)
+    texto_t = (f"Hola {x.persona.split()[0]}, su solicitud de {tipo} {rango} ha sido {que.upper()} por {quien}."
+               f"{motivo} Puede consultarla en INVERPMS → Personal → Vacaciones y ausencias.")
+    enviados = _avisar(db, [email] if email else [], f"Su solicitud de {tipo}: {que}", texto_t)
+    texto_r = f"{_texto(x, a)} Solicitud {que} por {quien}.{motivo}"
+    enviados += _avisar(db, au.recepcion(db, a), f"Ausencia {que}: {x.persona}", texto_r, scope.user.id)
+    wa = movil_whatsapp(movil) if movil and not email else None
+    return {"enviados": enviados, "trabajador_correo": bool(email), "correo_configurado": avisos.configurado(),
+            "whatsapp": f"https://wa.me/{wa}?text={quote(texto_t)}" if wa else None}
 
 
 @router.post("/{xid}/visto-bueno")
@@ -267,8 +299,7 @@ def approve(xid: int, scope: Scope = Depends(get_scope), db: Session = Depends(g
     x.estado, x.resuelto_por, x.resuelto_en = "aprobada", scope.user.id, datetime.now()
     audit(db, scope.user, "aprobar", "ausencia", x.id, {"persona": x.persona})
     db.commit()
-    _resolver_aviso(db, x, a, "aprobada")
-    return _uno(db, scope, x)
+    return {**_uno(db, scope, x), "comunicado": _comunicar(db, scope, x, a, "autorizada")}
 
 
 @router.post("/{xid}/denegar")
@@ -279,24 +310,32 @@ def deny(xid: int, data: NotaIn, scope: Scope = Depends(get_scope), db: Session 
     if not (au.puede_aprobar(db, scope, x) or au.puede_visto_bueno(db, scope, x)):
         raise HTTPException(403, f"Esta ausencia la aprueba: {au.quien_aprueba(x.colectivo)}")
     if not (data.nota or "").strip():
-        bad_request("Indique el motivo")
+        bad_request("Indique el motivo por el que se desestima")
     x.estado, x.resuelto_por, x.resuelto_en, x.nota = "denegada", scope.user.id, datetime.now(), data.nota.strip()
     audit(db, scope.user, "denegar", "ausencia", x.id, {"persona": x.persona, "nota": x.nota})
     db.commit()
-    _resolver_aviso(db, x, a, "denegada")
-    return _uno(db, scope, x)
+    return {**_uno(db, scope, x), "comunicado": _comunicar(db, scope, x, a, "desestimada")}
 
 
 @router.post("/{xid}/anular")
 def cancel(xid: int, data: NotaIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Anula (borra) una solicitud con un error o que no procede. Queda registrada como anulada, con el motivo, y se
+    comunica al trabajador y a Recepción. La propia persona puede retirar la suya sin motivo."""
     x = get_or_404(db, Absence, xid)
-    _activo(db, scope, x.asset_id)
+    a = _activo(db, scope, x.asset_id)
     if not au.puede_anular(db, scope, x):
         raise HTTPException(403, "No puede anular esta ausencia")
+    propia = x.user_id == scope.user.id
+    if not propia and not (data.nota or "").strip():
+        bad_request("Indique al trabajador el motivo por el que se anula")
     x.estado, x.nota = "anulada", (data.nota or "").strip() or None
+    x.resuelto_por, x.resuelto_en = scope.user.id, datetime.now()
     audit(db, scope.user, "anular", "ausencia", x.id, {"persona": x.persona, "nota": x.nota})
     db.commit()
-    return _uno(db, scope, x)
+    out = _uno(db, scope, x)
+    if not propia:
+        out["comunicado"] = _comunicar(db, scope, x, a, "anulada")
+    return out
 
 
 # --------------------------------------------------------------------------- resumen anual y Excel

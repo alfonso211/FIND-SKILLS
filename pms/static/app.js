@@ -4413,13 +4413,43 @@ async function informeQuincenal(aid, sel) {
 
 // ---- personal: vacaciones, días libres, bajas, permisos y faltas (quién aprueba según el colectivo)
 const COLOR_AUS = { vacaciones: "aus-vac", dia_libre: "aus-libre", baja_medica: "aus-baja", permiso: "aus-permiso", falta: "aus-falta", otro: "aus-otro", ausencia: "aus-otro" };
+// ---- ausencias: autorizar, desestimar o anular (con motivo) y comunicarlo al trabajador y a Recepción
+function comunicadoAusencia(r, que) {
+  const c = r.comunicado;
+  if (!c) return toast(`Ausencia ${que}`);
+  const lineas = [];
+  if (!c.correo_configurado) lineas.push('<p class="error">El correo saliente no está configurado: no se ha enviado ningún aviso.</p>');
+  else lineas.push(c.enviados.length ? `<p>Correo enviado a: <b>${c.enviados.map(esc).join(", ")}</b></p>` : '<p class="muted">No había a quién enviar el correo.</p>');
+  if (!c.trabajador_correo) lineas.push(c.whatsapp
+    ? `<p>${esc(r.persona)} no tiene correo: avísele por WhatsApp (el mensaje va escrito; pulse «Enviar» en WhatsApp).</p><p><a class="btn primary" href="${esc(c.whatsapp)}" target="_blank" rel="noopener">Abrir WhatsApp</a></p>`
+    : `<p class="error">${esc(r.persona)} no tiene correo ni móvil en su ficha: comuníqueselo de palabra.</p>`);
+  cerrarSolo(form(`Ausencia ${que} · ${r.persona}`, [{ html: lineas.join("") }], {}, async () => {}));
+}
+function accionesAusencia(x, load) {
+  const decide = x.puede_aprobar || x.puede_visto_bueno;
+  return [
+    x.puede_visto_bueno && ["Visto bueno", () => run(() => post(`/api/ausencias/${x.id}/visto-bueno`), "Visto bueno dado: pasa a dirección").then(load), "primary"],
+    x.puede_aprobar && ["Autorizar", async () => {
+      if (x.aviso_saldo && !confirm(`${x.aviso_saldo}\n\n¿Autorizarla de todas formas?`)) return;
+      const r = await run(() => post(`/api/ausencias/${x.id}/aprobar`)); load(); comunicadoAusencia(r, "autorizada");
+    }, "primary"],
+    decide && ["Desestimar", () => form(`Desestimar · ${x.persona}`, [
+      { html: '<p class="muted">El motivo se comunica por correo al trabajador y a Recepción.</p>' },
+      { k: "nota", t: "Motivo", type: "textarea", req: true, wide: true }], {},
+    async (d) => { const r = await post(`/api/ausencias/${x.id}/denegar`, d); load(); setTimeout(() => comunicadoAusencia(r, "desestimada"), 0); }, "Desestimar")],
+    x.puede_anular && ["Anular", () => form(`Anular · ${x.persona}`, [
+      { html: `<p class="muted">Para una solicitud con un error o que no procede. Queda registrada como anulada${x.propia ? "" : " y se comunica el motivo al trabajador y a Recepción"}.</p>` },
+      { k: "nota", t: x.propia ? "Motivo (opcional)" : "Motivo de la anulación", type: "textarea", req: !x.propia, wide: true }], {},
+    async (d) => { const r = await post(`/api/ausencias/${x.id}/anular`, d); load(); setTimeout(() => comunicadoAusencia(r, "anulada"), 0); }, "Anular"), "danger"],
+  ];
+}
 V.ausencias = async (el) => {
   // con «Todos los activos» y varios activos: vista global (cuadrante y pendientes de todos); para solicitar se elige activo
   const global = !S.asset && S.assets.length > 1;
   const aid = global ? null : await pickAsset();
   const [cat, per] = await Promise.all([get("/api/ausencias/catalogos"), aid ? get("/api/ausencias/personas", { asset_id: aid }) : Promise.resolve({ personas: [], gestiona: false })]);
   el.innerHTML = `<div class="toolbar"><label>Mes<input type="month" id="m" value="${today().slice(0, 7)}"></label>
-    <select id="e"><option value="vigentes">Pendientes y aprobadas</option><option value="">Todas</option><option value="pendiente">Pendientes</option><option value="aprobada">Aprobadas</option><option value="denegada">Denegadas</option><option value="anulada">Anuladas</option></select>
+    <select id="e"><option value="vigentes">Pendientes y aprobadas</option><option value="">Todas</option><option value="pendiente">Pendientes</option><option value="aprobada">Autorizadas</option><option value="denegada">Desestimadas</option><option value="anulada">Anuladas</option></select>
     <span class="spacer"></span><button class="btn" id="res">Resumen del año</button><button class="btn" id="xl">Excel</button><button class="btn primary" id="new">Solicitar ausencia</button></div>
     <div id="pend"></div><div id="cuad" class="no-encajar"></div><div id="t"></div>`;
   const leyenda = Object.entries(cat.tipos).map(([k, v]) => `<span class="aus-ley ${COLOR_AUS[k]}">${esc(v.split(" (")[0])}</span>`).join("") + '<span class="aus-ley aus-pend">Pendiente</span>';
@@ -4428,7 +4458,15 @@ V.ausencias = async (el) => {
     const ini = `${y}-${String(m).padStart(2, "0")}-01`, fin = `${y}-${String(m).padStart(2, "0")}-${n}`;
     const filas = await get("/api/ausencias", { asset_id: aid, desde: ini, hasta: fin, estado: $("#e", el).value });
     const mias = (await get("/api/ausencias", { asset_id: aid, estado: "vigentes" })).filter((x) => x.puede_aprobar || x.puede_visto_bueno);
-    $("#pend", el).innerHTML = mias.length ? `<div class="aviso-vencidas" style="margin:8px 0"><b>${mias.length} solicitud(es) esperan su decisión:</b> ${mias.map((x) => `${esc(x.persona)} (${fdate(x.desde)}${x.hasta !== x.desde ? ` a ${fdate(x.hasta)}` : ""}${x.activo && !S.asset ? ` · ${esc(x.activo)}` : ""})${x.aviso_saldo ? ` <span class="error">⚠ ${esc(x.aviso_saldo)}</span>` : ""}`).join(", ")}</div>` : "";
+    // solicitudes que esperan su decisión (de cualquier mes): se resuelven aquí mismo
+    $("#pend", el).innerHTML = mias.length ? `<div class="aviso-vencidas aus-pendientes" style="margin:8px 0"><b>${mias.length} solicitud(es) esperan su decisión</b>
+      <span class="muted peq">· al autorizar, desestimar o anular se avisa por correo al trabajador y a Recepción</span><div id="pendT"></div></div>` : "";
+    if (mias.length) table($("#pendT", el), [
+      { k: "persona", t: "Persona", f: (v, x) => `<b>${esc(v)}</b><div class="muted peq">${esc(x.colectivo_nombre)}${!S.asset ? ` · ${esc(x.activo)}` : ""}</div>${x.aviso_saldo ? `<div class="peq error">⚠ ${esc(x.aviso_saldo)}</div>` : ""}` },
+      { k: "tipo_nombre", t: "Tipo", f: (v, x) => `${esc(v)}${x.motivo ? `<div class="muted peq">${esc(x.motivo)}</div>` : ""}` },
+      { k: "desde", t: "Fechas", f: (v, x) => `${fdate(v)}${x.hasta !== v ? ` a ${fdate(x.hasta)}` : ""}<div class="muted peq">${x.dias_naturales} días · ${x.dias_laborables} lab.</div>` },
+      { k: "estado_nombre", t: "Estado", f: (v) => `<span class="badge b-pendiente">${esc(v)}</span>` },
+    ], mias, (x) => [...accionesAusencia(x, load), ["Ver mes", () => { $("#m", el).value = x.desde.slice(0, 7); load(); }]]);
     // cuadrante del mes: una fila por persona, una columna por día
     const vis = filas.filter((x) => ["pendiente", "visto_bueno", "aprobada"].includes(x.estado));
     const personas = [...new Map(vis.map((x) => [`${x.colectivo}|${x.persona}`, x])).values()].sort((a, b) => a.colectivo_nombre.localeCompare(b.colectivo_nombre) || a.persona.localeCompare(b.persona));
@@ -4450,14 +4488,7 @@ V.ausencias = async (el) => {
       { k: "estado_nombre", t: "Estado", f: (v, x) => `<span class="badge ${x.estado === "aprobada" ? "b-vigente" : ["denegada", "anulada"].includes(x.estado) ? "b-anulado" : "b-pendiente"}">${esc(v)}</span>
         ${x.visto_bueno_nombre ? `<div class="muted peq">V.º B.º ${esc(x.visto_bueno_nombre)}</div>` : ""}${x.resuelto_nombre && x.estado !== "anulada" ? `<div class="muted peq">${esc(x.resuelto_nombre)}</div>` : ""}${x.nota ? `<div class="muted peq">${esc(x.nota)}</div>` : ""}` },
       { k: "aprueba", t: "La aprueba" },
-    ], filas, (x) => [
-      x.puede_visto_bueno && ["Visto bueno", () => run(() => post(`/api/ausencias/${x.id}/visto-bueno`), "Visto bueno dado: pasa a dirección").then(load), "primary"],
-      x.puede_aprobar && ["Aprobar", () => run(() => post(`/api/ausencias/${x.id}/aprobar`), "Ausencia aprobada").then(load), "primary"],
-      (x.puede_aprobar || x.puede_visto_bueno) && ["Denegar", () => form(`Denegar · ${x.persona}`, [{ k: "nota", t: "Motivo", type: "textarea", req: true, wide: true }], {},
-        async (d) => { await post(`/api/ausencias/${x.id}/denegar`, d); toast("Ausencia denegada"); load(); }, "Denegar")],
-      x.puede_anular && ["Anular", () => form(`Anular · ${x.persona}`, [{ k: "nota", t: "Motivo (opcional)", type: "textarea", wide: true }], {},
-        async (d) => { await post(`/api/ausencias/${x.id}/anular`, d); toast("Ausencia anulada"); load(); }, "Anular"), "danger"],
-    ]);
+    ], filas, (x) => accionesAusencia(x, load));
   };
   $("#new", el).onclick = async () => {
     const aidN = aid || await pickAsset();

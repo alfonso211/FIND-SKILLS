@@ -115,6 +115,7 @@
 ## Vacaciones y ausencias del personal
 - **Personal → Vacaciones y ausencias**: cuadrante del mes, lista de solicitudes y aviso de las que esperan su decisión.
 - **Recepción 1** registra las ausencias de limpieza, conserjería y demás personal de subcontratas por administración (se lo dicen de palabra) y, si lo considera, marca **Aprobarla ya**. Da de alta a ese personal en **Personal → Fichas del personal** (áreas Conserjería u Otros).
+- Las pendientes salen arriba con **Autorizar**, **Desestimar** o **Anular**, siempre con el motivo cuando no se autoriza. Se avisa por correo al trabajador y a Recepción; si no tiene correo, pulse **Abrir WhatsApp** y **Enviar**.
 - **Recepción 2** solicita las suyas; primero da el **visto bueno** Recepción 1 y después **aprueba dirección**. Recepción 1 también puede **denegar** con el motivo.
 - Las de Recepción 1 las aprueba dirección; las de mantenimiento, el director técnico.
 - **Resumen del año** (días aprobados por persona y tipo) y **Excel**.

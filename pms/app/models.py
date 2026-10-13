@@ -935,7 +935,7 @@ COLECTIVOS_AUSENCIA = {
 }
 ESTADOS_AUSENCIA = {
     "pendiente": "Pendiente", "visto_bueno": "Visto bueno de Recepción 1 (falta dirección)",
-    "aprobada": "Aprobada", "denegada": "Denegada", "anulada": "Anulada",
+    "aprobada": "Autorizada", "denegada": "Desestimada", "anulada": "Anulada",
 }
 
 

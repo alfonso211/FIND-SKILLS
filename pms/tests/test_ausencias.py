@@ -149,3 +149,50 @@ def test_direccion_aprueba_cualquiera_y_presidencia_no(client, admin, ids):
     log = client.get("/api/admin/avisos-enviados", headers=admin)
     if log.status_code == 200:
         assert any(e.get("tipo") == "ausencia" for e in log.json())
+
+
+def test_resolver_y_comunicar(client, admin, ids):
+    """Autorizar, desestimar y anular desde el ordenador: se comunica por correo al trabajador y a Recepción; si el
+    trabajador no tiene correo, WhatsApp con el mensaje escrito. Para anular la de otro hay que dar el motivo."""
+    sae = ids["assets"]["SAE"]["id"]
+    r1 = _user(client, admin, ids, "r1.com@inversiete.com", "Recepción 1 · Zz comunica", "Recepción", "SAE")
+    r2 = _user(client, admin, ids, "r2.com@inversiete.com", "Recepción 2 · Comunica", "Recepción", "SAE")
+    dir_ = _user(client, admin, ids, "dir.com@inversiete.com", "Dirección Comunica", "Dirección Sociedad", "SAE")
+    antes = next(a for a in client.get("/api/activos", headers=admin).json() if a["id"] == sae)["informe_responsable_id"]
+    yo = client.get("/api/auth/me", headers=r1).json()["id"]
+    client.put(f"/api/activos/{sae}", headers=admin, json={"informe_responsable_id": yo})  # Recepción 1 del activo
+
+    # autorizar (dirección): correo a la persona y al resto de Recepción del activo
+    x = client.post("/api/ausencias", headers=r1, json={
+        "asset_id": sae, "tipo": "vacaciones", "desde": _f(70), "hasta": _f(74)}).json()
+    avisos.BANDEJA.clear()
+    r = client.post(f"/api/ausencias/{x['id']}/aprobar", headers=dir_)
+    assert r.status_code == 200, r.text
+    r = r.json()
+    assert r["estado_nombre"] == "Autorizada" and r["comunicado"]["trabajador_correo"]
+    assert {"r1.com@inversiete.com", "r2.com@inversiete.com"} <= set(r["comunicado"]["enviados"])
+    m = next(m for m in avisos.BANDEJA if m["para"] == "r1.com@inversiete.com" and "Su solicitud" in m["asunto"])
+    assert "AUTORIZADA" in m["texto"] and "Dirección Comunica" in m["texto"]
+
+    # desestimar (Recepción 1, en el visto bueno de Recepción 2): con motivo, que llega al trabajador
+    y = client.post("/api/ausencias", headers=r2, json={
+        "asset_id": sae, "tipo": "dia_libre", "desde": _f(80), "hasta": _f(80)}).json()
+    avisos.BANDEJA.clear()
+    assert client.post(f"/api/ausencias/{y['id']}/denegar", headers=r1, json={"nota": " "}).status_code == 400
+    r = client.post(f"/api/ausencias/{y['id']}/denegar", headers=r1, json={"nota": "Ocupación completa"}).json()
+    assert r["estado_nombre"] == "Desestimada"
+    m = next(m for m in avisos.BANDEJA if m["para"] == "r2.com@inversiete.com")
+    assert "DESESTIMADA" in m["texto"] and "Ocupación completa" in m["texto"]
+
+    # anular la de una persona sin correo (personal por administración): motivo obligatorio y WhatsApp
+    p = client.post("/api/personal", headers=admin, json={
+        "asset_id": sae, "area": "conserjeria", "nombre": "Conserje Comunica", "telefono": "611000111"}).json()
+    z = client.post("/api/ausencias", headers=admin, json={
+        "asset_id": sae, "staff_id": p["id"], "tipo": "falta", "desde": _f(3), "hasta": _f(3)}).json()
+    assert client.post(f"/api/ausencias/{z['id']}/anular", headers=dir_, json={}).status_code == 400
+    avisos.BANDEJA.clear()
+    r = client.post(f"/api/ausencias/{z['id']}/anular", headers=dir_, json={"nota": "Fecha equivocada"}).json()
+    assert r["estado"] == "anulada" and not r["comunicado"]["trabajador_correo"]
+    assert r["comunicado"]["whatsapp"].startswith("https://wa.me/34611000111?text=")
+    assert any(m["para"] == "r1.com@inversiete.com" and "Fecha equivocada" in m["texto"] for m in avisos.BANDEJA)
+    client.put(f"/api/activos/{sae}", headers=admin, json={"informe_responsable_id": antes})

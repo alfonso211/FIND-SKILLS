@@ -34,6 +34,7 @@
 - **Personal → Vacaciones y ausencias**: pulse **Solicitar ausencia**, elija el tipo (vacaciones, día libre, baja médica, permiso, falta u otro) y las fechas. Debajo de la persona se ve quién la aprueba.
 - El **cuadrante del mes** muestra quién falta cada día (rayado = pendiente). Las bajas médicas solo las ven con detalle la persona, Recepción 1 y dirección; los demás ven «Ausencia».
 - Mientras está pendiente, la puede **anular** usted mismo.
+- Cuando se **autoriza**, se **desestima** o se **anula**, le llega un correo con el resultado y, si no se autoriza, el motivo.
 
 ## Mi jornada (fichar)
 - Si es personal propio, fiche al **entrar** y al **salir** en **Personal → Mi jornada (fichar)**: un botón grande. Se guarda la hora del servidor y, si lo permite, la ubicación.
