@@ -28,15 +28,17 @@ def test_ot_propio_y_subcontrata(client, admin, ids, monkeypatch):
     principal = [x for x in r["enviados"] if not x.get("copia")]
     copias = [x for x in r["enviados"] if x.get("copia")]
     assert principal[0]["destino"] == "34611222333" and principal[0]["whatsapp"].startswith("https://wa.me/34611222333")
-    assert "Parte en PDF: https://pms.example.com/api/publico/ot/" in unquote(principal[0]["whatsapp"])
+    assert "Acceda aquí para gestionarla: https://pms.example.com/tecnico/" in unquote(principal[0]["whatsapp"])
     assert any(x["destino"] == "jefe.mto@example.com" for x in copias)  # copia por correo a quien tiene correo
     assert any(m["asunto"].startswith("Copia · ") for m in avisos.BANDEJA)
     assert r["orden"]["estado"] == "asignada"
-    # el enlace del PDF funciona sin iniciar sesión; con la firma cambiada, no
-    enlace = next(x for x in unquote(principal[0]["whatsapp"]).split() if "/api/publico/ot/" in x)
+    # el enlace del técnico y su parte en PDF funcionan sin iniciar sesión; con la firma cambiada, no
+    enlace = next(x for x in unquote(principal[0]["whatsapp"]).split() if "/tecnico/" in x)
     ruta = urlparse(enlace)
-    assert client.get(f"{ruta.path}?{ruta.query}").content.startswith(b"%PDF")
-    assert client.get(f"{ruta.path}?{ruta.query.replace('f=', 'f=0')}").status_code == 404
+    assert client.get(f"{ruta.path}?{ruta.query}").status_code == 200
+    pdf = f"/api/publico/ot/{w['id']}?{ruta.query}"
+    assert client.get(pdf).content.startswith(b"%PDF")
+    assert client.get(pdf.replace("f=", "f=0")).status_code == 404
     # sin correo en la ficha no se puede enviar por correo
     assert client.post(f"/api/mantenimiento/ordenes/{w['id']}/enviar-asignado", headers=admin,
                        json={"canales": ["email"]}).status_code == 400

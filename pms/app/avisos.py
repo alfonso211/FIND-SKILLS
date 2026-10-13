@@ -57,6 +57,9 @@ TIPOS = {
     "partes_estado": ("Partes de estado de mantenimiento y limpieza: aviso al momento a recepción de su activo (los "
                       "críticos, también a la dirección) y, en el resumen diario, los pendientes y abiertos hasta "
                       "resolverlos", "mantenimiento.abrir"),
+    "ot_tecnico": ("Órdenes de trabajo: resultado del técnico al momento (resuelta, pendiente de material, otra visita, "
+                   "derivar a subcontrata…) y recordatorio diario de las que quedan en pausa hasta que se actúe",
+                   "mantenimiento.cerrar"),
     "agenda": ("Agenda: tareas, reuniones y recordatorios que le envían, aviso antes de cada cita y su agenda del "
                "día en el resumen", None),
 }
@@ -267,6 +270,89 @@ def parte_estado(pid: int) -> int:
         return enviados
 
 
+# --------------------------------------------------------------------------- resultado del técnico (al momento)
+def _destinatarios_ot(db, w: WorkOrder) -> list[User]:
+    """Recepción del activo y dirección (suscritos al aviso) y quien emitió la orden."""
+    out = {u.id: u for u, ids in suscritos(db, "ot_tecnico") if ids is None or w.asset_id in ids}
+    emisor = db.get(User, w.abierta_por) if w.abierta_por else None
+    if emisor and emisor.activo:
+        out[emisor.id] = emisor
+    return list(out.values())
+
+
+def resultado_tecnico(visita_id: int) -> int:
+    """Aviso al momento cuando el técnico envía el resultado desde su enlace. Derivar a subcontrata va en rojo."""
+    if not configurado():
+        return 0
+    from .models import RESULTADOS_TECNICO, WorkOrderVisit
+    from .routers.personal import _lugar
+    with SessionLocal() as db:
+        v = db.get(WorkOrderVisit, visita_id)
+        w = db.get(WorkOrder, v.work_order_id)
+        a = db.get(Asset, w.asset_id)
+        ot, lugar, res = f"OT-{w.id:05d}", _lugar(db, w.asset_id, w.unit_id, w.zona), RESULTADOS_TECNICO[v.resultado]
+        if v.resultado == "escalar":
+            titulo = f"El personal propio solicita derivar la orden {ot} a una subcontrata especializada"
+            asunto = f"DERIVAR A SUBCONTRATA · {ot} · {a.nombre}"
+        else:
+            titulo = f"{ot}: {res}"
+            asunto = f"{ot} · {a.nombre} · {lugar}: {res}"
+        filas = [("Orden", f"{ot} · {w.titulo}"), ("Activo", a.nombre), ("Ubicación", lugar),
+                 ("Técnico", f"{v.tecnico} ({v.empresa})"), ("Estado al finalizar", res),
+                 ("Trabajos / diagnóstico", v.trabajos or "—")]
+        if v.materiales:
+            filas.append(("Material", "; ".join(f"{m['material']} ({m.get('cantidad') or '-'})" for m in v.materiales)))
+        if v.fecha_propuesta:
+            filas.append(("Siguiente visita propuesta", f"{v.fecha_propuesta:%d/%m/%Y}"))
+        if v.justificacion:
+            filas.append(("Justificación", v.justificacion))
+        if v.observaciones:
+            filas.append(("Observaciones", v.observaciones))
+        siguiente = ("Revise el trabajo y dé la conformidad de la propiedad para cerrarla." if v.resultado == "resuelta"
+                     else "Asigne la orden a una subcontrata desde Órdenes de trabajo → Asignar." if v.resultado == "escalar"
+                     else "Actúe sobre la orden: se recordará cada día hasta que se reprograme o se le dé un estado.")
+        texto = f"{titulo}\n\n" + "\n".join(f"{k}: {x}" for k, x in filas) + f"\n\n{siguiente}" + (f"\n{settings.url}/#ordenes" if settings.url else "")
+        rojo = ' style="color:#b3261e"' if v.resultado == "escalar" else ""
+        html = _html(titulo, f"<p{rojo}><b>{escape(titulo)}</b></p>" + _tabla([], [[k, x] for k, x in filas])
+                     + f"<p>{escape(siguiente)}</p>")
+        enviados = sum(_enviar_registrado(db, u, u.email, f"ot_tecnico:{v.id}", "ot_tecnico", asunto[:200], texto, html)
+                       for u in _destinatarios_ot(db, w))
+        db.commit()
+        return enviados
+
+
+def recordatorio_ot_pausadas(db, dia: date) -> int:
+    """Cada día, a recepción, dirección y al emisor: OT que el técnico dejó en pausa (pendiente de material, otra
+    visita, derivar a subcontrata u otro) hasta que alguien actúa (estado, fecha, asignación, cierre)."""
+    if not configurado():
+        return 0
+    from .models import RESULTADOS_TECNICO
+    from .routers.mantenimiento import ABIERTAS, PAUSADAS
+    from .routers.personal import _lugar
+    por_usuario: dict[int, tuple[User, list]] = {}
+    for w in db.scalars(select(WorkOrder).where(WorkOrder.alerta_tecnico.in_(PAUSADAS), WorkOrder.estado.in_(ABIERTAS))
+                        .order_by(WorkOrder.alerta_fecha)):
+        fila = [db.get(Asset, w.asset_id).nombre, f"OT-{w.id:05d}", _lugar(db, w.asset_id, w.unit_id, w.zona), w.titulo,
+                RESULTADOS_TECNICO[w.alerta_tecnico], w.fecha_prevista.strftime("%d/%m/%Y") if w.fecha_prevista else "",
+                f"{(dia - w.alerta_fecha.date()).days} días"]
+        for u in _destinatarios_ot(db, w):
+            por_usuario.setdefault(u.id, (u, []))[1].append(fila)
+    enviados = 0
+    cab = ["Activo", "Orden", "Ubicación", "Trabajo", "Situación", "Fecha prevista", "En pausa"]
+    for u, filas in por_usuario.values():
+        clave = f"ot_pausadas:{dia.isoformat()}"
+        if db.scalar(select(EmailLog.id).where(EmailLog.clave == clave, EmailLog.user_id == u.id, EmailLog.ok)):
+            continue
+        texto = "\n".join(" · ".join(f) for f in filas) + "\n\nReprograme, asigne o cambie su estado para dejar de recibir este aviso."
+        enviados += _enviar_registrado(db, u, u.email, clave, "ot_tecnico",
+                                       f"PMS · {len(filas)} orden(es) de trabajo en pausa", texto,
+                                       _html("Órdenes de trabajo en pausa", _tabla(cab, filas)
+                                             + "<p>Reprograme, asigne o cambie su estado para dejar de recibir "
+                                               "este aviso.</p>"))
+    db.commit()
+    return enviados
+
+
 # --------------------------------------------------------------------------- pago retenido (al momento)
 def _euros(x) -> str:
     return f"{float(x):,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -452,6 +538,7 @@ def resumen_diario(db, dia: date | None = None, forzar: bool = False) -> dict:
     informe_mensual(db, dia)
     from .documentacion_legal import recordatorio_semanal
     recordatorio_semanal(db, dia)
+    recordatorio_ot_pausadas(db, dia)
     from .recibos import garajes_al_dia
     garajes_al_dia(db, hoy=dia)  # emite los recibos de garaje del mes aunque nadie haya entrado en el PMS
     datos = _datos_resumen(db, dia)

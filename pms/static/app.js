@@ -278,6 +278,14 @@ V.panel = async (el) => {
   if (ip.length) avisos.push(`<div class="aviso-hito"><h4>📊 Informe a presidencia de ${esc(ip[0].periodo)}: pendiente</h4>
     <p>${ip.map((x) => `${esc(x.activo)} (lo envía ${esc(x.responsable)})`).join(" · ")}. Revíselo y envíelo por correo o WhatsApp.</p>
     <button class="btn sm primary" id="verPresidencia" data-a="${ip[0].asset_id}">Preparar informe</button></div>`);
+  const ott = (p.ot_tecnico || []).filter((x) => !S.asset || String(x.asset_id) === String(S.asset));
+  if (ott.length) {
+    const esc_ = ott.filter((x) => x.resultado === "escalar"), pausa = ott.filter((x) => x.pausada);
+    avisos.push(`<div class="aviso-hito${esc_.length || pausa.length ? " aviso-cobro" : ""}"><h4>🧰 Órdenes de trabajo con resultado del técnico: ${ott.length}${pausa.length ? ` · ${pausa.length} en pausa` : ""}</h4>
+    ${esc_.map((x) => `<p class="error"><b>El personal propio solicita derivar la orden ${otNum(x.id)} a una subcontrata especializada.</b></p>`).join("")}
+    <p>${ott.filter((x) => x.resultado !== "escalar").slice(0, 6).map((x) => `${otNum(x.id)} ${esc(x.titulo)}: <b>${esc(x.resultado_nombre)}</b>`).join(" · ")}</p>
+    <button class="btn sm primary" id="verOtTecnico">Revisar</button></div>`);
+  }
   const pe = (p.partes_estado || []).filter((x) => !S.asset || String(x.asset_id) === String(S.asset));
   if (pe.length) {
     const pend = pe.filter((x) => x.estado === "pendiente"), crit = pe.filter((x) => x.gravedad === "critica");
@@ -354,6 +362,7 @@ V.panel = async (el) => {
   if ($("#verPresidencia", el)) $("#verPresidencia", el).onclick = (e) => { S.presidencia = { asset: e.currentTarget.dataset.a }; go("presidencia"); };
   if ($("#verAusencias", el)) $("#verAusencias", el).onclick = () => go("ausencias");
   if ($("#verPartesEstado", el)) $("#verPartesEstado", el).onclick = () => go("estado?ver=lista");
+  if ($("#verOtTecnico", el)) $("#verOtTecnico", el).onclick = () => go("ordenes");
   pintarMinis(el).catch((e) => el.querySelectorAll(".minis").forEach((m) => (m.innerHTML = `<p class="error">${esc(e.message)}</p>`)));
   bindBuscador($("#busq", el), $("#busqRes", el));
   agendaWidget($("#agp", el), false, true);
@@ -2836,12 +2845,13 @@ function bindAsignacion(f) {
 const datosAsignacion = (d) => ({ ...d, asignacion: d.asignacion || null, personal_id: d.asignacion === "propio" && d.personal_id ? Number(d.personal_id) : null,
   proveedor: d.asignacion === "subcontrata" ? d.proveedor || null : d.asignacion === "propio" ? null : d.proveedor });
 const personalMto = (aid) => get("/api/personal", { asset_id: aid, area: "mantenimiento", solo_activos: true }).catch(() => []);
+const puedeAsignarOT = () => can("mantenimiento.editar") || can("mantenimiento.cerrar");  // recepción y dirección
 // Enviar la OT a quien la tiene asignada (WhatsApp y/o correo) con copia al personal de mantenimiento propio
 function enviarAsignado(w, reload) {
   const c = w.contacto;
   if (!w.asignacion) return enviarOT(w, reload);
   if (!c) return toast(w.asignacion === "subcontrata" ? "La subcontrata no está en Proveedores: dela de alta con su correo o teléfono y vuelva a elegirla en la OT" : "Elija en la OT la persona de mantenimiento", true);
-  const canales = [["whatsapp", `WhatsApp${c.whatsapp ? " (con enlace al parte en PDF)" : " · sin móvil en la ficha"}`], ["email", `Correo${c.email ? ` a ${c.email} (con el parte en PDF)` : " · sin correo en la ficha"}`]];
+  const canales = [["whatsapp", `WhatsApp${c.whatsapp ? " (con el enlace para gestionarla desde el móvil)" : " · sin móvil en la ficha"}`], ["email", `Correo${c.email ? ` a ${c.email} (enlace + parte en PDF)` : " · sin correo en la ficha"}`]];
   const def = w.asignacion === "propio" ? ["whatsapp"] : ["email", "whatsapp"].filter((k) => (k === "email" ? c.email : c.whatsapp));
   form(`Enviar ${otNum(w.id)} · ${w.titulo}`, [
     { html: `<p>Se envía a <b>${esc(c.nombre)}</b> · ${w.asignacion === "propio" ? "personal propio" : "subcontrata"}.</p>` },
@@ -2855,24 +2865,51 @@ function enviarAsignado(w, reload) {
     setTimeout(() => resultadoEnvio(`${otNum(w.id)} enviada`, r.enviados.map((x) => (x.copia ? { ...x, nombre: `${x.nombre} (copia)` } : x))), 0);
   }, "Enviar");
 }
+// Recepción o dirección asignan la OT (o la derivan a una subcontrata cuando el personal propio lo pide)
+async function asignarOT(w, reload) {
+  const gente = await personalMto(w.asset_id);
+  sugerirProveedores(bindAsignacion(form(`Asignar ${otNum(w.id)} · ${w.titulo}`, [
+    ...(w.alerta_tecnico === "escalar" ? [{ html: `<p class="error">El personal propio solicita derivar esta orden a una subcontrata especializada${w.tecnico ? `: «${esc(w.tecnico.nombre)}»` : ""}.</p>` }] : []),
+    ...camposAsignacion(gente), { k: "fecha_prevista", t: "Fecha prevista (reprogramar)", type: "date" },
+  ], { ...w, asignacion: w.alerta_tecnico === "escalar" ? "subcontrata" : w.asignacion }, async (d) => {
+    const x = await post(`/api/mantenimiento/ordenes/${w.id}/asignar`, clean(datosAsignacion(d)));
+    toast(`Asignada a ${x.asignado_a}`); reload && reload();
+    await altaProveedorSiNuevo(d.proveedor, w.categoria);
+    if (confirm(`¿Enviar ahora la ${otNum(x.id)} a ${x.asignado_a}?`)) enviarAsignado(x, reload);
+  }, "Asignar")), "proveedor");
+}
+// Intervenciones registradas por el técnico desde su enlace: tiempos, trabajos, materiales, resultado y firma
+async function intervencionesOT(w) {
+  const lista = await get(`/api/mantenimiento/ordenes/${w.id}/intervenciones`);
+  const f = cerrarSolo(form(`${otNum(w.id)} · intervenciones del técnico`, [{ html: lista.length ? lista.map((v) => `<div class="intervencion">
+      <p><b>${esc(v.tecnico || "—")}</b> · ${esc(v.empresa || "")} · ${v.resultado_nombre ? `<span class="badge ${v.resultado === "escalar" ? "b-urgente" : v.resultado === "resuelta" ? "b-cerrada" : "b-pendiente"}">${esc(v.resultado_nombre)}</span>` : '<span class="muted">en curso</span>'}</p>
+      <p class="muted peq">Llegada ${v.llegada ? fdt(v.llegada) : "—"} · salida ${v.salida ? fdt(v.salida) : "—"}${v.minutos != null ? ` · ${v.minutos} min` : ""}${v.enviado ? ` · enviado ${fdt(v.enviado)}` : ""}</p>
+      ${v.trabajos ? `<p><b>Trabajos / diagnóstico:</b> ${esc(v.trabajos)}</p>` : ""}
+      ${(v.materiales || []).length ? `<p><b>Material:</b> ${v.materiales.map((m) => `${esc(m.material)}${m.cantidad ? ` (${esc(m.cantidad)})` : ""}`).join(" · ")}</p>` : ""}
+      ${v.fecha_propuesta ? `<p><b>Siguiente visita propuesta:</b> ${fdate(v.fecha_propuesta)}</p>` : ""}
+      ${v.justificacion ? `<p><b>Justificación:</b> ${esc(v.justificacion)}</p>` : ""}
+      ${v.observaciones ? `<p><b>Observaciones:</b> ${esc(v.observaciones)}</p>` : ""}
+      ${v.con_firma ? `<img class="firma-tecnico" data-firma="${v.id}" alt="Firma del técnico">` : ""}</div>`).join("") : '<p class="muted">Sin intervenciones registradas.</p>' }], {}, async () => {}));
+  f.querySelectorAll("[data-firma]").forEach((img) => blobUrl(`/api/mantenimiento/intervenciones/${img.dataset.firma}/firma`).then((u) => (img.src = u)).catch(() => {}));
+}
 async function newWorkOrder(assetId, unitId, zona, parte) {  // zona: {zona, nombre} de una zona común del plano
   const aid = assetId || await pickAsset();
   const units = zona ? [] : await get("/api/unidades", { asset_id: aid });
   const titulo = zona ? `Nueva incidencia · ${zona.nombre}` : unitId ? `Nueva incidencia · ${units.find((u) => u.id === unitId)?.codigo ?? ""}` : `Nueva orden de trabajo · ${assetName(aid)}`;
-  const gente = can("mantenimiento.editar") ? await personalMto(aid) : [];
-  return new Promise((resolve) => sugerirProveedores((can("mantenimiento.editar") ? bindAsignacion : (x) => x)(bindFotos(form(titulo, [
+  const gente = puedeAsignarOT() ? await personalMto(aid) : [];
+  return new Promise((resolve) => sugerirProveedores((puedeAsignarOT() ? bindAsignacion : (x) => x)(bindFotos(form(titulo, [
     { k: "titulo", t: "Título", req: true, wide: true },
     ...(zona ? [] : [{ k: "unit_id", t: "Unidad (vacío = zonas comunes)", type: "select", options: units.map((u) => [u.id, u.codigo]) }]),
     ...(can("mantenimiento.editar") ? [{ k: "tipo", t: "Tipo", type: "select", req: true, options: list(["correctivo", "preventivo", "normativo", "mejora"]), def: "correctivo" }] : []),
     { k: "categoria", t: "Instalación / gremio", type: "select", req: true, options: list(S.cat.categorias_mto), def: "general" },
     { k: "prioridad", t: "Prioridad", type: "select", req: true, options: list(S.cat.prioridades), def: "media" },
-    ...(can("mantenimiento.editar") ? [...camposAsignacion(gente),
-      { k: "coste_estimado", t: "Coste estimado €", type: "number" }, { k: "fecha_prevista", t: "Fecha prevista", type: "date" }] : []),
+    ...(puedeAsignarOT() ? [...camposAsignacion(gente), { k: "fecha_prevista", t: "Fecha prevista", type: "date" }] : []),
+    ...(can("mantenimiento.editar") ? [{ k: "coste_estimado", t: "Coste estimado €", type: "number" }] : []),
     ...(zona ? [] : [{ k: "bloquea_unidad", t: "Bloquear unidad (fuera de venta hasta cierre)", type: "checkbox", wide: true }]),
     { k: "descripcion", t: "Descripción de la avería", type: "textarea", wide: true },
     { html: parte ? `<p class="muted">Se genera desde el parte de estado <b>${esc(parte.codigo)}</b>: sus fotos se adjuntan solas.</p>` : fotosHtml("Fotos de la avería (opcional)") },
   ], { unit_id: unitId, ...(parte ? parte.ot_propuesta : {}) }, async (d, f) => {
-    const w = await post("/api/mantenimiento/ordenes", clean({ ...(can("mantenimiento.editar") ? datosAsignacion(d) : d), asset_id: aid, unit_id: d.unit_id ? Number(d.unit_id) : null, zona: zona?.zona, parte_estado_id: parte?.id }));
+    const w = await post("/api/mantenimiento/ordenes", clean({ ...(puedeAsignarOT() ? datosAsignacion(d) : d), asset_id: aid, unit_id: d.unit_id ? Number(d.unit_id) : null, zona: zona?.zona, parte_estado_id: parte?.id }));
     const n = await subirFotos(f, w.id, "averia");
     toast(`Orden de trabajo OT-${String(w.id).padStart(5, "0")} creada` + (n ? ` con ${n} foto(s)` : "") + (w.prioridad === "urgente" ? ". Se ha avisado por correo." : ""));
     resolve();
@@ -2947,7 +2984,7 @@ V.ordenes = async (el) => {
   el.innerHTML = `<div class="toolbar"><select id="e"><option value="abiertas">Abiertas</option><option value="">Todas</option>${S.cat.estados_ot.map((x) => `<option value="${x}">${label(x)}</option>`).join("")}</select>
     <select id="tp"><option value="">Todos los tipos</option>${["correctivo", "preventivo", "normativo", "mejora"].map((x) => `<option>${x}</option>`).join("")}</select>
     <span class="spacer"></span>${canOpenOT() ? '<button class="btn primary" id="new">Nueva OT</button>' : ""}</div>
-    <p class="muted">Flujo: se abre la OT → mantenimiento confirma el trabajo → limpieza confirma la unidad → recepción cierra. Las preventivas de zonas comunes no pasan por limpieza.</p><div id="t"></div>`;
+    <p class="muted">Flujo: recepción abre y asigna la OT (personal propio o subcontrata) → «Enviar» manda el enlace por WhatsApp o correo → el técnico la gestiona desde el móvil y firma → limpieza confirma la unidad → recepción da la conformidad de la propiedad y cierra. Las preventivas de zonas comunes no pasan por limpieza.</p><div id="t"></div>`;
   const check = (who, when) => (who ? `<span title="${esc(fdt(when))}">✓ ${esc(who)}</span>` : '<span class="muted">pendiente</span>');
   const load = async () => {
     const e = $("#e", el).value;
@@ -2958,19 +2995,21 @@ V.ordenes = async (el) => {
       { k: "categoria", t: "Instalación" }, { k: "prioridad", t: "Prioridad", f: badge }, { k: "abierta_por_nombre", t: "Abierta por" },
       { k: "asignado_a", t: "Asignado" }, { k: "envios", t: "Enviada", f: (v) => (v?.length ? `<span title="${esc(v.map((e) => `${fdt(e.fecha)} ${e.nombre} (${e.canal === "email" ? "correo" : "WhatsApp"})`).join("\n"))}">✉ ${esc([...new Set(v.map((e) => e.nombre))].join(", "))}</span>` : "") }, { k: "conf_mto_por_nombre", t: "Mantenimiento", f: (v, w) => check(v, w.conf_mto_fecha) },
       { k: "conf_limpieza_por_nombre", t: "Limpieza", f: (v, w) => (w.requiere_limpieza ? check(v, w.conf_limpieza_fecha) : '<span class="muted">no aplica</span>') },
-      { k: "coste_real", t: "Coste", num: true, f: eur }, { k: "estado", t: "Estado", f: badge },
+      { k: "coste_real", t: "Coste", num: true, f: eur }, { k: "estado", t: "Estado", f: (v, w) => badge(v) + (w.alerta_nombre ? `<br><span class="badge ${w.alerta_tecnico === "escalar" ? "b-urgente" : "b-pendiente"}" title="Resultado del técnico sin atender">⚑ ${esc(w.alerta_nombre)}</span>` : "") + (w.tecnico?.fecha_propuesta && w.estado === "pendiente_visita" ? `<br><span class="muted peq">visita ${fdate(w.tecnico.fecha_propuesta)}</span>` : "") },
     ], rows, (w) => {
       const comunes = [
         [`📎 ${w.n_adjuntos || ""}`.trim(), () => adjuntosOT(w, load)],
         ["Parte PDF", () => run(() => download("GET", `/api/mantenimiento/ordenes/${w.id}/parte`))],
+        w.tecnico && ["Intervenciones", () => intervencionesOT(w)],
       ];
       if (["cerrada", "cancelada"].includes(w.estado)) return comunes;
-      const enTrabajo = !w.conf_mto_por;
+      const enTrabajo = !w.conf_mto_fecha;
       return [...comunes,
+        puedeAsignarOT() && enTrabajo && ["Asignar", () => asignarOT(w, load), w.alerta_tecnico === "escalar" ? "primary" : ""],
         puedeEnviarOT() && enTrabajo && ["Enviar", () => enviarAsignado(w, load)],
         puedeEnviarOT() && enTrabajo && w.asignacion && ["Enviar a otros", () => enviarOT(w, load)],
         can("mantenimiento.editar") && enTrabajo && ["Editar", async () => { const gente = await personalMto(w.asset_id); sugerirProveedores(bindAsignacion(form(`OT ${w.id}: ${w.titulo}`, [
-          { k: "titulo", t: "Título", req: true, wide: true }, { k: "estado", t: "Estado", type: "select", options: list(["abierta", "asignada", "en_curso", "pendiente_material"]) },
+          { k: "titulo", t: "Título", req: true, wide: true }, { k: "estado", t: "Estado", type: "select", options: list(["abierta", "asignada", "en_curso", "pendiente_material", "pendiente_visita", "escalada", "revisar"]) },
           { k: "prioridad", t: "Prioridad", type: "select", options: list(S.cat.prioridades) }, { k: "categoria", t: "Instalación", type: "select", options: list(S.cat.categorias_mto) },
           { k: "tipo", t: "Tipo", type: "select", options: list(["correctivo", "preventivo", "normativo", "mejora"]) },
           ...camposAsignacion(gente), { k: "coste_estimado", t: "Coste estimado €", type: "number" },
@@ -2987,11 +3026,18 @@ V.ordenes = async (el) => {
             const r = await post(`/api/mantenimiento/ordenes/${w.id}/confirmar-mantenimiento`, d);
             toast((r.requiere_limpieza ? "Trabajo confirmado. Pendiente de limpieza" : "Trabajo confirmado. Pendiente de cierre") + (n ? ` · ${n} foto(s)` : "")); load();
           }))],
-        can("limpieza.confirmar_ot") && w.requiere_limpieza && w.conf_mto_por && !w.conf_limpieza_por && ["Unidad OK", () => run(() => post(`/api/mantenimiento/ordenes/${w.id}/confirmar-limpieza`), "Confirmado por limpieza. Pendiente de cierre").then(load)],
-        (can("mantenimiento.cerrar") || (can("limpieza.confirmar_ot") && w.requiere_limpieza)) && w.conf_mto_por && ["Rechazar", () => form(`OT ${w.id}: devolver a mantenimiento`, [
+        can("limpieza.confirmar_ot") && w.requiere_limpieza && w.conf_mto_fecha && !w.conf_limpieza_por && ["Unidad OK", () => run(() => post(`/api/mantenimiento/ordenes/${w.id}/confirmar-limpieza`), "Confirmado por limpieza. Pendiente de cierre").then(load)],
+        (can("mantenimiento.cerrar") || (can("limpieza.confirmar_ot") && w.requiere_limpieza)) && w.conf_mto_fecha && ["Rechazar", () => form(`OT ${w.id}: devolver a mantenimiento`, [
           { k: "motivo", t: "Motivo (qué no está bien)", type: "textarea", wide: true, req: true }], {},
           async (d) => { await post(`/api/mantenimiento/ordenes/${w.id}/rechazar`, d); toast("Devuelta a mantenimiento"); load(); }), "danger"],
-        can("mantenimiento.cerrar") && w.estado === "pendiente_cierre" && ["Cerrar OT", () => run(() => post(`/api/mantenimiento/ordenes/${w.id}/cerrar`, {}), "OT cerrada").then(load), "primary"],
+        can("mantenimiento.cerrar") && w.estado === "pendiente_cierre" && ["Conformidad y cierre", () => form(`${otNum(w.id)}: conformidad de la propiedad`, [
+          { html: `<p>${w.tecnico ? `Trabajo enviado por <b>${esc(w.tecnico.nombre)}</b> (${esc(w.tecnico.empresa || "")}): ${esc(w.tecnico.resultado_nombre)} · ${fdt(w.tecnico.enviado)} (botón «Intervenciones» para ver el detalle y la firma).` : `Trabajo confirmado por ${esc(w.conf_mto_por_nombre || "mantenimiento")}.`}</p>` },
+          { k: "ok", t: "He revisado el trabajo y la deficiencia está subsanada: doy la conformidad de la propiedad", type: "checkbox", wide: true, req: true },
+          { html: `<p class="muted peq">Queda registrada con su usuario (${esc(S.me.nombre)}), la fecha y la hora, y aparece en el parte PDF. La orden pasa a cerrada y archivable.</p>` },
+        ], {}, async (d) => {
+          if (!d.ok) throw new Error("Marque la conformidad");
+          await post(`/api/mantenimiento/ordenes/${w.id}/cerrar`, {}); toast("Conformidad registrada: OT cerrada"); load();
+        }, "Dar conformidad y cerrar"), "primary"],
         can("mantenimiento.cerrar") && ["Anular", () => form(`Anular OT ${w.id}`, [{ k: "motivo", t: "Motivo", type: "textarea", wide: true, req: true }], {},
           async (d) => { await post(`/api/mantenimiento/ordenes/${w.id}/cerrar`, { cancelar: true, motivo: d.motivo }); toast("OT anulada"); load(); }), "danger"],
       ];
@@ -4603,6 +4649,7 @@ async function start() {
   renderNav();
   go(location.hash.slice(1) || "panel");
   avisoNovedades();
+  vigilarResultadosOT();
 }
 // Colaborador externo (subcontrata): solo su portal; el resto de la API le está cerrada
 async function startColaborador() {
@@ -4614,6 +4661,29 @@ async function startColaborador() {
   pintarUsuario();
   renderNav();
   go(location.hash.slice(1) || "colaborador");
+}
+// Alerta al momento (sonido + aviso) cuando un técnico envía el resultado de una orden desde su enlace
+function vigilarResultadosOT() {
+  clearInterval(S._otT);
+  if (!can("mantenimiento.cerrar")) return;
+  S._otDesde = S._otDesde || new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 19);
+  const pita = (urgente) => {
+    try {
+      const ac = new (window.AudioContext || window.webkitAudioContext)();
+      [0, 0.25, ...(urgente ? [0.5] : [])].forEach((t) => { const o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = urgente ? 880 : 660; g.gain.value = 0.08; o.connect(g); g.connect(ac.destination); o.start(ac.currentTime + t); o.stop(ac.currentTime + t + 0.15); });
+    } catch {}
+  };
+  S._otT = setInterval(async () => {
+    if (!S.me || document.hidden) return;
+    try {
+      const nuevos = await get("/api/mantenimiento/resultados", { desde: S._otDesde });
+      if (!nuevos.length) return;
+      S._otDesde = nuevos[nuevos.length - 1].enviado;
+      const n = nuevos[nuevos.length - 1];
+      pita(nuevos.some((x) => x.resultado === "escalar"));
+      toast(nuevos.length === 1 ? `${otNum(n.ot)} · ${n.tecnico}: ${n.resultado_nombre}` : `${nuevos.length} resultados de técnicos nuevos (último: ${otNum(n.ot)} ${n.resultado_nombre})`, n.resultado === "escalar");
+    } catch {}
+  }, 60000);
 }
 function pintarUsuario() {
   $("#userAvatar").textContent = iniciales(S.me.nombre); $("#userAvatar").title = S.me.nombre;

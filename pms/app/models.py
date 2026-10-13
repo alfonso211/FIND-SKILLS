@@ -437,6 +437,11 @@ class WorkOrder(Base):
     cerrada_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     # envíos de la orden al personal de mantenimiento: [{fecha, canal, destino, nombre, usuario}]
     envios: Mapped[list | None] = mapped_column(JSON)
+    # resultado que envía el técnico desde su enlace (resuelta, pendiente_material, otra_visita, escalar, otro):
+    # mientras no lo atiende recepción o dirección sale en el panel y, si queda en pausa, se recuerda cada día
+    alerta_tecnico: Mapped[str | None] = mapped_column(String(20))
+    alerta_fecha: Mapped[datetime | None] = mapped_column(DateTime)
+    conformidad_en: Mapped[datetime | None] = mapped_column(DateTime)  # conformidad de la propiedad (cierre)
 
 
 AREAS_PERSONAL = {"mantenimiento": "Mantenimiento", "limpieza": "Limpieza", "conserjeria": "Conserjería",
@@ -1042,3 +1047,29 @@ class StatusReportPhoto(Base):
     tamano: Mapped[int] = mapped_column(Integer)
     sha256: Mapped[str] = mapped_column(String(64))
     subido: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+RESULTADOS_TECNICO = {"resuelta": "Resuelta", "pendiente_material": "Pendiente de material",
+                      "otra_visita": "Requiere otra visita", "escalar": "Derivar a subcontrata", "otro": "Otro"}
+
+
+class WorkOrderVisit(Base):
+    """Intervención del técnico (propio o subcontrata) registrada desde el enlace de la orden de trabajo:
+    llegada y salida, trabajos, materiales, estado al finalizar y firma táctil (cifrada fuera de la base de datos)."""
+    __tablename__ = "intervenciones_ot"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    work_order_id: Mapped[int] = mapped_column(ForeignKey("ordenes_trabajo.id"), index=True)
+    empresa: Mapped[str | None] = mapped_column(String(160))
+    tecnico: Mapped[str | None] = mapped_column(String(120))
+    llegada: Mapped[datetime | None] = mapped_column(DateTime)
+    salida: Mapped[datetime | None] = mapped_column(DateTime)
+    trabajos: Mapped[str | None] = mapped_column(Text)
+    materiales: Mapped[list | None] = mapped_column(JSON)  # [{material, cantidad}]
+    observaciones: Mapped[str | None] = mapped_column(Text)
+    resultado: Mapped[str | None] = mapped_column(String(20))  # RESULTADOS_TECNICO; None = en curso
+    fecha_propuesta: Mapped[date | None] = mapped_column(Date)  # siguiente visita
+    justificacion: Mapped[str | None] = mapped_column(Text)
+    firma: Mapped[str | None] = mapped_column(String(64))  # fichero cifrado con la firma (PNG)
+    enviado: Mapped[datetime | None] = mapped_column(DateTime)
+    ip: Mapped[str | None] = mapped_column(String(45))
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now)

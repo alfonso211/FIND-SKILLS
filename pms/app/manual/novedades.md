@@ -1,5 +1,11 @@
 # Novedades
 
+## 2026-10-13 · Versión 1.37 · Órdenes de trabajo en el móvil del técnico
+- **Recepción y dirección**: botón **Asignar** (personal propio o subcontrata). **Enviar** manda por WhatsApp o correo el mensaje «Tiene una nueva orden de trabajo OT-xxxxx en … Acceda aquí para gestionarla» con un enlace seguro.
+- **Técnicos (propios y subcontratas)**: desde el enlace, sin usuario, indican llegada y salida, trabajos, material, fotos y el **estado al finalizar** (resuelta, pendiente de material, otra visita con fecha, derivar a subcontrata u otro), y **firman** en la pantalla.
+- **Avisos**: el resultado suena en el PMS y llega por correo. Las órdenes en pausa se recuerdan cada día hasta que alguien actúa. «Derivar a subcontrata» sale en rojo.
+- **Cierre**: **Conformidad y cierre** registra la conformidad de la propiedad. El parte PDF lleva la intervención, la firma del técnico y la conformidad.
+
 ## 2026-10-13 · Versión 1.36 · Partes de estado
 - **Mantenimiento y limpieza**: ya no abren órdenes de trabajo. Al revisar una vivienda o zona común registran un **parte de estado** desde el móvil, en 4 pasos y con foto obligatoria: ubicación (o código QR), estancia, elemento, y deficiencia con su gravedad.
 - **Recepción**: el parte le llega por correo y al Panel de control hasta resolverlo. Con **Generar OT** la orden sale rellena con sus fotos; también puede **descartarlo**. Al cerrar la OT, el parte queda resuelto.

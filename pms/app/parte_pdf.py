@@ -27,7 +27,9 @@ def _esc(s) -> str:
 
 
 def generar(w, asset, company, unidad, abierta_por: str | None, fotos: list[bytes], categoria: str,
-            zona: str | None = None) -> bytes:
+            zona: str | None = None, intervencion: dict | None = None, conformidad: str | None = None) -> bytes:
+    """Con `intervencion` (lo enviado por el técnico desde su enlace) la parte 2 sale rellena y con su firma;
+    con `conformidad`, el recuadro de la propiedad lleva quién y cuándo la dio."""
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=16 * mm, rightMargin=16 * mm, topMargin=14 * mm,
                             bottomMargin=14 * mm, title=f"Parte de incidencia OT-{w.id:05d}", author=company.nombre,
@@ -101,25 +103,51 @@ def generar(w, asset, company, unidad, abierta_por: str | None, fotos: list[byte
                                ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
         cuerpo.append(t)
 
+    iv = intervencion or {}
     lineas = lambda k: [[""] for _ in range(k)]  # noqa: E731
-    trabajos = Table([[Paragraph("TRABAJOS REALIZADOS / DIAGNÓSTICO", rot)]] + lineas(6), colWidths=[ancho],
-                     rowHeights=[6 * mm] + [7.5 * mm] * 6)
-    trabajos.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.5, LINEA),
-                                  ("LINEBELOW", (0, 1), (-1, -2), 0.3, LINEA)]))
-    materiales = Table([[Paragraph(x, rot) for x in ("MATERIAL EMPLEADO", "CANTIDAD", "OBSERVACIONES")]]
-                       + [["", "", ""] for _ in range(5)],
-                       colWidths=[90 * mm, 25 * mm, 63 * mm], rowHeights=[6 * mm] + [7 * mm] * 5)
-    materiales.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, LINEA), ("BACKGROUND", (0, 0), (-1, 0), FONDO)]))
-    horas = rejilla([[celda("EMPRESA", ""), celda("TÉCNICO", ""), celda("FECHA", ""),
-                      celda("HORA LLEGADA / SALIDA", "")]], [c4] * 4, alto=[13 * mm])
-    estado = Paragraph("Estado al finalizar:&nbsp;&nbsp; [   ] Resuelta &nbsp;&nbsp; [   ] Pendiente de material "
-                       "&nbsp;&nbsp; [   ] Requiere otra visita &nbsp;&nbsp; [   ] Presupuesto aparte", n)
-    firmas = Table([[Paragraph("Firma técnico de la subcontrata", rot), Paragraph("Conformidad de la propiedad "
-                                                                                 "(nombre y firma)", rot)],
-                    ["", ""]], colWidths=[89 * mm, 89 * mm], rowHeights=[6 * mm, 24 * mm])
+    if iv:
+        trabajos = rejilla([[[Paragraph("TRABAJOS REALIZADOS / DIAGNÓSTICO", rot), Paragraph(_esc(iv["trabajos"]), n)]]],
+                           [ancho])
+        mats = iv["materiales"] or [{"material": "—", "cantidad": ""}]
+        materiales = Table([[Paragraph(x, rot) for x in ("MATERIAL EMPLEADO", "CANTIDAD")]]
+                           + [[Paragraph(_esc(m["material"]), n), Paragraph(_esc(m.get("cantidad")), n)] for m in mats],
+                           colWidths=[140 * mm, 38 * mm])
+        if iv["observaciones"]:
+            materiales = KeepTogether([materiales, Spacer(1, 2 * mm), rejilla([[celda("OBSERVACIONES", iv["observaciones"])]],
+                                                                             [ancho])])
+    else:
+        trabajos = Table([[Paragraph("TRABAJOS REALIZADOS / DIAGNÓSTICO", rot)]] + lineas(6), colWidths=[ancho],
+                         rowHeights=[6 * mm] + [7.5 * mm] * 6)
+        trabajos.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.5, LINEA),
+                                      ("LINEBELOW", (0, 1), (-1, -2), 0.3, LINEA)]))
+        materiales = Table([[Paragraph(x, rot) for x in ("MATERIAL EMPLEADO", "CANTIDAD", "OBSERVACIONES")]]
+                           + [["", "", ""] for _ in range(5)],
+                           colWidths=[90 * mm, 25 * mm, 63 * mm], rowHeights=[6 * mm] + [7 * mm] * 5)
+    if not iv or isinstance(materiales, Table):
+        materiales.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, LINEA), ("BACKGROUND", (0, 0), (-1, 0), FONDO)]))
+    hora = lambda d: d.strftime("%H:%M") if d else "—"  # noqa: E731
+    dia = (iv.get("salida") or iv.get("llegada")) if iv else None
+    horas = rejilla([[celda("EMPRESA", iv.get("empresa", "")), celda("TÉCNICO", iv.get("tecnico", "")),
+                      celda("FECHA", dia.strftime("%d/%m/%Y") if dia else ""),
+                      celda("HORA LLEGADA / SALIDA", f"{hora(iv.get('llegada'))} / {hora(iv.get('salida'))}" if iv else "")]],
+                    [c4] * 4, alto=[13 * mm])
+    if iv:
+        estado = Paragraph(f"Estado al finalizar: <b>{_esc(iv['resultado'])}</b>", n)
+    else:
+        estado = Paragraph("Estado al finalizar:&nbsp;&nbsp; [   ] Resuelta &nbsp;&nbsp; [   ] Pendiente de material "
+                           "&nbsp;&nbsp; [   ] Requiere otra visita &nbsp;&nbsp; [   ] Presupuesto aparte", n)
+    firma_tec: object = ""
+    if iv.get("firma"):
+        firma_tec = Image(BytesIO(iv["firma"]))
+        k = min(80 * mm / firma_tec.imageWidth, 22 * mm / firma_tec.imageHeight)
+        firma_tec.drawWidth, firma_tec.drawHeight = firma_tec.imageWidth * k, firma_tec.imageHeight * k
+    firmas = Table([[Paragraph("Firma del técnico" + (" (firma digital)" if iv.get("firma") else " de la subcontrata"), rot),
+                     Paragraph("Conformidad de la propiedad (nombre y firma)", rot)],
+                    [firma_tec, Paragraph(_esc(conformidad), n) if conformidad else ""]],
+                   colWidths=[89 * mm, 89 * mm], rowHeights=[6 * mm, 24 * mm])
     firmas.setStyle(TableStyle([("BOX", (0, 0), (0, -1), 0.5, LINEA), ("BOX", (1, 0), (1, -1), 0.5, LINEA)]))
     cuerpo += [Spacer(1, 5 * mm), KeepTogether([
-        seccion("2. A rellenar por la subcontrata"), horas, Spacer(1, 2 * mm), trabajos, Spacer(1, 2 * mm),
+        seccion("2. Intervención del técnico" if iv else "2. A rellenar por la subcontrata"), horas, Spacer(1, 2 * mm), trabajos, Spacer(1, 2 * mm),
         materiales, Spacer(1, 3 * mm), estado, Spacer(1, 4 * mm), firmas, Spacer(1, 3 * mm),
         Paragraph(f"Devuelva este parte firmado junto con la factura, indicando la referencia OT-{w.id:05d}. "
                   "La orden no se da por cerrada hasta que la propiedad confirma el trabajo.", peq)])]
