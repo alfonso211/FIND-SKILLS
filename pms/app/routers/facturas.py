@@ -74,7 +74,7 @@ def list_invoices(asset_id: int | None = None, anio: int | None = None, serie: s
 
 @router.get("/pendientes-cobro")
 def unpaid(asset_id: int | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    """Facturas emitidas sin cobrar (renovaciones y reservas que pagan por transferencia), las más antiguas primero."""
+    """Facturas emitidas sin cobrar (ampliaciones de reserva y reservas que pagan por transferencia), las más antiguas primero."""
     ids = scope.asset_ids("facturas.ver")
     if asset_id:
         ids = {asset_id} if ids is None or asset_id in ids else set()

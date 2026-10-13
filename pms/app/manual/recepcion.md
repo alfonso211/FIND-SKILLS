@@ -29,16 +29,30 @@
 ## Ocupantes y contrato
 - Registre a **todos los ocupantes** (botón **Ocupantes**). Los **menores de 16 años no cuentan como plaza**.
 - **Contrato**: rellene y fírmelo en la **tablet**, o imprímalo. Queda guardado en la reserva.
+- **Dotación habitual**: marque la casilla en el contrato y se imprime (o se envía) con el **Anexo I · Inventario y dotación del apartamento**, con una casilla para revisar cada artículo.
+
+## Dotación de los apartamentos
+- **La primera vez**: en *Reservas → Dotación habitual*, elija cada tipo de apartamento. Sale la lista estándar 3 llaves (salón, cocina, menaje, dormitorios, baño y auxiliares) ya rellena: **marque lo que hay y ajuste las cantidades**, sin escribir. Pulse **Guardar como dotación habitual**.
+- Si falta un artículo: escriba su nombre en **Otra dotación** y pulse **+ Otra dotación**. Queda en el catálogo para la próxima vez.
+- **Dotación especial** de una reserva: botón **Dotación** de la reserva. Quite, cambie cantidades o añada artículos (cuna, plancha extra…). Sale marcada como «dotación especial» en el anexo del contrato.
 
 ## Check-in y check-out
 - **Check-in** en la reserva cuando el cliente llega (exige el registro completo de ocupantes).
-- **Check-out** a la salida: el apartamento pasa a **pendiente de limpieza**, sale en el **parte de limpieza** y se abre sola una **OT de revisión de salida** para mantenimiento.
-- **Parte de limpieza**: la limpieza de salida entra en el parte **al hacer el check-out**, no antes (el cliente puede renovar). Haga el check-out en cuanto el cliente entregue las llaves. Cada mañana, **Imprimir PDF** o **Enviar** a limpieza (el Excel queda en Documentos recibidos). Antes de imprimir o enviar puede **ordenarlo** (↑ ↓), marcar algo como **urgente**, añadir una **nota** o **pasarlo a otro día** («Cambiar»). Añada las **limpiezas extra** del día. Para algo que no puede esperar: **⚡ Limpieza urgente** (va la primera y se imprime o envía al momento). Cuando limpieza avise, pulse **Hecha** en cada una; lo no validado pasa al día siguiente.
+- **Check-out** a la salida. Si la reserva tiene **fianza**, sale la **devolución de fianza**: cliente, importe y forma (**transferencia**, **efectivo** o **tarjeta**, según indiquen Recepción 1 o Recepción 2).
+  - **Transferencia**: ponga el **IBAN** del cliente y la fecha. Los datos se envían por **correo** a Bárbara y a Alfonso, y se abren los botones de **WhatsApp** con el mismo texto. Queda en el registro de envíos y en el envío a INVERGESTION.
+  - Si no se devuelve todo (roturas, faltas), indique el **motivo**. Si no procede devolverla, elija **No procede**.
+  - En *Reservas → Devoluciones de fianza* se ven todas; cuando la Dirección haga la transferencia, pulse **Transferencia hecha**.
+- Tras el check-out el apartamento pasa a **pendiente de limpieza**, sale en el **parte de limpieza** y se abre sola una **OT de revisión de salida** para mantenimiento.
+- **Parte de limpieza**: la limpieza de salida entra en el parte **al hacer el check-out**, no antes (el cliente puede ampliar la reserva). Haga el check-out en cuanto el cliente entregue las llaves. Cada mañana, **Imprimir PDF** o **Enviar** a limpieza (el Excel queda en Documentos recibidos). Antes de imprimir o enviar puede **ordenarlo** (↑ ↓), marcar algo como **urgente**, añadir una **nota** o **pasarlo a otro día** («Cambiar»). Añada las **limpiezas extra** del día. Para algo que no puede esperar: **⚡ Limpieza urgente** (va la primera y se imprime o envía al momento). Cuando limpieza avise, pulse **Hecha** en cada una; lo no validado pasa al día siguiente.
 - **Plano de apartamentos**: colores por estado. Pulse un apartamento para ver su ficha, reservar, bloquear o abrir una incidencia.
 
 ## Anular una reserva o un alquiler de garaje
 - En la reserva (o en el alquiler de la plaza) pulse **Anular**, o ábrala con **Editar** y pulse **Anular reserva** / **Anular alquiler**. Escriba el **motivo**: queda en el historial como anulada y el apartamento o la plaza quedan libres.
 - Si ya tiene **factura**, primero se emite la **rectificativa** (Facturas emitidas → Rectificar). Si el alquiler tiene **recibos cobrados**, no se anula: se da de **Baja** con su fecha.
+
+## Ficha del cliente y lista negra
+- En la ficha del cliente, **Expediente completo**: todas sus estancias, contratos (reimprimir o PDF firmado), facturas (PDF), fianzas, alquileres y documentos escaneados. Desde cada estancia, **Gestionar** abre sus botones (cobro, contrato, ampliación, salida…).
+- **Lista negra** (Recepción 1, Recepción 2 o Dirección): botón **Lista negra** en la ficha, con el **motivo**. Si el cliente vuelve a reservar (en cualquier activo, con el mismo documento), sale el aviso con el motivo y hay que confirmar para seguir. Se ve en *Huéspedes → Lista negra*.
 
 ## Fichas de cliente repetidas
 - Si hay dos fichas con el **mismo nombre**, sale un aviso en Huéspedes y dentro de la ficha. Si es la misma persona, pulse **Unir fichas**. Si solo coincide el nombre, pulse **No es la misma persona**: no se unen y el aviso desaparece.
@@ -51,9 +65,11 @@
 - Si marcó una factura cobrada por error: **Deshacer cobro** (indique el motivo).
 - Una factura emitida **no se modifica**: si hay un error, Dirección emite una **rectificativa**.
 
-## Renovar una estancia
+## Ampliación de reserva
+- Los apartamentos turísticos **no renuevan**: se hace una **ampliación de reserva**. Ningún documento dice «renovación».
 - Las **estancias vencidas** (siguen alojados tras su fecha de salida) salen en el panel y en el correo.
-- En la reserva pulse **Renovar**: nueva fecha de salida; el precio sale con la tarifa estándar de las noches renovadas (revíselo y marque **«Acepto el precio»**), y elija la factura: **más tarde**, **cobrada ahora** o **facturar ya sin cobrar**. Después se firma el nuevo contrato.
+- En la reserva pulse **Ampliar reserva**: nueva fecha de salida; el precio sale con la tarifa estándar de las noches nuevas (revíselo y marque **«Acepto el precio»**), y elija la factura: **más tarde**, **cobrada ahora** o **facturar ya sin cobrar**. Después se firma el nuevo contrato.
+- **Corregir salida** solo cambia la fecha de salida (un error al teclear), sin contrato nuevo.
 
 ## Parte de viajeros (SES.HOSPEDAJE)
 - **Parte de viajeros (SES)**: marque las llegadas con el registro completo y **genere el fichero**.
@@ -91,7 +107,7 @@
 ## Informe mensual a la presidencia (Recepción 1)
 - El **primer día laborable de cada mes** le llega un correo (y un aviso en el panel) para preparar el informe del mes anterior.
 - Entre en **Facturación e informes → Informe a presidencia**, elija el activo y el mes, y **revise** que todo es correcto:
-  - **Producción**: alquileres por tipo de estancia (menos de 1 semana, 1 semana, 2 semanas, 1 mes, renovaciones mensuales) con contratos, pernoctaciones e importes; servicios uno a uno; total del mes.
+  - **Producción**: alquileres por tipo de estancia (menos de 1 semana, 1 semana, 2 semanas, 1 mes, ampliaciones de reserva mensuales) con contratos, pernoctaciones e importes; servicios uno a uno; total del mes.
   - **Gastos**: por proveedor (varias facturas del mismo proveedor en una línea), con nº de factura, importe sin IVA y CAPEX / OPEX.
   - **Resultado** y su **porcentaje**: rojo (0 a 12 %), naranja (13 a 25 %) o verde (26 % o más).
   - **Resumen mensual** del año anterior y del año en curso: producción, pernoctaciones, ocupación y variaciones.

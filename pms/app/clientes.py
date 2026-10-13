@@ -52,3 +52,26 @@ def por_documento(db: Session, asset: Asset, tipo: str, doc: str | None) -> Cont
 
 def nueva(asset: Asset, tipo: str, **datos) -> Contact:
     return Contact(company_id=asset.company_id, asset_id=asset.id, tipo=tipo, **datos)
+
+
+def lista_negra(db: Session, c: Contact | None = None, documento: str | None = None) -> list[dict]:
+    """Anotaciones de lista negra que afectan a un cliente: su ficha o cualquier ficha del grupo con el mismo
+    documento (el cliente puede volver por otro activo). Solo se devuelve lo necesario para el aviso."""
+    from .models import User
+    doc = nif.normalizar(documento or (c.documento_num if c else None))
+    conds = []
+    if c is not None and c.id:
+        conds.append(Contact.id == c.id)
+    if doc:
+        conds.append(func.upper(func.replace(Contact.documento_num, " ", "")) == doc)
+    if not conds:
+        return []
+    from sqlalchemy import or_
+    out = []
+    for x, autor, activo in db.execute(
+            select(Contact, User.nombre, Asset.nombre).outerjoin(User, User.id == Contact.lista_negra_user_id)
+            .outerjoin(Asset, Asset.id == Contact.asset_id)
+            .where(Contact.lista_negra.is_(True), or_(*conds)).order_by(Contact.lista_negra_fecha.desc())):
+        out.append({"contact_id": x.id, "motivo": x.lista_negra_motivo, "activo": activo, "autor": autor,
+                    "fecha": x.lista_negra_fecha.isoformat() if x.lista_negra_fecha else None})
+    return out

@@ -15,7 +15,7 @@ from .routers import (admin, agenda, alquiler, auth, buscar, documentos, estruct
                       garajes, gastos, historico, informes, mantenimiento, manual, panel, personal, plano, presidencia,
                       proveedores, turistico)
 from .routers import (ausencias, capex, cobros_alquiler, colaborador, documentacion_legal, limpieza, partes_estado,
-                      jornada, partes_trabajo, pedidos, tecnico)
+                      dotacion, jornada, partes_trabajo, pedidos, tecnico)
 from .seed import seed
 
 STATIC = BASE_DIR / "static"
@@ -40,7 +40,7 @@ app = FastAPI(title="INVERPMS", version="0.1.0", lifespan=lifespan)
 for r in (auth, estructura, alquiler, garajes, gastos, turistico, plano, facturas, mantenimiento, personal, proveedores,
           informes, admin, panel, documentos, buscar, agenda, expedientes, historico, exportacion, manual, presidencia,
           limpieza, pedidos, partes_trabajo, ausencias, colaborador, documentacion_legal,
-          cobros_alquiler, partes_estado, tecnico, jornada, capex):
+          cobros_alquiler, partes_estado, tecnico, jornada, capex, dotacion):
     app.include_router(r.router)
 app.include_router(colaborador.revision)
 app.include_router(facturas.router_servicios)

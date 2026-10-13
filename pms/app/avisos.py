@@ -43,7 +43,7 @@ TIPOS = {
                           "(resumen diario)", "reservas.ver"),
     "garajes_vencen": ("Plazas de garaje alquiladas a clientes externos: bajas en los próximos 30 días "
                        "(resumen diario)", "reservas.ver"),
-    "facturas_pendientes": ("Facturas emitidas pendientes de cobro (renovaciones y reservas que pagan por "
+    "facturas_pendientes": ("Facturas emitidas pendientes de cobro (ampliaciones de reserva y reservas que pagan por "
                             "transferencia): revisar si ha llegado el pago (resumen diario)", "facturas.ver"),
     "pagos_retenidos": ("Facturas recibidas con el pago retenido: aviso al momento de retenerlas y, en el resumen "
                         "diario, las retenidas con su fecha de revisión", "finanzas.ver"),
@@ -532,7 +532,7 @@ SECCIONES = {
                                                           "Retraso", "Pendiente"], "recibo(s) impagado(s)"),
     "contratos_vencen": ("Contratos que vencen", ["Activo", "Unidad", "Inquilino", "Fin de contrato", "Quedan"],
                          "contrato(s) por vencer"),
-    "estancias_vencidas": ("Estancias vencidas o que terminan en 3 días: renovar o dar la salida",
+    "estancias_vencidas": ("Estancias vencidas o que terminan en 3 días: ampliar la reserva o dar la salida",
                            ["Activo", "Apartamento", "Cliente", "Teléfono", "Salida", "Situación"], "estancia(s)"),
     "garajes_impagados": ("Plazas de garaje: recibos vencidos sin cobrar", ["Activo", "Plaza", "Cliente", "Periodo",
                                                                             "Vencimiento", "Retraso", "Pendiente"],

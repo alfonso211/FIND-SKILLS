@@ -21,7 +21,7 @@ MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto
 # Estancias por su duración total (noches), y las renovaciones mensuales aparte
 TIPOS_ESTANCIA = [("corta", "Contratos inferiores a 1 semana"), ("semana", "Contratos de 1 semana"),
                   ("dos_semanas", "Contratos de 2 semanas"), ("mes", "Contratos de 1 mes"),
-                  ("renovacion", "Renovaciones mensuales")]
+                  ("renovacion", "Ampliaciones de reserva (mensuales)")]
 ESTADOS_VALIDOS = ("confirmada", "checkin", "checkout")
 SEMAFORO = {"rojo": "#c62828", "naranja": "#ef7d00", "verde": "#2e7d32"}
 

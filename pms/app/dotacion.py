@@ -153,3 +153,135 @@ def estandar(perfil: str) -> list[dict]:
     """Dotación estándar de un perfil, lista para que recepción la ajuste (sin lo que ese perfil no lleva)."""
     return [{"codigo": x["codigo"], "zona": x["zona"], "articulo": x["articulo"], "cantidad": x["cantidades"][perfil]}
             for x in CATALOGO if x["cantidades"][perfil] not in NO_INCLUIDO]
+
+
+# --------------------------------------------------------------------------- dotación habitual y de la reserva
+def _db():  # imports locales: este módulo también se usa sin base de datos (catálogo)
+    from sqlalchemy import select
+    from .models import DotacionArticulo, DotacionHabitual
+    return select, DotacionArticulo, DotacionHabitual
+
+
+def articulos(db, asset_id: int | None) -> list[dict]:
+    """Catálogo para elegir: el maestro 3 llaves y los artículos creados con «Otra dotación» (del activo o comunes)."""
+    select, Art, _ = _db()
+    propios = db.scalars(select(Art).where((Art.asset_id == asset_id) | Art.asset_id.is_(None)).order_by(Art.codigo))
+    return CATALOGO + [{"codigo": a.codigo, "zona": a.zona, "articulo": a.articulo, "cantidades": {}, "propio": True}
+                       for a in propios]
+
+
+def nuevo_codigo(db) -> str:
+    select, Art, _ = _db()
+    n = len(list(db.scalars(select(Art.id)))) + 1
+    while db.scalar(select(Art.id).where(Art.codigo == f"OTR{n:03d}")):
+        n += 1
+    return f"OTR{n:03d}"
+
+
+def habitual(db, asset_id: int, tipologia: str | None):
+    select, _, Hab = _db()
+    return db.scalar(select(Hab).where(Hab.asset_id == asset_id, Hab.tipologia == (tipologia or "")))
+
+
+def base_unidad(db, unit) -> tuple[list[dict], bool]:
+    """(dotación habitual de la unidad, si Recepción ya la ha fijado). Si no, la estándar de su perfil."""
+    h = habitual(db, unit.asset_id, unit.tipologia)
+    if h:
+        return list(h.items), True
+    return estandar(perfil_de(unit.tipologia)), False
+
+
+def limpiar(items: list[dict]) -> list[dict]:
+    """Valida y normaliza una lista [{codigo, zona, articulo, cantidad}] (sin repetidos ni vacíos)."""
+    out, vistos = [], set()
+    for x in items or []:
+        cod = str(x.get("codigo") or "").strip().upper()[:12]
+        art = str(x.get("articulo") or "").strip()[:160]
+        cant = str(x.get("cantidad") if x.get("cantidad") is not None else "").strip()[:80]
+        zona = x.get("zona") if x.get("zona") in ZONAS else "auxiliar"
+        if not cod or not art or cant in NO_INCLUIDO or cod in vistos:
+            continue
+        vistos.add(cod)
+        out.append({"codigo": cod, "zona": zona, "articulo": art, "cantidad": cant})
+    orden = list(ZONAS)
+    return sorted(out, key=lambda x: (orden.index(x["zona"]), x["codigo"]))
+
+
+def de_reserva(db, r) -> dict:
+    """Dotación que se entrega en una reserva: la habitual con los cambios (añadir / quitar / otra cantidad) y la
+    dotación especial (artículos añadidos)."""
+    base, fijada = base_unidad(db, r.unit)
+    d = r.dotacion or {}
+    cambios = d.get("cambios") or {}
+    final = []
+    for x in base:
+        if x["codigo"] in cambios:
+            c = str(cambios[x["codigo"]]).strip()
+            if c in NO_INCLUIDO:
+                continue
+            x = {**x, "cantidad": c, "cambiado": True}
+        final.append(x)
+    extra = limpiar(d.get("extra") or [])
+    codigos = {x["codigo"] for x in final}
+    final += [{**x, "especial": True} for x in extra if x["codigo"] not in codigos]
+    orden = list(ZONAS)
+    final.sort(key=lambda x: (orden.index(x["zona"]) if x["zona"] in orden else 99, x["codigo"]))
+    return {"habitual": base, "habitual_fijada": fijada, "perfil": perfil_de(r.unit.tipologia),
+            "tipologia": r.unit.tipologia, "cambios": cambios, "extra": extra, "items": final,
+            "especial": bool(cambios or extra)}
+
+
+def _bordes(tabla) -> None:
+    """Bordes finos en la tabla (la plantilla del contrato no trae el estilo «Table Grid»)."""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    pr = tabla._tbl.tblPr
+    b = OxmlElement("w:tblBorders")
+    for lado in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        e = OxmlElement(f"w:{lado}")
+        for k, v in (("w:val", "single"), ("w:sz", "4"), ("w:space", "0"), ("w:color", "999999")):
+            e.set(qn(k), v)
+        b.append(e)
+    pr.append(b)
+
+
+def anexo(contenido: bytes, items: list[dict], titulo: str, subtitulo: str) -> bytes:
+    """Añade al contrato (.docx) el Anexo I · Inventario y dotación del apartamento, con casilla de comprobación."""
+    import io
+
+    import docx
+    from docx.enum.text import WD_BREAK
+    from docx.shared import Pt
+    doc = docx.Document(io.BytesIO(contenido))
+    p = doc.add_paragraph()
+    p.add_run().add_break(WD_BREAK.PAGE)
+    h = doc.add_paragraph()
+    r = h.add_run(titulo)
+    r.bold = True
+    r.font.size = Pt(13)
+    s = doc.add_paragraph(subtitulo)
+    s.runs[0].font.size = Pt(9)
+    t = doc.add_table(rows=1, cols=4)
+    _bordes(t)
+    for i, txt in enumerate(("Zona", "Artículo", "Cantidad", "Revisado")):
+        c = t.rows[0].cells[i]
+        c.text = txt
+        c.paragraphs[0].runs[0].bold = True
+    for x in items:
+        fila = t.add_row().cells
+        fila[0].text = ZONAS.get(x["zona"], x["zona"]).split(":")[0].split("/")[0].strip()
+        fila[1].text = x["articulo"] + (" (dotación especial)" if x.get("especial") else "")
+        fila[2].text = str(x["cantidad"])
+        fila[3].text = "☐"
+    for row in t.rows:
+        for c in row.cells:
+            for par in c.paragraphs:
+                for run in par.runs:
+                    run.font.size = Pt(8.5)
+    doc.add_paragraph()
+    doc.add_paragraph("El cliente declara recibir el apartamento con la dotación indicada en buen estado de uso. "
+                      "Los elementos que falten o se dañen durante la estancia podrán descontarse de la fianza.")
+    doc.add_paragraph("Firma del cliente:\t\t\t\t\tPor la propiedad:")
+    out = io.BytesIO()
+    doc.save(out)
+    return out.getvalue()

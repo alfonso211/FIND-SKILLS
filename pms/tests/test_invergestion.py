@@ -95,7 +95,8 @@ def test_paquete_emitidas_y_recibidas(client, admin, ids):
     em, re_ = f"EMITIDAS_TODOS_{periodo}.csv", f"RECIBIDAS_TODOS_{periodo}.csv"
     # un solo ZIP, sin ZIP dentro: CSV y manifest en la raíz, PDF en sus carpetas
     assert {em, re_, "manifest.json"} <= nombres and not any(n.endswith(".zip") for n in nombres)
-    assert all(n in (em, re_, "manifest.json") or n.startswith(("pdf/emitidas/", "pdf/recibidas/")) for n in nombres)
+    assert all(n in (em, re_, "manifest.json") or n.startswith(("pdf/emitidas/", "pdf/recibidas/", "FIANZAS_"))
+               for n in nombres)  # FIANZAS_*.csv solo si hay devoluciones de fianza en el periodo
 
     emitidas = _csv(z, em)
     assert list(emitidas[0]) == ex.COLUMNAS_EMITIDAS
@@ -141,7 +142,8 @@ def test_paquete_emitidas_y_recibidas(client, admin, ids):
     # manifest: activo, periodo, filas de cada CSV y ruta + SHA-256 de cada PDF
     m = json.loads(z.read("manifest.json"))
     assert (m["activo"], m["desde"], m["hasta"]) == ("TODOS", q["desde"], q["hasta"])
-    assert {x["fichero"]: x["filas"] for x in m["csv"]} == {em: len(emitidas), re_: len(recibidas)}
+    filas_csv = {x["fichero"]: x["filas"] for x in m["csv"] if not x["fichero"].startswith("FIANZAS_")}
+    assert filas_csv == {em: len(emitidas), re_: len(recibidas)}
     assert {x["ruta"] for x in m["pdf"]} == set(pdfs)
     assert all(x["sha256"] == hashlib.sha256(z.read(x["ruta"])).hexdigest() for x in m["pdf"])
 

@@ -384,6 +384,8 @@ class ReservationIn(BaseModel):
     # Desde la pantalla de reserva, recepción confirma el precio (propuesto por la tarifa estándar o cambiado).
     # False = no lo ha aceptado: no se crea. None = otras vías (importación, API).
     precio_aceptado: bool | None = None
+    # el cliente está en la lista negra y Recepción decide reservar igualmente (queda auditado)
+    lista_negra_aceptada: bool = False
 
     @field_validator("fecha_salida")
     @classmethod
@@ -394,8 +396,22 @@ class ReservationIn(BaseModel):
         return v
 
 
+class DepositRefundIn(BaseModel):
+    """Devolución de la fianza al hacer la salida (la indica Recepción 1 o Recepción 2)."""
+    forma: Literal["transferencia", "efectivo", "tarjeta", "no_procede"]
+    importe: float | None = Field(default=None, ge=0)  # por defecto, la fianza completa
+    retenido_motivo: str | None = Field(default=None, max_length=1000)
+    iban: str | None = Field(default=None, max_length=40)
+    fecha: date | None = None  # de la transferencia (prevista); por defecto, hoy
+    nota: str | None = Field(default=None, max_length=1000)
+
+
+class CheckoutIn(BaseModel):
+    fianza: DepositRefundIn | None = None
+
+
 class RenewalIn(BaseModel):
-    """Renovación de una estancia al mismo cliente: nueva reserva desde la salida actual hasta `fecha_salida`."""
+    """Ampliación de reserva al mismo cliente: nueva reserva desde la salida actual hasta `fecha_salida`."""
     fecha_salida: date
     importe_total: float = Field(default=0, ge=0)
     renovar_garaje: bool = True
@@ -408,7 +424,7 @@ class RenewalIn(BaseModel):
     @model_validator(mode="after")
     def _pagado(self):
         if self.importe_pagado > self.importe_total:
-            raise ValueError("Lo cobrado no puede superar el importe de la renovación")
+            raise ValueError("Lo cobrado no puede superar el importe de la ampliación")
         return self
 
 
@@ -488,6 +504,10 @@ class AccommodationContractIn(BaseModel):
     permitir_huecos: bool = False
     # Guardar los datos sin imprimir (p.ej. al hacer la reserva, para imprimir a la llegada)
     solo_guardar: bool = False
+    # «Dotación habitual»: con el contrato se imprime o envía el Anexo I con la dotación del apartamento (la habitual
+    # con los cambios y la dotación especial de la reserva). `dotacion_items` guarda la lista impresa.
+    dotacion: bool = False
+    dotacion_items: list[dict] | None = None
 
     @field_validator("motivo", "acreditacion", mode="before")
     @classmethod
