@@ -34,6 +34,12 @@
 - **Personal → Vacaciones y ausencias**: pulse **Solicitar ausencia**, elija el tipo (vacaciones, día libre, baja médica, permiso, falta u otro) y las fechas. Debajo de la persona se ve quién la aprueba.
 - El **cuadrante del mes** muestra quién falta cada día (rayado = pendiente). Las bajas médicas solo las ven con detalle la persona, Recepción 1 y dirección; los demás ven «Ausencia».
 - Mientras está pendiente, la puede **anular** usted mismo.
+- Cuando se **autoriza**, se **desestima** o se **anula**, le llega un correo con el resultado y, si no se autoriza, el motivo.
+
+## Mi jornada (fichar)
+- Si es personal propio, fiche al **entrar** y al **salir** en **Personal → Mi jornada (fichar)**: un botón grande. Se guarda la hora del servidor y, si lo permite, la ubicación.
+- Si no tiene usuario, Recepción 1 le envía por WhatsApp un **enlace personal**: guárdelo en la pantalla de inicio del móvil y no lo comparta.
+- Si se equivoca o se olvida de fichar la salida, avise a Recepción 1 para corregirlo.
 
 ## Portal del colaborador (subcontratas)
 - Si su usuario es de una empresa colaboradora, al entrar verá solo el **Portal del colaborador**: sus órdenes de trabajo, sus trabajos en los partes, los envíos a su personal, sus documentos y su personal.

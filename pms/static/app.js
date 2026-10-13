@@ -297,6 +297,14 @@ V.panel = async (el) => {
   if (ap.length) avisos.push(`<div class="aviso-hito"><h4>🗓️ Ausencias que esperan su decisión: ${ap.length}</h4>
     <p>${ap.map((x) => `${esc(x.persona)} (${fdate(x.desde)}${x.hasta !== x.desde ? ` a ${fdate(x.hasta)}` : ""})`).join(" · ")}.</p>
     <button class="btn sm primary" id="verAusencias">Revisar</button></div>`);
+  const ph = p.personal_hoy;
+  if (ph && (ph.faltan.length || ph.dentro.length || ph.olvidos || ph.documentos)) {
+    const fl = ph.faltan.filter((x) => !S.asset || String(x.asset_id) === String(S.asset));
+    avisos.push(`<div class="aviso-hito${ph.olvidos || ph.documentos ? " aviso-cobro" : ""}"><h4>👥 Personal hoy: ${fl.length} ausente(s) · ${ph.dentro.length} dentro${ph.olvidos ? ` · ${ph.olvidos} sin fichar la salida` : ""}${ph.documentos ? ` · ${ph.documentos} documento(s) vencen` : ""}</h4>
+    ${fl.length ? `<p>Ausentes: ${fl.map((x) => `${esc(x.persona)} (${esc(x.tipo)} hasta ${fdate(x.hasta)})`).join(" · ")}.</p>` : ""}
+    ${ph.dentro.length ? `<p class="muted">Dentro: ${ph.dentro.map(esc).join(" · ")}.</p>` : ""}
+    <button class="btn sm primary" id="verJornada">Registro de jornada</button> <button class="btn sm" id="verFichas">Fichas del personal</button></div>`);
+  }
   (p.hitos || []).forEach((h) => avisos.push(`<div class="aviso-hito"><h4>📅 ${esc(h.titulo)} · ${fdate(h.fecha)} (${h.dias > 0 ? `faltan ${h.dias} días` : h.dias === 0 ? "hoy" : `hace ${-h.dias} días`})</h4><p>${esc(h.detalle)}</p></div>`));
   el.innerHTML = `<div class="panel-grid"><div class="panel-main">
     <div class="buscador"><input id="busq" type="search" autocomplete="off" placeholder="🔍 Buscar: documento, apartamento, cliente, teléfono, localizador, factura, OT, proveedor…" aria-label="Buscar">
@@ -361,6 +369,8 @@ V.panel = async (el) => {
   if ($("#verRetenidas", el)) $("#verRetenidas", el).onclick = () => go("gastos");
   if ($("#verPresidencia", el)) $("#verPresidencia", el).onclick = (e) => { S.presidencia = { asset: e.currentTarget.dataset.a }; go("presidencia"); };
   if ($("#verAusencias", el)) $("#verAusencias", el).onclick = () => go("ausencias");
+  if ($("#verJornada", el)) $("#verJornada", el).onclick = () => go("jornada");
+  if ($("#verFichas", el)) $("#verFichas", el).onclick = () => go("personal");
   if ($("#verPartesEstado", el)) $("#verPartesEstado", el).onclick = () => go("estado?ver=lista");
   if ($("#verOtTecnico", el)) $("#verOtTecnico", el).onclick = () => go("ordenes");
   pintarMinis(el).catch((e) => el.querySelectorAll(".minis").forEach((m) => (m.innerHTML = `<p class="error">${esc(e.message)}</p>`)));
@@ -3073,7 +3083,7 @@ V.preventivo = async (el) => {
 };
 
 // ---- personal de mantenimiento y limpieza: fichas con correo y teléfono; envío de las OT y del parte de limpieza
-const AREAS = [["mantenimiento", "Mantenimiento"], ["limpieza", "Limpieza"], ["conserjeria", "Conserjería"], ["otros", "Otros (por administración)"]];
+const AREAS = [["mantenimiento", "Mantenimiento"], ["limpieza", "Limpieza"], ["conserjeria", "Conserjería"], ["recepcion", "Recepción"], ["administracion", "Administración y oficinas"], ["otros", "Otros (por administración)"]];
 const puedeEnviarOT = () => can("mantenimiento.editar") || can("mantenimiento.cerrar");
 const otNum = (id) => `OT-${String(id).padStart(5, "0")}`;
 const personaTxt = (p) => `${p.nombre}${p.empresa ? ` (${p.empresa})` : ""}${p.email ? "" : " · sin correo"}${p.whatsapp ? "" : " · sin WhatsApp"}`;
@@ -3217,6 +3227,8 @@ V.personal = async (el) => {
   el.innerHTML = `<div class="toolbar"><select id="ar"><option value="">Todas las áreas</option>${AREAS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
     <span class="spacer"></span>${can("limpieza.editar") ? '<button class="btn" id="pl">Enviar parte de limpieza</button>' : ""}${areas.length ? '<button class="btn primary" id="new">Nueva persona</button>' : ""}</div>
     <p class="muted">Técnicos, limpieza, conserjería y demás personal propio o de subcontratas por administración. A mantenimiento y limpieza se les envían las OT y el parte de limpieza por correo o WhatsApp; conserjería y otros los da de alta Recepción 1 para registrar sus ausencias. No necesitan usuario en INVERPMS.</p><div id="t"></div>`;
+  const catP = await get("/api/personal/catalogos");
+  const usuarios = S.me.admin_grupo ? await get("/api/admin/usuarios").catch(() => []) : [];
   const fields = [
     { k: "area", t: "Área", type: "select", req: true, options: areas },
     { k: "asset_id", t: "Activo (vacío = todos)", type: "select", options: opts(S.assets) },
@@ -3226,25 +3238,181 @@ V.personal = async (el) => {
     { k: "activo", t: "En activo", type: "checkbox", def: true },
     { k: "notas", t: "Notas (horario, especialidad…)", type: "textarea", wide: true },
   ];
+  // datos laborales: solo Recepción 1 del activo y dirección (los demás no los ven)
+  const ficha = [
+    { html: '<fieldset><legend>Ficha del empleado (personal propio)</legend><p class="muted peq">Solo la ven Recepción 1 del activo y la dirección. Las vacaciones se cuentan con estos datos y el registro de jornada se hace sobre esta ficha.</p></fieldset>', wide: true },
+    { k: "dni", t: "DNI / NIE" }, { k: "puesto", t: "Puesto" },
+    { k: "tipo_contrato", t: "Contrato", type: "select", options: Object.entries(catP.contratos) },
+    { k: "jornada_semanal", t: "Jornada (horas / semana)", type: "number" },
+    { k: "fecha_alta", t: "Fecha de alta", type: "date" }, { k: "fecha_baja", t: "Fecha de baja", type: "date" },
+    { k: "vacaciones_dias", t: "Días de vacaciones al año (convenio)", type: "number" },
+    { k: "vacaciones_tipo", t: "Los días son", type: "select", options: [["laborables", "Laborables"], ["naturales", "Naturales"]] },
+    ...(usuarios.length ? [{ k: "user_id", t: "Su usuario del PMS (para pedir vacaciones y fichar)", type: "select", options: usuarios.map((u) => [u.id, `${u.nombre} · ${u.email}`]), wide: true }] : []),
+  ];
+  const camposDe = (p) => (p ? (p.gestiona ? [...fields, ...ficha] : fields) : gest ? [...fields, ...ficha] : fields);
   const guardar = (p) => async (d) => {
-    const body = { ...d, asset_id: d.asset_id ? Number(d.asset_id) : null };
+    const body = { ...d, asset_id: d.asset_id ? Number(d.asset_id) : null, user_id: d.user_id ? Number(d.user_id) : (p?.user_id ?? null),
+      jornada_semanal: d.jornada_semanal ? Number(d.jornada_semanal) : null, vacaciones_dias: d.vacaciones_dias !== undefined && d.vacaciones_dias !== "" ? Number(d.vacaciones_dias) : null,
+      tipo_contrato: d.tipo_contrato || null, vacaciones_tipo: d.vacaciones_tipo || null, fecha_alta: d.fecha_alta || null, fecha_baja: d.fecha_baja || null };
     await (p ? put(`/api/personal/${p.id}`, body) : post("/api/personal", body));
     toast(p ? "Ficha guardada" : "Persona dada de alta"); load();
     await altaProveedorSiNuevo(d.empresa, d.area === "limpieza" ? "Limpieza" : d.area === "mantenimiento" ? "Mantenimiento" : "Otros");
   };
   const load = async () => table($("#t", el), [
-    { k: "area_nombre", t: "Área" }, { k: "nombre", t: "Nombre" }, { k: "empresa", t: "Empresa" },
-    { k: "activo_nombre", t: "Activo" }, { k: "email", t: "Correo" }, { k: "telefono", t: "Móvil" },
-    { k: "avisar_urgentes", t: "OT urgentes", f: (v) => (v ? "Al momento" : "") },
-    { k: "activo", t: "Estado", f: (v) => (v ? "En activo" : '<span class="muted">Baja</span>') },
-  ], await get("/api/personal", { asset_id: S.asset, area: $("#ar", el).value }), (p) => editar(p.area) ? [
-    ["Editar", () => sugerirProveedores(form(p.nombre, fields, p, guardar(p)), "empresa")],
-    ["Borrar", async () => { if (confirm(`¿Borrar la ficha de ${p.nombre}?`)) { await run(() => api("DELETE", `/api/personal/${p.id}`), "Ficha borrada"); load(); } }, "danger"],
-  ] : []);
+    { k: "area_nombre", t: "Área" },
+    { k: "nombre", t: "Nombre", f: (v, p) => `${esc(v)}${p.activo ? "" : ' <span class="badge">baja</span>'}${p.puesto ? `<div class="muted peq">${esc(p.puesto)}</div>` : ""}${p.empresa ? `<div class="muted peq">${esc(p.empresa)}</div>` : ""}` },
+    { k: "activo_nombre", t: "Activo" },
+    { k: "telefono", t: "Contacto", f: (v, p) => [v, p.email].filter(Boolean).map(esc).join("<br>") + (p.avisar_urgentes ? '<div class="muted peq">OT urgentes al momento</div>' : "") },
+    { k: "saldo", t: "Vacaciones", f: (v) => (v ? `<b>${v.restantes}</b> de ${v.corresponden}<div class="muted peq">${v.tipo}${v.pendientes ? ` · ${v.pendientes} por aprobar` : ""}</div>` : "") },
+    { k: "fichado", t: "Jornada", f: (v, p) => (p.gestiona && p.propio ? (v ? '<span class="badge b-vigente">dentro</span>' : '<span class="muted">fuera</span>') : "") },
+    { k: "documentos_vencen", t: "Docs.", f: (v) => (v ? `<span class="badge b-urgente" title="Documentos vencidos">${v} ⚠</span>` : "") },
+  ], await get("/api/personal", { asset_id: S.asset, area: $("#ar", el).value }), (p) => [
+    (editar(p.area) || p.gestiona) && ["Editar", () => sugerirProveedores(form(p.nombre, camposDe(p), p, guardar(p)), "empresa")],
+    p.gestiona && ["Docs.", () => documentosEmpleado(p, load)],
+    p.gestiona && p.propio && ["Enlace", () => enlaceFichaje(p, load)],
+    p.gestiona && p.propio && ["Jornada", () => { S.jornadaStaff = p.id; go("jornada"); }],
+    editar(p.area) && ["Borrar", async () => { if (confirm(`¿Borrar la ficha de ${p.nombre}?`)) { await run(() => api("DELETE", `/api/personal/${p.id}`), "Ficha borrada"); load(); } }, "danger"],
+  ]);
   $("#ar", el).onchange = load;
-  if ($("#new", el)) $("#new", el).onclick = () => sugerirProveedores(form("Nueva persona", fields, { area: areas[0][0], asset_id: S.asset || (S.assets.length === 1 ? S.assets[0].id : "") }, guardar(null)), "empresa");
+  if ($("#new", el)) $("#new", el).onclick = () => sugerirProveedores(form("Nueva persona", camposDe(null), { area: areas[0][0], asset_id: S.asset || (S.assets.length === 1 ? S.assets[0].id : "") }, guardar(null)), "empresa");
   if ($("#pl", el)) $("#pl", el).onclick = () => parteLimpieza(today());
   load();
+};
+
+// ---- ficha del empleado: documentos (contrato, nóminas, reconocimiento médico, formación…) con vencimiento
+async function documentosEmpleado(p, reload) {
+  const cat = await get("/api/personal/catalogos");
+  const docs = await get(`/api/personal/${p.id}/documentos`);
+  const filas = docs.length ? `<div class="table-wrap"><table><thead><tr><th>Tipo</th><th>Fecha</th><th>Vence</th><th>Notas</th><th class="acc"></th></tr></thead><tbody>
+    ${docs.map((d) => `<tr><td>${esc(d.tipo_nombre)}</td><td>${fdate(d.fecha)}</td><td>${d.vence ? (d.vencido ? `<span class="badge b-urgente">${fdate(d.vence)} vencido</span>` : fdate(d.vence)) : ""}</td>
+      <td>${esc(d.notas || "")}</td><td class="acc"><button type="button" class="btn sm" data-ver="${d.id}">Ver</button> <button type="button" class="btn sm danger" data-borra="${d.id}">Borrar</button></td></tr>`).join("")}
+    </tbody></table></div>` : '<p class="muted">Sin documentos todavía.</p>';
+  const f = form(`Documentos · ${p.nombre}`, [
+    { html: `${filas}<p class="muted peq">Se guardan cifrados. Solo los ven Recepción 1 del activo y la dirección, y queda registrado quién los abre. Los que vencen en 30 días salen en el panel y en el resumen diario.</p><h4>Añadir documento</h4>` },
+    { k: "tipo", t: "Tipo", type: "select", req: true, options: Object.entries(cat.documentos) },
+    { k: "fecha", t: "Fecha del documento", type: "date" }, { k: "vence", t: "Vence (si caduca)", type: "date" },
+    { k: "notas", t: "Notas", wide: true },
+    { html: '<label class="wide">Fichero (PDF o foto) *<input type="file" name="fichero" accept="application/pdf,image/*" required></label>' },
+  ], {}, async (d, fm) => {
+    const fd = new FormData();
+    fd.append("ficheros", fm.elements.fichero.files[0]); fd.append("tipo", d.tipo);
+    ["fecha", "vence", "notas"].forEach((k) => d[k] && fd.append(k, d[k]));
+    await upload(`/api/personal/${p.id}/documentos`, fd);
+    toast("Documento guardado"); reload && reload();
+    setTimeout(() => documentosEmpleado(p, reload), 0);
+  }, "Subir documento");
+  $("#modal").classList.add("ancho");
+  f.querySelectorAll("[data-ver]").forEach((b) => (b.onclick = () => abrirFichero(`/api/personal/documentos/${b.dataset.ver}`)));
+  f.querySelectorAll("[data-borra]").forEach((b) => (b.onclick = async () => {
+    if (!confirm("¿Borrar este documento?")) return;
+    await run(() => api("DELETE", `/api/personal/documentos/${b.dataset.borra}`), "Documento borrado");
+    reload && reload(); documentosEmpleado(p, reload);
+  }));
+}
+
+// ---- enlace personal para fichar desde el móvil (personal sin usuario del PMS)
+async function enlaceFichaje(p, reload, nuevo = false) {
+  const r = await run(() => api("POST", `/api/personal/${p.id}/enlace-fichaje${nuevo ? "?nuevo=true" : ""}`));
+  const f = cerrarSolo(form(`Enlace de fichaje · ${p.nombre}`, [{ html: `
+    <p>Con este enlace <b>${esc(p.nombre)}</b> ficha la entrada y la salida desde su móvil, sin usuario ni contraseña. Que lo guarde en la pantalla de inicio.</p>
+    <p><input id="enl" readonly value="${esc(r.url)}" style="width:100%"></p>
+    <div class="toolbar"><button type="button" class="btn" id="copiar">Copiar enlace</button>
+      ${r.whatsapp ? `<a class="btn primary" href="${esc(r.whatsapp)}" target="_blank" rel="noopener">Enviar por WhatsApp</a>` : '<span class="muted">Sin móvil en la ficha: cópielo y envíelo usted.</span>'}
+      <span class="spacer"></span><button type="button" class="btn danger" id="cambiar">Cambiar enlace</button></div>
+    <p class="muted peq">«Cambiar enlace» anula el anterior (si lo ha perdido o lo ha compartido). Al dar de baja la ficha, el enlace deja de funcionar.</p>` }], {}, async () => {}));
+  $("#copiar", f).onclick = async () => {
+    try { await navigator.clipboard.writeText(r.url); toast("Enlace copiado"); } catch { $("#enl", f).select(); document.execCommand("copy"); toast("Enlace copiado"); }
+  };
+  $("#cambiar", f).onclick = () => { if (confirm("El enlace actual dejará de funcionar. ¿Crear uno nuevo?")) enlaceFichaje(p, reload, true); };
+  reload && reload();
+}
+
+// ---- registro de jornada (Recepción 1 y dirección): consulta del mes, correcciones, informe y Excel
+const horasTxt = (h) => `${Number(h || 0).toFixed(2).replace(".", ",")} h`;
+const hhmm = (iso) => (iso ? new Date(iso).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "—");
+const isoMin = (iso) => (iso ? iso.slice(0, 16) : "");
+V.jornada = async (el) => {
+  S.jornadaMes = S.jornadaMes || today().slice(0, 7);
+  el.innerHTML = `<div class="toolbar"><label>Mes <input type="month" id="mes" value="${S.jornadaMes}"></label>
+    <select id="per"><option value="">Todo el personal</option></select>
+    <span class="spacer"></span><button class="btn" id="man">Registro manual</button><button class="btn" id="xl">Excel del mes (asesoría)</button></div>
+    <p class="muted">Registro diario de jornada del personal propio (art. 34.9 ET): entrada y salida con la hora del servidor. Se conserva 4 años. Fichan desde «Mi jornada» (con usuario) o con su enlace personal (Personal → Fichas del personal → «Enlace fichaje»). Las correcciones guardan el registro original, quién lo cambia y el motivo.</p>
+    <div id="t"></div>`;
+  let datos = [];
+  const corregir = (e, t) => form(`Corregir fichaje · ${e.nombre}`, [
+    ...(t.original ? [{ html: `<p class="muted">Original: entrada ${fdt(t.original.entrada)} · salida ${t.original.salida ? fdt(t.original.salida) : "—"}</p>` }] : []),
+    { k: "entrada", t: "Entrada", type: "datetime-local", req: true }, { k: "salida", t: "Salida", type: "datetime-local" },
+    { k: "motivo", t: "Motivo de la corrección", req: true, wide: true },
+  ], { entrada: isoMin(t.entrada), salida: isoMin(t.salida), motivo: t.motivo || "" }, async (d) => {
+    await post(`/api/jornada/${t.id}/corregir`, d); toast("Fichaje corregido"); load();
+  });
+  const manual = (staffId) => form("Registro manual de jornada", [
+    { k: "staff_id", t: "Empleado", type: "select", req: true, options: datos.map((e) => [e.id, `${e.nombre}${e.puesto ? " · " + e.puesto : ""}`]) },
+    { k: "entrada", t: "Entrada", type: "datetime-local", req: true }, { k: "salida", t: "Salida", type: "datetime-local" },
+    { k: "motivo", t: "Motivo (no pudo fichar…)", req: true, wide: true },
+  ], { staff_id: staffId || "" }, async (d) => {
+    await api("POST", "/api/jornada/manual", { ...d, staff_id: Number(d.staff_id) }); toast("Registro guardado"); load();
+  });
+  const detalle = (e) => {
+    const f = cerrarSolo(form(`${e.nombre} · ${S.jornadaMes}`, [{ html: `<p>${horasTxt(e.horas)} en ${e.dias} día(s)${e.sin_salida ? ` · <span class="error">${e.sin_salida} sin salida</span>` : ""}</p>
+      ${e.fichajes.length ? `<div class="table-wrap"><table><thead><tr><th>Día</th><th>Entrada</th><th>Salida</th><th class="num">Horas</th><th>Origen</th><th>Observaciones</th><th class="acc"></th></tr></thead><tbody>
+      ${e.fichajes.map((t, i) => `<tr><td>${fdate(t.entrada)}</td><td>${hhmm(t.entrada)}</td><td>${t.salida ? hhmm(t.salida) : '<span class="error">sin salida</span>'}</td><td class="num">${horasTxt(t.horas)}</td>
+        <td>${esc(t.origen)}${t.lat != null ? ` <a href="https://maps.google.com/?q=${t.lat},${t.lon}" target="_blank" rel="noopener" title="Ubicación al fichar">📍</a>` : ""}</td>
+        <td class="peq">${t.corregido || t.origen === "manual" ? `${esc(t.motivo || "")} <span class="muted">(${esc(t.editado_nombre || "")})</span>` : ""}</td>
+        <td class="acc"><button type="button" class="btn sm" data-c="${i}">Corregir</button></td></tr>`).join("")}</tbody></table></div>` : '<p class="muted">Sin fichajes este mes.</p>'}
+      <div class="toolbar"><button type="button" class="btn" id="dm">Registro manual</button><span class="spacer"></span><button type="button" class="btn primary" id="dp">Informe PDF para firmar</button></div>` }], {}, async () => {}));
+    $("#modal").classList.add("ancho");
+    f.querySelectorAll("[data-c]").forEach((b) => (b.onclick = () => corregir(e, e.fichajes[b.dataset.c])));
+    $("#dm", f).onclick = () => manual(e.id);
+    $("#dp", f).onclick = () => run(() => download("GET", `/api/jornada/informe.pdf?staff_id=${e.id}&mes=${S.jornadaMes}`));
+  };
+  const load = async () => {
+    S.jornadaMes = $("#mes", el).value || today().slice(0, 7);
+    try { datos = await get("/api/jornada", { mes: S.jornadaMes, asset_id: S.asset }); }
+    catch (e) { $("#t", el).innerHTML = `<p class="error">${esc(e.message)}</p>`; return; }
+    const sel = $("#per", el), v = S.jornadaStaff || sel.value;
+    sel.innerHTML = '<option value="">Todo el personal</option>' + datos.map((e) => `<option value="${e.id}" ${String(e.id) === String(v) ? "selected" : ""}>${esc(e.nombre)}</option>`).join("");
+    S.jornadaStaff = null;
+    const filas = sel.value ? datos.filter((e) => String(e.id) === sel.value) : datos;
+    table($("#t", el), [
+      { k: "nombre", t: "Empleado" }, { k: "puesto", t: "Puesto" }, { k: "activo", t: "Activo" },
+      { k: "dentro", t: "Hoy", f: (v) => (v ? '<span class="badge b-vigente">dentro</span>' : '<span class="muted">fuera</span>') },
+      { k: "dias", t: "Días", num: true }, { k: "horas", t: "Horas del mes", num: true, f: horasTxt },
+      { k: "sin_salida", t: "Sin salida", num: true, f: (v) => (v ? `<span class="badge b-urgente">${v}</span>` : "") },
+      { k: "enlace", t: "Ficha con", f: (v, e) => [e.usuario && "usuario", v && "enlace"].filter(Boolean).join(" y ") || '<span class="muted">sin configurar</span>' },
+    ], filas, (e) => [["Detalle", () => detalle(e)], ["Informe PDF", () => run(() => download("GET", `/api/jornada/informe.pdf?staff_id=${e.id}&mes=${S.jornadaMes}`))]]);
+    if (filas.length === 1 && sel.value) detalle(filas[0]);
+  };
+  $("#mes", el).onchange = load; $("#per", el).onchange = load;
+  $("#man", el).onclick = () => manual(Number($("#per", el).value) || null);
+  $("#xl", el).onclick = () => run(() => download("GET", `/api/jornada/excel?mes=${S.jornadaMes}${S.asset ? `&asset_id=${S.asset}` : ""}`));
+  load();
+};
+
+// ---- Mi jornada: el propio empleado ficha entrada y salida
+V.mijornada = async (el) => {
+  let gps = {};
+  if (navigator.geolocation) navigator.geolocation.getCurrentPosition((x) => { gps = { lat: x.coords.latitude, lon: x.coords.longitude }; }, () => {}, { timeout: 8000, maximumAge: 120000 });
+  const pinta = (e, msg = "") => {
+    el.innerHTML = `<div class="mi-jornada" style="max-width:460px;margin:0 auto;text-align:center">
+      <h3>${esc(e.nombre)}${e.puesto ? ` <span class="muted">· ${esc(e.puesto)}</span>` : ""}</h3>
+      <p style="font-size:18px">${e.dentro ? `<b style="color:var(--ok,#2e7d4f)">● Dentro</b> desde las ${hhmm(e.desde)}` : '<b class="muted">○ Fuera</b>'}</p>
+      <button class="btn ${e.dentro ? "danger" : "primary"}" id="fichar" style="width:100%;min-height:72px;font-size:22px">${e.dentro ? "Fichar SALIDA" : "Fichar ENTRADA"}</button>
+      <p class="${msg.startsWith("✔") ? "ok" : "error"}">${esc(msg)}</p>
+      <div class="table-wrap no-encajar"><table><thead><tr><th>Hoy · entrada</th><th>Salida</th><th class="num">Horas</th></tr></thead><tbody>
+      ${e.hoy.length ? e.hoy.map((t) => `<tr><td>${hhmm(t.entrada)}</td><td>${hhmm(t.salida)}</td><td class="num">${horasTxt(t.horas)}</td></tr>`).join("") : '<tr><td colspan="3" class="muted">Sin fichajes hoy</td></tr>'}
+      </tbody></table></div>
+      <p class="muted">Este mes: <b>${horasTxt(e.horas_mes)}</b>${e.jornada_semanal ? ` · contrato ${e.jornada_semanal} h/semana` : ""}. Se registra la hora del servidor y, si lo permite, la ubicación. Si se equivoca, avise a Recepción 1 para corregirlo.</p></div>`;
+    $("#fichar", el).onclick = async (ev) => {
+      ev.target.disabled = true;
+      try {
+        const r = await post("/api/jornada/mia/fichar", gps);
+        pinta(r, r.dentro ? `✔ Entrada registrada a las ${hhmm(r.fichaje.entrada)}` : `✔ Salida registrada a las ${hhmm(r.fichaje.salida)}`);
+      } catch (err) { toast(err.message, true); ev.target.disabled = false; }
+    };
+  };
+  try { pinta(await get("/api/jornada/mia")); }
+  catch (e) { el.innerHTML = `<p class="error">${esc(e.message)}</p><p class="muted">Recepción 1 o dirección enlazan su usuario en Personal → Fichas del personal → Editar → «Su usuario del PMS».</p>`; }
 };
 
 // ---- documentos recibidos (carpeta de cada activo) y cuenta de gastos
@@ -4245,11 +4413,43 @@ async function informeQuincenal(aid, sel) {
 
 // ---- personal: vacaciones, días libres, bajas, permisos y faltas (quién aprueba según el colectivo)
 const COLOR_AUS = { vacaciones: "aus-vac", dia_libre: "aus-libre", baja_medica: "aus-baja", permiso: "aus-permiso", falta: "aus-falta", otro: "aus-otro", ausencia: "aus-otro" };
+// ---- ausencias: autorizar, desestimar o anular (con motivo) y comunicarlo al trabajador y a Recepción
+function comunicadoAusencia(r, que) {
+  const c = r.comunicado;
+  if (!c) return toast(`Ausencia ${que}`);
+  const lineas = [];
+  if (!c.correo_configurado) lineas.push('<p class="error">El correo saliente no está configurado: no se ha enviado ningún aviso.</p>');
+  else lineas.push(c.enviados.length ? `<p>Correo enviado a: <b>${c.enviados.map(esc).join(", ")}</b></p>` : '<p class="muted">No había a quién enviar el correo.</p>');
+  if (!c.trabajador_correo) lineas.push(c.whatsapp
+    ? `<p>${esc(r.persona)} no tiene correo: avísele por WhatsApp (el mensaje va escrito; pulse «Enviar» en WhatsApp).</p><p><a class="btn primary" href="${esc(c.whatsapp)}" target="_blank" rel="noopener">Abrir WhatsApp</a></p>`
+    : `<p class="error">${esc(r.persona)} no tiene correo ni móvil en su ficha: comuníqueselo de palabra.</p>`);
+  cerrarSolo(form(`Ausencia ${que} · ${r.persona}`, [{ html: lineas.join("") }], {}, async () => {}));
+}
+function accionesAusencia(x, load) {
+  const decide = x.puede_aprobar || x.puede_visto_bueno;
+  return [
+    x.puede_visto_bueno && ["Visto bueno", () => run(() => post(`/api/ausencias/${x.id}/visto-bueno`), "Visto bueno dado: pasa a dirección").then(load), "primary"],
+    x.puede_aprobar && ["Autorizar", async () => {
+      if (x.aviso_saldo && !confirm(`${x.aviso_saldo}\n\n¿Autorizarla de todas formas?`)) return;
+      const r = await run(() => post(`/api/ausencias/${x.id}/aprobar`)); load(); comunicadoAusencia(r, "autorizada");
+    }, "primary"],
+    decide && ["Desestimar", () => form(`Desestimar · ${x.persona}`, [
+      { html: '<p class="muted">El motivo se comunica por correo al trabajador y a Recepción.</p>' },
+      { k: "nota", t: "Motivo", type: "textarea", req: true, wide: true }], {},
+    async (d) => { const r = await post(`/api/ausencias/${x.id}/denegar`, d); load(); setTimeout(() => comunicadoAusencia(r, "desestimada"), 0); }, "Desestimar")],
+    x.puede_anular && ["Anular", () => form(`Anular · ${x.persona}`, [
+      { html: `<p class="muted">Para una solicitud con un error o que no procede. Queda registrada como anulada${x.propia ? "" : " y se comunica el motivo al trabajador y a Recepción"}.</p>` },
+      { k: "nota", t: x.propia ? "Motivo (opcional)" : "Motivo de la anulación", type: "textarea", req: !x.propia, wide: true }], {},
+    async (d) => { const r = await post(`/api/ausencias/${x.id}/anular`, d); load(); setTimeout(() => comunicadoAusencia(r, "anulada"), 0); }, "Anular"), "danger"],
+  ];
+}
 V.ausencias = async (el) => {
-  const aid = await pickAsset();
-  const [cat, per] = await Promise.all([get("/api/ausencias/catalogos"), get("/api/ausencias/personas", { asset_id: aid })]);
+  // con «Todos los activos» y varios activos: vista global (cuadrante y pendientes de todos); para solicitar se elige activo
+  const global = !S.asset && S.assets.length > 1;
+  const aid = global ? null : await pickAsset();
+  const [cat, per] = await Promise.all([get("/api/ausencias/catalogos"), aid ? get("/api/ausencias/personas", { asset_id: aid }) : Promise.resolve({ personas: [], gestiona: false })]);
   el.innerHTML = `<div class="toolbar"><label>Mes<input type="month" id="m" value="${today().slice(0, 7)}"></label>
-    <select id="e"><option value="vigentes">Pendientes y aprobadas</option><option value="">Todas</option><option value="pendiente">Pendientes</option><option value="aprobada">Aprobadas</option><option value="denegada">Denegadas</option><option value="anulada">Anuladas</option></select>
+    <select id="e"><option value="vigentes">Pendientes y aprobadas</option><option value="">Todas</option><option value="pendiente">Pendientes</option><option value="aprobada">Autorizadas</option><option value="denegada">Desestimadas</option><option value="anulada">Anuladas</option></select>
     <span class="spacer"></span><button class="btn" id="res">Resumen del año</button><button class="btn" id="xl">Excel</button><button class="btn primary" id="new">Solicitar ausencia</button></div>
     <div id="pend"></div><div id="cuad" class="no-encajar"></div><div id="t"></div>`;
   const leyenda = Object.entries(cat.tipos).map(([k, v]) => `<span class="aus-ley ${COLOR_AUS[k]}">${esc(v.split(" (")[0])}</span>`).join("") + '<span class="aus-ley aus-pend">Pendiente</span>';
@@ -4258,7 +4458,15 @@ V.ausencias = async (el) => {
     const ini = `${y}-${String(m).padStart(2, "0")}-01`, fin = `${y}-${String(m).padStart(2, "0")}-${n}`;
     const filas = await get("/api/ausencias", { asset_id: aid, desde: ini, hasta: fin, estado: $("#e", el).value });
     const mias = (await get("/api/ausencias", { asset_id: aid, estado: "vigentes" })).filter((x) => x.puede_aprobar || x.puede_visto_bueno);
-    $("#pend", el).innerHTML = mias.length ? `<div class="aviso-vencidas" style="margin:8px 0"><b>${mias.length} solicitud(es) esperan su decisión:</b> ${mias.map((x) => `${esc(x.persona)} (${fdate(x.desde)}${x.hasta !== x.desde ? ` a ${fdate(x.hasta)}` : ""})`).join(", ")}</div>` : "";
+    // solicitudes que esperan su decisión (de cualquier mes): se resuelven aquí mismo
+    $("#pend", el).innerHTML = mias.length ? `<div class="aviso-vencidas aus-pendientes" style="margin:8px 0"><b>${mias.length} solicitud(es) esperan su decisión</b>
+      <span class="muted peq">· al autorizar, desestimar o anular se avisa por correo al trabajador y a Recepción</span><div id="pendT"></div></div>` : "";
+    if (mias.length) table($("#pendT", el), [
+      { k: "persona", t: "Persona", f: (v, x) => `<b>${esc(v)}</b><div class="muted peq">${esc(x.colectivo_nombre)}${!S.asset ? ` · ${esc(x.activo)}` : ""}</div>${x.aviso_saldo ? `<div class="peq error">⚠ ${esc(x.aviso_saldo)}</div>` : ""}` },
+      { k: "tipo_nombre", t: "Tipo", f: (v, x) => `${esc(v)}${x.motivo ? `<div class="muted peq">${esc(x.motivo)}</div>` : ""}` },
+      { k: "desde", t: "Fechas", f: (v, x) => `${fdate(v)}${x.hasta !== v ? ` a ${fdate(x.hasta)}` : ""}<div class="muted peq">${x.dias_naturales} días · ${x.dias_laborables} lab.</div>` },
+      { k: "estado_nombre", t: "Estado", f: (v) => `<span class="badge b-pendiente">${esc(v)}</span>` },
+    ], mias, (x) => [...accionesAusencia(x, load), ["Ver mes", () => { $("#m", el).value = x.desde.slice(0, 7); load(); }]]);
     // cuadrante del mes: una fila por persona, una columna por día
     const vis = filas.filter((x) => ["pendiente", "visto_bueno", "aprobada"].includes(x.estado));
     const personas = [...new Map(vis.map((x) => [`${x.colectivo}|${x.persona}`, x])).values()].sort((a, b) => a.colectivo_nombre.localeCompare(b.colectivo_nombre) || a.persona.localeCompare(b.persona));
@@ -4267,30 +4475,25 @@ V.ausencias = async (el) => {
     const celda = (p, d) => {
       const f = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
       const x = vis.find((z) => z.persona === p.persona && z.colectivo === p.colectivo && z.desde <= f && z.hasta >= f);
-      return `<td class="${finde(d) ? "aus-finde" : ""} ${x ? `${COLOR_AUS[x.tipo] || "aus-otro"} ${x.estado !== "aprobada" ? "aus-pend" : ""}` : ""}" title="${x ? esc(`${x.tipo_nombre} · ${x.estado_nombre}`) : ""}"></td>`;
+      return `<td class="${finde(d) ? "aus-finde" : ""} ${x ? `${COLOR_AUS[x.tipo] || "aus-otro"} ${x.estado !== "aprobada" ? "aus-pend" : ""}` : ""}" title="${x ? esc(`${x.tipo_nombre} · ${x.estado_nombre}${global ? ` · ${x.activo}` : ""}`) : ""}"></td>`;
     };
     $("#cuad", el).innerHTML = personas.length ? `<div class="table-wrap aus-cuadrante"><table><thead><tr><th>Persona</th>${dias.map((d) => `<th class="${finde(d) ? "aus-finde" : ""}">${d}</th>`).join("")}</tr></thead>
-      <tbody>${personas.map((p) => `<tr><td><b>${esc(p.persona)}</b><div class="muted peq">${esc(p.colectivo_nombre)}</div></td>${dias.map((d) => celda(p, d)).join("")}</tr>`).join("")}</tbody></table></div>
+      <tbody>${personas.map((p) => `<tr><td><b>${esc(p.persona)}</b><div class="muted peq">${esc(p.colectivo_nombre)}${global ? ` · ${esc(p.activo)}` : ""}</div></td>${dias.map((d) => celda(p, d)).join("")}</tr>`).join("")}</tbody></table></div>
       <div class="aus-leyenda">${leyenda}</div>` : `<p class="muted">Nadie tiene ausencias en ${MESES[m - 1]} de ${y}.</p>`;
     table($("#t", el), [
-      { k: "persona", t: "Persona", f: (v, x) => `<b>${esc(v)}</b><div class="muted peq">${esc(x.colectivo_nombre)}</div>` },
+      { k: "persona", t: "Persona", f: (v, x) => `<b>${esc(v)}</b><div class="muted peq">${esc(x.colectivo_nombre)}${global ? ` · ${esc(x.activo)}` : ""}</div>${x.aviso_saldo ? `<div class="peq error">⚠ ${esc(x.aviso_saldo)}</div>` : ""}` },
       { k: "tipo_nombre", t: "Tipo", f: (v, x) => `${esc(v)}${x.motivo ? `<div class="muted peq">${esc(x.motivo)}</div>` : ""}` },
       { k: "desde", t: "Desde", f: fdate }, { k: "hasta", t: "Hasta", f: fdate },
       { k: "dias_naturales", t: "Días", num: true, f: (v, x) => `${v}<div class="muted peq">${x.dias_laborables} lab.</div>` },
       { k: "estado_nombre", t: "Estado", f: (v, x) => `<span class="badge ${x.estado === "aprobada" ? "b-vigente" : ["denegada", "anulada"].includes(x.estado) ? "b-anulado" : "b-pendiente"}">${esc(v)}</span>
         ${x.visto_bueno_nombre ? `<div class="muted peq">V.º B.º ${esc(x.visto_bueno_nombre)}</div>` : ""}${x.resuelto_nombre && x.estado !== "anulada" ? `<div class="muted peq">${esc(x.resuelto_nombre)}</div>` : ""}${x.nota ? `<div class="muted peq">${esc(x.nota)}</div>` : ""}` },
       { k: "aprueba", t: "La aprueba" },
-    ], filas, (x) => [
-      x.puede_visto_bueno && ["Visto bueno", () => run(() => post(`/api/ausencias/${x.id}/visto-bueno`), "Visto bueno dado: pasa a dirección").then(load), "primary"],
-      x.puede_aprobar && ["Aprobar", () => run(() => post(`/api/ausencias/${x.id}/aprobar`), "Ausencia aprobada").then(load), "primary"],
-      (x.puede_aprobar || x.puede_visto_bueno) && ["Denegar", () => form(`Denegar · ${x.persona}`, [{ k: "nota", t: "Motivo", type: "textarea", req: true, wide: true }], {},
-        async (d) => { await post(`/api/ausencias/${x.id}/denegar`, d); toast("Ausencia denegada"); load(); }, "Denegar")],
-      x.puede_anular && ["Anular", () => form(`Anular · ${x.persona}`, [{ k: "nota", t: "Motivo (opcional)", type: "textarea", wide: true }], {},
-        async (d) => { await post(`/api/ausencias/${x.id}/anular`, d); toast("Ausencia anulada"); load(); }, "Anular"), "danger"],
-    ]);
+    ], filas, (x) => accionesAusencia(x, load));
   };
-  $("#new", el).onclick = () => {
-    const ops = per.personas.map((p) => [`${p.clave}:${p.id}`, `${p.nombre} · ${p.colectivo_nombre}`]);
+  $("#new", el).onclick = async () => {
+    const aidN = aid || await pickAsset();
+    const perN = aid ? per : await get("/api/ausencias/personas", { asset_id: aidN });
+    const ops = perN.personas.map((p) => [`${p.clave}:${p.id}`, `${p.nombre} · ${p.colectivo_nombre}`]);
     const f = form("Solicitar ausencia", [
       { k: "persona", t: "Persona", type: "select", req: true, options: ops, wide: true },
       { html: '<p class="muted" id="aprueba"></p>' },
@@ -4300,26 +4503,26 @@ V.ausencias = async (el) => {
       { k: "aprobar", t: "Aprobarla ya (si le corresponde a usted aprobarla)", type: "checkbox", wide: true },
     ], {}, async (d) => {
       const [clave, id] = d.persona.split(":");
-      const r = await post("/api/ausencias", clean({ asset_id: aid, tipo: d.tipo, desde: d.desde, hasta: d.hasta, motivo: d.motivo, aprobar: d.aprobar,
+      const r = await post("/api/ausencias", clean({ asset_id: aidN, tipo: d.tipo, desde: d.desde, hasta: d.hasta, motivo: d.motivo, aprobar: d.aprobar,
         ...(clave === "s" ? { staff_id: Number(id) } : Number(id) !== S.me.id ? { user_id: Number(id) } : {}) }));
-      toast(`${r.estado === "aprobada" ? "Ausencia registrada y aprobada" : `Solicitud enviada · la aprueba: ${r.aprueba}`}${r.coinciden.length ? ` · coincide con ${r.coinciden.join(", ")}` : ""}`);
+      toast(`${r.estado === "aprobada" ? "Ausencia registrada y aprobada" : `Solicitud enviada · la aprueba: ${r.aprueba}`}${r.coinciden.length ? ` · coincide con ${r.coinciden.join(", ")}` : ""}${r.aviso_saldo ? ` · ⚠ ${r.aviso_saldo}` : ""}`, !!r.aviso_saldo);
       load();
     }, "Guardar");
-    const info = () => { const p = per.personas.find((q) => `${q.clave}:${q.id}` === f.elements.persona.value); $("#aprueba").textContent = p ? `La aprueba: ${p.aprueba}.` : ""; };
+    const info = () => { const p = perN.personas.find((q) => `${q.clave}:${q.id}` === f.elements.persona.value); $("#aprueba").textContent = p ? `La aprueba: ${p.aprueba}.` : ""; };
     f.elements.persona.onchange = info; info();
-    f.elements.aprobar.closest("label").style.display = per.gestiona || can("personal.autorizar_mto") ? "" : "none";
+    f.elements.aprobar.closest("label").style.display = perN.gestiona || can("personal.autorizar_mto") ? "" : "none";
     f.elements.desde.onchange = () => { if (f.elements.hasta.value < f.elements.desde.value) f.elements.hasta.value = f.elements.desde.value; };
   };
   $("#res", el).onclick = async () => {
     const anio = Number($("#m", el).value.slice(0, 4));
     const r = await run(() => get("/api/ausencias/resumen", { asset_id: aid, anio }));
     const tipos = Object.entries(r.tipos);
-    cerrarSolo(form(`Ausencias aprobadas ${anio} · ${assetName(aid)}`, [{ html: r.personas.length ? `<div class="table-wrap"><table><thead><tr><th>Persona</th>${tipos.map(([, v]) => `<th class="num">${esc(v.split(" (")[0])}</th>`).join("")}<th class="num">Total</th><th class="num">Laborables</th></tr></thead>
+    cerrarSolo(form(`Ausencias aprobadas ${anio} · ${aid ? assetName(aid) : "todos los activos"}`, [{ html: r.personas.length ? `<div class="table-wrap"><table><thead><tr><th>Persona</th>${tipos.map(([, v]) => `<th class="num">${esc(v.split(" (")[0])}</th>`).join("")}<th class="num">Total</th><th class="num">Laborables</th></tr></thead>
       <tbody>${r.personas.map((p) => `<tr><td><b>${esc(p.persona)}</b><div class="muted peq">${esc(p.colectivo)}</div></td>${tipos.map(([k]) => `<td class="num">${p.tipos[k]?.naturales || ""}</td>`).join("")}<td class="num"><b>${p.naturales}</b></td><td class="num">${p.laborables}</td></tr>`).join("")}</tbody></table></div>
       <p class="muted">Días naturales por tipo. Laborables = de lunes a viernes (sin descontar festivos).</p>` : "<p>No hay ausencias aprobadas este año.</p>", wide: true }], {}, async () => {}));
     $("#modal").classList.add("ancho");
   };
-  $("#xl", el).onclick = () => run(() => download("GET", "/api/ausencias/excel?" + new URLSearchParams({ asset_id: aid, anio: $("#m", el).value.slice(0, 4) })));
+  $("#xl", el).onclick = () => run(() => download("GET", "/api/ausencias/excel?" + new URLSearchParams({ ...(aid ? { asset_id: aid } : {}), anio: $("#m", el).value.slice(0, 4) })));
   $("#m", el).onchange = load; $("#e", el).onchange = load;
   load();
 };
@@ -4528,19 +4731,20 @@ V.cobrosext = async (el) => {
 // ------------------------------------------------------------------ navegación
 const MENU = [
   ["General", [["panel", "Panel de control", null], ["agenda", "Agenda", null], ["manual", "Manual de uso", null], ["activos", "Activos", "activos.ver"], ["unidades", "Unidades", "activos.ver"]]],
+  ["Personal", [["ausencias", "Vacaciones y ausencias", "activos.ver"], ["personal", "Fichas del personal", "personal"], ["jornada", "Registro de jornada", "gestpersonal"], ["mijornada", "Mi jornada (fichar)", null]]],
   ["Apartamentos turísticos", [["plano", "Plano de apartamentos", "activos.ver"], ["hoy", "Llegadas / salidas", "reservas.ver"], ["limpieza", "Parte de limpieza", "limpieza.editar"], ["reservas", "Reservas", "reservas.ver"], ["planning", "Planning", "reservas.ver"], ["huespedes", "Huéspedes", "reservas.ver"], ["ses", "Parte de viajeros (SES)", "reservas.ver"], ["garajes", "Alquiler de garajes", "reservas.ver"]]],
   ["Alquiler residencial", [["contratos", "Contratos", "alquiler.ver"], ["recibos", "Recibos y cobros", "alquiler.ver"], ["inquilinos", "Inquilinos", "alquiler.ver"], ["cobrosext", "Cobros de otro programa", "alquiler.ver"]]],
   ["Facturación e informes", [["facturas", "Facturas emitidas", "facturas.ver"], ["servicios", "Servicios", "activos.ver"], ["informes", "Informes Excel", "informes"], ["presidencia", "Informe a presidencia", "facturas.ver"]]],
   ["Documentos y gastos", [["docrecibidos", "Documentos recibidos", "documentos.ver"], ["gastos", "Cuenta de gastos", "documentos.ver"]]],
   ["Mantenimiento", [["estado", "Partes de estado", "partesestado"], ["ordenes", "Órdenes de trabajo", "mantenimiento.ver"], ["preventivo", "Plan preventivo", "mantenimiento.ver"], ["partestrabajo", "Parte de trabajo diario", "partes"], ["pedidos", "Pedidos de material", "pedidos"], ["productos", "Catálogo de productos", "pedidos"], ["proveedores", "Proveedores", "proveedores"]]],
-  ["Personal", [["ausencias", "Vacaciones y ausencias", "activos.ver"], ["personal", "Fichas del personal", "personal"]]],
   ["Administración", [["legal", "Documentación legal", "legal.ver"], ["usuarios", "Usuarios", "admin"], ["roles", "Roles y permisos", "admin"], ["sociedades", "Sociedades", "admin"], ["avisos", "Avisos por correo", "admin"], ["auditoria", "Auditoría", "auditoria.ver"]]],
   ["", [["perfil", "Mi perfil", null]]],
 ];
 const allowed = (p) => !p || (p === "admin" ? S.me.admin_grupo : p === "informes" ? ["reservas.ver", "alquiler.ver", "finanzas.ver", "mantenimiento.ver"].some(can)
   : p === "personal" ? ["mantenimiento.ver", "limpieza.editar", "limpieza.confirmar_ot"].some(can)
   : p === "proveedores" ? verProveedores() : p === "pedidos" ? verPedidos() : p === "partes" ? verPartes()
-  : p === "partesestado" ? canParteEstado() || can("mantenimiento.abrir") : can(p));
+  : p === "partesestado" ? canParteEstado() || can("mantenimiento.abrir")
+  : p === "gestpersonal" ? can("personal.autorizar") || can("partes.validar") : can(p));
 const TITLES = Object.fromEntries(MENU.flatMap(([, items]) => items.map(([id, t]) => [id, t])));
 const PERMISO_VISTA = Object.fromEntries(MENU.flatMap(([, items]) => items.map(([id, , p]) => [id, p])));
 const puedeIr = (vista) => vista in PERMISO_VISTA && allowed(PERMISO_VISTA[vista]);  // pantalla del menú visible

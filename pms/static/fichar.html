@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="apple-touch-icon" href="/static/marca/favicon.png">
+<title>Registro de jornada</title>
+<style>
+  :root { --ink: #18181b; --muted: #6f6a61; --line: #e8e3d8; --bg: #f6f4ef; --oro-claro: #e6cf95; --negro: #0e0e10; --ok: #2e7d4f; --bad: #b3261e; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.4 "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif; }
+  header { background: var(--negro); color: #fff; padding: 14px 16px; }
+  header small { color: var(--oro-claro); letter-spacing: .08em; text-transform: uppercase; font-size: 11px; }
+  header h1 { margin: 2px 0 0; font-size: 20px; }
+  main { padding: 16px; max-width: 480px; margin: 0 auto; text-align: center; }
+  .reloj { font-size: 44px; font-weight: 700; margin: 10px 0 4px; font-variant-numeric: tabular-nums; }
+  .estado { font-size: 17px; margin-bottom: 18px; }
+  .dentro { color: var(--ok); font-weight: 700; } .fuera { color: var(--muted); font-weight: 700; }
+  button { width: 100%; min-height: 84px; border: 0; border-radius: 18px; font: inherit; font-size: 24px; font-weight: 700; color: #fff; cursor: pointer; }
+  button.entrar { background: var(--ok); } button.salir { background: var(--bad); }
+  button:disabled { opacity: .5; }
+  section { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin-top: 18px; text-align: left; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; } td, th { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: left; }
+  .muted { color: var(--muted); font-size: 13px; } .error { color: var(--bad); font-weight: 600; }
+</style>
+</head>
+<body>
+<header><small>Registro de jornada</small><h1 id="nom">Cargando…</h1></header>
+<main id="app"><p class="muted">Cargando…</p></main>
+<script>
+"use strict";
+const pid = location.pathname.split("/").filter(Boolean).pop();
+const k = new URLSearchParams(location.search).get("k") || "";
+const url = `/api/publico/fichaje/${pid}?k=${encodeURIComponent(k)}`;
+const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const hora = (iso) => (iso ? new Date(iso).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "—");
+let gps = {};
+if (navigator.geolocation) navigator.geolocation.getCurrentPosition((p) => { gps = { lat: p.coords.latitude, lon: p.coords.longitude }; }, () => {}, { timeout: 8000, maximumAge: 120000 });
+function pinta(e, msg = "") {
+  document.getElementById("nom").textContent = e.nombre;
+  document.getElementById("app").innerHTML = `
+    <div class="reloj" id="rel"></div>
+    <div class="estado">${e.dentro ? `<span class="dentro">● Dentro</span> desde las ${hora(e.desde)}` : '<span class="fuera">○ Fuera</span>'}</div>
+    <button id="b" class="${e.dentro ? "salir" : "entrar"}">${e.dentro ? "Fichar SALIDA" : "Fichar ENTRADA"}</button>
+    <p class="${msg.startsWith("✔") ? "dentro" : "error"}" id="msg">${esc(msg)}</p>
+    <section><b>Hoy</b><table>${e.hoy.length ? e.hoy.map((t) => `<tr><td>Entrada ${hora(t.entrada)}</td><td>Salida ${hora(t.salida)}</td><td>${t.horas.toFixed(2).replace(".", ",")} h</td></tr>`).join("") : '<tr><td class="muted">Sin fichajes hoy</td></tr>'}</table>
+      <p class="muted">Este mes: <b>${e.horas_mes.toFixed(2).replace(".", ",")} h</b>${e.jornada_semanal ? ` · contrato ${e.jornada_semanal} h/semana` : ""}</p></section>
+    <p class="muted">Se registra la hora del servidor${navigator.geolocation ? " y, si lo permite, la ubicación" : ""}. Si se equivoca, avise a Recepción 1 para corregirlo.<br>Guarde esta página en la pantalla de inicio y no comparta el enlace.</p>`;
+  const tic = () => { const r = document.getElementById("rel"); if (r) r.textContent = new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", second: "2-digit" }); };
+  tic(); clearInterval(window._t); window._t = setInterval(tic, 1000);
+  document.getElementById("b").onclick = async () => {
+    const b = document.getElementById("b"); b.disabled = true;
+    try {
+      const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(gps) });
+      const j = await r.json().catch(() => null);
+      if (!r.ok) throw new Error(j?.detail || `Error ${r.status}`);
+      pinta(j, j.dentro ? `✔ Entrada registrada a las ${hora(j.fichaje.entrada)}` : `✔ Salida registrada a las ${hora(j.fichaje.salida)}`);
+    } catch (err) { document.getElementById("msg").textContent = err.message; b.disabled = false; }
+  };
+}
+fetch(url).then(async (r) => { const j = await r.json().catch(() => null); if (!r.ok) throw new Error(j?.detail || "Enlace no válido"); pinta(j); })
+  .catch((err) => { document.getElementById("nom").textContent = "Enlace no válido"; document.getElementById("app").innerHTML = `<p class="error">${esc(err.message)}</p>`; });
+</script>
+</body>
+</html>

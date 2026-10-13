@@ -11,12 +11,12 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from .. import ausencias as au
-from .. import avisos
+from .. import avisos, empleados
 from ..database import get_db
 from ..models import (COLECTIVOS_AUSENCIA, ESTADOS_AUSENCIA, TIPOS_AUSENCIA, Absence, Asset, EmailLog, StaffMember,
                       User)
 from ..security import Scope, audit, get_scope
-from ..utils import bad_request, get_or_404
+from ..utils import bad_request, get_or_404, scoped
 
 router = APIRouter(prefix="/api/ausencias", tags=["ausencias"])
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -56,6 +56,10 @@ def _out(db: Session, scope: Scope, x: Absence, nombres: dict[int, str]) -> dict
              puede_anular=au.puede_anular(db, scope, x))
     if not detalle:
         d.update(tipo="ausencia", motivo=None)
+    d["activo"] = db.get(Asset, x.asset_id).nombre
+    # vacaciones: saldo de la persona a la vista de quien decide (aviso si lo supera)
+    if x.tipo == "vacaciones" and x.estado in ("pendiente", "visto_bueno") and (d["puede_aprobar"] or d["puede_visto_bueno"]):
+        d["aviso_saldo"] = empleados.aviso_saldo(db, x)
     return d
 
 
@@ -68,22 +72,30 @@ def _uno(db: Session, scope: Scope, x: Absence) -> dict:
     return _out(db, scope, x, _nombres(db, [x]))
 
 
-def _avisar(db: Session, usuarios: list[User], asunto: str, texto: str, excluir: int | None = None) -> None:
-    """Aviso por correo (si está configurado); un fallo no impide guardar la solicitud."""
+def _avisar(db: Session, usuarios: list, asunto: str, texto: str, excluir: int | None = None) -> list[str]:
+    """Aviso por correo (si está configurado); un fallo no impide guardar la solicitud. `usuarios`: User o correos
+    sueltos (personal sin usuario del PMS). Devuelve a quién se ha enviado."""
     if not avisos.configurado():
-        return
-    for u in {u.id: u for u in usuarios}.values():
-        if u.id == excluir or not u.email:
-            continue
+        return []
+    destinos: dict[str, int | None] = {}
+    for u in usuarios:
+        email, uid = (u, None) if isinstance(u, str) else (u.email, u.id)
+        if email and (uid is None or uid != excluir):
+            destinos.setdefault(email.strip().lower(), uid)
+    enviados = []
+    for email, uid in destinos.items():
         ok, error = True, None
         try:
-            avisos.enviar(u.email, asunto, texto, avisos._html(asunto, f"<p>{escape(texto)}</p>"))
+            avisos.enviar(email, asunto, texto, avisos._html(asunto, f"<p>{escape(texto)}</p>"))
         except Exception as e:  # noqa: BLE001
             ok, error = False, str(e)[:300]
         # queda en Administración → Avisos por correo (para comprobar a quién llegó)
-        db.add(EmailLog(clave="ausencia", tipo="ausencia", user_id=u.id, destinatario=u.email, asunto=asunto[:200],
+        db.add(EmailLog(clave="ausencia", tipo="ausencia", user_id=uid, destinatario=email, asunto=asunto[:200],
                         ok=ok, error=error))
+        if ok:
+            enviados.append(email)
     db.commit()
+    return enviados
 
 
 def _texto(x: Absence, a: Asset, tipo_visible: bool = True) -> str:
@@ -155,10 +167,17 @@ def people(asset_id: int, scope: Scope = Depends(get_scope), db: Session = Depen
 
 
 @router.get("")
-def list_absences(asset_id: int, desde: date | None = None, hasta: date | None = None, estado: str | None = None,
-                  scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    _activo(db, scope, asset_id)
-    stmt = select(Absence).where(Absence.asset_id == asset_id)
+def list_absences(asset_id: int | None = None, desde: date | None = None, hasta: date | None = None,
+                  estado: str | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """De un activo o, sin activo, de todos los que ve el usuario (vista global de la dirección)."""
+    if asset_id:
+        _activo(db, scope, asset_id)
+        stmt = select(Absence).where(Absence.asset_id == asset_id)
+    else:
+        ids = scope.asset_ids("activos.ver")
+        if ids is not None and not ids:
+            raise HTTPException(403, "Sin activos")
+        stmt = scoped(select(Absence), Absence.asset_id, ids)
     if desde:
         stmt = stmt.where(Absence.hasta >= desde)
     if hasta:
@@ -216,6 +235,7 @@ def create_absence(data: AbsenceIn, scope: Scope = Depends(get_scope), db: Sessi
     db.commit()
     _avisos_nueva(db, x, a, scope.user.id)
     out = _uno(db, scope, x)
+    out["aviso_saldo"] = empleados.aviso_saldo(db, x)
     # coincidencias con otras personas del mismo colectivo (para organizar el servicio)
     out["coinciden"] = [o.persona for o in db.scalars(select(Absence).where(
         Absence.asset_id == a.id, Absence.colectivo == colectivo, Absence.id != x.id,
@@ -223,10 +243,34 @@ def create_absence(data: AbsenceIn, scope: Scope = Depends(get_scope), db: Sessi
     return out
 
 
-def _resolver_aviso(db: Session, x: Absence, a: Asset, que: str) -> None:
+def _trabajador(db: Session, x: Absence) -> tuple[str | None, str | None]:
+    """Correo y móvil de la persona de la ausencia (su usuario del PMS o su ficha del personal)."""
     u = db.get(User, x.user_id) if x.user_id else None
-    if u is not None:
-        _avisar(db, [u], f"Su ausencia: {que}", _texto(x, a) + f" Estado: {que}." + (f" {x.nota}" if x.nota else ""))
+    p = empleados.ficha_de_ausencia(db, x)
+    if u is None and p is not None and p.user_id:
+        u = db.get(User, p.user_id)
+    return (u.email if u else None) or (p.email if p else None), p.telefono if p else None
+
+
+def _comunicar(db: Session, scope: Scope, x: Absence, a: Asset, que: str) -> dict:
+    """Comunica la resolución al trabajador y a Recepción del activo. Si el trabajador no tiene correo pero sí móvil,
+    devuelve el WhatsApp con el mensaje escrito."""
+    from urllib.parse import quote
+
+    from ..firma_contrato import movil_whatsapp
+    rango = f"el {x.desde:%d/%m/%Y}" if x.desde == x.hasta else f"del {x.desde:%d/%m/%Y} al {x.hasta:%d/%m/%Y}"
+    tipo = TIPOS_AUSENCIA.get(x.tipo, x.tipo).split(" (")[0].lower() if x.tipo != "baja_medica" else "ausencia"
+    motivo = f" Motivo: {x.nota}" if x.nota else ""
+    quien = scope.user.nombre
+    email, movil = _trabajador(db, x)
+    texto_t = (f"Hola {x.persona.split()[0]}, su solicitud de {tipo} {rango} ha sido {que.upper()} por {quien}."
+               f"{motivo} Puede consultarla en INVERPMS → Personal → Vacaciones y ausencias.")
+    enviados = _avisar(db, [email] if email else [], f"Su solicitud de {tipo}: {que}", texto_t)
+    texto_r = f"{_texto(x, a)} Solicitud {que} por {quien}.{motivo}"
+    enviados += _avisar(db, au.recepcion(db, a), f"Ausencia {que}: {x.persona}", texto_r, scope.user.id)
+    wa = movil_whatsapp(movil) if movil and not email else None
+    return {"enviados": enviados, "trabajador_correo": bool(email), "correo_configurado": avisos.configurado(),
+            "whatsapp": f"https://wa.me/{wa}?text={quote(texto_t)}" if wa else None}
 
 
 @router.post("/{xid}/visto-bueno")
@@ -255,8 +299,7 @@ def approve(xid: int, scope: Scope = Depends(get_scope), db: Session = Depends(g
     x.estado, x.resuelto_por, x.resuelto_en = "aprobada", scope.user.id, datetime.now()
     audit(db, scope.user, "aprobar", "ausencia", x.id, {"persona": x.persona})
     db.commit()
-    _resolver_aviso(db, x, a, "aprobada")
-    return _uno(db, scope, x)
+    return {**_uno(db, scope, x), "comunicado": _comunicar(db, scope, x, a, "autorizada")}
 
 
 @router.post("/{xid}/denegar")
@@ -267,31 +310,41 @@ def deny(xid: int, data: NotaIn, scope: Scope = Depends(get_scope), db: Session 
     if not (au.puede_aprobar(db, scope, x) or au.puede_visto_bueno(db, scope, x)):
         raise HTTPException(403, f"Esta ausencia la aprueba: {au.quien_aprueba(x.colectivo)}")
     if not (data.nota or "").strip():
-        bad_request("Indique el motivo")
+        bad_request("Indique el motivo por el que se desestima")
     x.estado, x.resuelto_por, x.resuelto_en, x.nota = "denegada", scope.user.id, datetime.now(), data.nota.strip()
     audit(db, scope.user, "denegar", "ausencia", x.id, {"persona": x.persona, "nota": x.nota})
     db.commit()
-    _resolver_aviso(db, x, a, "denegada")
-    return _uno(db, scope, x)
+    return {**_uno(db, scope, x), "comunicado": _comunicar(db, scope, x, a, "desestimada")}
 
 
 @router.post("/{xid}/anular")
 def cancel(xid: int, data: NotaIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Anula (borra) una solicitud con un error o que no procede. Queda registrada como anulada, con el motivo, y se
+    comunica al trabajador y a Recepción. La propia persona puede retirar la suya sin motivo."""
     x = get_or_404(db, Absence, xid)
-    _activo(db, scope, x.asset_id)
+    a = _activo(db, scope, x.asset_id)
     if not au.puede_anular(db, scope, x):
         raise HTTPException(403, "No puede anular esta ausencia")
+    propia = x.user_id == scope.user.id
+    if not propia and not (data.nota or "").strip():
+        bad_request("Indique al trabajador el motivo por el que se anula")
     x.estado, x.nota = "anulada", (data.nota or "").strip() or None
+    x.resuelto_por, x.resuelto_en = scope.user.id, datetime.now()
     audit(db, scope.user, "anular", "ausencia", x.id, {"persona": x.persona, "nota": x.nota})
     db.commit()
-    return _uno(db, scope, x)
+    out = _uno(db, scope, x)
+    if not propia:
+        out["comunicado"] = _comunicar(db, scope, x, a, "anulada")
+    return out
 
 
 # --------------------------------------------------------------------------- resumen anual y Excel
-def _resumen(db: Session, scope: Scope, asset_id: int, anio: int) -> list[dict]:
+def _resumen(db: Session, scope: Scope, asset_id: int | None, anio: int) -> list[dict]:
     ini, fin = date(anio, 1, 1), date(anio, 12, 31)
-    filas = db.scalars(select(Absence).where(Absence.asset_id == asset_id, Absence.estado == "aprobada",
-                                             Absence.desde <= fin, Absence.hasta >= ini))
+    stmt = select(Absence).where(Absence.estado == "aprobada", Absence.desde <= fin, Absence.hasta >= ini)
+    stmt = stmt.where(Absence.asset_id == asset_id) if asset_id else scoped(stmt, Absence.asset_id,
+                                                                            scope.asset_ids("activos.ver"))
+    filas = db.scalars(stmt)
     por: dict[tuple, dict] = {}
     for x in filas:
         if not au.ve_detalle(db, scope, x) and x.tipo == "baja_medica":
@@ -311,27 +364,30 @@ def _resumen(db: Session, scope: Scope, asset_id: int, anio: int) -> list[dict]:
 
 
 @router.get("/resumen")
-def summary(asset_id: int, anio: int | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    _activo(db, scope, asset_id)
+def summary(asset_id: int | None = None, anio: int | None = None, scope: Scope = Depends(get_scope),
+            db: Session = Depends(get_db)):
+    if asset_id:
+        _activo(db, scope, asset_id)
     anio = anio or date.today().year
     return {"anio": anio, "tipos": TIPOS_AUSENCIA, "personas": _resumen(db, scope, asset_id, anio)}
 
 
 @router.get("/excel")
-def excel(asset_id: int, anio: int | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+def excel(asset_id: int | None = None, anio: int | None = None, scope: Scope = Depends(get_scope),
+          db: Session = Depends(get_db)):
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
-    a = _activo(db, scope, asset_id)
+    a = _activo(db, scope, asset_id) if asset_id else None
     anio = anio or date.today().year
     negrita, fondo = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="1A1A1C")
     wb = Workbook()
     ws = wb.active
     ws.title = "Ausencias"
     filas = list_absences(asset_id, date(anio, 1, 1), date(anio, 12, 31), None, scope, db)
-    ws.append(["Persona", "Colectivo", "Tipo", "Desde", "Hasta", "Días naturales", "Días laborables", "Estado",
-               "Aprueba", "Visto bueno R1", "Resuelta por", "Motivo / nota"])
+    ws.append(["Activo", "Persona", "Colectivo", "Tipo", "Desde", "Hasta", "Días naturales", "Días laborables",
+               "Estado", "Aprueba", "Visto bueno R1", "Resuelta por", "Motivo / nota"])
     for x in filas:
-        ws.append([x["persona"], x["colectivo_nombre"], x["tipo_nombre"], date.fromisoformat(x["desde"]),
+        ws.append([x["activo"], x["persona"], x["colectivo_nombre"], x["tipo_nombre"], date.fromisoformat(x["desde"]),
                    date.fromisoformat(x["hasta"]), x["dias_naturales"], x["dias_laborables"], x["estado_nombre"],
                    x["aprueba"], x["visto_bueno_nombre"] or "", x["resuelto_nombre"] or "",
                    " · ".join(t for t in (x["motivo"], x["nota"]) if t)])
@@ -346,9 +402,9 @@ def excel(asset_id: int, anio: int | None = None, scope: Scope = Depends(get_sco
         for col in hoja.columns:
             hoja.column_dimensions[col[0].column_letter].width = max(12, min(40, max(len(str(c.value or "")) for c in col) + 2))
     for fila in ws.iter_rows(min_row=2):
-        for c in fila[3:5]:
+        for c in fila[4:6]:
             c.number_format = "DD/MM/YYYY"
     buf = io.BytesIO()
     wb.save(buf)
     return Response(buf.getvalue(), media_type=XLSX, headers={
-        "Content-Disposition": f'attachment; filename="Ausencias_{a.codigo}_{anio}.xlsx"'})
+        "Content-Disposition": f'attachment; filename="Ausencias_{a.codigo if a else "todos"}_{anio}.xlsx"'})
