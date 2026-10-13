@@ -1335,3 +1335,18 @@ class VacationRevision(Base):
     cambios: Mapped[list] = mapped_column(JSON, default=list)
     enviados: Mapped[int] = mapped_column(Integer, default=0)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+
+
+class VacationChange(Base):
+    """Cambio en las vacaciones pendiente de comunicar: se agrupan y se envían juntos en la siguiente revisión del
+    calendario (cada pocas horas, o al momento con «Enviar calendario ahora»)."""
+    __tablename__ = "vacaciones_cambios"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    anio: Mapped[int] = mapped_column(Integer, index=True)
+    texto: Mapped[str] = mapped_column(String(300))
+    staff_id: Mapped[int | None] = mapped_column(Integer)
+    desde: Mapped[date | None] = mapped_column(Date)
+    hasta: Mapped[date | None] = mapped_column(Date)
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    revision_id: Mapped[int | None] = mapped_column(ForeignKey("vacaciones_revisiones.id"), index=True)

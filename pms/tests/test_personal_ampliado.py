@@ -197,6 +197,8 @@ def test_vacaciones_registro_calendario_y_recordatorio(client, admin, ids):
     from test_colaborador import _user as _colab
     prov = client.post("/api/proveedores", headers=admin, json={"nombre": "Mantenimiento Colab Vac SL"}).json()
     _colab(client, admin, ids, "colab.vac@inversiete.com", "Colaborador Vacaciones", "Colaborador", supplier_id=prov["id"])
+    with SessionLocal() as db:  # la cola empieza vacía (cambios de otras pruebas)
+        informe_vacaciones.enviar_pendientes(db, forzar=True)
     avisos.BANDEJA.clear()
     r = client.post(f"/api/personal/{f['id']}/vacaciones", headers=admin, json={"periodos": periodos})
     assert r.status_code == 201, r.text
@@ -206,24 +208,42 @@ def test_vacaciones_registro_calendario_y_recordatorio(client, admin, ids):
         assert s["pendientes_solicitar"] == s["corresponden"] - s["disfrutadas"] - 5
     # solapado: no
     assert client.post(f"/api/personal/{f['id']}/vacaciones", headers=admin, json={"periodos": [periodos[-1]]}).status_code == 400
-    # el calendario se envía a todos los usuarios activos, colaboradores incluidos
+    # los cambios se agrupan: no sale ningún correo hasta la siguiente revisión
+    assert not [x for x in avisos.BANDEJA if x["asunto"].startswith("Calendario de vacaciones")]
+    cola = client.get("/api/ausencias/calendario-vacaciones/pendientes", headers=admin).json()
+    assert len(cola["cambios"]) == len(periodos) and cola["puede_enviar"]
+    assert client.post("/api/ausencias/calendario-vacaciones/enviar", headers=tec).status_code == 403
+    r = client.post("/api/ausencias/calendario-vacaciones/enviar", headers=admin).json()
+    assert r["cambios"] == len(periodos)
+    assert client.post("/api/ausencias/calendario-vacaciones/enviar", headers=admin).status_code == 400  # ya no queda nada
+    # una sola revisión, a todos los usuarios activos, colaboradores incluidos
     with SessionLocal() as db:
         todos = {u.email for u in informe_vacaciones.destinatarios(db)}
     assert "colab.vac@inversiete.com" in todos
     m = [x for x in avisos.BANDEJA if x["asunto"].startswith("Calendario de vacaciones")]
+    assert len(m) == len(todos)
     assert {x["para"] for x in m} == todos and m[0]["adjuntos"][0][0].endswith(".pdf")
     assert "Técnico Vacaciones: registradas las vacaciones" in m[0]["texto"]
     pdf = client.get("/api/ausencias/calendario-vacaciones.pdf", headers=tec)
     assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")
     v = client.get(f"/api/personal/{f['id']}/vacaciones", headers=admin).json()
     assert v["registrar"] and len(v["periodos"]) == len(periodos) and v["periodos"][-1]["registrada_por"]
-    # su propia solicitud también genera una revisión
+    # su propia solicitud se anota y sale en la revisión agrupada, pasado el intervalo y en horario de 8 a 20
     avisos.BANDEJA.clear()
     lejos = hoy + timedelta(days=40)
     x = client.post("/api/ausencias", headers=tec, json={"asset_id": sae, "tipo": "vacaciones", "desde": lejos.isoformat(),
                                                          "hasta": (lejos + timedelta(days=1)).isoformat()})
     assert x.status_code == 201, x.text
-    assert any("solicita vacaciones" in z["texto"] for z in avisos.BANDEJA if z["asunto"].startswith("Calendario"))
+    client.post(f"/api/ausencias/{x.json()['id']}/anular", headers=tec, json={})
+    from datetime import datetime as dt
+    with SessionLocal() as db:
+        assert len(informe_vacaciones.pendientes(db)) == 2
+        manana = dt.combine(hoy + timedelta(days=1), dt.min.time())
+        assert informe_vacaciones.enviar_pendientes(db, manana.replace(hour=3)) == 0  # de madrugada no
+        assert informe_vacaciones.enviar_pendientes(db, manana.replace(hour=10)) >= 1
+        assert informe_vacaciones.pendientes(db) == []
+    cal = [z for z in avisos.BANDEJA if z["asunto"].startswith("Calendario")]
+    assert len(cal) == len(todos) and "solicita vacaciones" in cal[0]["texto"] and "anuladas" in cal[0]["texto"]
 
     # recordatorio semanal (lunes), una vez por semana y persona
     lunes = hoy - timedelta(days=hoy.weekday())

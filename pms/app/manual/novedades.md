@@ -1,5 +1,9 @@
 # Novedades
 
+## 2026-10-14 · Versión 1.42 · Calendario de vacaciones agrupado
+- **Todos**: el calendario de vacaciones ya no llega con cada cambio. Los cambios se agrupan y se envían **juntos en un solo correo cada 3 horas**, solo entre las 8:00 y las 20:00.
+- **Dirección y Director Técnico**: en *Vacaciones y ausencias* se ven los cambios pendientes de enviar, con el botón **Enviar calendario ahora**.
+
 ## 2026-10-14 · Versión 1.41 · Personal: nuevas reglas y empezar de cero
 - **Recepción 1 de cada activo**: ahora se asigna en *Activos → Editar → Recepción 1*. Antes se deducía del nombre del usuario y podía tomar a Recepción 1 por Recepción 2.
 - **Fichas del personal**:

@@ -3,11 +3,11 @@ color por persona; bloque sólido = disfrutadas, claro = solicitadas, rayado = p
 Madrid, el día de hoy y el tramo modificado en esta revisión) y una hoja de resumen de saldos con los cambios, el
 criterio de cómputo, los días pendientes de solicitar y los solapes.
 
-Cada cambio en una solicitud de vacaciones genera una revisión y se envía por correo a todos los usuarios del PMS
-(colaboradores incluidos). Cada lunes se recuerda a quien tiene días sin solicitar que lo haga antes de fin de año."""
+Los cambios en las vacaciones se anotan y se agrupan: cada pocas horas (o al momento, con «Enviar calendario
+ahora») se genera una revisión con todos ellos y se envía por correo a todos los usuarios del PMS (colaboradores
+incluidos). Cada lunes se recuerda a quien tiene días sin solicitar que lo haga antes de fin de año."""
 import io
 import logging
-import threading
 from datetime import date, datetime, timedelta
 from html import escape
 
@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from . import avisos, empleados
 from .calendario import festivos
 from .config import settings
-from .models import Absence, EmailLog, StaffMember, User, VacationRevision
+from .models import Absence, EmailLog, StaffMember, User, VacationChange, VacationRevision
 
 log = logging.getLogger("pms.vacaciones")
 MESES = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE",
@@ -378,20 +378,44 @@ def enviar(db: Session, anio: int, cambios: list[str], modificados: list[tuple],
 
 
 def notificar(anio: int, cambios: list[str], modificados: list[tuple], autor_id: int | None = None) -> None:
-    """Genera y envía la revisión. En segundo plano (son muchos correos), salvo en pruebas."""
+    """Anota los cambios para la próxima revisión del calendario (se agrupan y se envían juntos cada pocas horas)."""
     from .database import SessionLocal
+    with SessionLocal() as db:
+        tramos = list(modificados) + [None] * (len(cambios) - len(modificados))
+        for texto, tramo in zip(cambios, tramos):
+            sid, a, b = tramo if tramo else (None, None, None)
+            db.add(VacationChange(anio=anio, texto=texto[:300], staff_id=sid, desde=a, hasta=b, user_id=autor_id))
+        db.commit()
 
-    def tarea():
-        try:
-            with SessionLocal() as db:
-                enviar(db, anio, cambios, modificados, autor_id)
-        except Exception:  # noqa: BLE001
-            log.exception("No se ha podido enviar el calendario de vacaciones")
 
-    if settings.smtp_host == "memoria" or not avisos.configurado():
-        tarea()
-    else:
-        threading.Thread(target=tarea, name="vacaciones", daemon=True).start()
+def pendientes(db: Session) -> list[VacationChange]:
+    return list(db.scalars(select(VacationChange).where(VacationChange.revision_id.is_(None))
+                           .order_by(VacationChange.id)))
+
+
+def enviar_pendientes(db: Session, ahora: datetime | None = None, forzar: bool = False) -> int:
+    """Una revisión por año con todos los cambios acumulados. Sin forzar, cuando el cambio más antiguo lleva el
+    intervalo configurado esperando y en horario de 8 a 20 (no se envían correos de madrugada)."""
+    ahora = ahora or datetime.now()
+    cola = pendientes(db)
+    if not cola:
+        return 0
+    if not forzar:
+        if not 8 <= ahora.hour < 20:
+            return 0
+        if ahora - cola[0].creado < timedelta(hours=settings.vacaciones_envio_horas):
+            return 0
+    n = 0
+    for anio in sorted({c.anio for c in cola}):
+        lote = [c for c in cola if c.anio == anio]
+        enviados = enviar(db, anio, [c.texto for c in lote],
+                          [(c.staff_id, c.desde, c.hasta) for c in lote if c.staff_id and c.desde], lote[-1].user_id)
+        rev = db.scalar(select(VacationRevision).where(VacationRevision.anio == anio).order_by(VacationRevision.id.desc()).limit(1))
+        for c in lote:
+            c.revision_id = rev.id
+        db.commit()
+        n += enviados
+    return n
 
 
 def cambio_de(db: Session, x: Absence, que: str) -> tuple[str, tuple | None]:

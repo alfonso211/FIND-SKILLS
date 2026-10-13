@@ -379,6 +379,38 @@ def summary(asset_id: int | None = None, anio: int | None = None, scope: Scope =
     return {"anio": anio, "tipos": TIPOS_AUSENCIA, "personas": _resumen(db, scope, asset_id, anio)}
 
 
+def _puede_enviar_calendario(scope: Scope) -> bool:
+    return empleados.director_tecnico(scope) or scope.has_any("personal.autorizar")
+
+
+@router.get("/calendario-vacaciones/pendientes")
+def vacation_calendar_queue(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Cambios de vacaciones anotados que saldrán en la próxima revisión del calendario."""
+    from datetime import timedelta
+
+    from .. import informe_vacaciones
+    from ..config import settings
+    cola = informe_vacaciones.pendientes(db)
+    return {"cambios": [c.texto for c in cola], "puede_enviar": _puede_enviar_calendario(scope),
+            "horas": settings.vacaciones_envio_horas,
+            "proximo": (cola[0].creado + timedelta(hours=settings.vacaciones_envio_horas)).isoformat() if cola else None}
+
+
+@router.post("/calendario-vacaciones/enviar")
+def vacation_calendar_send(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Envía ya la revisión del calendario con los cambios pendientes (sin esperar a la agrupación)."""
+    from .. import informe_vacaciones
+    if not _puede_enviar_calendario(scope):
+        raise HTTPException(403, "Lo envían la dirección y el Director Técnico")
+    n = len(informe_vacaciones.pendientes(db))
+    if not n:
+        bad_request("No hay cambios pendientes de enviar")
+    enviados = informe_vacaciones.enviar_pendientes(db, forzar=True)
+    audit(db, scope.user, "enviar_calendario_vacaciones", "ausencia", 0, {"cambios": n, "correos": enviados})
+    db.commit()
+    return {"cambios": n, "correos": enviados}
+
+
 @router.get("/calendario-vacaciones.pdf")
 def vacation_calendar(anio: int | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     """Calendario de vacaciones del personal propio con los saldos (el mismo que se envía en cada revisión)."""

@@ -49,6 +49,8 @@ class Settings:
         e.strip().lower() for e in (os.environ.get("PMS_CAPEX_APROBADORES") or "barbara@inversiete.es").split(",")
         if e.strip())
     capex_umbral: float = float(os.environ.get("PMS_CAPEX_UMBRAL") or 30000)
+    # Calendario de vacaciones: los cambios se agrupan y se envían juntos cada N horas (en horario de 8 a 20)
+    vacaciones_envio_horas: float = float(os.environ.get("PMS_VACACIONES_ENVIO_HORAS") or 3)
 
 
 settings = Settings()

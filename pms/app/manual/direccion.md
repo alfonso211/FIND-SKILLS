@@ -83,7 +83,7 @@
 - **Vacaciones** (botón en la ficha):
   - Muestra lo que corresponde, lo disfrutado, lo solicitado y lo pendiente de solicitar.
   - El Director Técnico registra los periodos ya disfrutados o ya acordados (quedan autorizados) y puede anularlos con motivo.
-  - Cada cambio genera el **calendario de vacaciones** en PDF y lo envía a todos los usuarios y colaboradores.
+  - Los cambios se agrupan: cada 3 horas (de 8 a 20 h) se genera el **calendario de vacaciones** en PDF con todos ellos y se envía a todos los usuarios y colaboradores. En *Vacaciones y ausencias* se ven los pendientes, con el botón **Enviar calendario ahora**.
 - **Recordatorio**: cada lunes se avisa por correo a quien tiene días sin solicitar, con el plazo del 31 de diciembre.
 - **Comprobar personal** (en *Fichas del personal*) tiene cuatro funciones:
   - Revisa activos sin Recepción 1, nombres que no cuadran, usuarios repetidos y solicitudes mal clasificadas (estas se corrigen con un clic).
