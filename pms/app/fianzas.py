@@ -22,11 +22,30 @@ log = logging.getLogger("pms.fianzas")
 
 
 def importe(r: Reservation) -> float:
-    """Fianza anotada en el contrato de la reserva (0 si no hay)."""
-    try:
-        return round(float((r.datos_contrato or {}).get("fianza") or 0), 2)
-    except (TypeError, ValueError):
-        return 0.0
+    """Fianza de la reserva: la cobrada al llegar o, si no se registró el cobro, la anotada en el contrato (0 si no
+    hay ninguna)."""
+    for x in ((r.fianza_cobro or {}).get("importe"), (r.datos_contrato or {}).get("fianza")):
+        try:
+            if x not in (None, ""):
+                return round(float(x), 2)
+        except (TypeError, ValueError):
+            continue
+    return 0.0
+
+
+FORMAS_COBRO = {"efectivo": "Efectivo", "tarjeta": "Tarjeta (cobro)", "preautorizacion": "Tarjeta (preautorización)",
+                "bizum": "Bizum", "transferencia": "Transferencia"}
+
+
+def registrar_cobro(r: Reservation, importe: float, forma: str, user: User, ref: str | None = None,
+                    cuando: datetime | None = None) -> dict:
+    """Fianza cobrada al llegar: importe, forma, fecha y quién (entra en la caja del turno y en la exportación)."""
+    r.fianza_cobro = {"importe": round(float(importe), 2), "forma": forma, "fecha": (cuando or datetime.now())
+                      .isoformat(timespec="seconds"), "user_id": user.id, "usuario": user.nombre, "ref": ref or None}
+    datos = dict(r.datos_contrato or {})
+    datos["fianza"] = r.fianza_cobro["importe"]  # el contrato que se imprima después ya la lleva
+    r.datos_contrato = datos
+    return r.fianza_cobro
 
 
 def titular(r: Reservation) -> str:

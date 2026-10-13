@@ -474,6 +474,13 @@ def _datos_resumen(db, dia: date) -> dict[str, list[tuple[int, list]]]:
         revisiones.append((p.asset_id, [nombres[p.asset_id], p.titulo, p.normativa or "", p.proveedor or "",
                                         p.proxima_fecha.strftime("%d/%m/%Y"),
                                         f"VENCIDA hace {-dias} días" if dias < 0 else f"en {dias} días"]))
+    from .routers.mantenimiento import ABIERTAS
+    for w in db.scalars(select(WorkOrder).where(WorkOrder.tipo.in_(("preventivo", "normativo")),
+                                                WorkOrder.estado.in_(ABIERTAS), WorkOrder.fecha_prevista < dia)
+                        .order_by(WorkOrder.fecha_prevista)):  # las OT ya generadas que siguen sin hacer
+        revisiones.append((w.asset_id, [nombres[w.asset_id], f"{w.titulo} (OT-{w.id:05d})", w.descripcion or "",
+                                        w.proveedor or w.asignado_a or "", w.fecha_prevista.strftime("%d/%m/%Y"),
+                                        f"OT VENCIDA hace {(dia - w.fecha_prevista).days} días"]))
     estancias = []
     for r, u, t in db.execute(
             select(Reservation, Unit, Contact).join(Unit, Unit.id == Reservation.unit_id)
@@ -693,7 +700,18 @@ def _bucle() -> None:
                             raise
             with SessionLocal() as db:
                 recordatorios_agenda(db, ahora.replace(tzinfo=None))
+            from . import automatismos
+            with SessionLocal() as db:
+                automatismos.avisar_plazos(db, ahora.replace(tzinfo=None))  # OT urgentes (4 h) y altas (24 h) sin respuesta
             if (ahora.hour, ahora.minute) >= (hh, mm):
+                for nombre, tarea in (("informe de dirección", automatismos.informe_direccion),
+                                      ("preventivo automático", automatismos.preventivo_automatico),
+                                      ("aviso de llegada", automatismos.avisos_llegada)):
+                    try:
+                        with SessionLocal() as db:
+                            tarea(db, ahora.date())
+                    except Exception:  # noqa: BLE001 — una tarea que falla no para las demás
+                        log.exception("Programador: falló «%s»", nombre)
                 from .informe_vacaciones import recordatorio_semanal
                 with SessionLocal() as db:
                     recordatorio_semanal(db, ahora.date())  # los lunes; una vez por semana y persona

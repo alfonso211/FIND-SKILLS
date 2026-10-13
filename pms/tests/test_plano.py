@@ -108,7 +108,7 @@ def test_zonas_comunes_y_permisos(client, admin, ids):
         "email": email, "nombre": "Limpieza", "password": "Provisional1",
         "asignaciones": [{"role_id": ids["roles"]["Gobernanta / Limpieza"], "asset_id": sae}]})
     h = login(client, email, "Provisional1")
-    client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"})
+    h["Authorization"] = "Bearer " + client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"}).json()["token"]
     p = client.get(f"/api/plano/{sae}", headers=h).json()
     assert p["puede"] == {"reservar": False, "bloquear": False, "incidencia": False, "parte_estado": True,
                           "ver_reservas": False, "ver_mantenimiento": True}
@@ -124,7 +124,7 @@ def test_zonas_comunes_y_permisos(client, admin, ids):
         "email": email, "nombre": "x", "password": "Provisional1",
         "asignaciones": [{"role_id": ids["roles"]["Recepción"], "asset_id": ids["assets"]["SFL"]["id"]}]})
     h = login(client, email, "Provisional1")
-    client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"})
+    h["Authorization"] = "Bearer " + client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"}).json()["token"]
     assert client.get(f"/api/plano/{sae}", headers=h).status_code == 403
     assert [a["codigo"] for a in client.get("/api/plano/activos", headers=h).json()] == ["SFL"]  # solo el suyo
 

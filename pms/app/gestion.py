@@ -54,6 +54,11 @@ ACTIVOS = {"SFL": "SFLORIDA", "SAE": "SAEROPUERTO", "BAB35": "BABILONIA35"}
 CANALES = ["directo", "booking", "airbnb", "expedia", "web", "agencia", "otros"]
 IVA_ALOJAMIENTO = 10.0
 ORIGEN = "gestion:"  # UnitBlock.origen de los bloqueos que pone gestión
+# Avisos nuevos (contrato v2, ver docs/pasarela_v2.md): se guardan siempre en la cola, pero solo se mandan cuando
+# gestión ya los sabe recibir (PMS_GESTION_EVENTOS_V2=1). Al activarlo salen todos los guardados, no se pierde nada.
+EVENTOS_V2 = ("reserva.ampliada", "fianza.cobrada", "fianza.devolucion", "fianza.transferida", "caja.cierre",
+              "incidencia.cerrada", "kpi.diario")
+V2 = (os.environ.get("PMS_GESTION_EVENTOS_V2") or "0") == "1"
 avisos.TIPOS.setdefault("bloqueo_gestion", ("Apartamento cerrado desde gestión por una avería con reservas que hay "
                                             "que reubicar (al momento)", "reservas.ver"))
 
@@ -138,7 +143,8 @@ def _detectar(session: Session, _ctx) -> None:
             if not cambios:
                 continue
             if "estado" in cambios and obj.estado == "checkout":
-                pend.append(("checkout", obj))
+                # la estancia sigue en una ampliación: no es una salida (el cliente no se va)
+                pend.append(("reserva.ampliada" if getattr(obj, "_ampliada_en", None) else "checkout", obj))
             elif "estado" in cambios and obj.estado in ("cancelada", "no_show", "anulada"):
                 pend.append(("reserva.cancelada", obj))
             else:
@@ -146,6 +152,9 @@ def _detectar(session: Session, _ctx) -> None:
         elif isinstance(obj, WorkOrder) and obj in session.new:
             if obj.tipo in ("correctivo", "mejora") or getattr(obj, "_origen_gestion", None):
                 pend.append(("incidencia.reportada", obj))
+        elif isinstance(obj, WorkOrder) and obj.estado in ("cerrada", "cancelada") and obj.tipo in ("correctivo", "mejora"):
+            if sa_inspect(obj).attrs["estado"].history.has_changes():
+                pend.append(("incidencia.cerrada", obj))
 
 
 @event.listens_for(SessionLocal, "after_flush_postexec")
@@ -162,6 +171,13 @@ def _encolar_detectados(session: Session, _ctx) -> None:
                 datos = _datos_reserva(obj)
                 if tipo == "checkout":
                     datos["fecha_checkout"] = date.today().isoformat()
+                elif tipo == "reserva.ampliada":
+                    datos["fecha_fin_tramo"] = date.today().isoformat()
+                    datos["continua_en"] = _datos_reserva(obj._ampliada_en)
+            elif tipo == "incidencia.cerrada":
+                datos = {"ot_pms_id": obj.id, "estado": obj.estado, "fecha_cierre": (obj.fecha_cierre or date.today())
+                         .isoformat(), "solucion": obj.solucion, "coste_real": _num(obj.coste_real) if obj.coste_real
+                         is not None else None, "asignado_a": obj.asignado_a}
             else:
                 obj._activo = session.get(Asset, obj.asset_id)
                 obj._unidad = session.get(Unit, obj.unit_id) if obj.unit_id else None
@@ -193,9 +209,10 @@ def procesar_cola(db: Session, ahora: datetime | None = None, limite: int = 50) 
         return {"enviados": 0, "fallidos": 0, "sin_configurar": True}
     ahora = ahora or datetime.now()
     env = fal = 0
-    for ev in db.scalars(select(GestionEvento).where(GestionEvento.estado.in_(("pendiente", "aviso")),
-                                                    GestionEvento.proximo <= ahora)
-                         .order_by(GestionEvento.id).limit(limite)):
+    q = select(GestionEvento).where(GestionEvento.estado.in_(("pendiente", "aviso")), GestionEvento.proximo <= ahora)
+    if not V2:  # los avisos nuevos esperan en la cola hasta que gestión los sepa recibir
+        q = q.where(GestionEvento.tipo.not_in(EVENTOS_V2))
+    for ev in db.scalars(q.order_by(GestionEvento.id).limit(limite)):
         ok, resp = _enviar(ev)
         ev.intentos += 1
         if ok:
@@ -482,8 +499,10 @@ def estado(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
            for e in db.scalars(select(GestionEvento).order_by(GestionEvento.id.desc()).limit(200))]
     activos = [{"id": a.id, "codigo": a.codigo, "nombre": a.nombre, "comisiones": a.comisiones_canal or {}}
                for a in db.scalars(select(Asset).where(Asset.modalidad == "apartamentos_turisticos").order_by(Asset.codigo))]
+    en_espera = 0 if V2 else db.scalar(select(func.count()).select_from(GestionEvento).where(
+        GestionEvento.estado.in_(("pendiente", "aviso")), GestionEvento.tipo.in_(EVENTOS_V2)))
     return {"configurado": bool(EVENTOS_SECRET), "sso": bool(SSO_SECRET), "url": GESTION_URL, "cuenta": cuenta,
-            "eventos": ult, "activos": activos, "canales": CANALES}
+            "eventos": ult, "activos": activos, "canales": CANALES, "v2": V2, "v2_en_espera": en_espera}
 
 
 def _resumen(e: GestionEvento) -> str:
@@ -494,6 +513,15 @@ def _resumen(e: GestionEvento) -> str:
         return f"{d.get('activo')} {d.get('unidad_codigo') or d.get('zona') or ''} · OT-{d.get('ot_pms_id')} · {d.get('titulo')}"
     if e.tipo == "liquidacion.periodo":
         return f"{d.get('activo')} {d.get('periodo')} · bruto {d.get('totales', {}).get('bruto')} €"
+    if e.tipo.startswith("fianza."):
+        return (f"{d.get('activo_pms')} {d.get('unidad_codigo')} · {d.get('localizador') or 'R-' + str(d.get('reserva_id'))}"
+                f" · fianza {d.get('fianza')} €" + (f" · devuelto {d.get('devuelto')} €" if "devuelto" in d else ""))
+    if e.tipo == "caja.cierre":
+        return f"{d.get('activo_pms')} · {d.get('recepcionista')} · {d.get('hasta')} · diferencia {d.get('diferencia')} €"
+    if e.tipo == "incidencia.cerrada":
+        return f"OT-{d.get('ot_pms_id')} · {d.get('estado')} {d.get('fecha_cierre')}"
+    if e.tipo == "kpi.diario":
+        return f"{d.get('activo_pms')} {d.get('fecha')} · ocupación {d.get('ocupacion')} %"
     return ""
 
 

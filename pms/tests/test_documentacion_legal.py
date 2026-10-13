@@ -17,7 +17,7 @@ def _user(client, admin, ids, email, nombre, rol, codigo=None):
         "email": email, "nombre": nombre, "password": "Provisional1", "asignaciones": [asg]})
     assert r.status_code == 201, r.text
     h = login(client, email, "Provisional1")
-    client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"})
+    h["Authorization"] = "Bearer " + client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"}).json()["token"]
     return h
 
 

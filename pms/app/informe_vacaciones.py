@@ -93,17 +93,19 @@ def _solapes(personas: list[dict], hoy: date, anio: int) -> list[str]:
 
 # --------------------------------------------------------------------------- PDF
 def pdf(db: Session, anio: int, cambios: list[str] | None = None, modificados: list[tuple] | None = None,
-        hoy: date | None = None, anterior: datetime | None = None) -> bytes:
+        hoy: date | None = None, anterior: datetime | None = None, saldos: bool = True) -> bytes:
+    """Calendario de vacaciones. Sin `saldos` (colaboradores externos): solo el calendario, los cambios y los solapes,
+    sin la hoja de saldos de cada persona."""
     hoy = hoy or date.today()
     personas = _personas(db, anio, hoy)
     total = None
     for _ in range(2):  # la primera pasada cuenta las páginas («Página x/N»)
-        datos, n = _dibuja(personas, anio, cambios or [], modificados or [], hoy, anterior, total)
+        datos, n = _dibuja(personas, anio, cambios or [], modificados or [], hoy, anterior, total, saldos)
         total = n
     return datos
 
 
-def _dibuja(personas, anio, cambios, modificados, hoy, anterior, total):
+def _dibuja(personas, anio, cambios, modificados, hoy, anterior, total, saldos=True):
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.styles import getSampleStyleSheet
@@ -269,12 +271,20 @@ def _dibuja(personas, anio, cambios, modificados, hoy, anterior, total):
     blanca = peq.clone("blanca", fontName="Helvetica-Bold", textColor=colors.white)
     tit = ss["Title"].clone("tit", alignment=0, textColor=azul, fontSize=16)
     sub = ss["Heading3"].clone("sub", textColor=azul, spaceBefore=6, spaceAfter=3)
-    historia = [Paragraph("RESUMEN DE SALDOS POR PERSONA — REVISIÓN", tit),
+    historia = [Paragraph("RESUMEN DE SALDOS POR PERSONA — REVISIÓN" if saldos else "CAMBIOS DE LA REVISIÓN", tit),
                 Paragraph(f"<i>INVERSIETE S.A. · Dirección Técnica · Situación actualizada a {hoy:%d/%m/%Y}"
                           + (f" (sustituye a la situación de {anterior:%d/%m/%Y %H:%M})" if anterior else "") + "</i>", peq)]
     if cambios:
         historia += [Paragraph("Cambios aplicados en esta revisión", sub)] + \
                     [Paragraph(f"• {escape(t)}", peq) for t in cambios]
+    if not saldos:  # colaborador externo: sin los saldos de la plantilla
+        historia += [Paragraph(f"Solapes pendientes (a partir de hoy, {hoy.day} de {MESES[hoy.month - 1].lower()})", sub),
+                     Paragraph(" · ".join(escape(x) for x in _solapes(personas, hoy, anio)) or "Sin coincidencias.", peq)]
+        pie()
+        Frame(12 * mm, 10 * mm, W - 24 * mm, H - 24 * mm, showBoundary=0).addFromList(historia, c)
+        c.showPage()
+        c.save()
+        return out.getvalue(), pagina[0]
     filas = [[Paragraph(t, blanca) for t in ("PERSONA", "DISFRUTADAS", "SOLICITADAS (pdte. disfrutar)",
                                            "TOTAL ASIGNADO", "PDTE. DE SOLICITAR", "REPARTO — PERIODOS")]]
     tot = {"d": 0, "s": 0, "c": 0.0, "p": 0.0}
@@ -349,6 +359,7 @@ def enviar(db: Session, anio: int, cambios: list[str], modificados: list[tuple],
     anterior = db.scalar(select(VacationRevision.creado).where(VacationRevision.anio == anio)
                          .order_by(VacationRevision.id.desc()).limit(1))
     datos = pdf(db, anio, cambios, modificados, anterior=anterior)
+    datos_ext = None  # colaboradores (subcontratas): el calendario sin los saldos de la plantilla
     rev = VacationRevision(anio=anio, cambios=cambios, user_id=autor_id)
     db.add(rev)
     db.flush()
@@ -364,8 +375,15 @@ def enviar(db: Session, anio: int, cambios: list[str], modificados: list[tuple],
     n = 0
     if avisos.configurado():
         for u in destinatarios(db):
+            adj = datos
+            if u.supplier_id:
+                if datos_ext is None:
+                    datos_ext = pdf(db, anio, cambios, modificados, anterior=anterior, saldos=False)
+                adj = datos_ext
             try:
-                avisos.enviar(u.email, asunto, texto, html, [(nombre, datos, "application/pdf")])
+                avisos.enviar(u.email, asunto, texto.replace(" con los saldos de cada persona", "") if u.supplier_id
+                              else texto, html.replace(" con los saldos de cada persona", "") if u.supplier_id
+                              else html, [(nombre, adj, "application/pdf")])
                 ok, err = True, None
                 n += 1
             except Exception as e:  # noqa: BLE001

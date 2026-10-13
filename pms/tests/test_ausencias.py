@@ -18,7 +18,7 @@ def _user(client, admin, ids, email, nombre, rol, codigo="BAB35"):
         "asignaciones": [{"role_id": ids["roles"][rol], "asset_id": ids["assets"][codigo]["id"]}]})
     assert r.status_code == 201, r.text
     h = login(client, email, "Provisional1")
-    client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"})
+    h["Authorization"] = "Bearer " + client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"}).json()["token"]
     return h
 
 
@@ -145,7 +145,7 @@ def test_direccion_aprueba_cualquiera_y_presidencia_no(client, admin, ids):
         "no_asignable": True, "asignaciones": [{"role_id": ids["roles"]["Dirección Sociedad"], "asset_id": bab}]})
     assert r.status_code == 201
     pres = login(client, "pres.aus@inversiete.com", "Provisional1")
-    client.post("/api/auth/password", headers=pres, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"})
+    pres["Authorization"] = "Bearer " + client.post("/api/auth/password", headers=pres, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"}).json()["token"]
     of = _user(client, admin, ids, "oficina.aus@inversiete.com", "Oficina Pruebas", "Consulta")
     _ficha(client, admin, of, bab)
     avisos.BANDEJA.clear()

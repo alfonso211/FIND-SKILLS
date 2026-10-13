@@ -60,5 +60,14 @@ class Settings:
         e.strip().lower() for e in (os.environ.get("PMS_FIANZA_AVISOS") or "barbara@inversiete.es,alfonso@inversiete.es")
         .split(",") if e.strip())
 
+    # Informe diario de dirección (ocupación, ADR, RevPAR, cobros pendientes, fianzas por transferir…) a primera hora
+    informe_direccion: tuple[str, ...] = tuple(
+        e.strip().lower() for e in (os.environ.get("PMS_INFORME_DIRECCION") or "barbara@inversiete.es,alfonso@inversiete.es")
+        .split(",") if e.strip())
+    # Mensaje al cliente la víspera de la llegada (documentos para el registro de viajeros, hora de entrada, fianza)
+    aviso_llegada: bool = (os.environ.get("PMS_AVISO_LLEGADA") or "1") != "0"
+    # Preventivo: el programador genera solo las OT que vencen en los próximos días
+    preventivo_auto: bool = (os.environ.get("PMS_PREVENTIVO_AUTO") or "1") != "0"
+
 
 settings = Settings()

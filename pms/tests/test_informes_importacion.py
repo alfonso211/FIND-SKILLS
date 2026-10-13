@@ -94,7 +94,7 @@ def test_importar_reservas(client, admin, ids):
         "email": email, "nombre": "x", "password": "Provisional1",
         "asignaciones": [{"role_id": ids["roles"]["Recepción"], "asset_id": ids["assets"]["SFL"]["id"]}]})
     h = login(client, email, "Provisional1")
-    client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"})
+    h["Authorization"] = "Bearer " + client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"}).json()["token"]
     assert client.post("/api/turistico/importar", headers=h, data={"asset_id": sae},
                        files={"fichero": ("reservas.xlsx", fichero, XLSX)}).status_code == 403
 
@@ -177,7 +177,7 @@ def test_informes(client, admin, ids):
         "email": email, "nombre": "x", "password": "Provisional1",
         "asignaciones": [{"role_id": ids["roles"]["Recepción"], "asset_id": ids["assets"]["SFL"]["id"]}]})
     h = login(client, email, "Provisional1")
-    client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"})
+    h["Authorization"] = "Bearer " + client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "ClaveDefinitiva2026"}).json()["token"]
     assert client.get("/api/informes/produccion", headers=h).status_code == 403  # sin finanzas
     wb = _libro(client.get("/api/informes/ocupacion?desde=2025-04-01&hasta=2025-04-30", headers=h))
     assert {f["Activo"] for f in _filas(wb["Turísticos"])} == {"Suite Florida"}  # solo su activo

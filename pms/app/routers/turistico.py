@@ -21,7 +21,7 @@ from ..facturacion import (EXENCION_INDEMNIZACION, IVA_ALOJAMIENTO, IVA_GENERAL,
                            estancia_facturada, linea, lineas_servicios, serie_activo)
 from ..models import (FORMAS_DEVOLUCION, MODALIDADES_RESERVA, AccommodationContract, Asset, Contact, DepositRefund, Invoice, Lease,
                       Reservation, ReservationGuest, Unit, User, WorkOrder)
-from ..schemas import (AccommodationContractIn, CheckoutIn, DepositRefundIn, ExtrasPaymentIn, LimpiezaPlanIn, OccupantIn, Payment, RenewalIn,
+from ..schemas import (AccommodationContractIn, CheckoutIn, DepositChargeIn, DepositRefundIn, ExtrasPaymentIn, LimpiezaPlanIn, OccupantIn, Payment, RenewalIn,
                        ReservationIn, ReservationUpdate, SendContractIn, ServiceLine, SignatureIn, UnpaidInvoiceIn)
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
@@ -436,11 +436,49 @@ def checkin(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(g
     return _res_out(r)
 
 
+def saldo(db: Session, r: Reservation) -> dict:
+    """Lo que el cliente debe todavía: estancia sin cobrar (facturada o no), servicios extra sin facturar y facturas
+    de servicios pendientes de cobro (también la de roturas que superan la fianza)."""
+    estancia = max(Decimal(0), dinero(r.importe_total) - dinero(r.importe_pagado))
+    extras = sum((dinero(e["precio"]) * dinero(e["cantidad"]) for e in r.extras or [] if not e.get("factura")),
+                 Decimal(0))
+    from ..facturacion import importe_estancia
+    facturas = []
+    for f in db.scalars(select(Invoice).where(Invoice.reservation_id == r.id, Invoice.cobro == "pendiente")):
+        resto = dinero(f.total) - importe_estancia(f)  # la parte de estancia ya cuenta en «estancia»
+        if resto > 0:
+            facturas.append({"codigo": f.codigo, "importe": float(resto)})
+    total = estancia + extras + sum((Decimal(str(x["importe"])) for x in facturas), Decimal(0))
+    return {"estancia": float(estancia), "extras": float(extras), "facturas": facturas, "total": float(total)}
+
+
 @router.get("/reservas/{rid}")
 def reservation_detail(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     r = get_or_404(db, Reservation, rid)
     scope.require_asset("reservas.ver", r.unit.asset_id)
-    return _res_out(r)
+    return {**_res_out(r), "saldo": saldo(db, r), "fianza": fianzas.importe(r)}
+
+
+@router.post("/reservas/{rid}/fianza/cobro")
+def deposit_charge(rid: int, data: DepositChargeIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Recepción anota la fianza cobrada al llegar el cliente (importe y forma). Cuenta en la caja de su turno y es
+    la que se devuelve a la salida, aunque no se haya guardado el contrato."""
+    r = get_or_404(db, Reservation, rid)
+    scope.require_asset("reservas.editar", r.unit.asset_id)
+    if r.estado not in ACTIVAS:
+        bad_request("Solo se cobra la fianza de una reserva confirmada o con el cliente alojado")
+    if _devolucion(db, r) is not None:
+        bad_request("La fianza de esta reserva ya se ha devuelto")
+    if r.fianza_cobro:
+        bad_request(f"La fianza ya se cobró el {datetime.fromisoformat(r.fianza_cobro['fecha']):%d/%m/%Y %H:%M} "
+                    f"({fianzas.FORMAS_COBRO.get(r.fianza_cobro['forma'], r.fianza_cobro['forma'])})")
+    c = fianzas.registrar_cobro(r, data.importe, data.forma, scope.user, data.referencia)
+    from .. import gestion
+    gestion.encolar(db, "fianza.cobrada", {**gestion._datos_reserva(r), "fianza": c["importe"], "forma": c["forma"],
+                                            "fecha": c["fecha"]})
+    audit(db, scope.user, "cobro_fianza", "reserva", r.id, {"importe": c["importe"], "forma": c["forma"]})
+    db.commit()
+    return {**_res_out(r), "fianza_cobro": c}
 
 
 def _devolucion(db: Session, r: Reservation) -> DepositRefund | None:
@@ -455,7 +493,8 @@ def deposit_info(rid: int, scope: Scope = Depends(get_scope), db: Session = Depe
     d = _devolucion(db, r)
     return {"fianza": fianzas.importe(r), "titular": fianzas.titular(r), "iban": r.guest.iban,
             "procede": fianzas.importe(r) > 0 and d is None, "devolucion": fianzas.a_dict(d) if d else None,
-            "revision": r.revision,
+            "revision": r.revision, "saldo": saldo(db, r), "cobro": r.fianza_cobro,
+            "formas_cobro": fianzas.FORMAS_COBRO,
             "formas": FORMAS_DEVOLUCION, "avisos": list(settings.fianza_avisos)}
 
 
@@ -541,6 +580,14 @@ def _registrar_devolucion(db: Session, scope: Scope, r: Reservation, f: DepositR
     if f.forma == "transferencia" and importe > 0:
         extra["avisos"] = fianzas.avisar(db, d, r, scope.user)
         extra["whatsapp"] = fianzas.whatsapp(db, d, r)
+    from .. import gestion
+    gestion.encolar(db, "fianza.devolucion", {
+        **gestion._datos_reserva(r), "devolucion_id": d.id, "fianza": total, "devuelto": importe,
+        "retenido": round(total - importe, 2), "cargos": [{k: c.get(k) for k in ("articulo", "cantidad", "precio", "importe",
+                                                                                   "ot_id")} for c in cargos],
+        "cargos_total": suma, "forma": f.forma, "estado": d.estado, "fecha": d.fecha.isoformat(),
+        "cobro": r.fianza_cobro and {k: r.fianza_cobro.get(k) for k in ("forma", "fecha")},
+        "factura_exceso": extra.get("factura_exceso") and {k: extra["factura_exceso"][k] for k in ("codigo", "total")}})
     audit(db, scope.user, "devolver_fianza", "reserva", r.id,
           {"forma": f.forma, "fianza": total, "importe": importe, "devolucion": d.id, "cargos": suma,
            "ots": ots, "factura_exceso": d.factura_exceso})
@@ -1207,6 +1254,7 @@ def cerrar_renovadas(db: Session) -> None:
     nueva = aliased(Reservation)
     for vieja, ren in db.execute(select(Reservation, nueva).join(nueva, nueva.renueva_id == Reservation.id).where(
             Reservation.estado == "checkin", nueva.estado.in_(ACTIVAS), nueva.fecha_entrada <= hoy)).all():
+        vieja._ampliada_en = ren  # para gestión es una ampliación, no una salida
         vieja.estado = "checkout"
         ren.estado = "checkin"
 
@@ -1763,6 +1811,10 @@ def deposit_done(fid: int, data: DevueltaIn, scope: Scope = Depends(get_scope), 
         bad_request("Solo se marcan las transferencias de fianza pendientes")
     d.estado = "devuelta"
     d.devuelta_fecha = data.fecha or date.today()
+    from .. import gestion
+    gestion.encolar(db, "fianza.transferida", {**gestion._datos_reserva(r), "devolucion_id": d.id,
+                                               "fianza": float(d.fianza), "devuelto": float(d.importe),
+                                               "fecha": d.devuelta_fecha.isoformat()})
     audit(db, scope.user, "fianza_devuelta", "reserva", r.id, {"devolucion": d.id})
     db.commit()
     return fianzas.a_dict(d)

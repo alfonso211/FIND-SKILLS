@@ -57,6 +57,7 @@ def _first_login(client, email, provisional, nueva="ClaveDefinitiva2026"):
     h = login(client, email, provisional)
     r = client.post("/api/auth/password", headers=h, json={"actual": provisional, "nueva": nueva})
     assert r.status_code == 200, r.text
+    h["Authorization"] = f"Bearer {r.json()['token']}"  # las demás sesiones se cierran al cambiar la contraseña
     return h
 
 
@@ -265,7 +266,9 @@ def test_initial_users_and_forced_password_change(client, admin):
     bad = [("ZZZZZZZZ", "OtraClave2026"), (INICIAL, INICIAL), (INICIAL, "corta12"), (INICIAL, "aaaaaaaaaaaa")]
     for actual, nueva in bad:
         assert client.post("/api/auth/password", headers=h, json={"actual": actual, "nueva": nueva}).status_code == 400
-    assert client.post("/api/auth/password", headers=h, json={"actual": INICIAL, "nueva": "Presidencia#2026"}).status_code == 200
+    r = client.post("/api/auth/password", headers=h, json={"actual": INICIAL, "nueva": "Presidencia#2026"})
+    assert r.status_code == 200
+    h["Authorization"] = f"Bearer {r.json()['token']}"
     assert client.get("/api/auth/me", headers=h).json()["debe_cambiar_password"] is False
     # acceso total
     assert {a["codigo"] for a in client.get("/api/activos", headers=h).json()} >= {"BAB35", "SFL", "SAE"}

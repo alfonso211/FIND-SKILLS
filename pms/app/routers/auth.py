@@ -7,8 +7,8 @@ from .. import avisos
 from ..database import get_db
 from ..models import Asset, Company, User, Supplier
 from ..schemas import Login, PasswordChange
-from ..security import (PASSWORD_MIN, PERMISOS, Scope, audit, create_token, current_user, get_scope, hash_password,
-                        limpiar_fallos, login_bloqueado, registrar_fallo, verify_password)
+from ..security import (PASSWORD_MIN, PERMISOS, Scope, audit, cerrar_sesiones, create_token, current_user, get_scope,
+                        hash_password, limpiar_fallos, login_bloqueado, registrar_fallo, verify_password)
 from .admin import puede_borrar
 
 from ..gestion import puede_ir
@@ -70,9 +70,10 @@ def change_password(data: PasswordChange, user: User = Depends(current_user), db
         raise HTTPException(400, f"La contraseña debe tener al menos {PASSWORD_MIN} caracteres")
     user.password_hash = hash_password(data.nueva)
     user.debe_cambiar_password = False
+    cerrar_sesiones(user)  # las demás sesiones abiertas (otro ordenador, móvil) se cierran
     audit(db, user, "cambio_password", "usuario", user.id)
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "token": create_token(user)}  # esta sesión sigue con el token nuevo
 
 
 # --------------------------------------------------------------------------- avisos por correo del propio usuario

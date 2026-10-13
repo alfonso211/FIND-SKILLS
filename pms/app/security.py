@@ -100,7 +100,13 @@ def verify_password(pw: str, hashed: str) -> bool:
 
 def create_token(user: User) -> str:
     exp = datetime.now(timezone.utc) + timedelta(hours=settings.token_hours)
-    return jwt.encode({"sub": str(user.id), "exp": exp}, settings.secret_key, algorithm="HS256")
+    return jwt.encode({"sub": str(user.id), "exp": exp, "tv": user.token_version or 0}, settings.secret_key,
+                      algorithm="HS256")
+
+
+def cerrar_sesiones(user: User) -> None:
+    """Las sesiones abiertas del usuario dejan de valer (contraseña cambiada o restablecida, usuario desactivado)."""
+    user.token_version = (user.token_version or 0) + 1
 
 
 _bearer = HTTPBearer(auto_error=False)
@@ -124,6 +130,8 @@ def current_user(request: Request, cred: HTTPAuthorizationCredentials | None = D
     user = db.get(User, int(payload["sub"]))
     if not user or not user.activo:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuario inactivo")
+    if payload.get("tv", 0) != (user.token_version or 0):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "La sesión se ha cerrado: vuelva a entrar")
     if user.debe_cambiar_password and request.url.path not in RUTAS_PASSWORD_PROVISIONAL:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Debe cambiar la contraseña provisional antes de continuar")
     if user.supplier_id is not None and not request.url.path.startswith(RUTAS_COLABORADOR):

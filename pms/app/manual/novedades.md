@@ -1,5 +1,24 @@
 # Novedades
 
+## 2026-10-15 · Versión 1.50 · Caja por turno, fianza al llegar, plazos de OT, informe diario y gestión
+- **Recepción**:
+  - **Caja y cierres de turno**: arqueo de lo cobrado por cada recepcionista (efectivo, tarjeta, Bizum…). Si no cuadra se indica el motivo y la Dirección recibe un aviso.
+  - **Cobrar fianza** al llegar: cuenta en la caja y es la que se devuelve, aunque no se guarde el contrato.
+  - **Saldo pendiente**: al dar la salida, aviso si el cliente debe algo.
+  - **Mensaje la víspera** de la llegada al cliente: documentos para el registro de viajeros, hora de entrada y fianza.
+- **Mantenimiento**:
+  - **Plazo de respuesta**: urgente 4 h, alta 24 h. Fuera de plazo, aviso al director técnico.
+  - **Preventivo automático**: las OT de las revisiones que vencen en 7 días se generan solas.
+  - **Enlace del técnico revocable**: deja de valer al reasignar la orden o con **Revocar enlace**.
+  - **CAE/PRL de subcontratas**: con la documentación vencida no se les asignan órdenes.
+- **Dirección**:
+  - **Informe diario** a primera hora: ocupación, ADR, RevPAR, cobros pendientes, fianzas por transferir, OT urgentes y descuadres.
+  - **Seguridad**: cambiar la contraseña o desactivar un usuario cierra sus sesiones abiertas.
+  - **Vacaciones**: los colaboradores reciben el calendario sin los saldos de la plantilla.
+- **Gestión**:
+  - La ampliación de una reserva ya no llega como salida.
+  - Avisos nuevos de fianzas, caja, cierre de incidencias e indicadores. Se activan cuando gestión los reciba.
+
 ## 2026-10-15 · Versión 1.49 · Botón «Gestión» solo para la Dirección y aviso de pedidos de reposición
 - **Todos · botón «Gestión»**: solo lo ven el administrador, Alfonso y Bárbara.
 - **Dirección · pedidos de reposición sin autorizar**: si Recepción 1 no autoriza un pedido de reposición en 3 días, llega un aviso cada día laborable.

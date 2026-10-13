@@ -1,5 +1,7 @@
 """Fichero de proveedores del grupo. No depende de ninguna sociedad: lo usan todas (órdenes de trabajo, plan
 preventivo, personal de subcontratas)."""
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
@@ -31,10 +33,14 @@ class SupplierIn(BaseModel):
     actividad: str | None = Field(default=None, max_length=160)
     activo: bool = True
     notas: str | None = None
+    # documentación CAE/PRL (subcontratas): vencida, no se le asignan órdenes de trabajo
+    cae_vence: date | None = None
+    cae_nota: str | None = Field(default=None, max_length=300)
 
 
 def _out(p: Supplier) -> dict:
     d = p.to_dict()
+    d["cae_vencida"] = bool(p.cae_vence and p.cae_vence < date.today())
     d["tipo_persona_nombre"] = TIPOS_PERSONA.get(p.tipo_persona, p.tipo_persona)
     return d
 

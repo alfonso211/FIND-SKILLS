@@ -416,7 +416,8 @@ def vacation_calendar(anio: int | None = None, scope: Scope = Depends(get_scope)
     """Calendario de vacaciones del personal propio con los saldos (el mismo que se envía en cada revisión)."""
     from .. import informe_vacaciones
     anio = anio or date.today().year
-    return Response(informe_vacaciones.pdf(db, anio), media_type="application/pdf",
+    return Response(informe_vacaciones.pdf(db, anio, saldos=scope.user.supplier_id is None),
+                    media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="Calendario_vacaciones_{anio}.pdf"'})
 
 

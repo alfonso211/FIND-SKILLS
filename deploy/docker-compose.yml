@@ -51,6 +51,13 @@ services:
       PMS_GESTION_SSO_SECRET: ${PMS_GESTION_SSO_SECRET:-}
       PMS_GESTION_URL: ${PMS_GESTION_URL:-http://invergestion:8000}
       PMS_GESTION_PUBLICA: ${PMS_GESTION_PUBLICA:-https://gestion.inversiete.es}
+      # avisos nuevos a gestión (fianzas, ampliaciones, caja, cierre de incidencias, indicadores): 1 cuando gestión los reciba
+      PMS_GESTION_EVENTOS_V2: ${PMS_GESTION_EVENTOS_V2:-0}
+      PMS_GESTION_USUARIOS: ${PMS_GESTION_USUARIOS:-alfonso@inversiete.es,barbara@inversiete.es}
+      # informe diario de dirección, aviso de la víspera al cliente y preventivo automático
+      PMS_INFORME_DIRECCION: ${PMS_INFORME_DIRECCION:-barbara@inversiete.es,alfonso@inversiete.es}
+      PMS_AVISO_LLEGADA: ${PMS_AVISO_LLEGADA:-1}
+      PMS_PREVENTIVO_AUTO: ${PMS_PREVENTIVO_AUTO:-1}
       TZ: Europe/Madrid
     volumes:
       - documentos:/data/documentos

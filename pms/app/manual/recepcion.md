@@ -42,7 +42,10 @@
 - **Dotación especial** de una reserva: botón **Dotación** de la reserva. Quite, cambie cantidades o añada artículos (cuna, plancha extra…). Sale marcada como «dotación especial» en el anexo del contrato.
 
 ## Check-in y check-out
+- **La víspera de la llegada** el cliente con correo recibe un mensaje automático: hora de entrada, que traiga el DNI o pasaporte de todos los huéspedes (registro de viajeros), la fianza y lo que tenga pendiente de pago. No hay que hacer nada.
 - **Check-in** en la reserva cuando el cliente llega (exige el registro completo de ocupantes).
+- **Cobrar fianza** (botón de la reserva): anote la fianza que entrega el cliente, con su forma (efectivo, tarjeta, preautorización, Bizum o transferencia). Entra en su caja del turno y es la que se devuelve a la salida, **aunque no se haya guardado el contrato**.
+- **Saldo pendiente**: al pulsar **Check-out**, si el cliente debe algo (estancia, servicios o facturas sin cobrar) sale un aviso con el detalle. Cobre antes o confirme la salida igualmente.
 - **Check-out** a la salida. Si la reserva tiene **fianza**, sale la **devolución de fianza**: cliente, importe y forma (**transferencia**, **efectivo** o **tarjeta**, según indiquen Recepción 1 o Recepción 2).
   - **Transferencia**: ponga el **IBAN** del cliente y la fecha. Los datos se envían por **correo** a Bárbara y a Alfonso, y se abren los botones de **WhatsApp** con el mismo texto. Queda en el registro de envíos y en el envío a INVERGESTION.
   - **Roturas y faltas**: elija el artículo de la dotación y cuántos. Se descuentan de la fianza a su precio de reposición y el detalle va solo en el motivo.
@@ -77,6 +80,14 @@
 - **Facturas pendientes de cobro**: salen en el panel y en el correo de cada mañana. Compruebe en el banco si ha llegado la transferencia y en **Facturas emitidas** pulse **Cobrada** (fecha, forma y referencia).
 - Si marcó una factura cobrada por error: **Deshacer cobro** (indique el motivo).
 - Una factura emitida **no se modifica**: si hay un error, Dirección emite una **rectificativa**.
+
+## Caja y cierre de turno
+- **Apartamentos turísticos → Caja y cierres de turno → Mi turno**: lo que usted ha cobrado y devuelto desde su último cierre, por forma de pago (efectivo, tarjeta, Bizum…). Cuenta los cobros, las facturas que marcó cobradas, las fianzas cobradas y las fianzas devueltas en efectivo o tarjeta.
+- Al terminar el turno, pulse **Cerrar turno (arqueo)**:
+  1. Cuente el efectivo y anótelo.
+  2. Si deja **fondo de caja**, indíquelo.
+  3. Si no cuadra, escriba el motivo. La Dirección recibe un aviso por correo.
+- El turno siguiente empieza en ese cierre. Abajo se ven los cierres anteriores.
 
 ## Ampliación de reserva
 - Los apartamentos turísticos **no renuevan**: se hace una **ampliación de reserva**. Ningún documento dice «renovación».

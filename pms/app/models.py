@@ -200,6 +200,10 @@ class Supplier(Base):
     persona_contacto: Mapped[str | None] = mapped_column(String(160))
     actividad: Mapped[str | None] = mapped_column(String(160))  # gremio: fontanería, PCI, ascensores...
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Coordinación de actividades empresariales (CAE, RD 171/2004) y PRL: hasta cuándo es válida su documentación.
+    # Vencida (o sin fecha, si se exige) no se le pueden asignar órdenes de trabajo.
+    cae_vence: Mapped[date | None] = mapped_column(Date)
+    cae_nota: Mapped[str | None] = mapped_column(String(300))
     notas: Mapped[str | None] = mapped_column(Text)
     creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
@@ -281,6 +285,9 @@ class Reservation(Base):
     # Revisión de salida hecha por limpieza desde el móvil: {fecha, nombre, nota, items: [{codigo, articulo, zona,
     # estado: falta|roto, cantidad, precio}]} (solo lo que no está bien)
     revision: Mapped[dict | None] = mapped_column(JSON)
+    # Cobro de la fianza al llegar: {importe, forma, fecha, user_id, ref}. Ver app/fianzas.py
+    fianza_cobro: Mapped[dict | None] = mapped_column(JSON)
+    aviso_llegada: Mapped[datetime | None] = mapped_column(DateTime)  # mensaje de la víspera (documentos para SES)
     unit: Mapped[Unit] = relationship()
     guest: Mapped[Contact] = relationship()
     ocupantes: Mapped[list["ReservationGuest"]] = relationship(order_by="ReservationGuest.orden",
@@ -475,6 +482,10 @@ class WorkOrder(Base):
     alerta_tecnico: Mapped[str | None] = mapped_column(String(20))
     alerta_fecha: Mapped[datetime | None] = mapped_column(DateTime)
     conformidad_en: Mapped[datetime | None] = mapped_column(DateTime)  # conformidad de la propiedad (cierre)
+    # enlace del técnico: al reasignar la orden o al revocarlo sube y los enlaces anteriores dejan de valer
+    enlace_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    plazo_avisado: Mapped[datetime | None] = mapped_column(DateTime)  # aviso de plazo de respuesta superado
+    creada: Mapped[datetime | None] = mapped_column(DateTime, default=_now)  # fecha y hora de apertura (plazos)
 
 
 AREAS_PERSONAL = {"mantenimiento": "Mantenimiento", "limpieza": "Limpieza", "conserjeria": "Conserjería",
@@ -660,6 +671,8 @@ class User(Base):
     no_asignable: Mapped[bool] = mapped_column(Boolean, default=False)
     # colaborador externo (subcontrata): solo entra en su portal y ve lo de este proveedor
     supplier_id: Mapped[int | None] = mapped_column(ForeignKey("proveedores.id"), index=True)
+    # sube al cambiar la contraseña o desactivar el usuario: las sesiones abiertas dejan de valer
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     assignments: Mapped[list["Assignment"]] = relationship(cascade="all, delete-orphan", lazy="selectin")
 
 
@@ -1462,3 +1475,22 @@ class DotacionPrecio(Base):
     precio: Mapped[float] = mapped_column(Numeric(10, 2))
     actualizado: Mapped[datetime] = mapped_column(DateTime, default=_now)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+
+
+# --------------------------------------------------------------------------- caja
+class CashClose(Base):
+    """Cierre de caja de un turno de recepción: lo cobrado y devuelto por el recepcionista en el activo desde su
+    cierre anterior, por forma de pago, y el efectivo contado. `movimientos`: [{hora, tipo, ref, forma, importe}]."""
+    __tablename__ = "cierres_caja"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), index=True)
+    desde: Mapped[datetime] = mapped_column(DateTime)
+    hasta: Mapped[datetime] = mapped_column(DateTime, index=True)
+    totales: Mapped[dict] = mapped_column(JSON)  # {forma: importe}
+    movimientos: Mapped[list] = mapped_column(JSON)
+    fondo: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
+    efectivo_esperado: Mapped[float] = mapped_column(Numeric(10, 2))
+    efectivo_contado: Mapped[float] = mapped_column(Numeric(10, 2))
+    diferencia: Mapped[float] = mapped_column(Numeric(10, 2))
+    nota: Mapped[str | None] = mapped_column(Text)
