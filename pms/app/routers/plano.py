@@ -416,6 +416,10 @@ def unblock_unit(uid: int, data: UnblockIn, scope: Scope = Depends(get_scope), d
         raise HTTPException(403, "Sin permiso para desbloquear apartamentos")
     if u.estado == "mantenimiento":
         bad_request("Está bloqueado por una orden de trabajo: se desbloquea al cerrarla")
+    from ..gestion import bloqueado_por_gestion
+    bg = bloqueado_por_gestion(db, uid)
+    if bg:
+        bad_request(f"Lo ha cerrado gestión ({bg.origen.split(':', 1)[1]}) por una avería: se abre al cerrar esa orden en gestión")
     if u.estado not in ("bloqueada", "fuera_servicio"):
         bad_request("El apartamento no está bloqueado")
     abiertos = list(db.scalars(select(UnitBlock).where(UnitBlock.unit_id == uid, UnitBlock.levantado.is_(None))))

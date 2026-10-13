@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import OperationalError
 
-from . import avisos, vigilante
+from . import avisos, gestion, vigilante
 from .config import BASE_DIR
 from .database import SessionLocal
 from .migraciones import migrar
@@ -33,6 +33,7 @@ async def lifespan(_: FastAPI):
     with SessionLocal() as db:
         seed(db)
     avisos.arrancar_programador()
+    gestion.arrancar()  # cola de avisos a INVERGESTION (fase 4)
     yield
 
 
@@ -42,6 +43,7 @@ for r in (auth, estructura, alquiler, garajes, gastos, turistico, plano, factura
           limpieza, pedidos, partes_trabajo, ausencias, colaborador, documentacion_legal,
           cobros_alquiler, partes_estado, tecnico, jornada, capex, dotacion, revision):
     app.include_router(r.router)
+app.include_router(gestion.router)
 app.include_router(colaborador.revision)
 app.include_router(facturas.router_servicios)
 app.include_router(facturas.publico)

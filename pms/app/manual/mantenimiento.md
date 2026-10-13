@@ -15,7 +15,8 @@
 - **Enviar**: vuelve a enviar la OT a quien la tiene asignada. **Enviar a otros**: a cualquier persona del personal.
 - **Parte PDF**: hoja de la OT para imprimir o firmar.
 - Si la OT **bloquea el apartamento**, este no se puede reservar hasta cerrarla.
-- **Revisión de salida**: con cada check-out se abre sola una OT «Revisión de salida · Apartamento …» (instalaciones, electrodomésticos, fontanería, climatización, iluminación, cerraduras y desperfectos). Revise el apartamento y ciérrela como cualquier OT; si hay algo que reparar, anótelo.
+- **Tras la salida del cliente** ya no se abre sola una OT de revisión (desde el 13/10/2026). Limpieza revisa el apartamento con la **hoja de revisión de salida**; si encuentra algo, recepción pulsa **Hecha con incidencia** en el parte de limpieza y se abre la OT, que llega también a gestión (INVERGESTION).
+- **Averías que cierra gestión**: si una orden de trabajo de gestión deja el apartamento fuera de servicio, el PMS lo bloquea solo («Lo ha cerrado gestión…») y lo reabre cuando se cierra esa orden allí. No se puede desbloquear a mano desde el PMS.
 
 ## La orden en el móvil (enlace de la OT)
 - Al enviarle una orden le llega por **WhatsApp** o **correo** un mensaje: «Tiene una nueva orden de trabajo OT-xxxxx en … Acceda aquí para gestionarla: enlace». Ábralo en el móvil: **no hace falta usuario ni contraseña**.

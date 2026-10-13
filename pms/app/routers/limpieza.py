@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from .. import avisos, documentos, dotacion, firma_contrato, limpiezas
 from ..database import get_db
-from ..models import Asset, CleaningTask, EmailLog, ReceivedDocument, Unit
+from ..models import Asset, CleaningTask, EmailLog, ReceivedDocument, Unit, WorkOrder
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request, get_or_404
 from .personal import despachar, destinatarios
@@ -103,16 +103,38 @@ def _tarea(db: Session, scope: Scope, tid: int) -> CleaningTask:
     return t
 
 
+class HechaIn(BaseModel):
+    """«Hecha con incidencia»: limpieza o la revisión tras la salida han encontrado algo que reparar."""
+    incidencia: str | None = Field(default=None, max_length=1000)
+    prioridad: str = Field(default="media", pattern="^(baja|media|alta|urgente)$")
+    bloquea: bool = False
+
+
 @router.post("/{tid}/hecha")
-def mark_done(tid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    """Recepción valida la limpieza (limpieza ha avisado de que está hecha): sale del parte."""
+def mark_done(tid: int, data: HechaIn | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Recepción valida la limpieza (limpieza ha avisado de que está hecha): sale del parte. Si se marca una
+    incidencia se abre una orden de trabajo de mantenimiento enlazada (y se avisa a gestión, origen PMS_CHECKOUT)."""
     t = _tarea(db, scope, tid)
     if t.estado != "pendiente":
         bad_request("La limpieza no está pendiente")
+    w = None
+    texto = (data.incidencia or "").strip() if data else ""
+    if texto:
+        u = t.unit
+        w = WorkOrder(asset_id=t.asset_id, unit_id=t.unit_id, tipo="correctivo", categoria="general",
+                      prioridad=data.prioridad, titulo=f"Incidencia tras la limpieza · Apartamento {u.codigo}"[:200],
+                      descripcion=texto, bloquea_unidad=data.bloquea, abierta_por=scope.user.id, fecha_prevista=date.today())
+        w._origen_gestion = "PMS_CHECKOUT" if t.tipo == "salida" else "PMS_INCIDENCIA"
+        db.add(w)
+        db.flush()
+        t.nota = ((f"{t.nota} · " if t.nota else "") + f"Incidencia: OT-{w.id:05d}")[-300:]
     limpiezas.validar(db, t, scope.user)
-    audit(db, scope.user, "limpieza_validada", "unidad", t.unit_id, {"limpieza": t.id, "tipo": t.tipo})
+    if w is not None and w.bloquea_unidad and t.unit.estado in ("disponible", "pendiente_limpieza"):
+        t.unit.estado = "mantenimiento"
+    audit(db, scope.user, "limpieza_validada", "unidad", t.unit_id,
+          {"limpieza": t.id, "tipo": t.tipo, **({"orden_trabajo": w.id} if w else {})})
     db.commit()
-    return {"ok": True, "unidad_estado": t.unit.estado}
+    return {"ok": True, "unidad_estado": t.unit.estado, "orden_trabajo": w.id if w else None}
 
 
 @router.post("/{tid}/deshacer")

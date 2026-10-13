@@ -131,3 +131,10 @@
 - **Comparativo y adjudicación**: mapa de calor por partida y capítulo (azul = baja anormal, rojo = exceso; ★ = mejor oferta completa) y **PDF del comparativo**. Se adjudica todo a un contratista o cada capítulo a uno distinto.
 - **Aprobación**: por encima de 30.000 € sin IVA, la adjudicación va por correo a la **Dirección General** con el comparativo y los botones **Aprobar** y **Rechazar**. La obra queda bloqueada hasta su decisión. Si la rechaza, el proyecto vuelve al comparativo.
 - **Plantillas CAPEX tipo** y **Base de precios (BC3)**: se gestionan en sus pantallas. La forma más rápida de crear una plantilla es abrir un proyecto y pulsar **Guardar como plantilla**.
+
+## Pasarela con INVERGESTION (gestión)
+- **Administración → Pasarela con gestión**: estado de la conexión, avisos enviados a gestión (reservas, salidas, incidencias y liquidaciones) y los que no han llegado. Si gestión no responde, el PMS reintenta solo (1 min, 5 min, 30 min, 2 h y después cada 2 h) y avisa por correo; no se pierde nada. **Reintentar ahora** adelanta el reintento.
+- **Comisión de cada canal** (% del bruto: Booking, Airbnb…) por activo. Con ella se calcula el neto de la **liquidación mensual** que recibe gestión; gestión la compara con los cobros del banco.
+- **Liquidación mensual**: **Ver** la de un mes y **Mandar a gestión**. Si se marca **Mandar sola cada mes**, el día 2 se manda la del mes anterior. La cifra sale de las reservas del PMS: si no están todas metidas, saldrá corta. Gestión no sustituye una producción metida a mano sin enseñar antes las diferencias.
+- Claves: PMS_EVENTOS_SECRET y PMS_GESTION_SSO_SECRET en el .env del servidor, las mismas en gestión. Sin la segunda, el botón «Gestión» abre gestión y allí se entra con usuario y contraseña.
+- El importador manual de ZIP (exportación a INVERGESTION) sigue disponible como respaldo.
