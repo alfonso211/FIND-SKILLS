@@ -62,6 +62,21 @@ def test_portal_colaborador(client, admin, ids):
     assert [p["nombre"] for p in client.get("/api/colaborador/personal", headers=col).json()] == ["Ana Colab"]
     ots = client.get("/api/colaborador/ordenes", headers=col).json()
     assert [o["id"] for o in ots] == [w1["id"]]
+    assert ots[0]["gestionar"] is None  # trabajo ya confirmado: no se gestiona más
+
+    # una OT abierta se gestiona desde el portal con la misma pantalla del enlace (y se ve su último resultado)
+    from test_tecnico_ot import _fin
+    w3 = client.post("/api/mantenimiento/ordenes", headers=admin, json={
+        "asset_id": bab, "titulo": "Cristales del portal", "asignacion": "subcontrata", "proveedor_id": prov["id"]}).json()
+    o3 = next(o for o in client.get("/api/colaborador/ordenes", headers=col).json() if o["id"] == w3["id"])
+    assert o3["gestionar"].startswith(f"/tecnico/{w3['id']}?") and o3["ultimo"] is None
+    q = o3["gestionar"].split("?", 1)[1]
+    assert client.get(o3["gestionar"]).status_code == 200
+    assert client.get(f"/api/publico/ot/{w3['id']}/datos?{q}").json()["propuesta"]["empresa"] == "Limpiezas Colab S.L."
+    assert client.post(f"/api/publico/ot/{w3['id']}/finalizar?{q}", json=_fin(resultado="pendiente_material")).status_code == 200
+    o3 = next(o for o in client.get("/api/colaborador/ordenes", headers=col).json() if o["id"] == w3["id"])
+    assert o3["ultimo"]["resultado"] == "Pendiente de material" and o3["gestionar"]
+    client.post(f"/api/mantenimiento/ordenes/{w3['id']}/cerrar", headers=admin, json={"cancelar": True, "motivo": "Prueba"})
     envios = client.get("/api/colaborador/envios", headers=col).json()
     assert len(envios) == 1 and envios[0]["persona"] == "Ana Colab" and "portal" in envios[0]["texto"].lower()
     partes = client.get("/api/colaborador/partes", headers=col).json()

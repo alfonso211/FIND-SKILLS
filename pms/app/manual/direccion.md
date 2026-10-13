@@ -74,7 +74,7 @@
 
 ## Colaboradores (subcontratas)
 - **Alta**: en *Administración → Usuarios*, nuevo usuario con su correo, en **Colaborador externo de** elija su empresa (ficha de Proveedores) y dele el rol **Colaborador** en los activos donde trabaja. Un usuario por persona; desactívelo al terminar el contrato.
-- El colaborador **solo entra en su portal**: el programa le bloquea cualquier otra pantalla. Ve las OT encargadas a su empresa o a su personal, sus líneas de los partes validados, lo que se ha enviado a su personal (OT, partes de limpieza) y la ficha de su personal.
+- El colaborador **solo entra en su portal**: el programa le bloquea cualquier otra pantalla. Ve las OT encargadas a su empresa o a su personal (y las gestiona con **Gestionar**, como con el enlace de WhatsApp: tiempos, trabajos, material, estado final y firma), sus líneas de los partes validados, lo que se ha enviado a su personal (OT, partes de limpieza) y la ficha de su personal.
 - **Sube** facturas, albaranes, presupuestos, documentación de personal y legal / CAE. Quedan **pendientes de revisar** en Documentos recibidos y se avisa por correo a Recepción 1.
 - Antes de dar acceso: contrato de **encargado del tratamiento** (art. 28 RGPD) con la subcontrata.
 

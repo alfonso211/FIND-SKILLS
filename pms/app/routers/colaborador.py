@@ -15,8 +15,8 @@ from sqlalchemy.orm import Session
 
 from .. import ausencias, avisos, documentos
 from ..database import get_db
-from ..models import (AREAS_PERSONAL, TIPOS_DOCUMENTO, Asset, ReceivedDocument, StaffDispatch, StaffMember, Supplier,
-                      WorkOrder, WorkReport)
+from ..models import (AREAS_PERSONAL, RESULTADOS_TECNICO, TIPOS_DOCUMENTO, Asset, ReceivedDocument, StaffDispatch,
+                      StaffMember, Supplier, WorkOrder, WorkOrderVisit, WorkReport)
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request, get_or_404
 from .gastos import _fichero
@@ -85,17 +85,29 @@ def staff(c: Ctx = Depends(ctx)):
 
 @router.get("/ordenes")
 def orders(abiertas: bool = False, c: Ctx = Depends(ctx), db: Session = Depends(get_db)):
+    """Sus órdenes con el último resultado enviado y, si siguen abiertas para el técnico, el enlace a la misma
+    pantalla de gestión (llegada, trabajos, material, estado al finalizar y firma) que reciben por WhatsApp."""
+    from .mantenimiento import _token
+    from .tecnico import FINALIZADAS
     nombres = {p.id: p.nombre for p in c.personal}
+    ots = [w for w in _ordenes(db, c) if not (abiertas and w.estado in ("cerrada", "cancelada"))]
+    ultimas: dict[int, WorkOrderVisit] = {}
+    for v in db.scalars(select(WorkOrderVisit).where(WorkOrderVisit.work_order_id.in_([w.id for w in ots] or [-1]),
+                                                     WorkOrderVisit.enviado.is_not(None)).order_by(WorkOrderVisit.enviado)):
+        ultimas[v.work_order_id] = v
     out = []
-    for w in _ordenes(db, c):
-        if abiertas and w.estado in ("cerrada", "cancelada"):
-            continue
+    for w in ots:
+        v = ultimas.get(w.id)
         out.append({"id": w.id, "ref": f"OT-{w.id:05d}", "activo": c.activos[w.asset_id].nombre,
                     "lugar": _lugar(db, w.asset_id, w.unit_id, w.zona), "titulo": w.titulo,
                     "descripcion": w.descripcion, "prioridad": w.prioridad, "estado": w.estado,
                     "fecha_apertura": w.fecha_apertura.isoformat(), "fecha_prevista": w.fecha_prevista.isoformat()
                     if w.fecha_prevista else None, "terminada": w.conf_mto_fecha.isoformat()
-                    if w.conf_mto_fecha else None, "solucion": w.solucion, "persona": nombres.get(w.personal_id)})
+                    if w.conf_mto_fecha else None, "solucion": w.solucion, "persona": nombres.get(w.personal_id),
+                    "ultimo": {"resultado": RESULTADOS_TECNICO[v.resultado], "enviado": v.enviado.isoformat(),
+                               "tecnico": v.tecnico, "fecha_propuesta": v.fecha_propuesta.isoformat()
+                               if v.fecha_propuesta else None} if v else None,
+                    "gestionar": None if w.estado in FINALIZADAS else f"/tecnico/{w.id}?{_token(w.id)}"})
     return out
 
 
