@@ -1,5 +1,8 @@
 # Novedades
 
+## 2026-10-13 · Versión 1.38 · Órdenes de trabajo desde el portal del colaborador
+- **Colaboradores (subcontratas)**: en su portal, botón **Gestionar** en cada orden abierta. Abre la misma pantalla que el enlace de WhatsApp (llegada, trabajos, material, estado al finalizar y firma), sin depender del mensaje. Nueva columna **Último resultado**.
+
 ## 2026-10-13 · Versión 1.37 · Órdenes de trabajo en el móvil del técnico
 - **Recepción y dirección**: botón **Asignar** (personal propio o subcontrata). **Enviar** manda por WhatsApp o correo el mensaje «Tiene una nueva orden de trabajo OT-xxxxx en … Acceda aquí para gestionarla» con un enlace seguro.
 - **Técnicos (propios y subcontratas)**: desde el enlace, sin usuario, indican llegada y salida, trabajos, material, fotos y el **estado al finalizar** (resuelta, pendiente de material, otra visita con fecha, derivar a subcontrata u otro), y **firman** en la pantalla.

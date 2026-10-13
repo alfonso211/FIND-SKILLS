@@ -4341,8 +4341,11 @@ V.colaborador = async (el) => {
         { k: "prioridad", t: "Prioridad", f: badge }, { k: "estado", t: "Estado", f: badge },
         { k: "fecha_apertura", t: "Abierta", f: (v, w) => fdate(v) + (w.fecha_prevista ? `<div class="muted peq">prevista ${fdate(w.fecha_prevista)}</div>` : "") },
         { k: "solucion", t: "Realizado", f: (v, w) => (w.terminada ? `${fdate(w.terminada)}<div class="muted peq">${esc(v || "")}</div>` : "") },
+        { k: "ultimo", t: "Último resultado", f: (v) => (v ? `<b>${esc(v.resultado)}</b><div class="muted peq">${fdt(v.enviado)}${v.tecnico ? ` · ${esc(v.tecnico)}` : ""}${v.fecha_propuesta ? `<br>siguiente visita ${fdate(v.fecha_propuesta)}` : ""}</div>` : '<span class="muted">—</span>') },
         { k: "persona", t: "Persona" },
-      ], await get("/api/colaborador/ordenes", { abiertas: $("#ab", el).checked }), (w) => [["Subir factura / albarán", () => subirColab({ work_order_id: w.id, tipo: "factura" })]]);
+      ], await get("/api/colaborador/ordenes", { abiertas: $("#ab", el).checked }), (w) => [
+        w.gestionar && ["Gestionar", () => window.open(w.gestionar, "_blank", "noopener"), "primary"],
+        ["Subir factura / albarán", () => subirColab({ work_order_id: w.id, tipo: "factura" })]]);
       $("#ab", el).onchange = load; load();
     },
     partes: async () => {

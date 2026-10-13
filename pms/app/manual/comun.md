@@ -37,6 +37,7 @@
 
 ## Portal del colaborador (subcontratas)
 - Si su usuario es de una empresa colaboradora, al entrar verá solo el **Portal del colaborador**: sus órdenes de trabajo, sus trabajos en los partes, los envíos a su personal, sus documentos y su personal.
+- En **Órdenes de trabajo**, el botón **Gestionar** de cada orden abierta abre la misma pantalla que el enlace de WhatsApp: llegada, trabajos, material, estado al finalizar y firma. La columna **Último resultado** muestra lo último enviado y, si la hay, la fecha de la siguiente visita.
 - **Subir documento**: elija el activo, el tipo (factura, albarán, presupuesto, documentación de personal, legal / CAE u otro), la fecha y el fichero (PDF o fotos). Queda **pendiente de revisar**; si se rechaza, verá el motivo. Mientras esté pendiente lo puede borrar.
 
 ## Código postal
