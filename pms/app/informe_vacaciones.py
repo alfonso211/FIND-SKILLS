@@ -395,13 +395,15 @@ def pendientes(db: Session) -> list[VacationChange]:
 
 def enviar_pendientes(db: Session, ahora: datetime | None = None, forzar: bool = False) -> int:
     """Una revisión por año con todos los cambios acumulados. Sin forzar, cuando el cambio más antiguo lleva el
-    intervalo configurado esperando y en horario de 8 a 20 (no se envían correos de madrugada)."""
+    intervalo configurado esperando, en días laborables (ni fines de semana ni festivos de Madrid) y de 8 a 20 h.
+    Lo que se acumula el fin de semana sale el lunes a primera hora."""
     ahora = ahora or datetime.now()
     cola = pendientes(db)
     if not cola:
         return 0
     if not forzar:
-        if not 8 <= ahora.hour < 20:
+        from .calendario import laborable
+        if not laborable(ahora.date()) or not 8 <= ahora.hour < 20:  # solo días laborables, de 8 a 20 h
             return 0
         if ahora - cola[0].creado < timedelta(hours=settings.vacaciones_envio_horas):
             return 0
