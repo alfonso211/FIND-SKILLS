@@ -36,6 +36,8 @@
 - Si falta un artículo: escriba su nombre en **Otra dotación** y pulse **+ Otra dotación**. Queda en el catálogo para la próxima vez.
 - **Apartamento concreto** (con terraza, VIP…): en la misma pantalla elija el apartamento y pulse **Dotación propia**. Manda sobre la de su tipo; con **Quitar** vuelve a la de su tipo.
 - **Precios de reposición**: precio por unidad de cada artículo (IVA incluido). Vienen orientativos; ajústelos a lo que se paga.
+- **Revisión en el móvil de limpieza**: en el *Parte de limpieza → Revisión en el móvil* salen los enlaces de las salidas del día; **Enviar todos por WhatsApp** a limpieza. Cada enlace abre la dotación del apartamento: marcan **Falta** o **Roto** y cuántos, y envían. Recepción 1 recibe un correo si hay incidencias. También desde la salida, con el botón **Revisión en el móvil de limpieza**. El enlace caduca a los 7 días.
+- **Informe de roturas**: en *Devoluciones de fianza → Informe de roturas*, por artículo y por apartamento, con Excel.
 - **Hoja de revisión de salida**: PDF con la dotación del apartamento por zonas, con casillas **OK / Falta / Roto** y el precio de reposición. Está en la reserva (botón **Dotación**), en la salida y en el **Parte de limpieza → Hojas de revisión** (todas las salidas del día).
 - **Dotación especial** de una reserva: botón **Dotación** de la reserva. Quite, cambie cantidades o añada artículos (cuna, plancha extra…). Sale marcada como «dotación especial» en el anexo del contrato.
 
@@ -44,6 +46,9 @@
 - **Check-out** a la salida. Si la reserva tiene **fianza**, sale la **devolución de fianza**: cliente, importe y forma (**transferencia**, **efectivo** o **tarjeta**, según indiquen Recepción 1 o Recepción 2).
   - **Transferencia**: ponga el **IBAN** del cliente y la fecha. Los datos se envían por **correo** a Bárbara y a Alfonso, y se abren los botones de **WhatsApp** con el mismo texto. Queda en el registro de envíos y en el envío a INVERGESTION.
   - **Roturas y faltas**: elija el artículo de la dotación y cuántos. Se descuentan de la fianza a su precio de reposición y el detalle va solo en el motivo.
+  - Si limpieza ha hecho la **revisión en el móvil**, lo que marcó como roto o que falta ya sale cargado.
+  - **OT mantenimiento**: márquela en lo roto que haya que reponer o reparar; se abre una orden de trabajo para ese apartamento. Lo roto de valor ya viene marcado.
+  - Si las roturas **superan la fianza**, marque **Facturar al cliente lo que supera la fianza**. Se emite una factura sin IVA (es una indemnización) que queda **pendiente de cobro**.
   - Si se retiene algo más, indique el **motivo**. Si no procede devolverla, elija **No procede**.
   - En *Reservas → Devoluciones de fianza* se ven todas; cuando la Dirección haga la transferencia, pulse **Transferencia hecha**.
 - Tras el check-out el apartamento pasa a **pendiente de limpieza**, sale en el **parte de limpieza** y se abre sola una **OT de revisión de salida** para mantenimiento.

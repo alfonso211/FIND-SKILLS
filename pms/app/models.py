@@ -276,6 +276,9 @@ class Reservation(Base):
     # Dotación entregada: {habitual: bool, cambios: {codigo: cantidad («—» = se quita)}, extra: [{codigo, zona,
     # articulo, cantidad}]}. Ver app/dotacion.py
     dotacion: Mapped[dict | None] = mapped_column(JSON)
+    # Revisión de salida hecha por limpieza desde el móvil: {fecha, nombre, nota, items: [{codigo, articulo, zona,
+    # estado: falta|roto, cantidad, precio}]} (solo lo que no está bien)
+    revision: Mapped[dict | None] = mapped_column(JSON)
     unit: Mapped[Unit] = relationship()
     guest: Mapped[Contact] = relationship()
     ocupantes: Mapped[list["ReservationGuest"]] = relationship(order_by="ReservationGuest.orden",
@@ -1387,8 +1390,9 @@ class DepositRefund(Base):
     user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     avisada: Mapped[datetime | None] = mapped_column(DateTime)  # correo a la Dirección
     exportada: Mapped[datetime | None] = mapped_column(DateTime)  # incluida en un envío a INVERGESTION
-    # roturas y faltas descontadas con su precio de reposición: [{codigo, articulo, cantidad, precio, importe}]
+    # roturas y faltas descontadas con su precio de reposición: [{codigo, articulo, cantidad, precio, importe, ot_id}]
     cargos: Mapped[list | None] = mapped_column(JSON)
+    factura_exceso: Mapped[str | None] = mapped_column(String(30))  # factura de lo que supera la fianza
 
 
 # --------------------------------------------------------------------------- dotación

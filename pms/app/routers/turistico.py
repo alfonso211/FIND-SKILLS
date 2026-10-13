@@ -11,13 +11,14 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm.attributes import flag_modified
 
 from ..config import settings
 from ..database import get_db
 from .. import (avisos, clientes, contratos, documentos, dotacion, encuesta_ine, fianzas, firma_contrato, importacion,
                importacion_ocupacion, limpiezas, nif, planos, recibos, registro_viajeros, tarifas)
-from ..facturacion import (IVA_ALOJAMIENTO, IVA_GENERAL, datos_cliente, dinero, emitir, estancia_facturada, linea,
-                           lineas_servicios, serie_activo)
+from ..facturacion import (EXENCION_INDEMNIZACION, IVA_ALOJAMIENTO, IVA_GENERAL, datos_cliente, dinero, emitir,
+                           estancia_facturada, linea, lineas_servicios, serie_activo)
 from ..models import (FORMAS_DEVOLUCION, MODALIDADES_RESERVA, AccommodationContract, Asset, Contact, DepositRefund, Invoice, Lease,
                       Reservation, ReservationGuest, Unit, User, WorkOrder)
 from ..schemas import (AccommodationContractIn, CheckoutIn, DepositRefundIn, ExtrasPaymentIn, LimpiezaPlanIn, OccupantIn, Payment, RenewalIn,
@@ -430,6 +431,7 @@ def deposit_info(rid: int, scope: Scope = Depends(get_scope), db: Session = Depe
     d = _devolucion(db, r)
     return {"fianza": fianzas.importe(r), "titular": fianzas.titular(r), "iban": r.guest.iban,
             "procede": fianzas.importe(r) > 0 and d is None, "devolucion": fianzas.a_dict(d) if d else None,
+            "revision": r.revision,
             "formas": FORMAS_DEVOLUCION, "avisos": list(settings.fianza_avisos)}
 
 
@@ -470,11 +472,43 @@ def _registrar_devolucion(db: Session, scope: Scope, r: Reservation, f: DepositR
     db.add(d)
     db.flush()
     extra: dict = {}
+    u = r.unit
+    ots = []
+    for c, ci in zip(cargos, f.cargos):  # lo roto que hay que reponer o reparar va a mantenimiento
+        if not ci.ot:
+            continue
+        w = WorkOrder(asset_id=u.asset_id, unit_id=u.id, tipo="correctivo", categoria="general", prioridad="media",
+                      titulo=f"Reponer o reparar: {c['articulo']} · Apartamento {u.codigo}"[:200],
+                      fecha_prevista=date.today(), abierta_por=scope.user.id,
+                      descripcion=(f"Roto o falta a la salida del cliente (reserva {r.localizador or 'R-' + str(r.id)}): "
+                                   f"{c['cantidad']} × {c['articulo']}. Precio de reposición {c['precio']:.2f} € "
+                                   "(cargado en la fianza). Reponer o reparar antes de la próxima llegada."))
+        db.add(w)
+        db.flush()
+        c["ot_id"] = w.id
+        ots.append(w.id)
+    if ots:
+        flag_modified(d, "cargos")  # se ha añadido la OT a cada cargo
+        extra["ots"] = ots
+    exceso = round(suma - total, 2)
+    if exceso > 0 and f.facturar_exceso:  # lo que no cubre la fianza: factura al cliente, pendiente de cobro
+        a = u.asset
+        concepto = (f"Reposición de la dotación dañada o no devuelta · Apartamento {u.codigo} · Reserva "
+                    f"{r.localizador or 'R-' + str(r.id)}: importe que excede de la fianza de {total:.2f} € "
+                    f"(total {suma:.2f} €). " + "; ".join(f"{c['cantidad']} × {c['articulo']}" for c in cargos))
+        fx = emitir(db, scope.user, company=a.company, serie=serie_activo(a), asset_id=a.id,
+                    cliente=datos_cliente(r.guest, None), contact_id=r.guest_id,
+                    lineas=[linea("servicio", concepto[:1000], exceso, 0)], fecha_operacion=date.today(),
+                    forma_pago="transferencia", reservation_id=r.id, cobro="pendiente",
+                    exencion=EXENCION_INDEMNIZACION)
+        d.factura_exceso = fx.codigo
+        extra["factura_exceso"] = {"id": fx.id, "codigo": fx.codigo, "total": float(fx.total)}
     if f.forma == "transferencia" and importe > 0:
         extra["avisos"] = fianzas.avisar(db, d, r, scope.user)
         extra["whatsapp"] = fianzas.whatsapp(db, d, r)
     audit(db, scope.user, "devolver_fianza", "reserva", r.id,
-          {"forma": f.forma, "fianza": total, "importe": importe, "devolucion": d.id, "cargos": suma})
+          {"forma": f.forma, "fianza": total, "importe": importe, "devolucion": d.id, "cargos": suma,
+           "ots": ots, "factura_exceso": d.factura_exceso})
     return d, extra
 
 
@@ -1732,3 +1766,85 @@ def stay_kit_save(rid: int, data: DotacionReservaIn, scope: Scope = Depends(get_
     audit(db, scope.user, "dotacion_reserva", "reserva", r.id, {"cambios": len(cambios), "extra": len(extra)})
     db.commit()
     return dotacion.de_reserva(db, r)
+
+
+# --------------------------------------------------------------------------- informe de roturas
+def _roturas(db: Session, scope: Scope, asset_id: int | None, desde: date, hasta: date) -> dict:
+    """Roturas y faltas descontadas de las fianzas en el periodo: por artículo, por apartamento y totales."""
+    ids = scope.asset_ids("reservas.ver")
+    stmt = select(DepositRefund, Unit, Asset).join(Reservation, Reservation.id == DepositRefund.reservation_id)\
+        .join(Unit, Unit.id == Reservation.unit_id).join(Asset, Asset.id == DepositRefund.asset_id)\
+        .where(DepositRefund.fecha >= desde, DepositRefund.fecha <= hasta)
+    if ids is not None:
+        stmt = stmt.where(DepositRefund.asset_id.in_(ids or {-1}))
+    if asset_id:
+        stmt = stmt.where(DepositRefund.asset_id == asset_id)
+    art: dict[str, dict] = {}
+    apt: dict[tuple, dict] = {}
+    salidas = con_cargos = 0
+    total = exceso = 0.0
+    for d, u, a in db.execute(stmt):
+        salidas += 1
+        cargos = d.cargos or []
+        if not cargos:
+            continue
+        con_cargos += 1
+        suma = sum(float(c["importe"]) for c in cargos)
+        total += suma
+        exceso += max(0.0, suma - float(d.fianza)) if d.factura_exceso else 0.0
+        k = (a.nombre, u.codigo)
+        x = apt.setdefault(k, {"activo": a.nombre, "unidad": u.codigo, "tipologia": u.tipologia, "salidas": 0,
+                               "unidades": 0, "importe": 0.0})
+        x["salidas"] += 1
+        for c in cargos:
+            y = art.setdefault(c.get("codigo") or c["articulo"], {"codigo": c.get("codigo"), "articulo": c["articulo"],
+                                                                  "veces": 0, "unidades": 0, "importe": 0.0, "ots": 0})
+            y["veces"] += 1
+            y["unidades"] += int(c["cantidad"])
+            y["importe"] += float(c["importe"])
+            y["ots"] += 1 if c.get("ot_id") else 0
+            x["unidades"] += int(c["cantidad"])
+            x["importe"] += float(c["importe"])
+    redondea = lambda xs: [{**v, "importe": round(v["importe"], 2)} for v in xs]  # noqa: E731
+    return {"desde": desde.isoformat(), "hasta": hasta.isoformat(), "salidas": salidas, "con_cargos": con_cargos,
+            "total": round(total, 2), "facturado_exceso": round(exceso, 2),
+            "por_articulo": redondea(sorted(art.values(), key=lambda v: -v["importe"])),
+            "por_apartamento": redondea(sorted(apt.values(), key=lambda v: -v["importe"]))}
+
+
+@router.get("/informe-roturas")
+def breakage_report(desde: date, hasta: date, asset_id: int | None = None, formato: str = "json",
+                    scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    if desde > hasta:
+        bad_request("La fecha inicial es posterior a la final")
+    x = _roturas(db, scope, asset_id, desde, hasta)
+    if formato != "xlsx":
+        return x
+    import io
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    wb = Workbook()
+    h = wb.active
+    h.title = "Por artículo"
+    h.append([f"Roturas y faltas descontadas de fianzas · {desde:%d/%m/%Y} a {hasta:%d/%m/%Y}"])
+    h.append([f"Salidas con fianza: {x['salidas']} · con cargos: {x['con_cargos']} · total {x['total']:.2f} € · "
+              f"facturado por exceso {x['facturado_exceso']:.2f} €"])
+    h.append([])
+    h.append(["Código", "Artículo", "Veces", "Unidades", "Importe €", "OT abiertas"])
+    for v in x["por_articulo"]:
+        h.append([v["codigo"], v["articulo"], v["veces"], v["unidades"], v["importe"], v["ots"]])
+    h2 = wb.create_sheet("Por apartamento")
+    h2.append(["Activo", "Apartamento", "Tipología", "Salidas con cargos", "Unidades", "Importe €"])
+    for v in x["por_apartamento"]:
+        h2.append([v["activo"], v["unidad"], v["tipologia"], v["salidas"], v["unidades"], v["importe"]])
+    for hoja, fila in ((h, 4), (h2, 1)):
+        for c in hoja[fila]:
+            c.font = Font(bold=True)
+        for col, ancho in zip("ABCDEF", (10, 45, 12, 12, 12, 12)):
+            hoja.column_dimensions[col].width = ancho
+    h["A1"].font = Font(bold=True, size=13)
+    out = io.BytesIO()
+    wb.save(out)
+    return Response(out.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="Roturas_{desde:%Y%m%d}_{hasta:%Y%m%d}.xlsx"'})

@@ -402,6 +402,7 @@ class CargoIn(BaseModel):
     articulo: str = Field(min_length=1, max_length=160)
     cantidad: int = Field(default=1, ge=1, le=999)
     precio: float = Field(ge=0, le=100000)
+    ot: bool = False  # roto y hay que reponerlo o repararlo: orden de trabajo a mantenimiento
 
 
 class DepositRefundIn(BaseModel):
@@ -413,6 +414,7 @@ class DepositRefundIn(BaseModel):
     fecha: date | None = None  # de la transferencia (prevista); por defecto, hoy
     nota: str | None = Field(default=None, max_length=1000)
     cargos: list[CargoIn] = Field(default=[], max_length=100)  # roturas y faltas con su precio de reposición
+    facturar_exceso: bool = False  # lo que supera la fianza se factura al cliente (pendiente de cobro)
 
 
 class CheckoutIn(BaseModel):
