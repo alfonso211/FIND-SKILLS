@@ -685,6 +685,9 @@ def _bucle() -> None:
                 from .informe_vacaciones import recordatorio_semanal
                 with SessionLocal() as db:
                     recordatorio_semanal(db, ahora.date())  # los lunes; una vez por semana y persona
+            from .informe_vacaciones import enviar_pendientes
+            with SessionLocal() as db:
+                enviar_pendientes(db, ahora.replace(tzinfo=None))  # calendario de vacaciones: cambios agrupados
         except Exception:  # noqa: BLE001
             log.exception("Error en el programador de avisos")
         time.sleep(120)  # cada 2 minutos: los recordatorios de la agenda llegan a su hora

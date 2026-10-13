@@ -35,7 +35,7 @@
 - El **cuadrante del mes** muestra quién falta cada día (rayado = pendiente). Las bajas médicas solo las ven con detalle la persona, Recepción 1 y dirección; los demás ven «Ausencia».
 - Mientras está pendiente, la puede **anular** usted mismo.
 - Cuando se **autoriza**, se **desestima** o se **anula**, le llega un correo con el resultado y, si no se autoriza, el motivo.
-- Con cada cambio en las vacaciones de cualquiera, todos reciben por correo el **calendario de vacaciones** actualizado. También está en el botón **Calendario de vacaciones (PDF)**.
+- Cuando hay cambios en las vacaciones, todos reciben por correo el **calendario de vacaciones** actualizado. Los cambios se agrupan en un solo correo cada pocas horas. También está en el botón **Calendario de vacaciones (PDF)**.
 - Si le quedan días sin solicitar, cada lunes le llegará un recordatorio para que los pida antes del 31 de diciembre.
 
 ## Mi jornada (fichar)

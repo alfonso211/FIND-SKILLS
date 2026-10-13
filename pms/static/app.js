@@ -3302,21 +3302,21 @@ async function vacacionesFicha(p, reload) {
     { html: `<div class="capex-kpis" style="margin-bottom:10px"><div><small>Corresponden (${esc(s.tipo)})</small><b>${s.corresponden}</b></div><div><small>Disfrutadas</small><b>${s.disfrutadas}</b></div>
       <div><small>Solicitadas (pdte. disfrutar)</small><b>${s.solicitadas}</b></div><div class="${s.pendientes_solicitar > 0 ? "mal" : ""}"><small>Pendientes de solicitar</small><b>${s.pendientes_solicitar}</b></div></div>
       ${filas ? `<div class="table-wrap"><table><thead><tr><th>Periodo</th><th class="num">Días</th><th>Estado</th><th></th><th></th></tr></thead><tbody>${filas}</tbody></table></div>` : '<p class="muted">Sin periodos registrados este año.</p>'}
-      ${r.registrar ? `<h4>Registrar vacaciones (Director Técnico)</h4><p class="muted peq">Para cuadrar el saldo: periodos ya disfrutados o ya acordados con la persona. Quedan autorizados y se envía el calendario actualizado a todos los usuarios y colaboradores.</p><div id="vfPer"></div><button type="button" class="btn sm" id="vfMas">+ Otro periodo</button>` : ""}` },
+      ${r.registrar ? `<h4>Registrar vacaciones (Director Técnico)</h4><p class="muted peq">Para cuadrar el saldo: periodos ya disfrutados o ya acordados con la persona. Quedan autorizados y se incluyen en la próxima revisión del calendario, que se envía a todos los usuarios y colaboradores.</p><div id="vfPer"></div><button type="button" class="btn sm" id="vfMas">+ Otro periodo</button>` : ""}` },
     ...(r.registrar ? [{ k: "nota", t: "Nota (opcional)", wide: true }] : []),
   ], {}, async (d, fm) => {
     if (!r.registrar) return;
     const periodos = [...fm.querySelectorAll(".vf-per")].map((x) => ({ desde: x.querySelector("[data-d]").value, hasta: x.querySelector("[data-h]").value })).filter((x) => x.desde && x.hasta);
     if (!periodos.length) throw new Error("Indique al menos un periodo (desde y hasta)");
     await post(`/api/personal/${p.id}/vacaciones`, { periodos, nota: d.nota });
-    toast("Vacaciones registradas · calendario enviado a todos"); reload();
-  }, r.registrar ? "Registrar y enviar calendario" : "Cerrar");
+    toast("Vacaciones registradas · saldrán en la próxima revisión del calendario"); reload();
+  }, r.registrar ? "Registrar" : "Cerrar");
   $("#modal").classList.add("ancho");
   const otro = () => $("#vfPer", f).insertAdjacentHTML("beforeend", '<div class="vf-per toolbar"><label>Desde <input type="date" data-d></label><label>Hasta <input type="date" data-h></label></div>');
   if (r.registrar) { otro(); $("#vfMas", f).onclick = otro; }
   f.querySelectorAll("[data-anula]").forEach((b) => (b.onclick = async () => {
     const m = prompt("Motivo de la anulación (se comunica a la persona y a Recepción):"); if (!m) return;
-    await run(() => post(`/api/ausencias/${b.dataset.anula}/anular`, { nota: m }), "Periodo anulado · calendario enviado"); $("#modal").close(); reload(); vacacionesFicha(p, reload);
+    await run(() => post(`/api/ausencias/${b.dataset.anula}/anular`, { nota: m }), "Periodo anulado"); $("#modal").close(); reload(); vacacionesFicha(p, reload);
   }));
 }
 
@@ -4518,13 +4518,24 @@ V.ausencias = async (el) => {
   el.innerHTML = `<div class="toolbar"><label>Mes<input type="month" id="m" value="${today().slice(0, 7)}"></label>
     <select id="e"><option value="vigentes">Pendientes y aprobadas</option><option value="">Todas</option><option value="pendiente">Pendientes</option><option value="aprobada">Autorizadas</option><option value="denegada">Desestimadas</option><option value="anulada">Anuladas</option></select>
     <span class="spacer"></span><button class="btn" id="cal">Calendario de vacaciones (PDF)</button><button class="btn" id="res">Resumen del año</button><button class="btn" id="xl">Excel</button><button class="btn primary" id="new">Solicitar ausencia</button></div>
-    <div id="pend"></div><div id="cuad" class="no-encajar"></div><div id="t"></div>`;
+    <div id="colaCal"></div><div id="pend"></div><div id="cuad" class="no-encajar"></div><div id="t"></div>`;
+  // cambios de vacaciones que saldrán juntos en la próxima revisión del calendario
+  const colaCal = async () => {
+    const q = await get("/api/ausencias/calendario-vacaciones/pendientes").catch(() => null);
+    if (!q || !q.cambios.length || !$("#colaCal", el)) { if ($("#colaCal", el)) $("#colaCal", el).innerHTML = ""; return; }
+    $("#colaCal", el).innerHTML = `<div class="aviso-hito" style="margin:8px 0"><b>📅 ${q.cambios.length} cambio(s) de vacaciones pendientes de enviar</b>
+      <span class="muted peq">· el calendario se envía a todos cada ${q.horas} h agrupando los cambios (próximo hacia las ${new Date(q.proximo).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}, de 8 a 20 h)</span>
+      <div class="muted peq">${q.cambios.map(esc).join(" · ")}</div>
+      ${q.puede_enviar ? '<button class="btn sm primary" id="calYa">Enviar calendario ahora</button>' : ""}</div>`;
+    if ($("#calYa", el)) $("#calYa", el).onclick = async () => { const r = await run(() => post("/api/ausencias/calendario-vacaciones/enviar")); toast(`Calendario enviado: ${r.cambios} cambio(s), ${r.correos} correo(s)`); colaCal(); };
+  };
   const leyenda = Object.entries(cat.tipos).map(([k, v]) => `<span class="aus-ley ${COLOR_AUS[k]}">${esc(v.split(" (")[0])}</span>`).join("") + '<span class="aus-ley aus-pend">Pendiente</span>';
   const load = async () => {
     const [y, m] = $("#m", el).value.split("-").map(Number), n = new Date(y, m, 0).getDate();
     const ini = `${y}-${String(m).padStart(2, "0")}-01`, fin = `${y}-${String(m).padStart(2, "0")}-${n}`;
     const filas = await get("/api/ausencias", { asset_id: aid, desde: ini, hasta: fin, estado: $("#e", el).value });
     const mias = (await get("/api/ausencias", { asset_id: aid, estado: "vigentes" })).filter((x) => x.puede_aprobar || x.puede_visto_bueno);
+    colaCal();
     // solicitudes que esperan su decisión (de cualquier mes): se resuelven aquí mismo
     $("#pend", el).innerHTML = mias.length ? `<div class="aviso-vencidas aus-pendientes" style="margin:8px 0"><b>${mias.length} solicitud(es) esperan su decisión</b>
       <span class="muted peq">· al autorizar, desestimar o anular se avisa por correo al trabajador y a Recepción</span><div id="pendT"></div></div>` : "";
