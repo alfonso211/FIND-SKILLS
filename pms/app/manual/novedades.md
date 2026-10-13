@@ -3,6 +3,15 @@
 ## 2026-10-15 · Versión 1.49 · Botón «Gestión» solo para la Dirección y aviso de pedidos de reposición
 - **Todos · botón «Gestión»**: solo lo ven el administrador, Alfonso y Bárbara.
 - **Dirección · pedidos de reposición sin autorizar**: si Recepción 1 no autoriza un pedido de reposición en 3 días, llega un aviso cada día laborable.
+- **Recepción · correcciones de la revisión general**:
+  - No se puede hacer el check-in si en el apartamento sigue alojado otro cliente (estancia vencida).
+  - «Editar» ya no cambia el estado de una reserva: para anular, dar la salida o el check-in están sus botones.
+  - El importe de una reserva no puede bajar de lo ya facturado.
+  - La lista negra reconoce el documento escrito con puntos, guiones o espacios.
+  - Un pago a cuenta ya no da por cobrados los extras pendientes.
+  - Al dar la salida no se puede devolver más que la fianza menos las roturas.
+- **Personal**: si alguien olvidó fichar la salida otro día, el fichaje de hoy empieza una entrada nueva y el día olvidado queda para corregirlo.
+- **Mantenimiento**: una OT urgente abierta desde «Hecha con incidencia» avisa al momento, como las demás.
 
 ## 2026-10-15 · Versión 1.48 · Pasarela con INVERGESTION (gestión)
 - **Recepción · salida sin OT automática**: el check-out ya no abre la OT de revisión de salida. En el parte de limpieza, **Hecha con incidencia** abre la OT cuando hay algo que reparar (y llega a gestión). Las OT por roturas y el pedido de reposición al dar la salida siguen igual.

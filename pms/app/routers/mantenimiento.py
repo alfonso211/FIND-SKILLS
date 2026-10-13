@@ -432,6 +432,14 @@ class EnvioAsignadoIn(BaseModel):
 
 def _destino(nombre: str, email: str | None, telefono: str | None, canales, asunto, texto, html, adj, db, clave,
              obligatorio: bool) -> list[dict]:
+    if obligatorio:  # se comprueba todo antes de enviar nada: así no sale un correo y luego un error
+        for canal in canales:
+            if canal == "email" and not email:
+                bad_request(f"{nombre} no tiene correo electrónico en su ficha")
+            if canal == "email" and not avisos.configurado():
+                bad_request("El correo no está configurado en el servidor: envíela por WhatsApp")
+            if canal != "email" and not firma_contrato.movil_whatsapp(telefono or ""):
+                bad_request(f"{nombre} no tiene un móvil válido para WhatsApp en su ficha")
     out = []
     for canal in canales:
         if canal == "email":

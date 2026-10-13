@@ -43,11 +43,20 @@ def del_activo(db: Session, scope, cid: int, asset: Asset, tipo: str) -> Contact
     return copia
 
 
+def doc_sql(col):
+    """El documento tal como lo deja nif.normalizar (sin espacios, puntos, guiones ni barras y en mayúsculas), en SQL:
+    «22222222-J», «22.222.222 j» y «22222222J» son el mismo documento."""
+    for ch in (" ", ".", "-", "/"):
+        col = func.replace(col, ch, "")
+    return func.upper(col)
+
+
 def por_documento(db: Session, asset: Asset, tipo: str, doc: str | None) -> Contact | None:
+    doc = nif.normalizar(doc)
     if not doc:
         return None
     return db.scalar(select(Contact).where(Contact.asset_id == asset.id, Contact.tipo == tipo,
-                                           func.upper(Contact.documento_num) == doc).order_by(Contact.id))
+                                           doc_sql(Contact.documento_num) == doc).order_by(Contact.id))
 
 
 def nueva(asset: Asset, tipo: str, **datos) -> Contact:
@@ -63,7 +72,7 @@ def lista_negra(db: Session, c: Contact | None = None, documento: str | None = N
     if c is not None and c.id:
         conds.append(Contact.id == c.id)
     if doc:
-        conds.append(func.upper(func.replace(Contact.documento_num, " ", "")) == doc)
+        conds.append(doc_sql(Contact.documento_num) == doc)
     if not conds:
         return []
     from sqlalchemy import or_

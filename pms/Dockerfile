@@ -6,7 +6,7 @@ WORKDIR /app
 # Lectura de documentos de identidad (OCR) y conversión de los contratos a PDF para firmarlos en tablet
 # (LibreOffice), todo en el propio servidor. Fuentes compatibles con Arial.
 RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-spa \
-       libreoffice-writer-nogui fonts-liberation fonts-dejavu-core \
+       libreoffice-writer-nogui fonts-liberation fonts-dejavu-core tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

@@ -111,18 +111,25 @@ def _asegura(db: Session, clave: str, **campos) -> CleaningTask:
     return t  # pendiente: se respeta el día (recepción puede haberla pasado a otro día)
 
 
+DIAS_ATRAS = 7  # limpiezas contratadas de días anteriores que se recuperan si nadie abrió el parte
+
+
 def sincronizar(db: Session, asset_id: int, dia: date) -> None:
     """Crea las limpiezas contratadas del día y anula las pendientes que ya no corresponden. Las de salida no se
     prevén: las crea el check-out (salida_realizada)."""
     uids = list(db.scalars(select(Unit.id).where(Unit.asset_id == asset_id, Unit.uso != "garaje")))
     if not uids:
         return
+    # también las de los últimos días: si nadie abrió el parte ese día, no se pierden (salen como arrastradas)
+    desde = dia - timedelta(days=DIAS_ATRAS)
     for r in db.scalars(select(Reservation).where(
             Reservation.unit_id.in_(uids), Reservation.limpieza.is_not(None), Reservation.fecha_entrada < dia,
-            Reservation.fecha_salida > dia, Reservation.estado.in_(("confirmada", "checkin")))):
-        if dia in fechas_plan(r.limpieza, r.fecha_entrada, r.fecha_salida):
-            _asegura(db, f"contratada:{r.id}:{dia.isoformat()}", asset_id=asset_id, unit_id=r.unit_id, fecha=dia,
-                     tipo="contratada", reservation_id=r.id)
+            Reservation.fecha_salida > desde, Reservation.estado.in_(("confirmada", "checkin")))):
+        for f in fechas_plan(r.limpieza, r.fecha_entrada, r.fecha_salida):
+            if desde <= f <= dia and (f == dia or not db.scalar(select(CleaningTask.id).where(
+                    CleaningTask.clave == f"contratada:{r.id}:{f.isoformat()}"))):
+                _asegura(db, f"contratada:{r.id}:{f.isoformat()}", asset_id=asset_id, unit_id=r.unit_id, fecha=f,
+                         tipo="contratada", reservation_id=r.id)
     db.flush()
     # apartamentos pendientes de limpieza sin ninguna limpieza pendiente (p.ej. de antes de existir el parte)
     con_tarea = set(db.scalars(select(CleaningTask.unit_id).where(CleaningTask.unit_id.in_(uids),

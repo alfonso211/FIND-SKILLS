@@ -192,6 +192,9 @@ def update_role(rid: int, data: RoleIn, scope: Scope = Depends(get_scope), db: S
     scope.require_group("usuarios.gestionar")
     _check_perms(data.permisos)
     r = get_or_404(db, Role, rid)
+    from ..security import ROLES_POR_DEFECTO
+    if r.nombre in ROLES_POR_DEFECTO and data.nombre != r.nombre:  # ausencias, personal y avisos usan su nombre
+        bad_request(f"El rol «{r.nombre}» es del sistema y no se puede renombrar (sí cambiar sus permisos)")
     old = list(r.permisos or [])
     r.nombre, r.descripcion, r.permisos = data.nombre, data.descripcion, list(data.permisos)
     audit(db, scope.user, "editar", "rol", rid, {"antes": old, "despues": data.permisos})

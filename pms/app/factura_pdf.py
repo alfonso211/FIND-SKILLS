@@ -69,7 +69,8 @@ def generar(f: Invoice, asset, original: Invoice | None = None) -> bytes:
                              ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
 
     lineas = lineas_de(f)
-    pct = lambda t: "Exento" if Decimal(str(t)) == 0 else f"{Decimal(str(t)).normalize():f} %"  # noqa: E731
+    cero = "No sujeto" if (f.exencion or "").startswith("Operación no sujeta") else "Exento"
+    pct = lambda t: cero if Decimal(str(t)) == 0 else f"{Decimal(str(t)).normalize():f} %"  # noqa: E731
     cant = lambda c: f"{Decimal(str(c)).normalize():f}".replace(".", ",")  # noqa: E731
     filas = [["Concepto", "Cant.", "Precio", "Base imponible", "IVA", "Cuota IVA", "Total"]]
     for x in lineas:

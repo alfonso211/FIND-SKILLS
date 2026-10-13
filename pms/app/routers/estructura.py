@@ -464,6 +464,13 @@ def merge_contacts(cid: int, data: MergeIn, scope: Scope = Depends(get_scope), d
                 setattr(c, k, getattr(o, k))
         if o.notas and o.notas not in (c.notas or ""):
             c.notas = f"{c.notas}\n{o.notas}" if c.notas else o.notas
+        if o.lista_negra:  # la lista negra no se pierde al unir fichas
+            c.lista_negra = True
+            if o.lista_negra_motivo and o.lista_negra_motivo not in (c.lista_negra_motivo or ""):
+                c.lista_negra_motivo = (f"{c.lista_negra_motivo} · {o.lista_negra_motivo}" if c.lista_negra_motivo
+                                        else o.lista_negra_motivo)
+            c.lista_negra_fecha = c.lista_negra_fecha or o.lista_negra_fecha
+            c.lista_negra_user_id = c.lista_negra_user_id or o.lista_negra_user_id
     ya = set(db.scalars(select(ReservationGuest.reservation_id).where(ReservationGuest.contact_id == cid)))
     for og in db.scalars(select(ReservationGuest).where(ReservationGuest.contact_id.in_(ids))):
         if og.reservation_id in ya:
@@ -474,7 +481,8 @@ def merge_contacts(cid: int, data: MergeIn, scope: Scope = Depends(get_scope), d
     db.flush()
     movidas = {}
     for modelo, col in ((Reservation, Reservation.guest_id), (Lease, Lease.tenant_id),
-                        (ContactDocument, ContactDocument.contact_id), (Invoice, Invoice.contact_id)):
+                        (ContactDocument, ContactDocument.contact_id), (Invoice, Invoice.contact_id),
+                        (DepositRefund, DepositRefund.contact_id)):
         filas = list(db.scalars(select(modelo).where(col.in_(ids))))
         for f in filas:
             setattr(f, col.key, cid)
@@ -614,6 +622,8 @@ def blacklist_check(contact_id: int | None = None, documento: str | None = None,
     if not scope.has_any("reservas.ver"):
         raise HTTPException(403, "Sin permiso")
     c = db.get(Contact, contact_id) if contact_id else None
+    if c is not None:
+        _visible(db, scope, c, "ver")  # no se consultan fichas de otras recepciones por su número
     return clientes.lista_negra(db, c, documento)
 
 
@@ -634,7 +644,7 @@ def create_contact(data: ContactIn, scope: Scope = Depends(get_scope), db: Sessi
         dup = db.scalar(select(Contact).where(Contact.company_id == data.company_id, Contact.tipo == data.tipo,
                                               Contact.asset_id.is_(None) if data.asset_id is None
                                               else Contact.asset_id == data.asset_id,
-                                              func.upper(Contact.documento_num) == doc))
+                                              clientes.doc_sql(Contact.documento_num) == doc))
         if dup:
             bad_request(f"Ya existe la ficha de {dup.nombre} {dup.apellidos or ''} con el documento {doc}: "
                         "búsquela y edítela en lugar de crear otra")

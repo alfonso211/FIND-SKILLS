@@ -552,12 +552,18 @@ SECCIONES = {
 def resumen_diario(db, dia: date | None = None, forzar: bool = False) -> dict:
     """Envía a cada usuario su resumen. Sin `forzar`, no repite a quien ya lo recibió ese día."""
     dia = dia or hoy()
-    informe_mensual(db, dia)
     from .documentacion_legal import recordatorio_semanal
-    recordatorio_semanal(db, dia)
-    recordatorio_ot_pausadas(db, dia)
     from .recibos import garajes_al_dia
-    garajes_al_dia(db, hoy=dia)  # emite los recibos de garaje del mes aunque nadie haya entrado en el PMS
+    # cada tarea previa por separado: si una falla, el resumen del día sale igual
+    for nombre, tarea in (("informe mensual", lambda: informe_mensual(db, dia)),
+                          ("documentación legal", lambda: recordatorio_semanal(db, dia)),
+                          ("OT pausadas", lambda: recordatorio_ot_pausadas(db, dia)),
+                          ("recibos de garaje", lambda: garajes_al_dia(db, hoy=dia))):  # aunque nadie entre en el PMS
+        try:
+            tarea()
+        except Exception:  # noqa: BLE001
+            db.rollback()
+            log.exception("Resumen diario: falló la tarea «%s»; se sigue con el resto", nombre)
     datos = _datos_resumen(db, dia)
     destinatarios: dict[int, tuple[User, dict]] = {}
     for tipo in RESUMEN:
@@ -678,7 +684,13 @@ def _bucle() -> None:
                     if not db.scalar(select(EmailLog.id).where(EmailLog.clave == marca)):
                         db.add(EmailLog(clave=marca, tipo="sistema", asunto="Resumen diario lanzado"))
                         db.commit()
-                        log.info("Resumen diario: %s", resumen_diario(db, ahora.date()))
+                        try:
+                            log.info("Resumen diario: %s", resumen_diario(db, ahora.date()))
+                        except Exception:  # noqa: BLE001 — se quita la marca para reintentarlo en la siguiente vuelta
+                            db.rollback()
+                            db.query(EmailLog).filter(EmailLog.clave == marca).delete()
+                            db.commit()
+                            raise
             with SessionLocal() as db:
                 recordatorios_agenda(db, ahora.replace(tzinfo=None))
             if (ahora.hour, ahora.minute) >= (hh, mm):

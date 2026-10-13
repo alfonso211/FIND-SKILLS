@@ -13,8 +13,8 @@ from sqlalchemy.orm import Session
 from .. import ausencias, avisos, documentos, empleados, firma_contrato, planos
 from ..config import settings
 from ..database import get_db
-from ..models import (AREAS_PERSONAL, TIPOS_CONTRATO, TIPOS_DOC_EMPLEADO, Asset, EmailLog, Reservation, StaffDispatch,
-                      StaffDocument, StaffMember, Supplier, TimeEntry, Unit, User)
+from ..models import (AREAS_PERSONAL, TIPOS_CONTRATO, TIPOS_DOC_EMPLEADO, Absence, Asset, EmailLog, ReceivedDocument,
+                      Reservation, StaffDispatch, StaffDocument, StaffMember, Supplier, TimeEntry, Unit, User, WorkOrder)
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request, get_or_404
 
@@ -225,6 +225,10 @@ def delete_staff(pid: int, scope: Scope = Depends(get_scope), db: Session = Depe
     audit(db, scope.user, "borrar", "personal", pid, {"nombre": p.nombre, "area": p.area})
     for e in db.scalars(select(StaffDispatch).where(StaffDispatch.staff_id == pid)):
         db.delete(e)
+    # lo que la cita se conserva sin ella (en PostgreSQL, si no, el borrado falla por la clave foránea)
+    db.execute(update(Absence).where(Absence.staff_id == pid).values(staff_id=None))
+    db.execute(update(WorkOrder).where(WorkOrder.personal_id == pid).values(personal_id=None))
+    db.execute(update(ReceivedDocument).where(ReceivedDocument.staff_id == pid).values(staff_id=None))
     db.delete(p)
     db.commit()
     return {"ok": True}

@@ -7,7 +7,7 @@ from datetime import date
 from html import escape
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -111,7 +111,8 @@ class HechaIn(BaseModel):
 
 
 @router.post("/{tid}/hecha")
-def mark_done(tid: int, data: HechaIn | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+def mark_done(tid: int, tareas: BackgroundTasks, data: HechaIn | None = None, scope: Scope = Depends(get_scope),
+              db: Session = Depends(get_db)):
     """Recepción valida la limpieza (limpieza ha avisado de que está hecha): sale del parte. Si se marca una
     incidencia se abre una orden de trabajo de mantenimiento enlazada (y se avisa a gestión, origen PMS_CHECKOUT)."""
     t = _tarea(db, scope, tid)
@@ -134,6 +135,8 @@ def mark_done(tid: int, data: HechaIn | None = None, scope: Scope = Depends(get_
     audit(db, scope.user, "limpieza_validada", "unidad", t.unit_id,
           {"limpieza": t.id, "tipo": t.tipo, **({"orden_trabajo": w.id} if w else {})})
     db.commit()
+    if w is not None and w.prioridad == "urgente":  # como al abrir una OT urgente: aviso al momento
+        tareas.add_task(avisos.ot_urgente, w.id, scope.user.id)
     return {"ok": True, "unidad_estado": t.unit.estado, "orden_trabajo": w.id if w else None}
 
 

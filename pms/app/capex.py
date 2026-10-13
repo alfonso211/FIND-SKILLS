@@ -255,8 +255,9 @@ def comparativo_pdf(db: Session, p: CapexProject, cmp: dict) -> bytes:
     doc = SimpleDocTemplate(out, pagesize=landscape(A4), leftMargin=10 * mm, rightMargin=10 * mm, topMargin=10 * mm,
                             bottomMargin=10 * mm, title=f"Comparativo {p.codigo}")
     ofs = cmp["ofertas"]
-    h = [Paragraph(f"<b>CUADRO COMPARATIVO · {p.codigo} · {p.titulo}</b>", ss["Title"]),
-         Paragraph(f"{a.nombre}{f' · {p.ubicacion}' if p.ubicacion else ''} · {datetime.now():%d/%m/%Y %H:%M} · "
+    from xml.sax.saxutils import escape as x  # textos libres: «<», «>» o «&» romperían el PDF
+    h = [Paragraph(f"<b>CUADRO COMPARATIVO · {x(p.codigo)} · {x(p.titulo)}</b>", ss["Title"]),
+         Paragraph(f"{x(a.nombre)}{f' · {x(p.ubicacion)}' if p.ubicacion else ''} · {datetime.now():%d/%m/%Y %H:%M} · "
                    f"Precios de ejecución material; importes con GG {float(p.gg_pct):g} % y BI {float(p.bi_pct):g} %, "
                    "sin IVA.", ss["Normal"]), Spacer(1, 3 * mm)]
     # resumen por oferta
@@ -281,7 +282,7 @@ def comparativo_pdf(db: Session, p: CapexProject, cmp: dict) -> bytes:
            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a1a1c")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
            ("ALIGN", (1, 1), (-1, -1), "RIGHT")]
     for i, c in enumerate(cmp["capitulos"], 1):
-        datos.append([Paragraph(f"{c['capitulo']} {c['nombre']}", peq), eur(c["importe_base"]),
+        datos.append([Paragraph(x(f"{c['capitulo']} {c['nombre']}"), peq), eur(c["importe_base"]),
                       *[eur(c["ofertas"][o["bid_id"]]["importe"]) + ("" if c["ofertas"][o["bid_id"]]["completo"] else " *")
                         for o in ofs]])
         for j, o in enumerate(ofs):
@@ -298,7 +299,8 @@ def comparativo_pdf(db: Session, p: CapexProject, cmp: dict) -> bytes:
            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a1a1c")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
            ("ALIGN", (1, 1), (-1, -1), "RIGHT"), ("VALIGN", (0, 0), (-1, -1), "TOP")]
     for i, f in enumerate(cmp["partidas"], 1):
-        datos.append([Paragraph(f"{f['codigo'] or ''} {f['descripcion'].splitlines()[0][:110]}", peq), f["unidad"] or "",
+        datos.append([Paragraph(x(f"{f['codigo'] or ''} {(f['descripcion'].splitlines() or [''])[0][:110]}"), peq),
+                      f["unidad"] or "",
                       f"{f['cantidad']:g}", eur(f["precio_base"]),
                       *[eur(f["ofertas"][o["bid_id"]]["precio"]) for o in ofs]])
         for j, o in enumerate(ofs):
