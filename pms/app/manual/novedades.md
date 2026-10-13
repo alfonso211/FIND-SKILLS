@@ -1,5 +1,8 @@
 # Novedades
 
+## 2026-10-14 · Versión 1.43 · Calendario de vacaciones solo en días laborables
+- **Todos**: el calendario de vacaciones agrupado solo se envía en **días laborables**, sin fines de semana ni festivos de Madrid, de 8:00 a 20:00. Lo que cambie el fin de semana llega el lunes a primera hora.
+
 ## 2026-10-14 · Versión 1.42 · Calendario de vacaciones agrupado
 - **Todos**: el calendario de vacaciones ya no llega con cada cambio. Los cambios se agrupan y se envían **juntos en un solo correo cada 3 horas**, solo entre las 8:00 y las 20:00.
 - **Dirección y Director Técnico**: en *Vacaciones y ausencias* se ven los cambios pendientes de enviar, con el botón **Enviar calendario ahora**.

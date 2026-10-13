@@ -4524,7 +4524,7 @@ V.ausencias = async (el) => {
     const q = await get("/api/ausencias/calendario-vacaciones/pendientes").catch(() => null);
     if (!q || !q.cambios.length || !$("#colaCal", el)) { if ($("#colaCal", el)) $("#colaCal", el).innerHTML = ""; return; }
     $("#colaCal", el).innerHTML = `<div class="aviso-hito" style="margin:8px 0"><b>📅 ${q.cambios.length} cambio(s) de vacaciones pendientes de enviar</b>
-      <span class="muted peq">· el calendario se envía a todos cada ${q.horas} h agrupando los cambios (próximo hacia las ${new Date(q.proximo).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}, de 8 a 20 h)</span>
+      <span class="muted peq">· el calendario se envía a todos cada ${q.horas} h agrupando los cambios (próximo hacia las ${new Date(q.proximo).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}, en días laborables de 8 a 20 h)</span>
       <div class="muted peq">${q.cambios.map(esc).join(" · ")}</div>
       ${q.puede_enviar ? '<button class="btn sm primary" id="calYa">Enviar calendario ahora</button>' : ""}</div>`;
     if ($("#calYa", el)) $("#calYa", el).onclick = async () => { const r = await run(() => post("/api/ausencias/calendario-vacaciones/enviar")); toast(`Calendario enviado: ${r.cambios} cambio(s), ${r.correos} correo(s)`); colaCal(); };

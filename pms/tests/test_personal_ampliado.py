@@ -238,8 +238,16 @@ def test_vacaciones_registro_calendario_y_recordatorio(client, admin, ids):
     from datetime import datetime as dt
     with SessionLocal() as db:
         assert len(informe_vacaciones.pendientes(db)) == 2
-        manana = dt.combine(hoy + timedelta(days=1), dt.min.time())
+        from app.calendario import laborable
+        dia = hoy + timedelta(days=1)
+        while not laborable(dia):
+            dia += timedelta(days=1)
+        festivo = dia + timedelta(days=1)
+        while laborable(festivo):  # siguiente sábado, domingo o festivo
+            festivo += timedelta(days=1)
+        manana = dt.combine(dia, dt.min.time())
         assert informe_vacaciones.enviar_pendientes(db, manana.replace(hour=3)) == 0  # de madrugada no
+        assert informe_vacaciones.enviar_pendientes(db, dt.combine(festivo, dt.min.time()).replace(hour=10)) == 0  # ni en festivo
         assert informe_vacaciones.enviar_pendientes(db, manana.replace(hour=10)) >= 1
         assert informe_vacaciones.pendientes(db) == []
     cal = [z for z in avisos.BANDEJA if z["asunto"].startswith("Calendario")]
