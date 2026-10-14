@@ -1,0 +1,172 @@
+Fusión PMS ↔ gestión · facturas, pagos, proveedores y catálogo automáticos. Web gestion.inversiete.es (lado gestión).
+Redactado el 14/10/2026. Contexto: C:\Users\Usuario\Documents\1._INVERGESTION\.omc\plans\plan_erp_multicompania.md (fase 4) y LEEME_SERVIDOR.md (fase 4, avisos v2, fianzas desde el PMS).
+La parte del PMS está en INSTRUCCION_PMS_FUSION_FACTURAS.txt. Las dos se hacen con el mismo contrato; si cambias algo del contrato, cámbialo en los dos ficheros.
+
+OBJETIVO (palabras de Alfonso)
+«Que funcionen como un único programa: lo que haga en uno y afecte al otro se hace solo. Si registro una factura a pagar en el PMS, sube sola con sus documentos a gestión, y si la registro en gestión, aparece en el PMS.»
+
+DECISIONES DE ALFONSO (14/10/2026)
+- GESTIÓN MANDA SIEMPRE. Una vez que la factura, el pago o el proveedor existe en gestión, sus datos contables (proveedor, NIF, número, fechas, base, IVA, retención, total, vencimiento, estado de pago, sociedad, activo, clase OPEX/CAPEX) solo se cambian en gestión. El PMS los recibe y los aplica sin discutir.
+- Viaja automáticamente, en los dos sentidos:
+  1. facturas recibidas (a pagar) con su PDF y sus adjuntos;
+  2. pagos y cobros con su justificante;
+  3. facturas emitidas con su PDF;
+  4. proveedores y catálogo de productos y precios.
+- Las fianzas NO entran aquí: ya tienen su circuito («Fianzas (PMS)», 14/10).
+
+Requisitos previos:
+- Fase 4 y avisos v2 desplegados (lo están desde el 13/10). Se reutilizan la entrada firmada POST /api/pms/eventos, la cola pms_salida, los reintentos y el aviso por correo. No se crea una segunda pasarela.
+- PMS en la versión que incluya INSTRUCCION_PMS_FUSION_FACTURAS.txt. Gestión debe aceptar los avisos nuevos aunque el PMS aún no los mande, y viceversa.
+
+Antes de tocar nada:
+1. Descarga en este momento el código actual de /opt/invergestion/app (regla del 08/10: nunca partir de un .tgz antiguo).
+2. Haz copia de seguridad de la aplicación y de la base de datos PostgreSQL en /root/copias.
+3. Lee LEEME_SERVIDOR.md y comprueba que siguen todas las marcas obligatorias de index.html (incluidas las del 13 y 14/10).
+4. Lee app/fase4.py y pms/docs/pasarela_v2.md del PMS. Aprovecha lo que ya existe; no dupliques colecciones ni pantallas.
+
+Reglas generales:
+- Solo cambios aditivos: no borrar ni renombrar colecciones, campos ni identificadores.
+- Ningún dato ya registrado cambia de valor sin confirmación de Alfonso.
+- Nada se envía a la AEAT. Las emitidas del PMS conservan su serie y su número (SF-…); gestión no las renumera, no las valida ni las vuelve a enviar.
+- Cada alta, cambio, rechazo y reintento queda en auditoria.log y en pms_eventos / pms_salida.
+- Todo idempotente: el mismo aviso recibido 5 veces deja 1 registro.
+
+------------------------------------------------------------
+1. CONTRATO (lo mismo en los dos programas)
+------------------------------------------------------------
+Transporte: el de la fase 4. Avisos firmados con HMAC (PMS_EVENTOS_SECRET), id_evento único y ventana de 5 minutos.
+- Del PMS a gestión: POST /api/pms/eventos.
+- De gestión al PMS: cola pms_salida hacia POST http://pms-app-1:8000/api/gestion/eventos (ruta propia, misma firma HMAC que /api/gestion/bloqueo; decidido por Alfonso el 14/10/2026), con los mismos reintentos. Los bloqueos siguen por /api/gestion/bloqueo.
+
+Documentos: no viajan dentro del aviso. El aviso lleva por cada documento {doc_id, nombre, tipo_mime, tamaño, sha256, categoria FACTURA|JUSTIFICANTE|ALBARAN|OTRO}. El receptor lo descarga con una petición firmada a la red interna:
+- gestión → PMS: GET http://pms-app-1:8000/api/gestion/documento/{doc_id}
+- PMS → gestión: GET http://invergestion:8000/api/pms/documento/{doc_id}
+Si la sha256 no cuadra, el documento no se adjunta y queda en «A revisar», igual que en el importador v1.1. Las dos rutas solo responden a peticiones firmadas desde la red interna; nunca son públicas.
+
+Identidad (claves de emparejado, sin duplicar):
+- Factura recibida: pms_id ↔ id de gestión. Si no tiene, se busca por NIF del proveedor + número + fecha de factura.
+- Factura emitida: la regla del importador v1.1 (número sin la serie delante: SF-00001-2026 = 00001/2026) + sociedad.
+- Pago o cobro: pms_id ↔ PAG-/COB-.
+- Proveedor: NIF (normalizado: sin espacios ni guiones, en mayúsculas).
+- Producto: ref (INV-…, PMS-… o la del proveedor); ya es única.
+Si se encuentra el gemelo (por ejemplo, porque entró antes por ZIP), se ENLAZA guardando pms_id y no se crea otro.
+
+Avisos nuevos (versión «fusion 1»), en los dos sentidos salvo que se indique:
+  factura_recibida.creada · factura_recibida.actualizada · factura_recibida.anulacion_pedida · factura_recibida.anulada
+  factura_emitida.emitida · factura_emitida.rectificada (PMS → gestión)
+  factura_emitida.emitida (gestión → PMS, solo las de activos que existen en el PMS)
+  documento.adjuntado (cualquier adjunto nuevo de una factura, pago o cobro ya sincronizado)
+  pago.registrado · pago.anulado · cobro.registrado · cobro.anulado
+  proveedor.alta · proveedor.actualizado
+  producto.alta · producto.actualizado · precio.pedido (PMS → gestión)
+Cada aviso lleva: id_evento, tipo, version "fusion1", emitido (UTC), origen PMS|GESTION, activo (código INVERGESTION), sociedad, datos y documentos[].
+
+------------------------------------------------------------
+1 bis. DETALLE DEL CONTRATO «fusion1» (fijado el 14/10/2026 al construir el lado de gestión)
+------------------------------------------------------------
+Cabecera de todos los avisos (JSON):
+  {"id_evento": "único, [A-Za-z0-9._:-], máx. 120", "tipo": "…", "version": "fusion1", "emitido": "ISO UTC",
+   "origen": "PMS" | "GESTION", "id_evento_causa": null | "id del aviso que lo provocó",
+   "activo": "código INVERGESTION (SFLORIDA, SAEROPUERTO, BABILONIA35…) o null en proveedores y productos",
+   "sociedad": "INV | CDC | EC | ETH o null", "datos": {…}, "documentos": [ {…}, … ]}
+Firma: la de la fase 4 (X-PMS-Fecha = segundos UNIX; X-PMS-Firma = hex HMAC-SHA256(PMS_EVENTOS_SECRET, fecha + "." + cuerpo)).
+Respuesta del receptor: 200 {"ok": true} (también si el id_evento ya se recibió: no se repite nada). En las altas puede devolver
+su identificador: {"ok": true, "pms_id": "…"} (lo devuelve el PMS) o {"ok": true, "resultado": {"id": "…"}} (gestión).
+Un tipo desconocido se guarda «sin_tratar» y se responde 200. Un aviso que todavía no se puede aplicar (por ejemplo, el pago de una
+factura que aún no ha llegado) se responde 400 y el emisor lo reintenta con su calendario normal.
+
+Documento (cada elemento de documentos[]): {"doc_id": "…", "nombre": "…", "tipo_mime": "application/pdf|image/jpeg|image/png",
+  "tamano": bytes, "sha256": "hex", "categoria": "FACTURA|JUSTIFICANTE|ALBARAN|OTRO"}.
+Descarga: GET a la ruta del apartado 1 con las cabeceras X-PMS-Fecha y X-PMS-Firma = hex HMAC(PMS_EVENTOS_SECRET, fecha + "." + doc_id).
+Responde el fichero con la cabecera X-Sha256. Solo desde la red interna (sin X-Forwarded-For) y solo documentos de registros sincronizados.
+
+datos por tipo (mismos nombres que el CSV v1.1 del importador; lo que no se tenga, null):
+- factura_recibida.* : pms_id, gestion_id, proveedor_nombre, proveedor_nif, proveedor_pais, proveedor_iban, numero, tipo_factura
+  (ORDINARIA|RECTIFICATIVA), numero_rectificada, fecha_factura, fecha_recepcion, fecha_vencimiento, dias_pago, concepto, categoria,
+  unidad, lineas [{base, tipo_iva, cuota_iva}], base, cuota_iva, retencion, total, inversion_sujeto_pasivo (true|false), forma_pago,
+  estado (REGISTRADA|ANULADA). Gestión → PMS añade: estado_pago (PENDIENTE|PARCIAL|PAGADA), importe_pagado, fecha_pago, clase
+  (OPEX|CAPEX|FINANCIERO), respuesta (null | "aceptada" | "rechazada", cuando contesta a una corrección o anulación pedida).
+  factura_recibida.anulacion_pedida: pms_id, gestion_id, motivo.
+- factura_emitida.* : pms_id, gestion_id, nif_emisor, serie, numero, tipo_factura (COMPLETA|SIMPLIFICADA|RECTIFICATIVA|RESUMEN),
+  numero_rectificada, fecha_expedicion, fecha_operacion, fecha_vencimiento, cliente_nombre, cliente_nif, cliente_pais, cliente_email,
+  unidad, reserva_id, canal, fecha_entrada, fecha_salida, concepto, lineas [{base, tipo_iva, cuota_iva, causa_exencion}], base,
+  cuota_iva, retencion, total, forma_pago, estado (EMITIDA|ANULADA), importe_cobrado (solo informativo: el cobro se registra
+  únicamente con cobro.registrado, para no contarlo dos veces).
+- pago.registrado / cobro.registrado: pms_id, gestion_id, factura_pms_id, factura_gestion_id, fecha, importe, forma_pago, concepto,
+  referencia, contraparte. El justificante va en documentos[] con categoria JUSTIFICANTE.
+- pago.anulado / cobro.anulado: pms_id, gestion_id, motivo. En gestión nunca borra: queda como solicitud para administración.
+- proveedor.*: pms_id, nif, nombre, pais, iban, email, telefono, forma_pago. Si el NIF ya existe en gestión solo se enlaza.
+- producto.*: pms_id, referencia, articulo, familia, unidad.
+- precio.pedido (PMS → gestión): referencia, articulo, familia, unidad, precio (sin IVA), cantidad, tipo_iva, proveedor,
+  proveedor_nif, fecha_pedido, num_pedido, marca, ref_proveedor.
+- documento.adjuntado: vinculo {tipo: factura_recibida|factura_emitida|pago|cobro, pms_id, gestion_id} y el documento en documentos[].
+
+Carga inicial («Emparejar facturas»): gestión pide al PMS GET http://pms-app-1:8000/api/gestion/fusion/inventario?activo=…&desde=AAAA-MM-DD
+firmado con HMAC(PMS_EVENTOS_SECRET, fecha + "." + "activo=…&desde=…"). El PMS contesta
+{"recibidas": [datos…], "emitidas": [datos…], "pagos": [datos… con "tipo": "PAGO"|"COBRO"], "proveedores": [datos…], "productos": [datos…]}
+en el mismo formato de datos de arriba, sin documentos. Gestión solo simula hasta que Alfonso dice desde qué fecha se aplica.
+
+Botón «PMS» de gestión (SSO inverso): gestión abre https://pms.inversiete.es/sso/gestion?pase=…&firma=… con
+pase = base64url(JSON {"email", "nombre", "usuario", "destino": inicio|recibida|emitida|pago|proveedor, "id": pms_id o null, "activo",
+"emitido": ISO UTC, "nonce": 16-128 caracteres}) y firma = hex HMAC-SHA256(PMS_GESTION_SSO_SECRET, pase). Vale 60 s y una sola vez;
+el PMS busca el usuario por email y decide los permisos. El botón «Abrir en gestión» del PMS usa el /sso/pms de siempre con
+destino recibida|emitida|pago|proveedor e "id" = id de gestión.
+
+------------------------------------------------------------
+2. QUÉ HACE GESTIÓN AL RECIBIR (PMS → gestión)
+------------------------------------------------------------
+- factura_recibida.creada → crea la recibida (origen PMS, pms_id) con sus adjuntos, en el mismo estado que tendría si se registrara a mano: pendiente de pago y sujeta a la autorización de pagos. Si el proveedor no existe, lo da de alta por NIF. Si viene sin PDF, el aviso «Falta documento» sale en «Pendiente hoy».
+  Lectura con Claude: si el PDF trae líneas con precio unitario, pasan a la base de precios igual que hoy (lineas_precio).
+- factura_recibida.actualizada desde el PMS:
+  · si la factura aún no ha tocado la contabilidad (sin pago, sin autorización ni remesa, sin exportar a la gestoría): se aplica;
+  · si ya la ha tocado: NO se aplica. Se guarda como «Corrección pedida desde el PMS», con las diferencias campo a campo, en «Pendiente hoy» de administración, con los botones «Aceptar» y «Rechazar». La respuesta vuelve al PMS como factura_recibida.actualizada (gestión manda).
+- factura_recibida.anulacion_pedida → nunca borra. Va a «Pendiente hoy» como solicitud. Si se acepta, gestión la manda a la papelera con sus reglas y avisa al PMS con factura_recibida.anulada.
+- factura_emitida.emitida / .rectificada → se registra en emitidas con su PDF y la serie del PMS (mismo resultado que el importador v1.1, que se queda como respaldo). Las rectificativas se enlazan con la original.
+- pago.registrado / cobro.registrado → crea PAG-/COB- (origen PMS) con su justificante, deja la factura pagada o cobrada y lo ofrece a la conciliación bancaria. No pasa por la autorización (el pago ya se hizo en el PMS, por ejemplo en caja), pero queda marcado «Pagado desde el PMS» y sale en el informe de pagos.
+- proveedor.alta → alta si el NIF es nuevo; si existe, solo enlaza (los datos de gestión no se pisan).
+- producto.alta / precio.pedido → lo mismo que hoy hace «Importar del PMS» del catálogo (articulos con origen PMS; precios con fuente PMS «Pedido PMS»), pero automático.
+- documento.adjuntado → se adjunta al registro enlazado (vínculo y categoría del aviso). Si es un JUSTIFICANTE de una factura con pago_sin_justificante, el aviso «Falta justificante» desaparece solo (regla de Gestión 360).
+
+------------------------------------------------------------
+3. QUÉ MANDA GESTIÓN (gestión → PMS)
+------------------------------------------------------------
+Solo los registros de un activo que existe en el PMS (los emparejados en «Pasarela PMS»: hoy SFLORIDA, SAEROPUERTO y los demás que tengan unidades.pms_id). Samaniego 12 y lo que no está en el PMS no se manda.
+- Al crear o cambiar en gestión una recibida, un pago o cobro, una emitida, un proveedor o un producto de esos activos → aviso a la cola pms_salida con sus documentos.
+- Si un cambio llega de gestión, el PMS lo aplica siempre (gestión manda).
+- Si el cambio nació de un aviso del PMS, no se devuelve el mismo aviso (evitar el eco: comparar origen e id_evento_causa).
+
+------------------------------------------------------------
+4. CARGA INICIAL Y EMPAREJADO
+------------------------------------------------------------
+- En «Pasarela PMS», botón «Emparejar facturas»: primero SIMULA y enseña cuántas recibidas, emitidas, pagos, proveedores y productos se enlazarían, cuántas faltan en cada lado y cuántas tienen diferencias de importe.
+- No se aplica nada ni se carga historial sin que Alfonso lo vea y diga desde qué fecha.
+- Las diferencias de importe entre los dos programas no se corrigen solas: lista «Diferencias» para resolver a mano (gestión manda, pero la primera vez decide Alfonso).
+
+------------------------------------------------------------
+5. PANTALLAS EN GESTIÓN
+------------------------------------------------------------
+- «Pasarela PMS» → nueva pestaña «Sincronización»: estado de las dos colas, últimos 100 avisos, errores, documentos con sha256 que no cuadra y botón «Reintentar».
+- En cada recibida, emitida, pago y proveedor sincronizado: etiqueta «También en el PMS» y botón «Abrir en el PMS».
+- Botón «PMS» en la barra superior de gestión que abre el PMS ya identificado (el SSO inverso al botón «Gestión»: pase firmado de 60 s y un solo uso con PMS_GESTION_SSO_SECRET, usuario por email; el PMS decide los permisos). Así se pasa de un programa a otro sin volver a entrar.
+- En «Pendiente hoy»: correcciones y anulaciones pedidas desde el PMS, documentos que no cuadran y avisos con error después de los reintentos.
+
+------------------------------------------------------------
+6. ACTIVACIÓN
+------------------------------------------------------------
+- Interruptor INVG_SYNC_FACTURAS en /opt/invergestion/.env (0 = solo registra los avisos «sin_tratar», como hoy; 1 = sincroniza).
+- Por activo, en «Pasarela PMS»: casilla «Sincronizar facturas». Piloto: Suite Florida durante una semana; después, el resto.
+- El importador manual de ZIP (v1.1) y la exportación del catálogo siguen como respaldo; si se usan con la sincronización activa, no duplican (reglas de identidad del apartado 1).
+
+Comprobación (prueba app/fusion_prueba.py, con datos de prueba ZZ-PRUEBA-FUSION en fechas 2031, que se borran al acabar):
+- Recibida creada en el PMS con 2 PDF → aparece en gestión con los 2 PDF y su sha256 correcta.
+- Recibida creada en gestión para SFLORIDA → aparece en el PMS con su PDF. Una de SAMANIEGO12 no se manda.
+- El mismo aviso enviado 5 veces → 1 factura.
+- Recibida que entró antes por ZIP → el aviso la enlaza y no la duplica.
+- Cambio de importe en el PMS de una factura sin pagar → se aplica. Con la factura ya pagada → queda como «Corrección pedida» y no cambia nada hasta aceptarla.
+- Cambio en gestión → llega al PMS y no vuelve como eco.
+- Pago en el PMS con justificante → factura pagada en gestión y el justificante, adjunto.
+- PDF con sha256 alterada → no se adjunta y sale en «A revisar».
+- PMS parado (dirección falsa, nunca parar el PMS real) → reintentos y aviso; al volver, se entrega todo en orden.
+- Repetir fase2_prueba, fase3_prueba, fase4_prueba y fase4v2_prueba: TODO CORRECTO.
+
+Explícame qué vas a hacer antes de desplegar y no despliegues sin mi permiso. Borra los datos de prueba al terminar. Al terminar, actualiza LEEME_SERVIDOR.md con fecha y añade la marca obligatoria «FUSIÓN PMS (14/10/2026)» en index.html (y el módulo nuevo, por ejemplo app/fusion.py, en la lista de marcas).

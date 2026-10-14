@@ -5,9 +5,9 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
-from .. import nif
+from .. import fusion, nif
 from ..database import get_db
 from ..models import TIPOS_PERSONA, Expense, Supplier
 from ..security import Scope, audit, get_scope
@@ -40,6 +40,8 @@ class SupplierIn(BaseModel):
 
 def _out(p: Supplier) -> dict:
     d = p.to_dict()
+    db = object_session(p)
+    d["gestionado"] = bool(db and fusion.gestionada(db, "proveedor", p.id))
     d["cae_vencida"] = bool(p.cae_vence and p.cae_vence < date.today())
     d["tipo_persona_nombre"] = TIPOS_PERSONA.get(p.tipo_persona, p.tipo_persona)
     return d
@@ -134,7 +136,9 @@ def update_supplier(pid: int, data: SupplierIn, scope: Scope = Depends(get_scope
     _puede_editar(scope)
     p = get_or_404(db, Supplier, pid)
     antes = p.to_dict()
-    for k, v in _validar(db, data, pid).items():
+    valores = _validar(db, data, pid)
+    fusion.comprobar_proveedor(db, p, valores)  # ya en gestión: nombre, NIF y país solo se cambian allí
+    for k, v in valores.items():
         setattr(p, k, v)
     _enlazar_gastos(db, p)
     audit(db, scope.user, "editar", "proveedor", pid, {k: v for k, v in p.to_dict().items() if antes.get(k) != v})
@@ -147,6 +151,8 @@ def delete_supplier(pid: int, scope: Scope = Depends(get_scope), db: Session = D
     """Las órdenes de trabajo y los gastos guardan el nombre del proveedor: borrar la ficha no cambia el histórico."""
     _puede_borrar(scope)
     p = get_or_404(db, Supplier, pid)
+    if fusion.gestionada(db, "proveedor", pid):
+        raise HTTPException(409, "Proveedor gestionado en INVERGESTION: no se borra en el PMS")
     for g in db.scalars(select(Expense).where(Expense.supplier_id == pid)):
         g.supplier_id = None  # el gasto conserva el nombre del proveedor
     audit(db, scope.user, "borrar", "proveedor", pid, {"nombre": p.nombre, "nif": p.nif})

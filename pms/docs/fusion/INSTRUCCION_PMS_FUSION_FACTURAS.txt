@@ -1,0 +1,55 @@
+PMS (pms.inversiete.es, repositorio alfonso211/FIND-SKILLS) · fusión con gestión: facturas, pagos, proveedores y catálogo automáticos.
+Redactado el 14/10/2026 para la sesión del PMS. El contrato completo, que es el mismo en los dos programas, está en INSTRUCCION_FUSION_PMS_GESTION.txt, apartado 1. Léelo entero antes de empezar.
+
+OBJETIVO
+Que el PMS y gestión funcionen como un único programa. Lo que se registra en uno y afecta al otro pasa solo, con sus documentos.
+
+DECISIONES DE ALFONSO (14/10/2026)
+- GESTIÓN MANDA SIEMPRE en los datos contables.
+- Viajan solos: facturas recibidas con PDF, pagos y cobros con justificante, facturas emitidas con PDF, proveedores y catálogo de productos y precios.
+- Las fianzas siguen por su circuito actual (libro_fianzas).
+
+Qué hay que hacer en el PMS:
+1. Avisos nuevos a la cola gestion_cola (mismos reintentos y aviso por correo que hoy, version "fusion1"):
+   - factura_recibida.creada y .actualizada;
+   - factura_recibida.anulacion_pedida (nunca anula por su cuenta una factura que ya está en gestión);
+   - factura_emitida.emitida y .rectificada;
+   - documento.adjuntado;
+   - pago.registrado, pago.anulado, cobro.registrado y cobro.anulado;
+   - proveedor.alta y .actualizado;
+   - producto.alta y .actualizado, y precio.pedido.
+   Solo de los activos que tengan activada la casilla «Sincronizar facturas» (Administración › Pasarela con gestión).
+2. Ruta firmada GET /api/gestion/documento/{doc_id}:
+   - solo para gestión, por la red interna;
+   - entrega el archivo y su sha256;
+   - descifra con PMS_DOCS_KEY dentro del PMS (la clave nunca sale).
+3. Recepción de los mismos avisos desde gestión por una ruta propia, POST /api/gestion/eventos, con la misma firma HMAC (PMS_EVENTOS_SECRET, cabeceras X-PMS-Fecha y X-PMS-Firma, ventana de 5 minutos) que la entrada de bloqueos. Decidido por Alfonso el 14/10/2026; /api/gestion/bloqueo no cambia. Responde 200 {"ok":true} (también si el id_evento ya se recibió) y 200 con «sin_tratar» si el tipo no lo conoce:
+   - crea o actualiza la factura, el pago, el proveedor o el producto y descarga sus documentos de http://invergestion:8000/api/pms/documento/{doc_id}, comprobando la sha256;
+   - lo que llega de gestión se aplica SIEMPRE, aunque pise un dato del PMS (gestión manda);
+   - no se devuelve como eco (id_evento_causa).
+4. Pantallas:
+   - Toda factura, pago o proveedor que ya esté en gestión queda en SOLO LECTURA para los campos contables, con la etiqueta «Gestionada en INVERGESTION» y el botón «Abrir en gestión» (SSO ya existente, destino=recibida|emitida|pago|proveedor y el id).
+   - Siguen permitidos:
+     · adjuntar documentos (viajan con documento.adjuntado);
+     · «Pedir corrección», que manda factura_recibida.actualizada para que la acepte o la rechace administración en gestión;
+     · «Pedir anulación».
+   - Una factura del PMS que aún no ha llegado a gestión se puede editar con normalidad.
+5. SSO inverso: aceptar en el PMS un pase firmado desde gestión (botón «PMS» de gestión), con las mismas reglas que /sso/pms en gestión:
+   - 60 segundos y un solo uso;
+   - usuario por email;
+   - el PMS decide los permisos.
+5 bis. Campos de cada aviso, descarga de documentos, carga inicial y SSO inverso: apartado «1 bis. DETALLE DEL CONTRATO «fusion1»» de
+   INSTRUCCION_FUSION_PMS_GESTION.txt (fijado el 14/10/2026; el lado de gestión ya está construido con él). En el PMS hacen falta además:
+   · GET /api/gestion/fusion/inventario?activo=…&desde=… (firmada) para el botón «Emparejar facturas» de gestión;
+   · GET /sso/gestion?pase=…&firma=… para el botón «PMS» de gestión (60 s, un solo uso, usuario por email, permisos del PMS);
+   · en las altas recibidas desde gestión, devolver {"ok": true, "pms_id": "…"} para que gestión guarde el enlace.
+6. Interruptor PMS_GESTION_SYNC_FACTURAS en /opt/pms/deploy/.env (0 por defecto). Documenta el contrato en pms/docs/pasarela_v2.md, sección «Fusión: facturas, pagos, proveedores y catálogo».
+
+Pruebas (tests/test_gestion_fusion.py, más las que ya existen en verde):
+- Factura recibida con 2 PDF → aviso con 2 documentos y sha256 correctas; gestión los puede descargar; sin firma → 401.
+- Factura ya en gestión → no se puede editar el importe en el PMS; «Pedir corrección» genera el aviso.
+- Aviso de gestión que cambia el importe → el PMS lo aplica, y el cambio no vuelve como eco.
+- Mismo aviso de gestión 5 veces → un único cambio.
+- Activo sin la casilla → no se manda nada.
+
+Cómo se entrega: rama fusion-gestion desde main y solicitud de cambios «Fusión con gestión: facturas, pagos y catálogo». NO la fusiones ni despliegues: dime el enlace. Alfonso la revisa y el despliegue lo hace la sesión de gestión junto con INSTRUCCION_FUSION_PMS_GESTION.txt. Si hace falta una migración, que sea la siguiente libre y avisa del número.

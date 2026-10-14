@@ -57,6 +57,8 @@ services:
       PMS_GESTION_PUBLICA: ${PMS_GESTION_PUBLICA:-https://gestion.inversiete.es}
       # avisos nuevos a gestión (fianzas, ampliaciones, caja, cierre de incidencias, indicadores): 1 cuando gestión los reciba
       PMS_GESTION_EVENTOS_V2: ${PMS_GESTION_EVENTOS_V2:-0}
+      # fusión con gestión (facturas, pagos, proveedores y catálogo): 1 para sincronizar los activos marcados
+      PMS_GESTION_SYNC_FACTURAS: ${PMS_GESTION_SYNC_FACTURAS:-0}
       # fianzas: csv (gestión las contabiliza del CSV) o avisos (de los avisos fianza.*, el CSV queda de control)
       PMS_FIANZAS_ORIGEN: ${PMS_FIANZAS_ORIGEN:-csv}
       PMS_FIANZAS_AVISOS_DESDE: ${PMS_FIANZAS_AVISOS_DESDE:-}

@@ -6,6 +6,7 @@ apartamentos turísticos, ...). Nuevas modalidades se añaden en MODALIDADES.
 """
 from datetime import date, datetime, time
 
+from sqlalchemy import false as sa_false
 from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, Time, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -95,6 +96,8 @@ class Asset(Base):
     notas: Mapped[str | None] = mapped_column(Text)
     # Comisión de cada canal en % del bruto (booking, airbnb…) para la liquidación mensual que se manda a gestión
     comisiones_canal: Mapped[dict | None] = mapped_column(JSON)
+    # Fusión con gestión (contrato «fusion1»): sus facturas, pagos y cobros se sincronizan con INVERGESTION
+    sync_facturas: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false())
     company: Mapped[Company] = relationship(foreign_keys=[company_id])
     propietaria: Mapped[Company | None] = relationship(foreign_keys=[propietaria_id])
 
@@ -206,6 +209,9 @@ class Supplier(Base):
     cae_nota: Mapped[str | None] = mapped_column(String(300))
     notas: Mapped[str | None] = mapped_column(Text)
     creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    # datos de pago (los manda gestión en la fusión: proveedor.alta / proveedor.actualizado)
+    iban: Mapped[str | None] = mapped_column(String(34))
+    forma_pago: Mapped[str | None] = mapped_column(String(30))
 
 
 # --------------------------------------------------------------------------- alquiler residencial
@@ -337,6 +343,61 @@ class GestionEvento(Base):
     creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
     enviado: Mapped[datetime | None] = mapped_column(DateTime)
     ultimo_error: Mapped[str | None] = mapped_column(String(400))
+
+
+class FusionEnlace(Base):
+    """Fusión con gestión: registro del PMS (gasto, factura, pago, cobro, proveedor o producto) y su gemelo en
+    INVERGESTION. «sincronizada»: ya está en gestión, que manda en sus datos contables (solo lectura en el PMS)."""
+    __tablename__ = "fusion_enlaces"
+    __table_args__ = (UniqueConstraint("tipo", "pms_ref"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tipo: Mapped[str] = mapped_column(String(20))  # recibida | emitida | externa | pago | cobro | proveedor | producto
+    pms_ref: Mapped[int] = mapped_column(Integer)
+    gestion_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    asset_id: Mapped[int | None] = mapped_column(Integer)
+    estado: Mapped[str] = mapped_column(String(20), default="pendiente")  # pendiente | sincronizada | anulada
+    origen: Mapped[str] = mapped_column(String(10), default="PMS")  # dónde nació: PMS | GESTION
+    # «Pedir corrección» / «Pedir anulación» desde el PMS: queda pendiente hasta que gestión contesta
+    solicitud: Mapped[str | None] = mapped_column(String(20))  # correccion | anulacion
+    solicitud_datos: Mapped[dict | None] = mapped_column(JSON)
+    solicitud_fecha: Mapped[datetime | None] = mapped_column(DateTime)
+    actualizado: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+
+
+class FusionEntrada(Base):
+    """Avisos «fusion1» recibidos de gestión (POST /api/gestion/eventos). Uno por id_evento: el repetido no se aplica
+    otra vez. «sin_tratar»: tipo desconocido o sincronización apagada; se guarda y se contesta 200."""
+    __tablename__ = "fusion_entradas"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    id_evento: Mapped[str] = mapped_column(String(160), unique=True)
+    tipo: Mapped[str] = mapped_column(String(60), index=True)
+    origen: Mapped[str | None] = mapped_column(String(20))
+    id_evento_causa: Mapped[str | None] = mapped_column(String(160))
+    estado: Mapped[str] = mapped_column(String(20), default="aplicado")  # aplicado | sin_tratar | eco | sso
+    cuerpo: Mapped[dict | None] = mapped_column(JSON)
+    resultado: Mapped[dict | None] = mapped_column(JSON)
+    recibido: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+
+
+class FusionDocumento(Base):
+    """Documentos de la fusión: adjuntos de más del PMS («Adjuntar documento»), copias de las facturas emitidas que
+    se mandan a gestión y documentos descargados de gestión («a_revisar» si su sha256 no cuadra: no se adjuntan)."""
+    __tablename__ = "fusion_documentos"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tipo: Mapped[str] = mapped_column(String(20))  # recibida | emitida | externa | pago | cobro
+    pms_ref: Mapped[int] = mapped_column(Integer, index=True)
+    origen: Mapped[str] = mapped_column(String(10))  # PMS | GESTION
+    categoria: Mapped[str] = mapped_column(String(20), default="OTRO")  # FACTURA | JUSTIFICANTE | ALBARAN | OTRO
+    documento_id: Mapped[int | None] = mapped_column(ForeignKey("documentos_recibidos.id", ondelete="SET NULL"))
+    fichero: Mapped[str | None] = mapped_column(String(64))  # copia cifrada (PDF de una factura emitida)
+    doc_id_gestion: Mapped[str | None] = mapped_column(String(120), index=True)
+    nombre: Mapped[str | None] = mapped_column(String(200))
+    mime: Mapped[str | None] = mapped_column(String(100))
+    tamano: Mapped[int | None] = mapped_column(Integer)
+    sha256: Mapped[str | None] = mapped_column(String(64))
+    estado: Mapped[str] = mapped_column(String(20), default="ok")  # ok | a_revisar
+    motivo: Mapped[str | None] = mapped_column(String(300))
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
 class ContactDocument(Base):

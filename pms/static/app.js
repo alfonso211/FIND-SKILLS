@@ -3280,7 +3280,7 @@ V.proveedores = async (el) => {
     S.proveedores = null; toast(p ? "Proveedor guardado" : "Proveedor dado de alta"); load();
   };
   const load = async () => table($("#t", el), [
-    { k: "nombre", t: "Nombre" }, { k: "nif", t: "CIF / DNI" }, { k: "tipo_persona_nombre", t: "Tipo" },
+    { k: "nombre", t: "Nombre", f: (v, p) => `${esc(v)}${p.gestionado ? '<div><span class="badge b-gestion" title="Nombre, NIF y país solo se cambian en gestión">Gestionado en INVERGESTION</span></div>' : ""}` }, { k: "nif", t: "CIF / DNI" }, { k: "tipo_persona_nombre", t: "Tipo" },
     { k: "actividad", t: "Actividad" }, { k: "municipio", t: "Municipio" }, { k: "telefono", t: "Teléfono" },
     { k: "email", t: "Correo" }, { k: "cae_vence", t: "CAE/PRL", f: (v, p) => (v ? (p.cae_vencida ? `<span class="badge b-urgente">vencida ${fdate(v)}</span>` : `hasta ${fdate(v)}`) : '<span class="muted">—</span>') },
     { k: "activo", t: "Estado", f: (v) => (v ? "En activo" : '<span class="muted">Baja</span>') },
@@ -4325,6 +4325,102 @@ async function editarGasto(g, reload, aidNuevo) {
   bindAmbito(f); bindRetencion(f); sugerirProveedores(f, "proveedor");
 }
 
+// ---- fusión con gestión (contrato «fusion1»): lo que ya está en gestión es de solo lectura en lo contable
+function etiquetaFusion(fu) {
+  if (!fu) return "";
+  return (fu.gestionada ? '<div><span class="badge b-gestion" title="Los datos contables solo se cambian en gestión">Gestionada en INVERGESTION</span></div>' : "")
+    + (fu.solicitud === "correccion" ? '<div><span class="badge b-pendiente">corrección pedida</span></div>' : "")
+    + (fu.solicitud === "anulacion" ? '<div><span class="badge b-pendiente">anulación pedida</span></div>' : "")
+    + (fu.solicitud === "anulacion_gestion" ? '<div><span class="badge b-cancelada">gestión pide anularla</span></div>' : "")
+    + ((fu.adjuntos || []).some((a) => a.estado === "a_revisar") ? '<div><span class="badge b-cancelada">documento a revisar</span></div>' : "");
+}
+function accionesFusion(g, editar, load) {
+  const fu = g.fusion || {}, adj = (fu.adjuntos || []).filter((a) => a.documento_id);
+  return [
+    adj.length && [`Adjuntos (${adj.length})`, () => verAdjuntos(g, adj)],
+    editar && ["Adjuntar", () => adjuntarAGasto(g, load)],
+    fu.gestionada && (editar || S.me.gestion) && ["Gestión…", () => menuGestion(g, editar, load)],
+  ];
+}
+// Factura ya en gestión: abrirla allí, o pedir a administración que la corrija o la anule
+function menuGestion(g, editar, load) {
+  const fu = g.fusion || {};
+  const ops = [
+    S.me.gestion && ["abrir", "Abrir en gestión"],
+    editar && ["correccion", "Pedir corrección (importe, fecha, nº…)"],
+    editar && ["anulacion", "Pedir anulación de la factura"],
+    editar && fu.pago_gestionado && ["anulacion_pago", "Pedir anulación del pago"],
+  ].filter(Boolean);
+  const f = form(`Gestionada en INVERGESTION · ${g.proveedor || g.concepto}`, [
+    { html: `<p class="muted">Sus datos contables solo se cambian en gestión. Elija qué hacer:</p><div class="toolbar">${ops.map(([k, t]) => `<button type="button" class="btn" data-op="${k}">${esc(t)}</button>`).join("")}</div>` }], {}, async () => {}, "Cerrar");
+  const motivo = (titulo, texto, url, ok) => form(titulo, [{ html: `<p class="muted">${texto}</p>` }, { k: "motivo", t: "Motivo", req: true, wide: true }], {},
+    async (d) => { await post(url, d); toast(ok); load(); }, "Pedir anulación");
+  f.querySelectorAll("[data-op]").forEach((b) => (b.onclick = () => ({
+    abrir: () => { $("#modal").close(); abrirEnGestion("recibida", g.id); },
+    correccion: () => pedirCorreccion(g, load),
+    anulacion: () => motivo(`Pedir anulación · ${g.proveedor || g.concepto}`, "La factura ya está en gestión: el PMS no la anula. Se pide a administración, que la acepta o la rechaza en gestión.",
+      `/api/gestion/fusion/recibida/${g.id}/anulacion`, "Anulación pedida a gestión"),
+    anulacion_pago: () => motivo(`Pedir anulación del pago · ${g.proveedor || g.concepto}`, "El pago ya está en gestión: queda como solicitud para administración.",
+      `/api/gestion/fusion/pago/${g.id}/anulacion`, "Anulación del pago pedida a gestión"),
+  })[b.dataset.op]()));
+}
+function verAdjuntos(g, adj) {
+  const f = form(`Adjuntos · ${g.proveedor || g.concepto}`, [{ html: `<table class="tabla"><tbody>${adj.map((a) => `<tr><td>${esc(a.nombre || "")}</td><td>${esc(a.categoria)}</td><td class="muted">${a.origen === "GESTION" ? "de gestión" : "del PMS"}</td><td><button type="button" class="btn sm" data-doc="${a.documento_id}">Ver</button></td></tr>`).join("")}</tbody></table>` }], {}, async () => {}, "Cerrar");
+  f.querySelectorAll("[data-doc]").forEach((b) => (b.onclick = () => abrirFichero(`/api/documentos-recibidos/${b.dataset.doc}/fichero`)));
+}
+function adjuntarAGasto(g, load) {
+  form(`Adjuntar documento · ${g.proveedor || g.concepto}`, [
+    { html: '<label class="wide">Documento (PDF o fotos) *<input type="file" name="ficheros" multiple accept="application/pdf,image/*" required></label>' },
+    { k: "categoria", t: "Qué es", type: "select", req: true, def: "ALBARAN", options: [["FACTURA", "Factura"], ["ALBARAN", "Albarán"], ["JUSTIFICANTE", "Justificante de pago"], ["OTRO", "Otro"]] },
+  ], {}, async (d, fm) => {
+    const files = [...fm.querySelector("input[type=file]").files];
+    if (!files.length) throw new Error("Adjunte el documento");
+    const fd = new FormData();
+    files.forEach((x) => fd.append("ficheros", x));
+    fd.append("categoria", d.categoria);
+    await upload(`/api/gestion/fusion/recibida/${g.id}/documento`, fd);
+    toast("Documento adjuntado"); load && load();
+  }, "Adjuntar");
+}
+async function editarGestionada(g, load) {
+  const [C, unidades] = await Promise.all([catGastos(), unidadesActivo(g.asset_id)]);
+  const f = form(`Gasto · ${g.concepto}`, [
+    { html: `<div class="aviso-amarillo"><b>Gestionada en INVERGESTION.</b> Proveedor, nº, fechas, importes, IVA, retención, forma de pago y OPEX/CAPEX solo se cambian en gestión (botón «Pedir corrección»). Aquí: concepto, categoría, a qué se imputa y notas.</div>` },
+    { k: "concepto", t: "Concepto del gasto", req: true, wide: true },
+    { k: "categoria", t: "Categoría del gasto", type: "select", req: true, options: kv(C.categorias) },
+    { k: "ambito", t: "Imputado a", type: "select", options: kv(C.ambitos) },
+    { k: "unit_id", t: "Apartamento", type: "select", options: unidades.map((u) => [u.id, `${u.codigo}${u.bloque ? " · " + u.bloque : ""}`]) },
+    { k: "ambito_detalle", t: "Detalle (zona, varios apartamentos…)" },
+    { k: "notas", t: "Notas", type: "textarea", wide: true },
+  ], g, async (d) => {
+    await put(`/api/gestion/fusion/recibida/${g.id}/datos`, { ...d, unit_id: d.unit_id ? Number(d.unit_id) : null });
+    toast("Gasto actualizado"); load && load();
+  });
+  bindAmbito(f);
+}
+function pedirCorreccion(g, load) {
+  form(`Pedir corrección · ${g.proveedor || g.concepto}`, [
+    { html: '<p class="muted">La factura ya está en gestión: el PMS no la cambia. Se manda la corrección a administración, que la acepta o la rechaza en gestión; si la acepta, el cambio llega solo. Rellene solo lo que haya que corregir.</p>' },
+    { k: "numero", t: "Nº de factura" }, { k: "fecha_factura", t: "Fecha de la factura", type: "date" },
+    { k: "fecha_vencimiento", t: "Vencimiento", type: "date" }, { k: "proveedor_nif", t: "NIF del proveedor" },
+    { k: "base", t: "Base €", type: "number" }, { k: "cuota_iva", t: "Cuota de IVA €", type: "number" },
+    { k: "retencion", t: "Retención €", type: "number" }, { k: "total", t: "Total de la factura €", type: "number" },
+    { k: "nota", t: "Explicación para administración", type: "textarea", wide: true, req: true },
+  ], {}, async (d) => {
+    const { nota, ...cambios } = d;
+    if (!Object.values(cambios).some((v) => v !== null && v !== "")) throw new Error("Indique qué hay que corregir");
+    await post(`/api/gestion/fusion/recibida/${g.id}/correccion`, { cambios, nota });
+    toast("Corrección pedida a gestión"); load && load();
+  }, "Pedir corrección");
+}
+async function abrirEnGestion(tipo, ref) {
+  const w = window.open("about:blank", "_blank");
+  try {
+    const r = await get("/api/gestion/fusion/abrir", { tipo, ref });
+    if (w) { w.opener = null; w.location.href = r.url; } else location.href = r.url;
+  } catch (e) { if (w) w.close(); toast(e.message); }
+}
+
 V.docrecibidos = async (el) => {
   const C = await catGastos();
   const editar = can("documentos.editar");
@@ -4387,7 +4483,7 @@ V.gastos = async (el) => {
     const FORMAS_GASTO = (await catGastos()).formas_pago;
     table($("#t", el), [
       { k: "fecha", t: "Fecha", f: fdate }, { k: "activo", t: "Activo" }, { k: "lugar", t: "Imputado a" }, { k: "categoria_nombre", t: "Categoría", f: (v, g) => `${esc(v)}<div class="muted peq">${g.naturaleza ? esc(g.naturaleza) : '<span class="badge b-cancelada">falta OPEX/CAPEX</span>'}</div>` },
-      { k: "concepto", t: "Concepto" }, { k: "proveedor", t: "Proveedor", f: (v, g) => `${esc(v || "")}${g.numero_factura ? `<div class="muted peq">${esc(g.numero_factura)}</div>` : ""}` },
+      { k: "concepto", t: "Concepto", f: (v, g) => `${esc(v)}${etiquetaFusion(g.fusion)}` }, { k: "proveedor", t: "Proveedor", f: (v, g) => `${esc(v || "")}${g.numero_factura ? `<div class="muted peq">${esc(g.numero_factura)}</div>` : ""}` },
       { k: "base", t: "Base", num: true, f: eur }, { k: "cuota", t: "IVA", num: true, f: (v, g) => `${eur(v)}<div class="muted peq">${g.tipo_iva} %</div>` },
       { k: "liquido", t: "A pagar", num: true, f: (v, g) => `${eur(v)}${g.retencion ? `<div class="muted peq">ret. ${g.retencion_pct} %: ${eur(g.retencion)}</div>` : ""}` },
       { k: "pagado", t: "Pago", f: (v, g) => (g.pago_retenido && !v ? `<span class="badge b-cancelada" title="${esc(g.pago_retenido_motivo || "")}">RETENIDA</span><div class="muted peq">revisar ${fdate(g.pago_retenido_revision)}</div><div class="muted peq">${esc(g.pago_retenido_motivo || "")}</div>` : "") + (v ? `<span class="badge b-vigente">pagado</span><div class="muted peq">${fdate(g.fecha_pago)}</div>`
@@ -4405,8 +4501,9 @@ V.gastos = async (el) => {
         async (d) => { await post(`/api/gastos/${g.id}/retener-pago`, d); toast("Pago retenido: avisado a quien paga"); load(); }, "Retener pago")],
       g.pago_retenido && !g.pagado && ["Liberar pago", () => form("Liberar el pago (ya se puede pagar)", [{ k: "nota", t: "Nota (opcional)", wide: true }], {},
         async (d) => { await post(`/api/gastos/${g.id}/liberar-pago`, d); toast("Pago liberado"); load(); }, "Liberar")],
-      editar && ["Editar", () => editarGasto(g, load)],
-      editar && ["Borrar", async () => { if (confirm(`¿Borrar el gasto «${g.concepto}»?`)) { await run(() => api("DELETE", `/api/gastos/${g.id}`), "Gasto borrado"); load(); } }, "danger"],
+      ...accionesFusion(g, editar, load),
+      editar && ["Editar", () => (g.fusion?.gestionada ? editarGestionada(g, load) : editarGasto(g, load))],
+      editar && !g.fusion?.gestionada && ["Borrar", async () => { if (confirm(`¿Borrar el gasto «${g.concepto}»?`)) { await run(() => api("DELETE", `/api/gastos/${g.id}`), "Gasto borrado"); load(); } }, "danger"],
     ]);
   };
   ["#d", "#h", "#c", "#p"].forEach((s) => ($(s, el).onchange = load));
@@ -6052,7 +6149,28 @@ async function abrirGestion(destino, assetId, unitId) {
 }
 const CANAL_TXT = { directo: "Directo", booking: "Booking", airbnb: "Airbnb", expedia: "Expedia", web: "Web propia", agencia: "Agencia", otros: "Otros" };
 const EV_TXT = { "reserva.creada": "Reserva nueva", "reserva.modificada": "Reserva modificada", "reserva.cancelada": "Reserva cancelada", checkout: "Check-out", "incidencia.reportada": "Incidencia", "liquidacion.periodo": "Liquidación",
-  "reserva.ampliada": "Ampliación", "fianza.cobrada": "Fianza cobrada", "fianza.devolucion": "Fianza devuelta", "fianza.transferida": "Transferencia de fianza", "caja.cierre": "Cierre de caja", "incidencia.cerrada": "Incidencia cerrada", "kpi.diario": "Indicadores del día" };
+  "reserva.ampliada": "Ampliación", "fianza.cobrada": "Fianza cobrada", "fianza.devolucion": "Fianza devuelta", "fianza.transferida": "Transferencia de fianza", "caja.cierre": "Cierre de caja", "incidencia.cerrada": "Incidencia cerrada", "kpi.diario": "Indicadores del día",
+  "factura_recibida.creada": "Factura recibida", "factura_recibida.actualizada": "Factura recibida (cambio)", "factura_recibida.anulacion_pedida": "Anulación pedida", "factura_recibida.anulada": "Factura anulada",
+  "factura_emitida.emitida": "Factura emitida", "factura_emitida.rectificada": "Factura rectificativa", "documento.adjuntado": "Documento adjunto", "pago.registrado": "Pago", "pago.anulado": "Pago anulado",
+  "cobro.registrado": "Cobro", "cobro.anulado": "Cobro anulado", "proveedor.alta": "Proveedor nuevo", "proveedor.actualizado": "Proveedor (cambio)", "producto.alta": "Producto nuevo", "producto.actualizado": "Producto (cambio)", "precio.pedido": "Precio de pedido" };
+async function tarjetaFusion(cont) {
+  const d = await get("/api/gestion/fusion/estado").catch(() => null);
+  if (!d) return;
+  const n = d.enlazados || {};
+  cont.innerHTML = `<h3>Fusión con gestión: facturas, pagos, proveedores y catálogo</h3>
+    ${d.sync ? '<p class="muted">Sincronización <b>activada</b> en el servidor (PMS_GESTION_SYNC_FACTURAS=1). Solo viajan los activos marcados.</p>' : '<p class="aviso-amarillo">Sincronización <b>apagada</b> en el servidor (PMS_GESTION_SYNC_FACTURAS=0): no se manda ni se aplica nada de la fusión. Las casillas se pueden dejar preparadas.</p>'}
+    <div class="kpis"><div class="kpi"><b>${n.recibida || 0}</b><span>Facturas recibidas en gestión</span></div><div class="kpi"><b>${n.emitida || 0}</b><span>Facturas emitidas</span></div>
+      <div class="kpi"><b>${(n.pago || 0) + (n.cobro || 0)}</b><span>Pagos y cobros</span></div><div class="kpi"><b>${n.proveedor || 0}</b><span>Proveedores</span></div>
+      <div class="kpi ${d.a_revisar.length ? "mal" : ""}"><b>${d.a_revisar.length}</b><span>Documentos a revisar</span></div><div class="kpi ${d.solicitudes.length ? "mal" : ""}"><b>${d.solicitudes.length}</b><span>Solicitudes abiertas</span></div></div>
+    <table class="tabla"><thead><tr><th>Activo</th><th>Código en gestión</th><th>Sincronizar facturas</th></tr></thead><tbody>${d.activos.map((a) => `<tr><td>${esc(a.nombre)}</td><td>${esc(a.codigo_gestion || "")}</td><td><input type="checkbox" data-sync="${a.id}" ${a.sync_facturas ? "checked" : ""}></td></tr>`).join("")}</tbody></table>
+    <p class="muted">Al marcar un activo no se manda lo anterior: la carga inicial se hace desde gestión con «Emparejar facturas».</p>
+    ${d.a_revisar.length ? `<h4>Documentos de gestión que no cuadran (no adjuntados)</h4><ul>${d.a_revisar.map((x) => `<li>${esc(x.nombre || "")} · ${esc(x.tipo)} ${x.pms_ref} · ${esc(x.motivo || "")}</li>`).join("")}</ul>` : ""}
+    <h4>Últimos avisos recibidos de gestión</h4><div id="fen"></div>`;
+  cont.querySelectorAll("[data-sync]").forEach((c) => (c.onchange = () => run(() => api("PUT", `/api/gestion/fusion/activos/${c.dataset.sync}`, { sync_facturas: c.checked }), c.checked ? "Activo sincronizado con gestión" : "Sincronización del activo desactivada")));
+  table($("#fen", cont), [{ k: "recibido", t: "Fecha", f: fdt }, { k: "tipo", t: "Aviso", f: (v) => EV_TXT[v] || v },
+    { k: "estado", t: "Estado", f: (v) => badge({ aplicado: "aplicado", sin_tratar: "sin tratar", eco: "eco (ignorado)" }[v] || v) },
+    { k: "resultado", t: "Registro", f: (v) => esc((v && v.pms_id) || "") }], d.entradas);
+}
 V.gestion = async (el) => {
   const d = await get("/api/gestion/estado");
   const c = d.cuenta || {};
@@ -6069,7 +6187,9 @@ V.gestion = async (el) => {
     <div class="card"><h3>Liquidación mensual</h3><p class="muted">Si el activo tiene marcado «Mandar sola cada mes», el día 2 se manda la del mes anterior. Aquí se puede ver antes o mandar a mano (gestión no pisa una producción metida a mano sin enseñar las diferencias). Ojo: sale de las reservas del PMS; si no están todas, la cifra saldrá corta.</p>
       <div class="toolbar"><select id="gla">${d.activos.map((a) => `<option value="${a.id}">${esc(a.nombre)}</option>`).join("")}</select><input id="glp" type="month" value="${mesAnt}">
       <button class="btn" id="glv">Ver</button><button class="btn primary" id="gle">Mandar a gestión</button></div><div id="glr"></div></div>
+    <div class="card" id="gfus"></div>
     <div class="card"><h3>Últimos avisos a gestión</h3><div class="toolbar"><button class="btn" id="grt">Reintentar ahora los pendientes</button></div><div id="gev"></div></div>`;
+  tarjetaFusion($("#gfus", el));
   $("#gcom", el).innerHTML = `<div style="overflow-x:auto"><table class="tabla"><thead><tr><th>Activo</th>${d.canales.map((k) => `<th class="num">${CANAL_TXT[k] || k}</th>`).join("")}<th>Mandar sola cada mes</th><th></th></tr></thead><tbody>${d.activos.map((a) => `<tr data-a="${a.id}"><td>${esc(a.nombre)}</td>${d.canales.map((k) => `<td class="num"><input type="number" step="0.1" min="0" max="50" style="width:70px" data-k="${k}" value="${a.comisiones[k] ?? ""}"></td>`).join("")}<td><input type="checkbox" data-auto ${a.comisiones._auto ? "checked" : ""}></td><td><button class="btn sm" data-g>Guardar</button></td></tr>`).join("")}</tbody></table></div>`;
   $("#gcom", el).querySelectorAll("[data-g]").forEach((b) => (b.onclick = () => { const tr = b.closest("tr"); const com = {};
     tr.querySelectorAll("input[data-k]").forEach((i) => { if (i.value !== "") com[i.dataset.k] = Number(i.value); });
@@ -6335,4 +6455,12 @@ $("#menuBtn").onclick = () => $(".sidebar").classList.toggle("open");
 $("#backBtn").onclick = volver;
 $("#assetFilter").onchange = (e) => { setAsset(e.target.value); go(location.hash.slice(1)); };
 window.onhashchange = () => S.me && go(location.hash.slice(1));
+// Botón «PMS» de gestión: /sso/gestion deja la sesión en la dirección (#sso=…) y se lleva a la pantalla pedida
+(() => {
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (!h.get("sso")) return;
+  S.token = h.get("sso"); localStorage.setItem("pms_token", S.token);
+  const vista = { recibida: "gastos", pago: "gastos", emitida: "facturas", proveedor: "proveedores" }[h.get("destino")] || "panel";
+  history.replaceState(null, "", `/#${vista}`);
+})();
 S.token ? start() : showLogin();
