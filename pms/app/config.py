@@ -60,6 +60,12 @@ class Settings:
         e.strip().lower() for e in (os.environ.get("PMS_FIANZA_AVISOS") or "barbara@inversiete.es,alfonso@inversiete.es")
         .split(",") if e.strip())
 
+    # Fianzas: de dónde las contabiliza gestión. «csv» (FIANZAS_*.csv de la exportación) o «avisos» (fianza.*): con
+    # «avisos» el CSV sale como CONTROL_FIANZAS_*.csv (solo control) y los avisos llevan el asiento sugerido.
+    fianzas_origen: str = "avisos" if (os.environ.get("PMS_FIANZAS_ORIGEN") or "").strip().lower() == "avisos" else "csv"
+    # Primer día que gestión contabiliza desde los avisos (AAAA-MM-DD); lo anterior ya está en los CSV
+    fianzas_avisos_desde: str | None = (os.environ.get("PMS_FIANZAS_AVISOS_DESDE") or "").strip() or None
+
     # Informe diario de dirección (ocupación, ADR, RevPAR, cobros pendientes, fianzas por transferir…) a primera hora
     informe_direccion: tuple[str, ...] = tuple(
         e.strip().lower() for e in (os.environ.get("PMS_INFORME_DIRECCION") or "barbara@inversiete.es,alfonso@inversiete.es")

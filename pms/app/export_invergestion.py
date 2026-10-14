@@ -26,6 +26,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from . import documentos, factura_pdf, nif
+from .config import settings
 from .facturacion import desglose, dinero, lineas_de
 from .models import (Asset, Charge, Contact, DepositRefund, Expense, Invoice, Lease, ReceivedDocument, Reservation,
                      Supplier, Unit)
@@ -352,6 +353,12 @@ def _pdfs_recibidas(ficheros: list[tuple]) -> tuple[dict[str, bytes], list[str]]
     return out, errores
 
 
+def prefijo_fianzas() -> str:
+    """FIANZAS_*.csv mientras gestión contabiliza las fianzas desde el CSV; CONTROL_FIANZAS_*.csv (mismo contenido,
+    solo para cuadrar) cuando las contabiliza desde los avisos fianza.* (PMS_FIANZAS_ORIGEN=avisos)."""
+    return "CONTROL_FIANZAS" if settings.fianzas_origen == "avisos" else "FIANZAS"
+
+
 def fianzas(db: Session, asset_ids: set[int], desde: date, hasta: date) -> tuple[list[dict], list, list[str]]:
     """(filas, [], avisos). Las devoluciones registradas o hechas en el periodo."""
     ini, fin = datetime.combine(desde, time.min), datetime.combine(hasta, time.max)
@@ -408,7 +415,8 @@ def paquete(db: Session, datos: dict, activo: str, desde: date, hasta: date, pdf
     for tipo, (cod, filas, adjuntos, _) in datos.items():
         if tipo == "fianzas":  # solo si hay devoluciones en el periodo
             if filas:
-                csvs[nombre_fichero("FIANZAS", cod, desde, hasta, "csv")] = (a_csv(COLUMNAS_FIANZAS, filas), len(filas))
+                csvs[nombre_fichero(prefijo_fianzas(), cod, desde, hasta, "csv")] = (a_csv(COLUMNAS_FIANZAS, filas),
+                                                                                      len(filas))
             continue
         if pdf:
             if tipo == "emitidas":
@@ -429,7 +437,10 @@ def paquete(db: Session, datos: dict, activo: str, desde: date, hasta: date, pdf
     manifiesto = {
         "formato": "INVERGESTION-PMS 1.1", "activo": activo, "desde": desde.isoformat(), "hasta": hasta.isoformat(),
         "generado": datetime.now().isoformat(timespec="seconds"),
-        "csv": [{"fichero": n, "filas": filas} for n, (_, filas) in csvs.items()],
+        "csv": [{"fichero": n, "filas": filas, **({"contabilizar": False} if n.startswith("CONTROL_") else {})}
+                for n, (_, filas) in csvs.items()],
+        # de dónde contabiliza gestión las fianzas: «csv» (FIANZAS_*.csv) o «avisos» (fianza.*, el CSV es de control)
+        "fianzas_origen": settings.fianzas_origen,
         "pdf": [{"ruta": r, "sha256": hashlib.sha256(c).hexdigest(), "bytes": len(c)} for r, c in sorted(ficheros.items())],
     }
     out = io.BytesIO()

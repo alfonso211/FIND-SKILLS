@@ -16,7 +16,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from ..config import settings
 from ..database import get_db
 from .. import (avisos, clientes, contratos, documentos, dotacion, encuesta_ine, fianzas, firma_contrato, importacion,
-               importacion_ocupacion, limpiezas, nif, planos, recibos, registro_viajeros, tarifas)
+               importacion_ocupacion, libro_fianzas, limpiezas, nif, planos, recibos, registro_viajeros, tarifas)
 from ..facturacion import (EXENCION_INDEMNIZACION, IVA_ALOJAMIENTO, IVA_GENERAL, datos_cliente, dinero, emitir,
                            estancia_facturada, linea, lineas_servicios, serie_activo)
 from ..models import (FORMAS_DEVOLUCION, MODALIDADES_RESERVA, AccommodationContract, Asset, Contact, DepositRefund,
@@ -494,7 +494,7 @@ def deposit_charge(rid: int, data: DepositChargeIn, scope: Scope = Depends(get_s
     c = fianzas.registrar_cobro(r, data.importe, data.forma, scope.user, data.referencia)
     from .. import gestion
     gestion.encolar(db, "fianza.cobrada", {**gestion._datos_reserva(r), "fianza": c["importe"], "forma": c["forma"],
-                                            "fecha": c["fecha"]})
+                                            "fecha": c["fecha"], **libro_fianzas.contable(db, "fianza.cobrada", r)})
     audit(db, scope.user, "cobro_fianza", "reserva", r.id, {"importe": c["importe"], "forma": c["forma"]})
     db.commit()
     return {**_res_out(r), "fianza_cobro": c}
@@ -606,7 +606,8 @@ def _registrar_devolucion(db: Session, scope: Scope, r: Reservation, f: DepositR
                                                                                    "ot_id")} for c in cargos],
         "cargos_total": suma, "forma": f.forma, "estado": d.estado, "fecha": d.fecha.isoformat(),
         "cobro": r.fianza_cobro and {k: r.fianza_cobro.get(k) for k in ("forma", "fecha")},
-        "factura_exceso": extra.get("factura_exceso") and {k: extra["factura_exceso"][k] for k in ("codigo", "total")}})
+        "factura_exceso": extra.get("factura_exceso") and {k: extra["factura_exceso"][k] for k in ("codigo", "total")},
+        **libro_fianzas.contable(db, "fianza.devolucion", r, d)})
     audit(db, scope.user, "devolver_fianza", "reserva", r.id,
           {"forma": f.forma, "fianza": total, "importe": importe, "devolucion": d.id, "cargos": suma,
            "ots": ots, "factura_exceso": d.factura_exceso})
@@ -1846,6 +1847,53 @@ def deposits(estado: str | None = None, asset_id: int | None = None, scope: Scop
     return out
 
 
+def _ids_libro(db: Session, scope: Scope, asset_id: int | None) -> set[int]:
+    ids = scope.asset_ids("finanzas.ver")
+    if asset_id:
+        scope.require_asset("finanzas.ver", asset_id)
+        return {asset_id}
+    if ids is None:
+        ids = set(db.scalars(select(Asset.id).where(Asset.modalidad.in_(MODALIDADES_RESERVA))))
+    if not ids:
+        raise HTTPException(403, "Sin permiso para ver el libro de fianzas (finanzas)")
+    return ids
+
+
+@router.get("/fianzas/libro")
+def deposit_book(desde: date | None = None, hasta: date | None = None, asset_id: int | None = None,
+                 formato: str | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Libro de fianzas: lo que se custodia ahora, los movimientos del periodo con su asiento sugerido, si gestión
+    ha recibido cada aviso y lo que no cuadra (ver app/libro_fianzas.py)."""
+    hasta = hasta or date.today()
+    desde = desde or hasta.replace(day=1)
+    if desde > hasta or (hasta - desde).days > 400:
+        bad_request("Periodo no válido (máximo 13 meses)")
+    datos = libro_fianzas.libro(db, _ids_libro(db, scope, asset_id), desde, hasta)
+    if formato == "xlsx":
+        return Response(libro_fianzas.excel(datos), media_type=XLSX, headers={
+            "Content-Disposition": f'attachment; filename="libro_fianzas_{desde:%Y%m%d}_{hasta:%Y%m%d}.xlsx"'})
+    from .. import gestion
+    return {**datos, "puede_generar": gestion.puede_ir(scope.user) and datos["origen"] == "avisos"
+            and bool(datos["corte"])}
+
+
+@router.post("/fianzas/libro/avisos")
+def deposit_book_events(desde: date, hasta: date, asset_id: int | None = None, scope: Scope = Depends(get_scope),
+                        db: Session = Depends(get_db)):
+    """Genera los avisos a gestión de los movimientos (del corte en adelante) que no lo tienen. Solo la Dirección."""
+    from .. import gestion
+    if not gestion.puede_ir(scope.user):
+        raise HTTPException(403, "Solo la Dirección puede generar avisos a gestión")
+    try:
+        creados = libro_fianzas.generar_faltan(db, _ids_libro(db, scope, asset_id), desde, hasta)
+    except ValueError as e:
+        bad_request(str(e))
+    audit(db, scope.user, "fianzas_avisos_generados", "fianzas", None,
+          {"desde": str(desde), "hasta": str(hasta), "creados": len(creados)})
+    db.commit()
+    return {"creados": creados}
+
+
 def _fianza(db: Session, scope: Scope, fid: int) -> tuple[DepositRefund, Reservation]:
     d = get_or_404(db, DepositRefund, fid)
     scope.require_asset("reservas.editar", d.asset_id)
@@ -1863,7 +1911,9 @@ def deposit_done(fid: int, data: DevueltaIn, scope: Scope = Depends(get_scope), 
     from .. import gestion
     gestion.encolar(db, "fianza.transferida", {**gestion._datos_reserva(r), "devolucion_id": d.id,
                                                "fianza": float(d.fianza), "devuelto": float(d.importe),
-                                               "fecha": d.devuelta_fecha.isoformat()})
+                                               "fecha": d.devuelta_fecha.isoformat(),
+                                               **libro_fianzas.contable(db, "fianza.transferida", r, d,
+                                                                        d.devuelta_fecha)})
     audit(db, scope.user, "fianza_devuelta", "reserva", r.id, {"devolucion": d.id})
     db.commit()
     return fianzas.a_dict(d)

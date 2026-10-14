@@ -1508,6 +1508,41 @@ async function salidaReserva(r, reload, preguntar = false) {
     ot: x.estado === "roto" && !seRepone(x) && (x.precio ?? 0) >= 20, pedido: seRepone(x) }));
   pintaCargos();
 }
+// ---- libro de fianzas: custodia, movimientos con su asiento, avisos a gestión y lo que no cuadra
+async function libroFianzas() {
+  const mes = today().slice(0, 8) + "01";
+  const f = cerrarSolo(form("Libro de fianzas", [
+    { k: "desde", t: "Desde", type: "date", def: mes }, { k: "hasta", t: "Hasta", type: "date", def: today() },
+    { html: `<div class="toolbar"><button type="button" class="btn" data-ver>Ver</button><button type="button" class="btn primary" data-xls>Excel</button><span class="spacer"></span><button type="button" class="btn" data-gen hidden>Generar los avisos que faltan</button></div><div data-r></div>` }], {}, async () => {}));
+  $("#modal").classList.add("ancho");
+  const q = () => clean({ desde: f.elements.desde.value, hasta: f.elements.hasta.value, asset_id: S.asset });
+  const ver = async () => {
+    const x = await run(() => get("/api/turistico/fianzas/libro", q()));
+    const origen = x.origen === "avisos" ? `gestión las contabiliza desde los <b>avisos</b>${x.corte ? ` (desde el ${fdate(x.corte)})` : ""}; el CSV de la exportación es solo de control`
+      : "gestión las contabiliza desde el <b>CSV de la exportación</b>; los avisos sirven de control";
+    $("[data-gen]", f).hidden = !x.puede_generar;
+    $("[data-r]", f).innerHTML = `<p class="muted">Las fianzas son dinero del cliente: no son ingresos hasta que se retienen. Ahora ${origen}.</p>
+      <h4>Por activo</h4><div data-a></div>
+      <h4>Lo que no cuadra (${x.cuadre.length})</h4>${x.cuadre.length ? `<ul>${x.cuadre.map((c) => `<li>${esc(c.texto)} · <span class="muted">${esc(c.ref)}</span></li>`).join("")}</ul>` : "<p>✔ Todo cuadra.</p>"}
+      <h4>Movimientos (${x.movimientos.length})</h4><div data-m></div>`;
+    table($("[data-a]", f), [{ k: "activo", t: "Activo" }, { k: "custodia", t: "En custodia ahora", num: true, f: eur }, { k: "por_transferir", t: "Por transferir", num: true, f: eur },
+      { k: "preautorizado", t: "Preautorizado", num: true, f: eur }, { k: "cobrado", t: "Cobrado", num: true, f: eur }, { k: "devuelto", t: "Devuelto", num: true, f: eur },
+      { k: "retenido", t: "Retenido", num: true, f: eur }, { k: "transferido", t: "Transferido", num: true, f: eur }], x.resumen);
+    table($("[data-m]", f), [{ k: "fecha", t: "Fecha", f: fdate }, { k: "tipo_nombre", t: "Movimiento" }, { k: "unidad", t: "Apto." },
+      { k: "localizador", t: "Reserva", f: (v, m) => esc(v || `R-${m.reserva_id}`) }, { k: "importe", t: "Importe", num: true, f: eur }, { k: "forma", t: "Forma" },
+      { k: "asiento", t: "Asiento sugerido", f: (v) => (v.length ? v.map((l) => `${l.cuenta} ${l.debe ? "D " + eur(l.debe) : "H " + eur(l.haber)}`).join("<br>") : '<span class="muted">sin movimiento de dinero</span>') },
+      { k: "aviso", t: "Aviso a gestión", f: (v, m) => (m.aviso_estado === "enviado" ? "✔ recibido" : `<span class="badge b-pendiente">${esc(v)}</span>`) }], x.movimientos);
+  };
+  $("[data-ver]", f).onclick = ver;
+  $("[data-xls]", f).onclick = () => run(() => download("GET", "/api/turistico/fianzas/libro?" + new URLSearchParams({ ...q(), formato: "xlsx" })));
+  $("[data-gen]", f).onclick = async () => {
+    if (!confirm("Se crearán los avisos a gestión de los movimientos sin aviso (desde la fecha de corte). Gestión no los duplica. ¿Continuar?")) return;
+    const r = await run(() => post("/api/turistico/fianzas/libro/avisos?" + new URLSearchParams(q())));
+    toast(r.creados.length ? `${r.creados.length} aviso(s) creados` : "No faltaba ningún aviso");
+    ver();
+  };
+  ver();
+}
 async function informeRoturas() {
   const mes = today().slice(0, 8) + "01";
   const f = cerrarSolo(form("Informe de roturas y faltas", [
@@ -1553,9 +1588,10 @@ async function devolucionesFianza() {
       }]] : []);
   };
   const f = cerrarSolo(form("Devoluciones de fianza", [{ html: `<p class="muted">Registradas al dar la salida. Las transferencias las hace la Dirección; cuando esté hecha, márquela. Todas van en el envío a INVERGESTION (gestoría). Las facturas de exceso sin cobrar se recuerdan solas al cliente a los 3, 10 y 17 días (si tiene correo).</p>
-    <div class="toolbar"><span class="spacer"></span><button type="button" class="btn" data-roturas>Informe de roturas</button></div><div data-t></div>` }], {}, async () => {}));
+    <div class="toolbar"><span class="spacer"></span>${can("finanzas.ver") ? '<button type="button" class="btn" data-libro>Libro de fianzas</button>' : ""}<button type="button" class="btn" data-roturas>Informe de roturas</button></div><div data-t></div>` }], {}, async () => {}));
   $("#modal").classList.add("ancho");
   $("[data-roturas]", f).onclick = () => informeRoturas();
+  if ($("[data-libro]", f)) $("[data-libro]", f).onclick = () => libroFianzas();
   pinta();
 }
 
@@ -3065,7 +3101,7 @@ function exportarInvergestion() {
     { html: `<p>Genera <b>un solo ZIP</b> para INVERGESTION: los CSV de <b>EMITIDAS</b> y <b>RECIBIDAS</b>, el <b>manifest.json</b> y los PDF de las facturas en las carpetas <b>pdf/emitidas</b> y <b>pdf/recibidas</b>. Si falta el PDF de alguna factura, no se genera y se indica cuál.</p>
       <ul class="muted"><li>Emitidas: las <b>emitidas</b> en el periodo (aunque su fecha de factura sea el último día del mes) y las <b>cobradas</b> en el periodo, para informar el cobro.</li>
       <li>Recibidas: las de la cuenta de gastos con fecha de factura, registro o pago en el periodo.</li>
-      <li>Fianzas: las devoluciones registradas al dar la salida o hechas en el periodo (FIANZAS_*.csv, solo si hay).</li>
+      <li>Fianzas: las devoluciones registradas al dar la salida o hechas en el periodo (FIANZAS_*.csv, solo si hay). Si gestión las contabiliza desde los avisos, el fichero sale como CONTROL_FIANZAS_*.csv: solo para cuadrar.</li>
       <li>INVERGESTION actualiza las facturas que ya tiene: se pueden repetir periodos sin duplicar nada.</li></ul>` },
     { k: "desde", t: "Desde", type: "date", req: true, def: d0 }, { k: "hasta", t: "Hasta", type: "date", req: true, def: d1 },
     { k: "activo", t: "Activo", type: "select", req: true, def: "TODOS", options: [["TODOS", "Todos"], ["SFLORIDA", "Suite Florida"], ["SAEROPUERTO", "Suite Aeropuerto"], ["BABILONIA35", "C/ Babilonia 35"]] },

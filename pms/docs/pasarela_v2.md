@@ -78,6 +78,55 @@ La Dirección marca hecha la transferencia de una devolución.
 - `devolucion_id`, `fianza`, `devuelto`.
 - `fecha`: la de la transferencia.
 
+### Contabilidad de las fianzas desde los avisos (versión 1.58 del PMS)
+
+Desde la 1.58, los tres avisos `fianza.*` llevan además estos campos. No se quita ni se cambia ninguno de los
+anteriores.
+
+- `empresa`: `{nombre, cif}` de la sociedad que explota el activo.
+- `origen_contable`: `avisos` o `csv`. Indica de dónde contabiliza gestión las fianzas.
+- `contabilizar`: `true` si gestión debe contabilizar este aviso. Es `false` con `origen_contable` = `csv` o si el
+  movimiento es anterior a la fecha de corte.
+- `cobro_registrado`: `false` si la fianza no se anotó al cobrarla (solo constaba en el contrato). Hay que revisarla.
+- `asiento`: lista de `{cuenta, nombre, debe, haber}` con el asiento sugerido (Plan General Contable). Lista vacía si
+  el movimiento no mueve dinero.
+- `saldo_activo`: fianzas en custodia del activo después del movimiento (€). Incluye las de los clientes alojados y
+  las devoluciones por transferencia aún sin hacer.
+- `preautorizado_activo`: preautorizaciones de tarjeta abiertas del activo (€). No es dinero.
+- `generado_desde_libro`: `true` solo en los avisos creados después desde el libro de fianzas (ver más abajo).
+
+**Cuentas sugeridas**: 560 Fianzas recibidas a corto plazo, 570 Caja, 572 Bancos y 778 Ingresos excepcionales
+(fianza retenida). Gestión puede usar sus propias cuentas; el importe y el reparto son los mismos.
+
+| Movimiento | Asiento sugerido |
+|---|---|
+| `fianza.cobrada` (efectivo) | 570 al debe / 560 al haber |
+| `fianza.cobrada` (tarjeta, Bizum, transferencia) | 572 al debe / 560 al haber |
+| `fianza.cobrada` (preautorización) | sin asiento: no hay dinero hasta la salida |
+| `fianza.devolucion`, parte retenida | 560 al debe / 778 al haber |
+| `fianza.devolucion`, devuelto en efectivo o tarjeta | 560 al debe / 570 o 572 al haber |
+| `fianza.devolucion`, devuelto por transferencia | sin asiento todavía: sigue en la 560 |
+| `fianza.transferida` | 560 al debe / 572 al haber |
+| Preautorización con retención | 572 al debe / 778 al haber, solo por lo retenido |
+
+Así, el saldo de la 560 de cada activo en gestión debe coincidir con `saldo_activo` del último aviso.
+
+**Activación y fecha de corte.** En el `.env` del servidor del PMS:
+
+1. `PMS_FIANZAS_ORIGEN=avisos`.
+2. `PMS_FIANZAS_AVISOS_DESDE=AAAA-MM-DD`: el primer día que gestión contabiliza desde los avisos. Lo anterior ya
+   está contabilizado con los CSV.
+
+Desde ese momento, el fichero del paquete de exportación se llama `CONTROL_FIANZAS_*.csv` en lugar de
+`FIANZAS_*.csv`. El contenido es el mismo, pero **no se contabiliza**: sirve para cuadrar. El `manifest.json` indica
+`"fianzas_origen": "avisos"` y, en ese fichero, `"contabilizar": false`. Con el nombre nuevo, un importador que busque
+`FIANZAS_*` no lo recoge, y una fianza no se apunta dos veces.
+
+**Avisos que faltan.** El libro de fianzas del PMS (*Reservas → Devoluciones de fianza → Libro de fianzas*) compara
+cada movimiento con su aviso. La Dirección puede generar los que falten desde la fecha de corte. Esos avisos llevan
+un `id_evento` fijo (`pms-{tipo}-r{reserva_id}`) y `generado_desde_libro: true`, así que no se duplican. En ellos,
+`saldo_activo` es el del día en que se generan.
+
 ### 5. `caja.cierre`
 
 Cada recepcionista cierra su turno con el arqueo.
@@ -133,10 +182,10 @@ Sirve para el cuadro de mando de gestión, sin recalcular nada allí.
 
 1. Aceptar (2xx) y guardar los 7 tipos nuevos.
 2. `reserva.ampliada`: no tratarlo como salida.
-3. Para las fianzas, elegir una de estas dos opciones:
-   - Contabilizarlas desde los avisos (`fianza.*`).
-   - Seguir con el CSV `FIANZAS_*.csv` del paquete de exportación, que no cambia. En ese caso, los avisos sirven de
-     control.
+3. Fianzas: **decidido (14/10/2026), se contabilizan desde los avisos `fianza.*`** con el asiento sugerido. Hay que
+   contabilizar solo los avisos con `contabilizar: true` y dejar de importar el CSV de fianzas. Cuando gestión esté
+   lista, Alfonso pone `PMS_FIANZAS_ORIGEN=avisos` y la fecha de corte en el `.env` del PMS. Hasta entonces sigue el
+   CSV `FIANZAS_*.csv`.
 4. `incidencia.cerrada`: cerrar la incidencia espejo.
 5. `kpi.diario` y `caja.cierre`: guardarlos para el cuadro de mando y el control de caja.
 6. Cuando esté desplegado, avisar a Alfonso para que ponga `PMS_GESTION_EVENTOS_V2=1` en el `.env` del PMS.

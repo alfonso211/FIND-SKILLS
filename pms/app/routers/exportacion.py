@@ -61,7 +61,8 @@ def check(desde: date, hasta: date, activo: str | None = None, tipos: str = "emi
             out[tipo] = {"devoluciones": len(filas), "filas": len(filas), "ficheros": 0, "facturas": 0,
                          "total": round(sum(float(f["importe_devuelto"]) for f in filas), 2),
                          "avisos": avisos[:200], "n_avisos": len(avisos),
-                         "csv": ex.nombre_fichero("FIANZAS", cod, desde, hasta, "csv")}
+                         "csv": ex.nombre_fichero(ex.prefijo_fianzas(), cod, desde, hasta, "csv"),
+                         "solo_control": ex.prefijo_fianzas() != "FIANZAS"}
             continue
         claves = {(f.get("nif_emisor") or f.get("proveedor_nif"), f.get("serie"), f["numero"]) for f in filas}
         out[tipo] = {"facturas": len(claves), "filas": len(filas), "ficheros": len(ficheros),
