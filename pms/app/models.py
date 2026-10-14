@@ -718,6 +718,8 @@ class User(Base):
     debe_cambiar_password: Mapped[bool] = mapped_column(Boolean, default=False)
     # avisos por correo que quiere recibir (None = todos los que le permiten sus permisos)
     avisos: Mapped[list | None] = mapped_column(JSON)
+    # accesos rápidos de la barra superior [{nombre, url}] (None = los de serie: Gmail, Outlook, Excel y Word)
+    accesos: Mapped[list | None] = mapped_column(JSON)
     # presidencia: los demás no pueden asignarle tareas, recordatorios ni convocarle (él sí a ellos)
     no_asignable: Mapped[bool] = mapped_column(Boolean, default=False)
     # colaborador externo (subcontrata): solo entra en su portal y ve lo de este proveedor

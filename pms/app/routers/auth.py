@@ -58,6 +58,7 @@ def me(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
         "borrar_usuarios": puede_borrar(u),
         "gestion": puede_ir(u),  # botón «Gestión» (INVERGESTION)
         "ambitos": ambitos,
+        "accesos": accesos_de(u),  # accesos rápidos de la barra superior
         # colaborador externo: solo su portal
         "colaborador": {"supplier_id": u.supplier_id, "proveedor": db.get(Supplier, u.supplier_id).nombre}
         if u.supplier_id else None,
@@ -107,6 +108,63 @@ def set_my_alerts(data: AlertPrefs, scope: Scope = Depends(get_scope), db: Sessi
     audit(db, scope.user, "avisos", "usuario", scope.user.id, {"avisos": scope.user.avisos})
     db.commit()
     return my_alerts(scope)
+
+
+# --------------------------------------------------------------------------- accesos rápidos de la barra superior
+# Se abren en una pestaña nueva; las versiones web porque el navegador no puede abrir programas del ordenador.
+ACCESOS_DEFECTO = [
+    {"nombre": "Gmail", "url": "https://mail.google.com/"},
+    {"nombre": "Outlook", "url": "https://outlook.office.com/mail/"},
+    {"nombre": "Excel", "url": "https://www.office.com/launch/excel"},
+    {"nombre": "Word", "url": "https://www.office.com/launch/word"},
+]
+ACCESOS_MAX, ACCESO_NOMBRE_MAX, ACCESO_URL_MAX = 8, 30, 500
+
+
+def accesos_de(u: User) -> list[dict]:
+    return [dict(a) for a in (ACCESOS_DEFECTO if u.accesos is None else u.accesos)]
+
+
+class Acceso(BaseModel):
+    nombre: str
+    url: str
+
+
+class AccesosIn(BaseModel):
+    accesos: list[Acceso] | None  # None = volver a los de serie
+
+
+def _acceso_valido(a: Acceso) -> dict:
+    from urllib.parse import urlsplit
+    nombre, url = " ".join(a.nombre.split()), a.url.strip()
+    if not nombre:
+        raise HTTPException(400, "Cada acceso necesita un nombre")
+    if len(nombre) > ACCESO_NOMBRE_MAX:
+        raise HTTPException(400, f"«{nombre[:40]}»: el nombre admite como máximo {ACCESO_NOMBRE_MAX} caracteres")
+    partes = urlsplit(url)
+    # solo páginas seguras: nada de javascript:, data:, file: ni direcciones con espacios o credenciales
+    if (partes.scheme.lower() != "https" or not partes.hostname or partes.username or partes.password
+            or len(url) > ACCESO_URL_MAX or any(c.isspace() for c in url)):
+        raise HTTPException(400, f"«{nombre}»: la dirección debe empezar por https:// (por ejemplo https://mail.google.com)")
+    return {"nombre": nombre, "url": url}
+
+
+@router.get("/accesos")
+def my_shortcuts(user: User = Depends(current_user)):
+    return {"accesos": accesos_de(user), "de_serie": user.accesos is None, "maximo": ACCESOS_MAX}
+
+
+@router.put("/accesos")
+def set_my_shortcuts(data: AccesosIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    if data.accesos is None:
+        user.accesos = None
+    else:
+        if len(data.accesos) > ACCESOS_MAX:
+            raise HTTPException(400, f"Como máximo {ACCESOS_MAX} accesos rápidos")
+        user.accesos = [_acceso_valido(a) for a in data.accesos]
+    audit(db, user, "accesos_rapidos", "usuario", user.id, {"accesos": user.accesos})
+    db.commit()
+    return my_shortcuts(user)
 
 
 @router.get("/reloj")

@@ -68,6 +68,30 @@ main { min-width: 0; }
 .usuario .user { color: var(--ink); font-weight: 600; font-size: 13px; line-height: 1.15; }
 .usuario .user small { display: block; color: var(--muted); font-weight: 400; font-size: 11.5px; }
 .menu-btn { display: none; }
+/* accesos rápidos de la barra superior (Mi perfil → Accesos rápidos) */
+.accesos { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.accesos .acc-lista { display: flex; gap: 6px; flex-wrap: wrap; }
+.acceso { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border: 1px solid var(--line);
+  border-radius: 999px; background: #fff; color: var(--ink); font-size: 12.5px; text-decoration: none; white-space: nowrap; }
+.acceso:hover { border-color: var(--oro); background: #fffaf0; }
+.acc-ico { width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center; color: #fff;
+  font-weight: 700; font-size: 11px; flex: none; }
+.acc-c0 { background: #d93025; } .acc-c1 { background: #0f6cbd; } .acc-c2 { background: #107c41; } .acc-c3 { background: #185abd; }
+.acc-c4 { background: #7b5ea7; } .acc-c5 { background: #c9a45a; } .acc-c6 { background: #00838f; } .acc-c7 { background: #5f6368; }
+.accesos details { display: none; position: relative; }
+.accesos details summary { cursor: pointer; list-style: none; }
+.accesos details summary::-webkit-details-marker { display: none; }
+.accesos details[open] .acc-desplegable { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; background: #fff;
+  border: 1px solid var(--line); border-radius: 10px; padding: 6px; display: grid; gap: 4px; box-shadow: 0 10px 30px rgba(0, 0, 0, .12); }
+.acc-editor { display: grid; gap: 6px; margin-bottom: 8px; }
+.acc-fila { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto; gap: 6px; align-items: center; }
+.acc-fila input { min-width: 0; }
+.acc-botones { white-space: nowrap; }
+@media (max-width: 1100px) {
+  .accesos .acc-lista { display: none; }
+  .accesos details { display: block; }
+}
+@media (max-width: 600px) { .acc-fila { grid-template-columns: 1fr; } }
 .back-btn { white-space: nowrap; }
 .back-btn[hidden] { display: none; }
 .view { padding: 24px 28px 40px; }
