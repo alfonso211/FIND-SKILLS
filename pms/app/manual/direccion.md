@@ -185,3 +185,10 @@
   - Se guardan desde ya, pero no salen hasta poner PMS_GESTION_EVENTOS_V2=1 en el .env del servidor. Al activarlo se mandan todos los guardados.
   - El contrato para gestión está en `pms/docs/pasarela_v2.md`.
   - La ampliación de una reserva ya no llega a gestión como salida.
+- **Fusión con gestión (versión 1.63): facturas, pagos, proveedores y catálogo**:
+  - Lo que se registra en uno pasa solo al otro, con sus documentos: facturas recibidas y emitidas con sus PDF, pagos y cobros con su justificante, proveedores y catálogo. Las fianzas no: siguen con sus avisos.
+  - **Gestión manda**: una factura, un pago o un proveedor que ya está en gestión aparece como «Gestionada en INVERGESTION» y sus datos contables solo se cambian allí. Desde la Cuenta de gastos: **Abrir en gestión**, **Adjuntar documento**, **Pedir corrección** (la acepta o rechaza administración en gestión) y **Pedir anulación** (el PMS nunca anula por su cuenta). Concepto, categoría, apartamento y notas sí se cambian en el PMS.
+  - Lo que llega de gestión se aplica siempre y no vuelve como eco. Un documento cuya huella (sha256) no cuadra no se adjunta: aparece en la tarjeta «Fusión con gestión» como **documento a revisar**.
+  - **Activar**: 1) en el `.env` del servidor, `PMS_GESTION_SYNC_FACTURAS=1` y reiniciar; 2) en *Pasarela con gestión → Fusión con gestión*, marcar **«Sincronizar facturas»** en cada activo (piloto: Suite Florida una semana). Al marcarlo no se manda lo anterior: la carga inicial se hace desde gestión con «Emparejar facturas».
+  - El botón «PMS» de gestión entra en el PMS sin contraseña (enlace de 60 segundos y un solo uso), con los permisos del usuario en el PMS.
+  - El contrato técnico está en `pms/docs/pasarela_v2.md`, apartado «Fusión: facturas, pagos, proveedores y catálogo».

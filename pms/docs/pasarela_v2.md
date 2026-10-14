@@ -192,3 +192,147 @@ Sirve para el cuadro de mando de gestión, sin recalcular nada allí.
 4. `incidencia.cerrada`: cerrar la incidencia espejo.
 5. `kpi.diario` y `caja.cierre`: guardarlos para el cuadro de mando y el control de caja.
 6. Cuando esté desplegado, avisar a Alfonso para que ponga `PMS_GESTION_EVENTOS_V2=1` en el `.env` del PMS.
+
+## Fusión: facturas, pagos, proveedores y catálogo
+
+Contrato «fusion1», fijado el 14/10/2026 por Alfonso y construido así en los dos programas. Las instrucciones
+originales están copiadas en `pms/docs/fusion/` (`INSTRUCCION_FUSION_PMS_GESTION.txt`, apartados 1 y 1 bis, e
+`INSTRUCCION_PMS_FUSION_FACTURAS.txt`). Si el contrato cambia, hay que cambiarlo en los dos programas y en esas copias.
+
+**Decisiones**:
+- Gestión manda siempre en los datos contables.
+- Viajan solos, en los dos sentidos:
+  - facturas recibidas con sus PDF;
+  - pagos y cobros con su justificante;
+  - facturas emitidas con su PDF;
+  - proveedores y catálogo de productos y precios.
+- Las fianzas **no**: siguen con sus avisos `fianza.*` (ver arriba).
+
+### Activación
+
+1. En el `.env` del servidor del PMS: `PMS_GESTION_SYNC_FACTURAS=1` (por defecto `0`: no se manda ni se aplica nada de
+   la fusión). Gestión tiene su propio interruptor, `INVG_SYNC_FACTURAS`.
+2. Por activo, en *Administración → Pasarela con gestión*: casilla **«Sincronizar facturas»**. Solo viaja lo de los
+   activos marcados. Al marcarlo no se manda lo anterior: la carga inicial es el botón «Emparejar facturas» de gestión.
+3. Proveedores y productos no son de un activo: viajan si al menos un activo tiene la casilla.
+
+### Transporte
+
+| Sentido | Ruta | Firma |
+|---|---|---|
+| PMS → gestión, avisos | `POST http://invergestion:8000/api/pms/eventos` (cola `gestion_cola`, mismos reintentos y aviso por correo, cabecera `X-INVG: 1`) | `X-PMS-Fecha` + `X-PMS-Firma` = HMAC-SHA256(`PMS_EVENTOS_SECRET`, fecha + "." + cuerpo) |
+| Gestión → PMS, avisos | `POST http://pms-app-1:8000/api/gestion/eventos` | la misma que `/api/gestion/bloqueo` (que no cambia) |
+| Gestión descarga un documento del PMS | `GET http://pms-app-1:8000/api/gestion/documento/{doc_id}` | HMAC(fecha + "." + doc_id) |
+| El PMS descarga un documento de gestión | `GET http://invergestion:8000/api/pms/documento/{doc_id}` | HMAC(fecha + "." + doc_id) |
+| Carga inicial | `GET http://pms-app-1:8000/api/gestion/fusion/inventario?activo=…&desde=AAAA-MM-DD` | HMAC(fecha + "." + "activo=…&desde=…") |
+| Botón «PMS» de gestión | `GET https://pms.inversiete.es/sso/gestion?pase=…&firma=…` | hex HMAC-SHA256(`PMS_GESTION_SSO_SECRET`, pase) |
+
+- Las rutas de documentos e inventario solo responden desde la red interna: rechazan con 403 cualquier petición con
+  `X-Forwarded-For`, que es lo que añade Caddy a lo que llega de internet.
+- Ventana de la firma: 5 minutos.
+
+### Cabecera de todos los avisos
+
+```json
+{"id_evento": "único, [A-Za-z0-9._:-], máx. 120", "tipo": "…", "version": "fusion1", "emitido": "ISO UTC",
+ "origen": "PMS" | "GESTION", "id_evento_causa": null | "id del aviso que lo provocó",
+ "activo": "SFLORIDA | SAEROPUERTO | BABILONIA35… o null en proveedores y productos",
+ "sociedad": "INV | CDC | EC | ETH o null", "datos": {…}, "documentos": [{…}]}
+```
+
+**Respuesta del receptor**:
+- `200 {"ok": true}`, también si el `id_evento` ya se recibió: no se repite nada.
+- En las altas, el PMS devuelve su identificador: `{"ok": true, "pms_id": "…"}`. Gestión devuelve el suyo como
+  `{"ok": true, "resultado": {"id": "…"}}`, y el PMS lo guarda como enlace.
+- Un tipo desconocido se guarda «sin_tratar» y se responde 200.
+- Un aviso que todavía no se puede aplicar (por ejemplo, el pago de una factura que aún no ha llegado) se responde
+  **400**. El emisor lo reintenta con su calendario normal.
+
+**Documento** (cada elemento de `documentos[]`):
+
+```json
+{"doc_id": "…", "nombre": "…", "tipo_mime": "application/pdf|image/jpeg|image/png", "tamano": bytes,
+ "sha256": "hex", "categoria": "FACTURA|JUSTIFICANTE|ALBARAN|OTRO"}
+```
+
+- Al descargarlo se responde el fichero con la cabecera `X-Sha256`.
+- Si la sha256 no cuadra, el documento no se adjunta y queda **«A revisar»**.
+- Los `doc_id` del PMS son `rd-N` (documento de la carpeta del activo) y `fd-N` (copia del PDF de una factura emitida,
+  siempre la misma, para que su sha256 no cambie).
+- El PMS descifra con `PMS_DOCS_KEY` dentro del propio PMS: la clave nunca sale.
+
+### Avisos
+
+| Tipo | Sentido | En el PMS |
+|---|---|---|
+| `factura_recibida.creada` / `.actualizada` | los dos | apunte de la Cuenta de gastos |
+| `factura_recibida.anulacion_pedida` | los dos | «Pedir anulación»: el PMS nunca anula por su cuenta |
+| `factura_recibida.anulada` | gestión → PMS | el apunte sale de la Cuenta de gastos (los documentos quedan en la carpeta y la auditoría guarda sus datos) |
+| `factura_emitida.emitida` / `.rectificada` | PMS → gestión | factura del PMS, con su serie y número |
+| `factura_emitida.emitida` | gestión → PMS | se guarda como facturación externa «INVERGESTION», fuera de la numeración y de la cadena de huellas del PMS |
+| `documento.adjuntado` | los dos | documento de más de una factura, pago o cobro ya sincronizado |
+| `pago.registrado` / `pago.anulado` | los dos | pago de la factura recibida, con justificante |
+| `cobro.registrado` / `cobro.anulado` | los dos | cobro de la factura emitida |
+| `proveedor.alta` / `.actualizado` | los dos | fichero de proveedores (por NIF) |
+| `producto.alta` / `.actualizado` | los dos | catálogo (por referencia) |
+| `precio.pedido` | PMS → gestión | línea con precio de un pedido autorizado |
+
+**Identificadores del PMS (`pms_id`)**:
+- `gasto-N`: factura recibida.
+- `pago-N`: su pago (mismo N).
+- `factura-N`: factura emitida.
+- `cobro-N`: su cobro (mismo N).
+- `externa-N`: emitida que vino de gestión.
+- `proveedor-N` y `producto-N`.
+
+Los nombres de `datos` de cada tipo son los del apartado 1 bis (los del CSV v1.1 del importador). Lo que no se
+tenga va `null`.
+
+### Reglas
+
+- **Gestión manda.** Lo que llega de gestión se aplica siempre, aunque pise un dato del PMS. No genera avisos de
+  vuelta: sin eco. Un aviso con `origen: "PMS"` que vuelve al PMS se guarda como «eco» y no se aplica.
+- **Idempotente.** El mismo `id_evento` recibido 5 veces deja un solo cambio. Lo recibido se guarda en
+  `fusion_entradas` y la auditoría.
+- **Identidad, sin duplicar**:
+  - Recibida: `pms_id` ↔ id de gestión; si no lo hay, NIF del proveedor + número + fecha de factura.
+  - Emitida: su `pms_id`.
+  - Pago o cobro: `pms_id` ↔ `PAG-`/`COB-`.
+  - Proveedor: NIF.
+  - Producto: referencia.
+
+  Si se encuentra el gemelo (por ejemplo, entró por ZIP), se enlaza y no se crea otro.
+- **Solo lectura.** Una factura recibida, un pago o un proveedor que ya está en gestión no cambia sus datos contables
+  en el PMS. La pantalla los marca «Gestionada en INVERGESTION» y ofrece:
+  - «Abrir en gestión»: el `/sso/pms` de siempre con `destino` = recibida|emitida|pago|proveedor e `id` = id de gestión.
+  - «Adjuntar documento».
+  - «Pedir corrección»: manda `factura_recibida.actualizada` con los datos corregidos, sin cambiar nada en el PMS.
+  - «Pedir anulación».
+
+  Datos contables de la recibida: proveedor, número, fechas, base, IVA, retención, total, forma de pago y OPEX/CAPEX.
+  El concepto, la categoría, a qué apartamento se imputa y las notas sí se cambian en el PMS. Una factura del PMS
+  que aún no ha llegado a gestión se edita con normalidad.
+- **Avisos agrupados.** Los avisos del PMS toman los datos y documentos del registro al mandarse por primera vez.
+  Un gasto registrado y completado enseguida (por ejemplo, con un segundo PDF) sale en un solo aviso con todo. En
+  los reintentos se manda siempre lo mismo.
+- Las facturas emitidas del PMS no se modifican nunca desde gestión (un cambio se hace con rectificativa). Un aviso
+  de gestión sobre una de ellas solo guarda el enlace.
+
+### Carga inicial
+
+`GET /api/gestion/fusion/inventario?activo=…&desde=AAAA-MM-DD` contesta, sin documentos:
+
+```json
+{"recibidas": [datos…], "emitidas": [datos…], "pagos": [datos… con "tipo": "PAGO"|"COBRO"],
+ "proveedores": [datos…], "productos": [datos…]}
+```
+
+Gestión solo simula hasta que Alfonso dice desde qué fecha se aplica.
+
+### Botón «PMS» de gestión (SSO inverso)
+
+- `pase` = base64url de un JSON con `email`, `nombre`, `usuario`, `destino` (inicio|recibida|emitida|pago|proveedor),
+  `id`, `activo`, `emitido` (ISO UTC) y `nonce` (16 a 128 caracteres).
+- Vale 60 segundos y una sola vez.
+- El PMS busca al usuario por email (activo) y le abre su sesión normal: los permisos son los suyos en el PMS.
+- Lleva a la pantalla del destino: Cuenta de gastos, Facturas o Proveedores.

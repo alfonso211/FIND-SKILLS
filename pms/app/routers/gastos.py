@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from .. import adjuntos, ausencias, avisos, documentos
+from .. import adjuntos, ausencias, avisos, documentos, fusion
 from ..database import get_db
 from ..facturacion import FORMAS_PAGO, dinero
 from ..models import (TIPOS_DOC_RESERVADOS, AMBITOS_GASTO, CATEGORIAS_GASTO, TIPOS_DOCUMENTO, Asset, Company, Expense,
@@ -465,10 +465,12 @@ def _gastos(db, scope, asset_id, desde, hasta, categoria, unit_id, pagado) -> li
     activos = _activos(db)
     docs = dict(db.execute(select(ReceivedDocument.id, ReceivedDocument.tipo).where(
         ReceivedDocument.id.in_([g.documento_id for g in filas if g.documento_id] or [-1]))).all())
+    fu = fusion.estado_gastos(db, [g.id for g in filas])
     out = []
     for g in filas:
         d = _gasto_out(g, unidades, usuarios, activos)
         d["documento_tipo"] = TIPOS_DOCUMENTO.get(docs.get(g.documento_id)) if g.documento_id else None
+        d["fusion"] = fu.get(g.id)
         out.append(d)
     return out
 
@@ -531,7 +533,9 @@ def _uno(db: Session, scope: Scope, gid: int) -> dict:
     g = db.get(Expense, gid)
     unidades, usuarios = _nombres(db, {g.unit_id} if g.unit_id else set(),
                                   {i for i in (g.user_id, g.pago_retenido_user_id) if i})
-    return _gasto_out(g, unidades, usuarios, _activos(db))
+    d = _gasto_out(g, unidades, usuarios, _activos(db))
+    d["fusion"] = fusion.estado_gastos(db, [g.id]).get(g.id)
+    return d
 
 
 @router.put("/gastos/{gid}")
@@ -544,6 +548,7 @@ def update_expense(gid: int, data: ExpenseIn, scope: Scope = Depends(get_scope),
     if data.pagado and not g.pagado:
         bad_request(SIN_JUSTIFICANTE)
     valores = _valores_gasto(db, g.asset_id, data)
+    fusion.comprobar_edicion_gasto(db, g, valores, data.pagado)  # ya en gestión: lo contable, solo allí
     _comprobar(db, g.asset_id, valores, excluir=gid, confirmado=True)  # al editar: solo el duplicado exacto
     if g.pagado and data.pagado:  # sigue pagada: se conserva la fecha de pago si no se cambia
         valores["fecha_pago"] = data.fecha_pago or g.fecha_pago
@@ -626,6 +631,8 @@ def release_payment(gid: int, data: LiberarIn, scope: Scope = Depends(get_scope)
 def delete_expense(gid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     g = get_or_404(db, Expense, gid)
     _puede_borrar(scope, g.asset_id, g.user_id, g.creado)
+    if fusion.gestionada(db, "recibida", gid):
+        raise HTTPException(409, "Factura gestionada en INVERGESTION: no se borra en el PMS. Use «Pedir anulación».")
     audit(db, scope.user, "borrar", "gasto", gid, {"concepto": g.concepto, "total": float(g.total)})
     db.delete(g)
     db.commit()

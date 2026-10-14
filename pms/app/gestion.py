@@ -188,15 +188,19 @@ def _encolar_detectados(session: Session, _ctx) -> None:
 
 
 def _enviar(ev: GestionEvento) -> tuple[bool, str]:
-    cuerpo = json.dumps({"id_evento": ev.id_evento, "tipo": ev.tipo, "emitido": ev.creado.isoformat(timespec="seconds"),
-                         "datos": ev.datos}, ensure_ascii=False, default=str).encode()
+    from . import fusion
+    if (ev.datos or {}).get("version") == fusion.VERSION:  # avisos de la fusión: cabecera completa «fusion1»
+        cuerpo = fusion.cuerpo(ev)
+    else:
+        cuerpo = json.dumps({"id_evento": ev.id_evento, "tipo": ev.tipo, "emitido": ev.creado.isoformat(timespec="seconds"),
+                             "datos": ev.datos}, ensure_ascii=False, default=str).encode()
     ts = str(int(time.time()))
     req = urllib.request.Request(GESTION_URL + "/api/pms/eventos", data=cuerpo, method="POST",
                                  headers={"Content-Type": "application/json", "X-INVG": "1", "X-PMS-Fecha": ts,
                                           "X-PMS-Firma": firmar(EVENTOS_SECRET, ts, cuerpo)})
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
-            return True, r.read(300).decode(errors="replace")
+            return True, r.read(4000).decode(errors="replace")
     except urllib.error.HTTPError as e:
         return False, f"HTTP {e.code}: {e.read(300).decode(errors='replace')}"
     except Exception as e:  # noqa: BLE001
@@ -212,11 +216,20 @@ def procesar_cola(db: Session, ahora: datetime | None = None, limite: int = 50) 
     q = select(GestionEvento).where(GestionEvento.estado.in_(("pendiente", "aviso")), GestionEvento.proximo <= ahora)
     if not V2:  # los avisos nuevos esperan en la cola hasta que gestión los sepa recibir
         q = q.where(GestionEvento.tipo.not_in(EVENTOS_V2))
+    from . import fusion
+    if not fusion.SYNC:  # fusión apagada (PMS_GESTION_SYNC_FACTURAS=0): sus avisos esperan
+        q = q.where(GestionEvento.tipo.not_in(fusion.TIPOS))
     for ev in db.scalars(q.order_by(GestionEvento.id).limit(limite)):
+        if ev.tipo in fusion.TIPOS and not fusion.materializar(db, ev):
+            ev.estado, ev.ultimo_error = "descartado", "El registro ya no existe en el PMS"
+            db.commit()
+            continue
         ok, resp = _enviar(ev)
         ev.intentos += 1
         if ok:
             ev.estado, ev.enviado, ev.ultimo_error = "enviado", datetime.now(), None
+            if ev.tipo in fusion.TIPOS:
+                fusion.entregado(db, ev, resp)
             env += 1
         else:
             fal += 1
@@ -507,6 +520,9 @@ def estado(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
 
 def _resumen(e: GestionEvento) -> str:
     d = e.datos or {}
+    from . import fusion
+    if e.tipo in fusion.TIPOS:
+        return fusion.resumen(e)
     if e.tipo.startswith("reserva") or e.tipo == "checkout":
         return f"{d.get('activo_pms')} {d.get('unidad_codigo')} · {d.get('localizador') or 'R-' + str(d.get('reserva_id'))} · {d.get('entrada')} → {d.get('salida')}"
     if e.tipo == "incidencia.reportada":

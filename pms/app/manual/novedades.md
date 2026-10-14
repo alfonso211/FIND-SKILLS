@@ -1,5 +1,20 @@
 # Novedades
 
+## 2026-10-14 · Versión 1.63 · Fusión con gestión: facturas, pagos y catálogo
+- **Dirección**: el PMS y gestión (INVERGESTION) funcionan como un solo programa. Lo que se registra en uno pasa solo al otro, con sus documentos:
+  - facturas recibidas (cuenta de gastos) con sus PDF;
+  - pagos y cobros con su justificante;
+  - facturas emitidas con su PDF;
+  - proveedores y catálogo de productos.
+- **Gestión manda** en los datos contables. Una factura, un pago o un proveedor que ya está en gestión aparece como **«Gestionada en INVERGESTION»**: su proveedor, nº, fechas, importes, IVA, retención y forma de pago no se cambian en el PMS. Botones nuevos:
+  - **Abrir en gestión**;
+  - **Adjuntar documento**;
+  - **Pedir corrección**: administración la acepta o la rechaza en gestión, y si la acepta el cambio llega solo;
+  - **Pedir anulación**.
+- **Recepción**: una factura que todavía no ha llegado a gestión se edita como siempre. Sigue el mismo circuito para registrar facturas y marcar pagos con su justificante.
+- **Desde gestión**: el botón «PMS» de gestión abre el PMS ya identificado, con los permisos de cada usuario en el PMS.
+- **Activación**: está **apagada** hasta que la Dirección la active en el servidor y marque cada activo en *Administración → Pasarela con gestión → «Sincronizar facturas»*. Piloto previsto: Suite Florida una semana. Las fianzas siguen por su circuito.
+
 ## 2026-10-14 · Versión 1.62 · CAPEX fase 2: documentación PRL, contrato y acta de replanteo
 - **Dirección Técnica**: los proyectos adjudicados tienen una pestaña nueva, **Obra**. Cada contrata tiene un **semáforo de su documentación PRL**:
   - **Documentos**: seguro de RC, certificados de Hacienda y Seguridad Social, alta de trabajadores, formación PRL, REA, Plan de Seguridad y Salud y recurso preventivo.
