@@ -105,6 +105,7 @@
 - **Alquiler de garajes**: alta de clientes externos por meses, recibos mensuales y bajas.
 
 ## Averías e incidencias
+- **Apartamento con cliente alojado**: al abrir la OT hay que marcar cómo se entra: **el cliente autoriza la llave de recepción** o **contactar con el cliente** (su teléfono sale solo). El técnico lo ve en el mensaje, en su enlace y en el parte (🔑 Acceso).
 - **Órdenes de trabajo → Nueva OT** (o desde el plano): describa la avería y **adjunte fotos**. Si es urgente, márquelo: mantenimiento recibe un correo al momento.
 - **Partes de estado** (Mantenimiento → Partes de estado): mantenimiento y limpieza ya no abren OT; registran un parte y le llega un **correo al momento**. El parte sale en el **Panel de control** hasta que se resuelve.
   - **Generar OT**: abre la orden con todo relleno (título, gremio, prioridad propuesta, descripción y fotos del parte). Asígnela y envíela a quien corresponda.

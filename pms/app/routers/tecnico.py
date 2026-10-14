@@ -27,7 +27,7 @@ from ..models import RESULTADOS_TECNICO, Asset, StaffMember, WorkOrder, WorkOrde
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request, get_or_404, scoped
 from . import personal
-from .mantenimiento import ABIERTAS, PAUSADAS, _subcontrata, requiere_limpieza, token_valido
+from .mantenimiento import ABIERTAS, PAUSADAS, _subcontrata, acceso_texto, requiere_limpieza, token_valido
 
 publico = APIRouter(tags=["técnico (enlace)"])
 router = APIRouter(prefix="/api/mantenimiento", tags=["mantenimiento"])
@@ -87,7 +87,7 @@ def data(wid: int, c: int, f: str, db: Session = Depends(get_db)):
                "sociedad": a.company.nombre, "ubicacion": personal._lugar(db, w.asset_id, w.unit_id, w.zona),
                "direccion": ", ".join(x for x in (a.direccion, a.cp, a.municipio) if x),
                "fecha_prevista": w.fecha_prevista.isoformat() if w.fecha_prevista else None,
-               "asignacion": w.asignacion},
+               "asignacion": w.asignacion, "acceso": acceso_texto(db, w)},
         "propuesta": _quien(db, w), "permite_escalar": w.asignacion == "propio",
         "finalizada": w.estado in FINALIZADAS, "resultados": RESULTADOS_TECNICO,
         "en_curso": {"id": abierta.id, "llegada": abierta.llegada.isoformat() if abierta.llegada else None,

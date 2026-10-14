@@ -559,6 +559,7 @@ class WorkOrderIn(BaseModel):
     bloquea_unidad: bool = False
     fecha_prevista: date | None = None
     parte_estado_id: int | None = None  # OT generada por recepción a partir de un parte de estado
+    acceso: Literal["llave", "contactar"] | None = None  # apartamento con huésped: llave de recepción o contactar
 
 
 class WorkOrderUpdate(BaseModel):
@@ -577,6 +578,7 @@ class WorkOrderUpdate(BaseModel):
     coste_real: float | None = None
     fecha_prevista: date | None = None
     solucion: str | None = None
+    acceso: Literal["llave", "contactar"] | None = None  # apartamento con huésped: llave de recepción o contactar
 
 
 class PlanIn(BaseModel):

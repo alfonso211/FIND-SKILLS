@@ -118,3 +118,33 @@ def test_dotacion_estandar_obligatoria_y_extraordinaria(client, admin, ids):
     assert r2.status_code == 201
     with SessionLocal() as db:
         assert db.get(Reservation, r2.json()["id"]).dotacion is None
+
+
+# --------------------------------------------------------------------------- acceso al apartamento en la OT
+def test_ot_acceso_con_cliente_alojado(client, admin, ids):
+    sfl = ids["assets"]["SFL"]["id"]
+    aptos = [u for u in client.get(f"/api/unidades?asset_id={sfl}", headers=admin).json() if u["uso"] == "apartamento"]
+    u = aptos[-9]
+    assert client.get(f"/api/mantenimiento/acceso?unit_id={u['id']}", headers=admin).json()["alojado"] is False
+    r = client.post("/api/turistico/reservas", headers=admin, json={
+        "unit_id": u["id"], "fecha_entrada": (HOY - timedelta(days=1)).isoformat(),
+        "fecha_salida": (HOY + timedelta(days=3)).isoformat(), "importe_total": 200,
+        "guest": {"nombre": "Cliente Acceso", "telefono": "612345678"}})
+    assert r.status_code == 201, r.text
+    client.put(f"/api/turistico/reservas/{r.json()['id']}", headers=admin, json={"estado": "checkin"})
+    a = client.get(f"/api/mantenimiento/acceso?unit_id={u['id']}", headers=admin).json()
+    assert a["alojado"] and a["telefono"] == "612345678"
+    w = client.post("/api/mantenimiento/ordenes", headers=admin, json={
+        "asset_id": sfl, "unit_id": u["id"], "titulo": "Persiana del dormitorio atascada", "acceso": "contactar"}).json()
+    assert "612345678" in w["acceso_texto"] and "Contactar" in w["acceso_texto"]
+    w2 = client.post("/api/mantenimiento/ordenes", headers=admin, json={
+        "asset_id": sfl, "unit_id": u["id"], "titulo": "Bombilla fundida", "acceso": "llave"}).json()
+    assert "llave de recepción" in w2["acceso_texto"].lower()
+    # el técnico lo ve en su enlace y en el parte
+    from test_tecnico_ot import _api, _enlace
+    p = client.post("/api/personal", headers=admin, json={"asset_id": sfl, "area": "mantenimiento",
+                                                          "nombre": "Técnico Acceso", "telefono": "600111009"}).json()
+    client.post(f"/api/mantenimiento/ordenes/{w['id']}/asignar", headers=admin, json={"asignacion": "propio", "personal_id": p["id"]})
+    e = _enlace(client, admin, w["id"])
+    assert "612345678" in client.get(_api(e, "/datos")).json()["ot"]["acceso"]
+    assert client.get(f"/api/mantenimiento/ordenes/{w['id']}/parte", headers=admin).content[:4] == b"%PDF"

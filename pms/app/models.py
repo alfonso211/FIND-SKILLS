@@ -486,6 +486,8 @@ class WorkOrder(Base):
     enlace_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     plazo_avisado: Mapped[datetime | None] = mapped_column(DateTime)  # aviso de plazo de respuesta superado
     creada: Mapped[datetime | None] = mapped_column(DateTime, default=_now)  # fecha y hora de apertura (plazos)
+    # acceso al apartamento con huésped: «llave» (el cliente autoriza usar la llave de recepción) | «contactar»
+    acceso: Mapped[str | None] = mapped_column(String(12))
 
 
 AREAS_PERSONAL = {"mantenimiento": "Mantenimiento", "limpieza": "Limpieza", "conserjeria": "Conserjería",

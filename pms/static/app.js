@@ -3330,9 +3330,9 @@ async function newWorkOrder(assetId, unitId, zona, parte) {  // zona: {zona, nom
   const units = zona ? [] : await get("/api/unidades", { asset_id: aid });
   const titulo = zona ? `Nueva incidencia · ${zona.nombre}` : unitId ? `Nueva incidencia · ${units.find((u) => u.id === unitId)?.codigo ?? ""}` : `Nueva orden de trabajo · ${assetName(aid)}`;
   const gente = puedeAsignarOT() ? await personalMto(aid) : [];
-  return new Promise((resolve) => sugerirProveedores((puedeAsignarOT() ? bindAsignacion : (x) => x)(bindFotos(form(titulo, [
+  return new Promise((resolve) => sugerirProveedores((puedeAsignarOT() ? bindAsignacion : (x) => x)(bindFotos(bindAccesoOT(form(titulo, [
     { k: "titulo", t: "Título", req: true, wide: true },
-    ...(zona ? [] : [{ k: "unit_id", t: "Unidad (vacío = zonas comunes)", type: "select", options: units.map((u) => [u.id, u.codigo]) }]),
+    ...(zona ? [] : [{ k: "unit_id", t: "Unidad (vacío = zonas comunes)", type: "select", options: units.map((u) => [u.id, u.codigo]) }, { html: "<div data-acceso></div>", wide: true }]),
     ...(can("mantenimiento.editar") ? [{ k: "tipo", t: "Tipo", type: "select", req: true, options: list(["correctivo", "preventivo", "normativo", "mejora"]), def: "correctivo" }] : []),
     { k: "categoria", t: "Instalación / gremio", type: "select", req: true, options: list(S.cat.categorias_mto), def: "general" },
     { k: "prioridad", t: "Prioridad", type: "select", req: true, options: list(S.cat.prioridades), def: "media" },
@@ -3342,13 +3342,36 @@ async function newWorkOrder(assetId, unitId, zona, parte) {  // zona: {zona, nom
     { k: "descripcion", t: "Descripción de la avería", type: "textarea", wide: true },
     { html: parte ? `<p class="muted">Se genera desde el parte de estado <b>${esc(parte.codigo)}</b>: sus fotos se adjuntan solas.</p>` : fotosHtml("Fotos de la avería (opcional)") },
   ], { unit_id: unitId, ...(parte ? parte.ot_propuesta : {}) }, async (d, f) => {
-    const w = await post("/api/mantenimiento/ordenes", clean({ ...(puedeAsignarOT() ? datosAsignacion(d) : d), asset_id: aid, unit_id: d.unit_id ? Number(d.unit_id) : null, zona: zona?.zona, parte_estado_id: parte?.id }));
+    const acceso = f._acceso ? f._acceso() : null;
+    const w = await post("/api/mantenimiento/ordenes", clean({ ...(puedeAsignarOT() ? datosAsignacion(d) : d), asset_id: aid, unit_id: d.unit_id ? Number(d.unit_id) : null, zona: zona?.zona, parte_estado_id: parte?.id, acceso }));
     const n = await subirFotos(f, w.id, "averia");
     toast(`Orden de trabajo OT-${String(w.id).padStart(5, "0")} creada` + (n ? ` con ${n} foto(s)` : "") + (w.prioridad === "urgente" ? ". Se ha avisado por correo." : ""));
     resolve();
     await altaProveedorSiNuevo(d.proveedor, d.categoria);
     if (w.asignacion && puedeEnviarOT()) setTimeout(() => enviarAsignado(w), 0);  // generada: se envía a quien la hace
-  }))), "proveedor"));
+  })))), "proveedor"));
+}
+// Apartamento con cliente dentro: obligatorio indicar cómo se entra (llave de recepción con su permiso, o contactar
+// con él; su teléfono sale solo de la ficha del cliente alojado)
+function bindAccesoOT(f) {
+  const box = $("[data-acceso]", f), sel = f.elements.unit_id;
+  if (!box || !sel) return f;
+  let info = null;
+  const pinta = async () => {
+    info = sel.value ? await get("/api/mantenimiento/acceso", { unit_id: sel.value }).catch(() => null) : null;
+    box.innerHTML = info?.alojado ? `<fieldset><legend>Cliente alojado: acceso al apartamento</legend>
+      <label class="check"><input type="radio" name="acc" value="llave"> El cliente autoriza entrar con la llave de recepción</label>
+      <label class="check"><input type="radio" name="acc" value="contactar"> Contactar con el cliente para el acceso · tel. <b>${esc(info.telefono || "sin teléfono en su ficha")}</b></label></fieldset>` : "";
+  };
+  sel.addEventListener("change", () => pinta());
+  pinta();
+  f._acceso = () => {
+    if (!info?.alojado) return null;
+    const x = f.querySelector("input[name=acc]:checked");
+    if (!x) throw new Error("El apartamento tiene un cliente alojado: indique si autoriza la llave de recepción o hay que contactarle");
+    return x.value;
+  };
+  return f;
 }
 // Bloque de fotos: en el móvil «Hacer foto» abre directamente la cámara trasera
 function fotosHtml(titulo, pdf = false) {
@@ -3424,7 +3447,7 @@ V.ordenes = async (el) => {
     const rows = await get("/api/mantenimiento/ordenes", { asset_id: S.asset, tipo: $("#tp", el).value, ...(e === "abiertas" ? { abiertas: true } : { estado: e }) });
     table($("#t", el), [
       { k: "id", t: "Nº", f: otNum }, { k: "fecha_apertura", t: "Apertura", f: fdate }, { k: "asset_id", t: "Activo", f: (v) => esc(assetName(v)) },
-      { k: "unidad", t: "Unidad", f: (v, w) => esc(v || w.zona_nombre || "Z. comunes") }, { k: "titulo", t: "Título" },
+      { k: "unidad", t: "Unidad", f: (v, w) => esc(v || w.zona_nombre || "Z. comunes") }, { k: "titulo", t: "Título", f: (v, w) => esc(v) + (w.acceso ? `<div class="peq" title="${esc(w.acceso_texto || "")}">${w.acceso === "llave" ? "🔑 Llave recepción" : `📞 ${esc((w.acceso_texto || "").split("tel. ")[1] || "Contactar")}`}</div>` : "") },
       { k: "categoria", t: "Instalación" }, { k: "prioridad", t: "Prioridad", f: (v, w) => badge(v) + (w.plazo ? `<br><span class="${w.plazo.vencido ? "badge b-urgente" : "muted peq"}" title="Plazo de respuesta: urgente 4 h, alta 24 h">${w.plazo.vencido ? "⏰ fuera de plazo" : "plazo"} ${fdt(w.plazo.limite).slice(0, -3)}</span>` : "") }, { k: "abierta_por_nombre", t: "Abierta por" },
       { k: "asignado_a", t: "Asignado", f: (v, w) => esc(v || "") + (w.cae_vencida ? `<br><span class="badge b-urgente" title="Documentación CAE/PRL vencida: pídala antes de que trabaje">CAE vencida</span>` : "") }, { k: "envios", t: "Enviada", f: (v) => (v?.length ? `<span title="${esc(v.map((e) => `${fdt(e.fecha)} ${e.nombre} (${e.canal === "email" ? "correo" : "WhatsApp"})`).join("\n"))}">✉ ${esc([...new Set(v.map((e) => e.nombre))].join(", "))}</span>` : "") }, { k: "conf_mto_por_nombre", t: "Mantenimiento", f: (v, w) => check(v, w.conf_mto_fecha) },
       { k: "conf_limpieza_por_nombre", t: "Limpieza", f: (v, w) => (w.requiere_limpieza ? check(v, w.conf_limpieza_fecha) : '<span class="muted">no aplica</span>') },
