@@ -1,5 +1,9 @@
 # Novedades
 
+## 2026-10-14 · Versión 1.61 · Arranque del servidor más robusto
+- **Dirección**: el servidor ya no se bloquea si en su configuración falta la contraseña inicial del administrador (`PMS_ADMIN_PASSWORD`). Solo se usa al instalar; la contraseña real es la de *Mi perfil*.
+- Para el resto del equipo no cambia nada.
+
 ## 2026-10-14 · Versión 1.60 · Accesos rápidos en la barra superior
 - **Todos**: en la barra de arriba, junto al título de la pantalla, hay botones para abrir **Gmail, Outlook, Excel, Word y Teams** en una pestaña nueva sin salir del PMS.
 - **Todos**: cada uno elige los suyos en *Mi perfil → Accesos rápidos*: añadir (nombre y dirección https://), quitar, cambiar el orden o volver a los de serie. Hasta 10.
