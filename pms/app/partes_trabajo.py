@@ -54,11 +54,25 @@ def lineas(db: Session, asset_id: int, area: str, f: date) -> list[dict]:
     for e in db.scalars(select(WorkEntry).where(WorkEntry.asset_id == asset_id, WorkEntry.area == area,
                                                 WorkEntry.fecha == f)):
         u = db.get(Unit, e.unit_id) if e.unit_id else None
-        out.append({"origen": "actuacion", "id": e.id, "ref": f"A-{e.id:05d}", "hora": f"{e.creada:%H:%M}",
+        out.append({"origen": "actuacion", "id": e.id, "ref": f"A-{e.id:05d}",
+                    "hora": f"{e.hora or e.creada:%H:%M}",
                     "ubicacion": (f"{u.uso} {u.codigo}" if u else "") + (" · " if u and e.ubicacion else "")
                     + (e.ubicacion or ""), "trabajo": e.descripcion, "detalle": "", "categoria": "actuacion",
-                    "persona": e.persona or "", "horas": float(e.horas) if e.horas is not None else None})
+                    "persona": e.persona or "", "horas": float(e.horas) if e.horas is not None else None,
+                    "unit_id": e.unit_id, "ubicacion_texto": e.ubicacion or "", "editable": True})
+    # correcciones hechas en el parte a las líneas de OT y de limpieza (no cambian la OT ni la limpieza)
+    rep = db.scalar(select(WorkReport.correcciones).where(WorkReport.asset_id == asset_id, WorkReport.area == area,
+                                                          WorkReport.fecha == f))
+    for x in out:
+        x.setdefault("editable", True)
+        c = (rep or {}).get(f"{x['origen']}:{x['id']}")
+        if c and x["origen"] != "actuacion":
+            x.update({k: v for k, v in c.items() if k in CORREGIBLES})
+            x["corregida"] = True
     return sorted(out, key=lambda x: (x["hora"], x["ref"]))
+
+
+CORREGIBLES = ("hora", "persona", "horas", "detalle")  # lo que se corrige en una línea de OT o de limpieza
 
 
 def parte(db: Session, asset_id: int, area: str, f: date) -> tuple[WorkReport | None, list[dict]]:

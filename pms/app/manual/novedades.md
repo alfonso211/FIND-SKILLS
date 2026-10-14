@@ -1,5 +1,11 @@
 # Novedades
 
+## 2026-10-14 · Versión 1.51 · Hora de Madrid, partes de trabajo editables y dotación obligatoria
+- **Todos · hora**: el programa trabaja siempre en hora de Madrid. Corregido el día que proponía el navegador entre las 00:00 y las 02:00 (salía el anterior) y la fecha de salida que a veces salía igual a la de entrada. Aviso si el reloj del ordenador va desfasado.
+- **Partes de trabajo · Editar**: cada línea se puede corregir (hora, trabajo, lugar, quién y horas) con el motivo, mientras el parte esté abierto. Al anotar una actuación se indica la hora a la que se hizo.
+- **Órdenes de trabajo · acceso con cliente alojado**: al abrirla se marca si el cliente autoriza la llave de recepción o hay que contactarle (su teléfono sale solo). Lo ve el técnico.
+- **Recepción · dotación al reservar**: es obligatorio tener fijada la dotación estándar del tipo de apartamento (se fija en la misma reserva, una sola vez). La dotación extraordinaria se añade al reservar; si no se indica, se entrega la estándar.
+
 ## 2026-10-15 · Versión 1.50 · Caja por turno, fianza al llegar, plazos de OT, informe diario y gestión
 - **Recepción**:
   - **Caja y cierres de turno**: arqueo de lo cobrado por cada recepcionista (efectivo, tarjeta, Bizum…). Si no cuadra se indica el motivo y la Dirección recibe un aviso.

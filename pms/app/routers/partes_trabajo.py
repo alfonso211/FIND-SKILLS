@@ -1,5 +1,5 @@
 """Parte de trabajo diario de mantenimiento y limpieza (ver app/partes_trabajo.py) e informe quincenal."""
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
@@ -80,6 +80,7 @@ class EntryIn(BaseModel):
     ubicacion: str | None = Field(default=None, max_length=160)
     persona: str | None = Field(default=None, max_length=160)
     horas: float | None = Field(default=None, ge=0, le=24)
+    hora: time | None = None  # a qué hora se hizo (vacía: la hora en que se anota)
 
 
 def _abierto(db: Session, asset_id: int, area: str, f: date) -> None:
@@ -121,6 +122,79 @@ def delete_entry(eid: int, scope: Scope = Depends(get_scope), db: Session = Depe
     audit(db, scope.user, "quitar_actuacion", "parte_trabajo", eid)
     db.commit()
     return _out(db, scope, asset_id, area, f)
+
+
+class LineaIn(BaseModel):
+    """Corrección de una línea del parte. Actuación anotada: todos sus datos. Línea de una OT o de una limpieza: hora,
+    persona, horas y detalle (la OT y la limpieza no cambian; la corrección queda en el parte)."""
+    origen: str = Field(pattern="^(ot|limpieza|actuacion)$")
+    id: int
+    fecha: date | None = None  # solo actuaciones: pasarla a otro día
+    hora: time | None = None
+    descripcion: str | None = Field(default=None, min_length=3, max_length=2000)
+    unit_id: int | None = None
+    ubicacion: str | None = Field(default=None, max_length=160)
+    persona: str | None = Field(default=None, max_length=160)
+    horas: float | None = Field(default=None, ge=0, le=24)
+    detalle: str | None = Field(default=None, max_length=2000)
+    motivo: str = Field(min_length=3, max_length=300)
+
+
+@router.put("/lineas")
+def edit_line(asset_id: int, area: str, fecha: date, data: LineaIn, scope: Scope = Depends(get_scope),
+              db: Session = Depends(get_db)):
+    """Editar una línea del parte (por si se comete un error). Solo con el parte abierto: si ya está validado, recepción
+    lo reabre antes. Queda en la auditoría con lo que había antes y el motivo."""
+    area = _area(area)
+    if not _puede_anotar(scope, asset_id, area):
+        raise HTTPException(403, f"Sin permiso para corregir el parte de {AREAS_PARTE[area].lower()}")
+    _abierto(db, asset_id, area, fecha)
+    campos = data.model_fields_set - {"origen", "id", "motivo"}
+    if data.origen == "actuacion":
+        e = get_or_404(db, WorkEntry, data.id)
+        if e.asset_id != asset_id or e.area != area or e.fecha != fecha:
+            bad_request("La actuación no es de este parte")
+        if not (e.user_id == scope.user.id or _validador(scope, asset_id)):
+            raise HTTPException(403, "Solo la corrige quien la anotó (o recepción)")
+        if "fecha" in campos and data.fecha and data.fecha != e.fecha:
+            if data.fecha > date.today():
+                bad_request("No se anotan trabajos de días futuros")
+            _abierto(db, asset_id, area, data.fecha)
+        if "unit_id" in campos and data.unit_id is not None and get_or_404(db, Unit, data.unit_id).asset_id != asset_id:
+            bad_request("La unidad no es de este activo")
+        if "descripcion" in campos and not data.descripcion:
+            bad_request("Indique el trabajo realizado")
+        antes = {k: getattr(e, k) for k in ("fecha", "hora", "descripcion", "unit_id", "ubicacion", "persona", "horas")}
+        for k in campos & set(antes):
+            v = getattr(data, k)
+            setattr(e, k, (v.strip() or None) if isinstance(v, str) and k != "descripcion" else v)
+        if not e.persona:
+            e.persona = scope.user.nombre
+        despues = {k: getattr(e, k) for k in antes}
+    else:
+        r = db.scalar(select(WorkReport).where(WorkReport.asset_id == asset_id, WorkReport.area == area,
+                                               WorkReport.fecha == fecha))
+        if not any(x["origen"] == data.origen and x["id"] == data.id for x in pt.lineas(db, asset_id, area, fecha)):
+            bad_request("Esa línea no está en este parte")
+        if r is None:
+            r = WorkReport(asset_id=asset_id, area=area, fecha=fecha)
+            db.add(r)
+        corr = dict(r.correcciones or {})
+        clave = f"{data.origen}:{data.id}"
+        antes = dict(corr.get(clave) or {})
+        nueva = dict(antes)
+        for k in campos & set(pt.CORREGIBLES):
+            v = getattr(data, k)
+            nueva[k] = v.strftime("%H:%M") if isinstance(v, time) else (v.strip() if isinstance(v, str) else v)
+        corr[clave] = nueva
+        r.correcciones = corr  # nuevo dict: SQLAlchemy detecta el cambio del JSON
+        despues = nueva
+    audit(db, scope.user, "corregir_linea", "parte_trabajo", data.id,
+          {"area": area, "fecha": str(fecha), "origen": data.origen, "motivo": data.motivo,
+           "antes": {k: str(v) if v is not None else None for k, v in antes.items()},
+           "despues": {k: str(v) if v is not None else None for k, v in despues.items()}})
+    db.commit()
+    return _out(db, scope, asset_id, area, fecha)
 
 
 class ValidateIn(BaseModel):

@@ -172,6 +172,10 @@ def create_reservation(data: ReservationIn, scope: Scope = Depends(get_scope), d
         bad_request(f"Se supera la capacidad de la unidad ({unit.capacidad} plazas; los menores de 16 años no cuentan)")
     if _conflict(db, unit.id, data.fecha_entrada, data.fecha_salida):
         bad_request(f"La unidad {unit.codigo} ya está reservada en esas fechas")
+    if data.dotacion_extra is not None and unit.uso != "garaje" and not dotacion.base_unidad(db, unit)[1]:
+        raise HTTPException(409, f"DOTACION_ESTANDAR: Los apartamentos «{unit.tipologia or 'sin tipología'}» todavía no "
+                                 "tienen fijada su dotación estándar. Fíjela (Reservas → Dotación habitual) y vuelva a "
+                                 "crear la reserva.")
     asset = unit.asset
     if data.guest_id:
         guest = clientes.del_activo(db, scope, data.guest_id, asset, "huesped")
@@ -199,8 +203,14 @@ def create_reservation(data: ReservationIn, scope: Scope = Depends(get_scope), d
         adjuntar_pendientes(db, scope.user, data.documentos, guest)
     r = Reservation(**data.model_dump(exclude={"guest", "guest_id", "documentos", "importe_pagado", "forma_pago",
                                                "facturar_pendiente", "extras", "limpieza", "precio_aceptado",
-                                               "lista_negra_aceptada"}),
+                                               "lista_negra_aceptada", "dotacion_extra"}),
                     guest_id=guest.id, importe_pagado=0)
+    extra = dotacion.limpiar(data.dotacion_extra or []) if unit.uso != "garaje" else []
+    if extra:  # dotación extraordinaria pedida al reservar; sin ella, la estándar del apartamento
+        base = {x["codigo"] for x in dotacion.base_unidad(db, unit)[0]}
+        # un artículo que ya está en la estándar: la cantidad indicada es la total de esta reserva
+        r.dotacion = {"cambios": {x["codigo"]: x["cantidad"] for x in extra if x["codigo"] in base},
+                      "extra": [x for x in extra if x["codigo"] not in base]}
     if not (r.localizador or "").strip():
         r.localizador = nuevo_localizador(db, asset)
     r.ocupantes.append(ReservationGuest(contact_id=guest.id, titular=True, orden=0))
@@ -214,7 +224,8 @@ def create_reservation(data: ReservationIn, scope: Scope = Depends(get_scope), d
     audit(db, scope.user, "crear", "reserva", r.id,
           {"unidad": unit.codigo, "entrada": str(r.fecha_entrada), "salida": str(r.fecha_salida),
            "importe": float(data.importe_total), "tarifa_estandar": estandar["total"] if estandar else None,
-           "precio_aceptado": data.precio_aceptado, **({"lista_negra_aceptada": True} if negra else {})})
+           "precio_aceptado": data.precio_aceptado, **({"lista_negra_aceptada": True} if negra else {}),
+           **({"dotacion_extraordinaria": len(extra)} if extra else {})})
     facturas = []
     if data.importe_pagado:  # pagado al reservar: se registra el cobro y se factura (estancia y servicios aparte)
         facturas = _cobrar(db, scope, r, Payment(importe=data.importe_pagado, forma_pago=data.forma_pago))

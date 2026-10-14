@@ -77,6 +77,7 @@ async function carga() {
   const cab = `<section><h2>Orden de trabajo</h2>
     <p class="dato"><b>Trabajo</b>${esc(o.titulo)} ${o.prioridad === "urgente" ? '<span class="urgente">· URGENTE</span>' : ""}</p>
     ${o.descripcion ? `<p class="dato"><b>Descripción</b>${esc(o.descripcion).replace(/\n/g, "<br>")}</p>` : ""}
+    ${o.acceso ? `<p class="dato"><b>Acceso</b>🔑 ${esc(o.acceso)}</p>` : ""}
     <p class="dato"><b>Ubicación</b>${esc(o.ubicacion)} · ${esc(o.activo)}${o.direccion ? `<br><span class="muted">${esc(o.direccion)}</span>` : ""}</p>
     ${o.fecha_prevista ? `<p class="dato"><b>Fecha prevista</b>${new Date(o.fecha_prevista).toLocaleDateString("es-ES")}</p>` : ""}
     ${D.fotos.length ? `<div class="fotos">${D.fotos.map((id) => `<a href="${api(`/foto/${id}`)}" target="_blank"><img src="${api(`/foto/${id}`)}" alt="Foto de la avería"></a>`).join("")}</div>` : ""}

@@ -1,5 +1,7 @@
 """Dotación de los apartamentos: catálogo 3 llaves, dotación habitual por tipología (la fija Recepción) y artículos
 nuevos («Otra dotación»)."""
+from datetime import datetime
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -98,7 +100,7 @@ def unit_kit_save(uid: int, data: UnidadIn, scope: Scope = Depends(get_scope), d
     if p is None:
         p = DotacionUnidad(unit_id=u.id, items=items)
         db.add(p)
-    p.items, p.user_id, p.actualizada = items, scope.user.id, func.now()
+    p.items, p.user_id, p.actualizada = items, scope.user.id, datetime.now()
     audit(db, scope.user, "dotacion_apartamento", "unidad", u.id, {"articulos": len(items)})
     db.commit()
     return unit_kit(uid, scope, db)
@@ -146,7 +148,7 @@ def prices_save(data: PreciosIn, scope: Scope = Depends(get_scope), db: Session 
         if p is None:
             db.add(DotacionPrecio(asset_id=data.asset_id, codigo=cod, precio=round(precio, 2), user_id=scope.user.id))
         else:
-            p.precio, p.user_id, p.actualizado = round(precio, 2), scope.user.id, func.now()
+            p.precio, p.user_id, p.actualizado = round(precio, 2), scope.user.id, datetime.now()
         cambios += 1
     audit(db, scope.user, "precios_reposicion", "activo", data.asset_id, {"cambios": cambios})
     db.commit()
@@ -168,7 +170,7 @@ def usual_save(data: HabitualIn, scope: Scope = Depends(get_scope), db: Session 
         h = DotacionHabitual(asset_id=data.asset_id, tipologia=data.tipologia, perfil=data.perfil, items=items)
         db.add(h)
     h.perfil, h.items, h.user_id = data.perfil, items, scope.user.id
-    h.actualizada = func.now()
+    h.actualizada = datetime.now()
     db.flush()
     audit(db, scope.user, "dotacion_habitual", "activo", data.asset_id,
           {"tipologia": data.tipologia, "perfil": data.perfil, "articulos": len(items)})

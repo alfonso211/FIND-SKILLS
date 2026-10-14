@@ -19,6 +19,7 @@
 - **Averías que cierra gestión**: si una orden de trabajo de gestión deja el apartamento fuera de servicio, el PMS lo bloquea solo («Lo ha cerrado gestión…») y lo reabre cuando se cierra esa orden allí. No se puede desbloquear a mano desde el PMS.
 
 ## La orden en el móvil (enlace de la OT)
+- **🔑 Acceso**: si el apartamento tiene cliente, la orden indica si se entra con la llave de recepción (autorizado) o si hay que llamar antes al cliente (con su teléfono).
 - Al enviarle una orden le llega por **WhatsApp** o **correo** un mensaje: «Tiene una nueva orden de trabajo OT-xxxxx en … Acceda aquí para gestionarla: enlace». Ábralo en el móvil: **no hace falta usuario ni contraseña**.
 - En esa pantalla:
   1. **Iniciar trabajo** al llegar (anota la hora de llegada).
@@ -64,7 +65,8 @@
 ## Parte de trabajo diario
 - **Mantenimiento → Parte de trabajo diario**, área *Mantenimiento*, y el día.
 - Las **OT terminadas** ese día entran solas en el parte (OT-xxxxx).
-- Lo que se hizo **sin OT** se añade con **Anotar actuación**: lugar, trabajo, quién y horas (A-xxxxx). Se puede quitar mientras el parte esté abierto.
+- Lo que se hizo **sin OT** se añade con **Anotar actuación**: lugar, trabajo, quién, **hora a la que se hizo** y horas (A-xxxxx). Se puede quitar mientras el parte esté abierto.
+- **Editar** (en cada línea, con el parte abierto): si se ha cometido un error, corrija la hora, el trabajo, el lugar, quién o las horas, y escriba el motivo. Las actuaciones las corrige quien las anotó o recepción. En una línea de OT se corrige la hora, quién, las horas y el detalle; la OT no cambia y la línea sale como «corregida».
 - Recepción 1 o Recepción 2 lo **valida**; desde ese momento no se cambia (si hace falta, recepción lo **reabre**).
 
 ## Vacaciones y ausencias

@@ -27,7 +27,8 @@ def _esc(s) -> str:
 
 
 def generar(w, asset, company, unidad, abierta_por: str | None, fotos: list[bytes], categoria: str,
-            zona: str | None = None, intervencion: dict | None = None, conformidad: str | None = None) -> bytes:
+            zona: str | None = None, intervencion: dict | None = None, conformidad: str | None = None,
+            acceso: str | None = None) -> bytes:
     """Con `intervencion` (lo enviado por el técnico desde su enlace) la parte 2 sale rellena y con su firma;
     con `conformidad`, el recuadro de la propiedad lleva quién y cuándo la dio."""
     buf = BytesIO()
@@ -85,7 +86,8 @@ def generar(w, asset, company, unidad, abierta_por: str | None, fotos: list[byte
     ], [c4] * 4)
     desc = rejilla([[[Paragraph("TÍTULO", rot), Paragraph(f"<b>{_esc(w.titulo)}</b>", n), Spacer(1, 2 * mm),
                       Paragraph("DESCRIPCIÓN DE LA AVERÍA", rot),
-                      Paragraph(_esc(w.descripcion) or "&nbsp;", n)]]], [ancho])
+                      Paragraph(_esc(w.descripcion) or "&nbsp;", n)]
+                     + ([Spacer(1, 2 * mm), Paragraph("ACCESO", rot), Paragraph(_esc(acceso), n)] if acceso else [])]], [ancho])
 
     logos = marca.cabecera_pdf(marca.clave_sociedad(company.cif), marca.clave_activo(asset.codigo), ancho, 20 * mm)
     cuerpo = ([logos, Spacer(1, 5 * mm)] if logos else []) + [cab, Spacer(1, 6 * mm), seccion("1. Incidencia"), datos, desc]

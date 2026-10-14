@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from .. import avisos
@@ -9,9 +9,9 @@ from ..models import Asset, Company, User, Supplier
 from ..schemas import Login, PasswordChange
 from ..security import (PASSWORD_MIN, PERMISOS, Scope, audit, cerrar_sesiones, create_token, current_user, get_scope,
                         hash_password, limpiar_fallos, login_bloqueado, registrar_fallo, verify_password)
+from ..gestion import puede_ir
 from .admin import puede_borrar
 
-from ..gestion import puede_ir
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
@@ -101,3 +101,24 @@ def set_my_alerts(data: AlertPrefs, scope: Scope = Depends(get_scope), db: Sessi
     audit(db, scope.user, "avisos", "usuario", scope.user.id, {"avisos": scope.user.avisos})
     db.commit()
     return my_alerts(scope)
+
+
+@router.get("/reloj")
+def clock(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Hora del programa (Madrid), zona efectiva y hora de la base de datos: para comprobar que coinciden con la del
+    ordenador de quien consulta (si su reloj va mal, las fechas que propone el navegador salen mal)."""
+    import time
+    from datetime import datetime, timezone
+    from .. import ZONA
+    ahora, utc = datetime.now(), datetime.now(timezone.utc)
+    try:
+        bd = db.execute(text("SELECT CURRENT_TIMESTAMP")).scalar()
+        bd = bd.astimezone(timezone.utc) if getattr(bd, "tzinfo", None) else None
+    except Exception:  # noqa: BLE001
+        bd = None
+    desfase = round((ahora - utc.replace(tzinfo=None)).total_seconds() / 3600, 2)
+    return {"hora": ahora.isoformat(timespec="seconds"), "utc": utc.isoformat(timespec="seconds"),
+            "zona": ZONA, "zona_efectiva": time.tzname[time.localtime().tm_isdst > 0], "horas_sobre_utc": desfase,
+            "correcta": desfase in (1.0, 2.0),  # Madrid: UTC+1 en invierno, UTC+2 en verano
+            "bd_utc": bd.isoformat(timespec="seconds") if bd else None,
+            "bd_desfase_s": round((bd - utc).total_seconds()) if bd else None}

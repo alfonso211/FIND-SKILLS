@@ -17,8 +17,8 @@ from .. import adjuntos, avisos, documentos, firma_contrato, parte_pdf, planos
 from . import personal
 from ..config import settings
 from ..database import get_db
-from ..models import (RESULTADOS_TECNICO, Asset, EmailLog, PreventivePlan, StaffMember, Supplier, Unit, User,
-                      WorkOrder, WorkOrderAttachment, WorkOrderVisit)
+from ..models import (RESULTADOS_TECNICO, Asset, EmailLog, PreventivePlan, Reservation, StaffMember, Supplier, Unit,
+                      User, WorkOrder, WorkOrderAttachment, WorkOrderVisit)
 from ..schemas import PlanIn, PlanUpdate, WorkOrderIn, WorkOrderUpdate
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
@@ -59,6 +59,26 @@ PLANTILLA_PREVENTIVO = [
 TIPOS_PREVENTIVOS = ("preventivo", "normativo")
 
 
+def alojado(db: Session, unit_id: int | None) -> Reservation | None:
+    """Reserva con el cliente dentro del apartamento (check-in hecho), si la hay."""
+    if not unit_id:
+        return None
+    return db.scalar(select(Reservation).where(Reservation.unit_id == unit_id, Reservation.estado == "checkin")
+                     .order_by(Reservation.fecha_entrada.desc()).limit(1))
+
+
+def acceso_texto(db: Session, w: WorkOrder) -> str | None:
+    """Cómo se entra en un apartamento con huésped: con la llave de recepción (autorizado) o contactando al cliente
+    (su teléfono sale solo de la ficha del cliente alojado)."""
+    if w.acceso == "llave":
+        return "Llave de recepción (el cliente autoriza el acceso)"
+    if w.acceso == "contactar":
+        r = alojado(db, w.unit_id)
+        tel = r.guest.telefono if r and r.guest else None
+        return f"Contactar con el cliente antes de entrar · tel. {tel or 'sin teléfono en su ficha: pedirlo a recepción'}"
+    return None
+
+
 def atendida(w: WorkOrder) -> None:
     """Recepción o dirección han actuado sobre el resultado del técnico: deja de avisarse y de recordarse."""
     w.alerta_tecnico = w.alerta_fecha = None
@@ -93,6 +113,7 @@ def _wo_out(w: WorkOrder, db: Session, n_adjuntos: int | None = None) -> dict:
     if w.conf_mto_fecha and not w.conf_mto_por and ultima:  # confirmado por el técnico desde su enlace
         d["conf_mto_por_nombre"] = f"{ultima.tecnico} (enlace)"
     d["alerta_nombre"] = RESULTADOS_TECNICO.get(w.alerta_tecnico)
+    d["acceso_texto"] = acceso_texto(db, w)
     from ..automatismos import SIN_RESPUESTA, limite
     lim = limite(w)  # plazo de respuesta por prioridad (urgente 4 h, alta 24 h)
     d["plazo"] = {"limite": lim.isoformat(timespec="minutes"), "vencido": w.estado in SIN_RESPUESTA and ultima is None
@@ -169,6 +190,18 @@ def _comprobar_cae(db: Session, w: WorkOrder) -> None:
         if cae_vencida(s):
             bad_request(f"{s.nombre} tiene la documentación CAE/PRL vencida desde el {s.cae_vence:%d/%m/%Y}. "
                         "Pídale la documentación actualizada y anote la nueva fecha en su ficha de Proveedores")
+
+
+@router.get("/acceso")
+def unit_access(unit_id: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Al abrir una OT: si el apartamento tiene un cliente dentro, hay que indicar cómo se entra (llave de recepción
+    con su permiso, o contactar con él: se da su teléfono)."""
+    u = get_or_404(db, Unit, unit_id)
+    if not (scope.can_asset("mantenimiento.abrir", u.asset_id) or scope.can_asset("mantenimiento.ver", u.asset_id)):
+        raise HTTPException(403, "Sin permiso en este activo")
+    r = alojado(db, u.id)
+    return {"alojado": r is not None, "telefono": r.guest.telefono if r and r.guest else None,
+            "salida": r.fecha_salida.isoformat() if r else None}
 
 
 @router.post("/ordenes", status_code=201)
@@ -388,7 +421,8 @@ def parte(db: Session, w: WorkOrder) -> bytes:
                    if w.conformidad_en and w.cerrada_por else None)
     pdf = parte_pdf.generar(w, asset, asset.company, db.get(Unit, w.unit_id) if w.unit_id else None, abierta, fotos,
                             w.categoria.replace("_", " ").capitalize(),
-                            planos.zonas(asset.codigo).get(w.zona) if w.zona else None, intervencion, conformidad)
+                            planos.zonas(asset.codigo).get(w.zona) if w.zona else None, intervencion, conformidad,
+                            acceso_texto(db, w))
     return pdf
 
 
@@ -564,6 +598,8 @@ def mensaje_whatsapp(db: Session, w: WorkOrder, base: str | None, nota: str | No
     lugar = personal._lugar(db, w.asset_id, w.unit_id, w.zona)
     texto = (f"{a.company.nombre}: Tiene una nueva orden de trabajo OT-{w.id:05d} en {a.nombre}"
              f"{' · URGENTE' if w.prioridad == 'urgente' else ''}. {lugar}: {w.titulo}.")
+    if acceso_texto(db, w):
+        texto += f" Acceso: {acceso_texto(db, w)}."
     if nota:
         texto += f" Nota: {nota}."
     enlace = enlace_tecnico(w, base)
@@ -580,6 +616,8 @@ def mensaje_ot(db: Session, w: WorkOrder, nota: str | None = None, enlace: str |
         filas.append(("Fecha prevista", f"{w.fecha_prevista:%d/%m/%Y}"))
     if w.bloquea_unidad:
         filas.append(("Unidad", "Bloqueada hasta terminar el trabajo"))
+    if acceso_texto(db, w):
+        filas.append(("Acceso", acceso_texto(db, w)))
     if nota:
         filas.append(("Nota", nota))
     asunto = f"{'URGENTE · ' if w.prioridad == 'urgente' else ''}OT-{w.id:05d} · {a.nombre} · {lugar}: {w.titulo}"[:200]
