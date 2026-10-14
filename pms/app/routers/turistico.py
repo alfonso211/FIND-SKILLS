@@ -10,7 +10,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session, aliased, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
 from ..config import settings
@@ -32,6 +32,10 @@ router = APIRouter(prefix="/api/turistico", tags=["apartamentos turísticos"])
 ESTADOS_RESERVA = {"confirmada", "checkin", "checkout", "cancelada", "no_show"}
 ACTIVAS = ("confirmada", "checkin")
 NO_ASIGNABLE = {"bloqueada", "fuera_servicio", "mantenimiento"}
+
+
+# Listas de reservas: el apartamento y el cliente de todas se cargan de golpe (2 consultas) y no uno a uno
+EN_BLOQUE = (selectinload(Reservation.unit), selectinload(Reservation.guest))
 
 
 def _res_out(r: Reservation) -> dict:
@@ -159,7 +163,7 @@ def list_reservations(asset_id: int | None = None, desde: date | None = None, ha
         stmt = stmt.where(or_(Reservation.localizador.ilike(like), Contact.nombre.ilike(like),
                               Contact.apellidos.ilike(like), Unit.codigo.ilike(like)))
     stmt = stmt.order_by(Reservation.fecha_entrada, Unit.codigo)
-    return [_res_out(r) for r in db.scalars(stmt.limit(2000))]
+    return [_res_out(r) for r in db.scalars(stmt.options(*EN_BLOQUE).limit(2000))]
 
 
 @router.post("/reservas", status_code=201)
@@ -697,7 +701,7 @@ def today(asset_id: int | None = None, fecha: date | None = None,
     db.commit()
     f = fecha or date.today()
     ids = scope.asset_ids("reservas.ver")
-    base = scoped(select(Reservation).join(Unit), Unit.asset_id, ids)
+    base = scoped(select(Reservation).join(Unit), Unit.asset_id, ids).options(*EN_BLOQUE)
     if asset_id:
         base = base.where(Unit.asset_id == asset_id)
     llegadas = db.scalars(base.where(Reservation.fecha_entrada == f, Reservation.estado.in_(ACTIVAS)))
@@ -758,7 +762,7 @@ def planning(asset_id: int, desde: date | None = None, dias: int = Query(14, ge=
     unit_ids = {u.id for u in units}
     res = db.scalars(select(Reservation).join(Unit).where(
         Unit.asset_id == asset_id, Reservation.estado.in_(("confirmada", "checkin", "checkout")),
-        Reservation.fecha_entrada < d1, Reservation.fecha_salida > d0))
+        Reservation.fecha_entrada < d1, Reservation.fecha_salida > d0).options(selectinload(Reservation.guest)))
     by_unit: dict[int, list] = {}
     for r in res:
         if r.unit_id not in unit_ids:
@@ -1400,8 +1404,8 @@ def overdue_stays(asset_id: int | None = None, dias: int = Query(3, ge=0, le=30)
     ids = scope.asset_ids("reservas.ver")
     vencen = scoped(select(Reservation).join(Unit), Unit.asset_id, ids).where(
         Reservation.estado == "checkin", Unit.uso != "garaje", Reservation.fecha_salida >= hoy, ~_renovada(),
-        Reservation.fecha_salida <= hoy + timedelta(days=dias))
-    q_venc = vencidas_q(ids, hoy)
+        Reservation.fecha_salida <= hoy + timedelta(days=dias)).options(*EN_BLOQUE)
+    q_venc = vencidas_q(ids, hoy).options(*EN_BLOQUE)
     if asset_id:
         vencen, q_venc = vencen.where(Unit.asset_id == asset_id), q_venc.where(Unit.asset_id == asset_id)
 

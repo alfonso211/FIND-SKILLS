@@ -1,5 +1,9 @@
 # Novedades
 
+## 2026-10-14 · Versión 1.56 · Pantallas más rápidas con muchas reservas
+- **Todos**: con decenas de miles de reservas y miles de órdenes de trabajo, las pantallas de uso diario cargan mucho más rápido: órdenes de trabajo unas 10 veces más rápido, reservas 7 veces, llegadas y salidas de hoy 9 veces, planning 4 veces y plano del edificio 3 veces.
+- Nada cambia en el manejo: los mismos datos, en menos tiempo.
+
 ## 2026-10-14 · Versión 1.55 · Acceso a apartamentos con cliente en las OT
 - **Llave de recepción**: se anota quién autoriza el acceso y cómo (en persona, teléfono, WhatsApp o correo), quién lo registra y cuándo. El técnico ve que hay permiso, sin los datos del cliente.
 - **El permiso vale para esa estancia**: si entra otro cliente con la OT abierta, se avisa para volver a pedirlo (botón **Acceso**).
