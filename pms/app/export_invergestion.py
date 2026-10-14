@@ -184,11 +184,17 @@ def emitidas(db: Session, asset_ids: set[int], desde: date, hasta: date) -> tupl
         Charge.id.in_({f.charge_id for f in facturas if f.charge_id} or {-1})))}
     contactos = {c.id: c for c in db.scalars(select(Contact).where(
         Contact.id.in_({f.contact_id for f in facturas if f.contact_id} or {-1})))}
+    contratos = {x.id: x for x in db.scalars(select(Lease).where(
+        Lease.id.in_({c.lease_id for c in recibos.values() if c.lease_id} or {-1})))}
+    unidades = {u.id: u for u in db.scalars(select(Unit).where(Unit.id.in_(
+        {r.unit_id for r in reservas.values() if r.unit_id} | {x.unit_id for x in contratos.values() if x.unit_id}
+        or {-1})))}
+    activos = {a.id: a for a in db.scalars(select(Asset))}
     filas, pdfs, avisos = [], [], []
     for f in facturas:
         r, c = reservas.get(f.reservation_id), recibos.get(f.charge_id)
-        lease: Lease | None = c.lease if c else None
-        unidad: Unit | None = r.unit if r else (lease.unit if lease else None)
+        lease: Lease | None = contratos.get(c.lease_id) if c else None
+        unidad: Unit | None = unidades.get(r.unit_id) if r else (unidades.get(lease.unit_id) if lease else None)
         cliente = contactos.get(f.contact_id)
         rect = f.tipo == "rectificativa"
         original = originales.get(f.rectifica_id)
@@ -210,7 +216,7 @@ def emitidas(db: Session, asset_ids: set[int], desde: date, hasta: date) -> tupl
         if deducido and not nif.tipo(f.cliente.get("nif") or ""):
             avisos.append(f"{numero}: país del cliente sin indicar en su ficha; se envía {pais}")
         cab = {
-            "activo": codigo_activo(f.asset), "nif_emisor": f.emisor.get("nif"), "serie": f.serie,
+            "activo": codigo_activo(activos[f.asset_id]), "nif_emisor": f.emisor.get("nif"), "serie": f.serie,
             "numero": numero,
             "tipo_factura": "RECTIFICATIVA" if rect else "COMPLETA",
             "numero_rectificada": numero_factura(original) if original else "",

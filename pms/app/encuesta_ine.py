@@ -14,9 +14,10 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from . import registro_viajeros as rv
-from .models import Asset, Reservation, Unit
+from .models import Asset, Reservation, ReservationGuest, Unit
 
 ESTADOS = ("confirmada", "checkin", "checkout")
 IVA_ALOJAMIENTO = Decimal("1.10")
@@ -49,7 +50,9 @@ def calcular(db, asset: Asset, anio: int, mes: int) -> dict:
     abiertas = [u for u in unidades if u.estado != "fuera_servicio"]
     reservas = list(db.scalars(select(Reservation).join(Unit).where(
         Unit.asset_id == asset.id, Unit.uso != "garaje", Reservation.estado.in_(ESTADOS),
-        Reservation.fecha_entrada <= fin, Reservation.fecha_salida > ini)))
+        Reservation.fecha_entrada <= fin, Reservation.fecha_salida > ini).options(  # todo en bloque, no reserva a reserva
+        selectinload(Reservation.ocupantes).selectinload(ReservationGuest.contact),
+        selectinload(Reservation.guest), selectinload(Reservation.unit))))
 
     entradas = defaultdict(lambda: [0] * dias)
     salidas = defaultdict(lambda: [0] * dias)

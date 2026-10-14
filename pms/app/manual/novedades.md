@@ -1,5 +1,10 @@
 # Novedades
 
+## 2026-10-14 · Versión 1.57 · Informes más rápidos con muchas reservas
+- **Dirección y Administración**: con decenas de miles de reservas y facturas, los informes cargan mucho más rápido: encuesta del INE unas 6 veces, morosidad 6 veces, producción 3 veces, informe de presidencia (pantalla, PDF y Excel) entre 2,5 y 3,5 veces y ocupación anual 3 veces.
+- **Exportación a gestión**: la comprobación de un año completo hace 19 consultas en lugar de 643; la de un mes sigue siendo inmediata.
+- Nada cambia en el manejo ni en los resultados: los mismos datos, en menos tiempo.
+
 ## 2026-10-14 · Versión 1.56 · Pantallas más rápidas con muchas reservas
 - **Todos**: con decenas de miles de reservas y miles de órdenes de trabajo, las pantallas de uso diario cargan mucho más rápido: órdenes de trabajo unas 10 veces más rápido, reservas 7 veces, llegadas y salidas de hoy 9 veces, planning 4 veces y plano del edificio 3 veces.
 - Nada cambia en el manejo: los mismos datos, en menos tiempo.
