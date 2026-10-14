@@ -386,6 +386,10 @@ class ReservationIn(BaseModel):
     precio_aceptado: bool | None = None
     # el cliente está en la lista negra y Recepción decide reservar igualmente (queda auditado)
     lista_negra_aceptada: bool = False
+    # Desde la pantalla de reserva: dotación extraordinaria de esta reserva [{codigo, zona, articulo, cantidad}]
+    # (vacía = la dotación estándar). Con la pantalla, el apartamento tiene que tener ya fijada su dotación estándar.
+    # None = otras vías (importación, API): no se comprueba.
+    dotacion_extra: list[dict] | None = None
 
     @field_validator("fecha_salida")
     @classmethod

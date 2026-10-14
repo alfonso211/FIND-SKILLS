@@ -5,7 +5,9 @@ const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const eur = (n) => (n == null ? "" : Number(n).toLocaleString("es-ES", { style: "currency", currency: "EUR" }));
 const fdate = (d) => (d ? new Date(d.length === 10 ? d + "T00:00:00" : d).toLocaleDateString("es-ES") : "");
 const fdt = (d) => (d ? new Date(d).toLocaleString("es-ES") : "");
-const iso = (dt) => dt.toISOString().slice(0, 10);
+// Fechas en la hora local del ordenador (Madrid), nunca en UTC: con toISOString(), entre las 00:00 y las 02:00 el
+// programa proponía el día anterior y «día siguiente» podía salir el mismo día.
+const iso = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 const today = () => iso(new Date());
 const addDays = (d, n) => { const x = new Date(d + "T00:00:00"); x.setDate(x.getDate() + n); return iso(x); };
 const can = (p) => !!S.me?.permisos?.[p];
@@ -1174,7 +1176,13 @@ function resActions(reload) {
     r.importe_total - r.importe_pagado > 0.004 && ["Facturar sin cobrar", () => cobroForm(`Facturar sin cobrar · reserva ${r.localizador || r.id} · ${r.unidad}`,
       Math.round((r.importe_total - r.importe_pagado) * 100) / 100, `/api/turistico/reservas/${r.id}/cobro`, reload, r.asset_id, true, null, r)],
     r.extras_pendientes > 0 && ["Facturar extras", () => facturarExtras(r, reload)],
-    r.estado === "confirmada" && ["Check-in", () => run(() => post(`/api/turistico/reservas/${r.id}/checkin`), "Check-in realizado").then(reload).catch(() => ocupantesReserva(r, reload))],
+    r.estado === "confirmada" && ["Check-in", async () => {
+      if (r.uso !== "garaje") {  // la dotación estándar del apartamento es obligatoria (reservas de antes de fijarla)
+        const d = await get(`/api/dotacion/unidad/${r.unit_id}`).catch(() => ({ fijada: true }));
+        if (!d.fijada) { alert(`Antes del check-in fije la dotación estándar de los apartamentos «${d.tipologia || "sin tipología"}» (Reservas → Dotación habitual). Solo se hace una vez por tipo de apartamento.`); return dotacionHabitual(); }
+      }
+      return run(() => post(`/api/turistico/reservas/${r.id}/checkin`), "Check-in realizado").then(reload).catch(() => ocupantesReserva(r, reload));
+    }],
     ["confirmada", "checkin"].includes(r.estado) && r.uso !== "garaje" && ["Ampliar reserva", () => renovarEstancia(r, reload)],
     ["confirmada", "checkin"].includes(r.estado) && r.uso !== "garaje" && !r.fianza_cobro && ["Cobrar fianza", () => cobrarFianza(r, reload)],
     r.estado === "checkin" && ["Check-out", () => salidaReserva(r, reload)],
@@ -1982,9 +1990,10 @@ async function newReservation(reload, fija) {  // fija: {id, codigo, asset_id} p
       { k: "forma_pago", t: "Forma de pago", type: "select", options: kv(S.cat.formas_pago) },
       { k: "facturar_pendiente", t: "Si no se cobra ahora: facturar ya el importe total y dejarlo pendiente de cobro (pagará por transferencia)", type: "checkbox", wide: true },
       { k: "notas", t: "Notas", type: "textarea", wide: true },
-      ...(fija?.uso === "garaje" ? [] : [{ html: extrasHtml() }]),
+      ...(fija?.uso === "garaje" ? [] : [{ html: extrasHtml() }, { html: dotacionAltaHtml() }]),
     ], {}, async (d, fr) => {
       fr._validaPrecio();
+      const dotacion_extra = fr._dotacion ? fr._dotacion() : null;  // obligatorio: dotación estándar fijada
       Object.assign(d, fr._extras ? fr._extras() : {});
       const g = {}; guestFields.filter((f) => f.k).forEach((f) => { g[f.k] = d[f.k]; delete d[f.k]; });
       let cliente = { guest: clean(g) };
@@ -1992,7 +2001,7 @@ async function newReservation(reload, fija) {  // fija: {id, codigo, asset_id} p
         await put(`/api/terceros/${fr._cliente.id}`, { ...clean(g), company_id: fr._cliente.company_id, tipo: "huesped" });
         cliente = { guest_id: fr._cliente.id };
       }
-      const cuerpo = { ...clean(d), ...q, unit_id: Number(d.unit_id), ...cliente, documentos: fr._docs.map((x) => x.id) };
+      const cuerpo = { ...clean(d), ...q, unit_id: Number(d.unit_id), ...cliente, documentos: fr._docs.map((x) => x.id), ...(dotacion_extra ? { dotacion_extra } : {}) };
       const nueva = await post("/api/turistico/reservas", cuerpo).catch((e) => {
         if (!String(e.message).startsWith("LISTA NEGRA")) throw e;  // cliente en lista negra: Recepción decide
         if (!confirm(`⚠ CLIENTE EN LISTA NEGRA\n\n${e.message.replace("LISTA NEGRA: ", "Motivo: ")}\n\n¿Reservar igualmente? (quedará registrado)`)) throw new Error("Reserva no creada: cliente en lista negra");
@@ -2009,7 +2018,62 @@ async function newReservation(reload, fija) {  // fija: {id, codigo, asset_id} p
       fr.elements.unit_id.addEventListener("change", recalcula);
     }, 0);
     if (fija?.uso !== "garaje") setTimeout(() => bindExtras($("#modalForm"), aid, null, () => q).catch((e) => toast(e.message, true)), 0);
+    if (fija?.uso !== "garaje") setTimeout(() => bindDotacionAlta($("#modalForm"), aid).catch((e) => toast(e.message, true)), 0);
   }, "Buscar disponibilidad");
+}
+// ---- dotación al reservar: la estándar del apartamento es obligatoria (si su tipo aún no la tiene, se fija aquí) y,
+// si el cliente necesita algo más, se añade la dotación extraordinaria de esta reserva. Sin nada añadido: la estándar.
+const dotacionAltaHtml = () => `<fieldset data-dotalta><legend>Dotación del apartamento</legend><div data-dotest class="muted">Elija el apartamento…</div><div data-dfijar></div>
+  <p class="muted peq">Dotación extraordinaria (cuna, trona, juego de toallas más…): elija el artículo y la cantidad total para esta reserva. Si no añade nada, se entrega la estándar.</p>
+  <div class="toolbar"><select data-dart><option value="">Artículo…</option></select><input data-dcant value="1" size="6" aria-label="Cantidad"><button type="button" class="btn sm" data-dadd>+ Añadir</button></div><div data-dlista></div></fieldset>`;
+async function bindDotacionAlta(f, aid) {
+  const box = $("[data-dotalta]", f);
+  if (!box) return;
+  const cat = await catalogoDotacion(aid);
+  const extra = [];
+  let d = null;
+  const estado = $("[data-dotest]", box), ed = $("[data-dfijar]", box), lista = $("[data-dlista]", box);
+  $("[data-dart]", box).insertAdjacentHTML("beforeend", Object.entries(cat.zonas).map(([z, nz]) => `<optgroup label="${esc(nz)}">${cat.articulos.filter((a) => a.zona === z).map((a) => `<option value="${esc(a.codigo)}">${esc(a.articulo)}</option>`).join("")}</optgroup>`).join(""));
+  const pintaLista = () => {
+    lista.innerHTML = extra.length ? `<ul class="envios">${extra.map((x, i) => `<li>${esc(x.cantidad)} × ${esc(x.articulo)} <button type="button" class="btn sm" data-dq="${i}">Quitar</button></li>`).join("")}</ul>`
+      : '<p class="muted">Sin dotación extraordinaria: se entrega la estándar.</p>';
+    lista.querySelectorAll("[data-dq]").forEach((b) => (b.onclick = () => { extra.splice(Number(b.dataset.dq), 1); pintaLista(); }));
+  };
+  $("[data-dadd]", box).onclick = () => {
+    const a = cat.articulos.find((x) => x.codigo === $("[data-dart]", box).value), cant = $("[data-dcant]", box).value.trim();
+    if (!a || !cant) return toast("Elija el artículo y la cantidad", true);
+    const i = extra.findIndex((x) => x.codigo === a.codigo);
+    const item = { codigo: a.codigo, zona: a.zona, articulo: a.articulo, cantidad: cant };
+    if (i >= 0) extra[i] = item; else extra.push(item);
+    pintaLista();
+  };
+  const carga = async () => {
+    ed.innerHTML = "";
+    const uid = f.elements.unit_id?.value;
+    if (!uid) { d = null; return; }
+    d = await get(`/api/dotacion/unidad/${uid}`);
+    if (d.fijada) {
+      estado.innerHTML = `<span class="cli-ok">✔ Se entrega la dotación estándar ${d.origen === "apartamento" ? "propia de este apartamento" : `de los apartamentos «${esc(d.tipologia || "")}»`} (${d.items.length} artículos).</span>`;
+      return;
+    }
+    estado.innerHTML = `<div class="aviso-vencidas"><b>Obligatorio:</b> los apartamentos «${esc(d.tipologia || "sin tipología")}» aún no tienen fijada su <b>dotación estándar</b>. Revísela (se propone la del catálogo 3 llaves), ajuste lo que haga falta y pulse «Guardar como dotación estándar». Solo hay que hacerlo una vez por tipo de apartamento.</div>
+      <div class="toolbar"><button type="button" class="btn primary" data-dver>Revisar y fijar la dotación estándar</button></div>`;
+    $("[data-dver]", estado).onclick = () => {
+      ed.innerHTML = `<div data-dl></div><div class="toolbar"><button type="button" class="btn primary" data-dg>Guardar como dotación estándar</button></div>`;
+      const leer = dotacionEditor($("[data-dl]", ed), cat, d.items, d.perfil, aid);
+      $("[data-dg]", ed).onclick = async () => {
+        await run(() => put("/api/dotacion/habitual", { asset_id: aid, tipologia: d.tipologia || "", perfil: d.perfil, items: leer() }), "Dotación estándar guardada");
+        carga();
+      };
+    };
+  };
+  f.elements.unit_id?.addEventListener("change", () => carga().catch((e) => toast(e.message, true)));
+  pintaLista();
+  await carga();
+  f._dotacion = () => {
+    if (d && !d.fijada) throw new Error("Fije primero la dotación estándar de este tipo de apartamento (obligatorio): botón «Revisar y fijar la dotación estándar»");
+    return extra;
+  };
 }
 
 // ---- ocupantes de la reserva: todos quedan registrados (contrato y parte de viajeros a SES.HOSPEDAJE)
@@ -2376,7 +2440,7 @@ async function encuestaIne() {
   const prev = new Date(); prev.setDate(1); prev.setMonth(prev.getMonth() - 1);
   form(`Encuesta INE · ${assetName(aid)}`, [
     { html: '<p class="muted">Encuesta de Ocupación en Apartamentos Turísticos: viajeros entrados y pernoctaciones por día y residencia, apartamentos ocupados y tarifa media por tipo de cliente. Calculado con los ocupantes registrados de cada reserva.</p>' },
-    { k: "mes", t: "Mes", type: "month", req: true, def: prev.toISOString().slice(0, 7) },
+    { k: "mes", t: "Mes", type: "month", req: true, def: iso(prev).slice(0, 7) },
   ], {}, async (d) => {
     const [anio, mes] = d.mes.split("-").map(Number);
     const q = { asset_id: aid, anio, mes };
@@ -4273,7 +4337,7 @@ async function partesLista(cuerpo) {
 
 // Panel técnico de la dirección: Pareto de fallos, tiempo medio de reparación e intervenciones por unidad y mes
 async function partesKpis(cuerpo) {
-  const hoyIso = new Date().toISOString().slice(0, 10), haceAnio = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
+  const hoyIso = today(), haceAnio = iso(new Date(Date.now() - 365 * 864e5));
   cuerpo.innerHTML = `<div class="toolbar"><label>Desde <input type="date" data-d value="${haceAnio}"></label><label>Hasta <input type="date" data-h value="${hoyIso}"></label></div><div data-k></div>`;
   const horas = (m) => (m.horas == null ? "—" : m.horas < 48 ? `${m.horas} h` : `${(m.horas / 24).toFixed(1)} días`);
   const load = async () => {
@@ -4779,6 +4843,27 @@ V.productos = async (el) => {
 // valida y entonces se imprime (PDF / Excel) y queda archivado. Informe quincenal con los totales.
 const verPartes = () => ["mantenimiento.ver", "limpieza.editar", "partes.validar"].some(can);
 const ORIGEN_PARTE = { ot: "Orden de trabajo", limpieza: "Limpieza del parte", actuacion: "Actuación anotada" };
+// Corregir una línea del parte (abierto). Actuación: todos sus datos. OT o limpieza: hora, persona, horas y detalle;
+// la OT y la limpieza no cambian, la corrección queda en el parte. Se pide el motivo (queda en la auditoría).
+async function editarLineaParte(x, p, aid, load) {
+  const act = x.origen === "actuacion";
+  const uds = act ? await get("/api/unidades", { asset_id: aid }).catch(() => []) : [];
+  form(`Editar ${x.ref} · ${ORIGEN_PARTE[x.origen]} · ${fdate(p.fecha)}`, [
+    ...(act ? [] : [{ html: `<p class="muted">${esc(x.trabajo)}${x.ubicacion ? " · " + esc(x.ubicacion) : ""}. La corrección queda en el parte; la ${x.origen === "ot" ? "orden de trabajo" : "limpieza"} no cambia.</p>` }]),
+    ...(act ? [{ k: "fecha", t: "Día", type: "date", req: true }, { k: "descripcion", t: "Trabajo realizado", type: "textarea", req: true, wide: true },
+      { k: "unit_id", t: "Apartamento / unidad", type: "select", options: [["", "—"], ...uds.filter((u) => u.uso !== "garaje").map((u) => [u.id, u.codigo])] },
+      { k: "ubicacion", t: "Zona / ubicación" }] : [{ k: "detalle", t: "Detalle", type: "textarea", wide: true }]),
+    { k: "hora", t: "Hora a la que se hizo", type: "time", req: true }, { k: "persona", t: "Quién lo hizo" },
+    { k: "horas", t: "Horas", type: "number", step: "0.25" },
+    { k: "motivo", t: "Motivo de la corrección", req: true, wide: true },
+  ], { fecha: p.fecha, descripcion: x.trabajo, unit_id: x.unit_id || "", ubicacion: x.ubicacion_texto ?? "", detalle: x.detalle, hora: x.hora, persona: x.persona, horas: x.horas ?? "" },
+  async (d) => {
+    const cuerpo = { origen: x.origen, id: x.id, hora: d.hora, persona: d.persona || null, horas: d.horas === "" || d.horas == null ? null : Number(d.horas), motivo: d.motivo,
+      ...(act ? { fecha: d.fecha, descripcion: d.descripcion, unit_id: d.unit_id ? Number(d.unit_id) : null, ubicacion: d.ubicacion || null } : { detalle: d.detalle || null }) };
+    await put("/api/partes-trabajo/lineas?" + new URLSearchParams({ asset_id: aid, area: p.area, fecha: p.fecha }), cuerpo);
+    toast("Línea corregida"); load();
+  }, "Guardar corrección");
+}
 V.partestrabajo = async (el) => {
   const aid = await pickAsset();
   const areaDef = can("mantenimiento.editar") || !can("limpieza.editar") ? "mantenimiento" : "limpieza";
@@ -4803,8 +4888,9 @@ V.partestrabajo = async (el) => {
     table($("#t", el), [
       { k: "hora", t: "Hora" }, { k: "ref", t: "Ref.", f: (v) => `<b>${esc(v)}</b>` }, { k: "origen", t: "Origen", f: (v) => esc(ORIGEN_PARTE[v] || v) },
       { k: "ubicacion", t: "Ubicación" }, { k: "trabajo", t: "Trabajo realizado", f: (v, x) => `${esc(v)}${x.detalle ? `<div class="muted peq">${esc(x.detalle)}</div>` : ""}` },
-      { k: "persona", t: "Persona" }, { k: "horas", t: "Horas", num: true, f: (v) => (v ? String(v).replace(".", ",") : "") },
-    ], p.lineas, (x) => (x.origen === "actuacion" && !val ? [["Quitar", () => confirm("¿Quitar esta actuación del parte?") && run(() => api("DELETE", `/api/partes-trabajo/actuaciones/${x.id}`), "Actuación quitada").then(load), "danger"]] : []));
+      { k: "persona", t: "Persona" }, { k: "horas", t: "Horas", num: true, f: (v, x) => (v ? String(v).replace(".", ",") : "") + (x.corregida ? ' <span class="badge b-pendiente" title="Corregida en el parte">corregida</span>' : "") },
+    ], p.lineas, (x) => (!val && p.puede_anotar ? [["Editar", () => editarLineaParte(x, p, aid, load)],
+      x.origen === "actuacion" && ["Quitar", () => confirm("¿Quitar esta actuación del parte?") && run(() => api("DELETE", `/api/partes-trabajo/actuaciones/${x.id}`), "Actuación quitada").then(load), "danger"]] : []));
     const acc = {
       anotar: async () => {
         const uds = await get("/api/unidades", { asset_id: aid }).catch(() => []);
@@ -4813,8 +4899,8 @@ V.partestrabajo = async (el) => {
           { k: "descripcion", t: "Trabajo realizado", type: "textarea", req: true, wide: true },
           { k: "unit_id", t: "Apartamento / unidad (si es en una)", type: "select", options: [["", "—"], ...uds.filter((u) => u.uso !== "garaje").map((u) => [u.id, u.codigo])] },
           { k: "ubicacion", t: "Zona / ubicación (zonas comunes, sala de máquinas…)" },
-          { k: "persona", t: "Quién lo hizo (en blanco: usted)" }, { k: "horas", t: "Horas", type: "number", step: "0.25" },
-        ], {}, async (d) => { await post("/api/partes-trabajo/actuaciones", clean({ ...q(), ...d, unit_id: d.unit_id ? Number(d.unit_id) : null, horas: d.horas ? Number(d.horas) : null })); toast("Actuación anotada en el parte"); load(); }, "Anotar");
+          { k: "persona", t: "Quién lo hizo (en blanco: usted)" }, { k: "hora", t: "Hora a la que se hizo", type: "time" }, { k: "horas", t: "Horas", type: "number", step: "0.25" },
+        ], { hora: p.fecha === today() ? new Date().toTimeString().slice(0, 5) : "" }, async (d) => { await post("/api/partes-trabajo/actuaciones", clean({ ...q(), ...d, unit_id: d.unit_id ? Number(d.unit_id) : null, horas: d.horas ? Number(d.horas) : null })); toast("Actuación anotada en el parte"); load(); }, "Anotar");
       },
       validar: () => form(`Validar el parte de ${p.area_nombre.toLowerCase()} · ${fdate(p.fecha)}`, [
         { html: `<p>Se validan <b>${p.lineas.length} trabajo(s)</b>. El parte queda cerrado, se puede imprimir y su PDF y Excel se archivan en los documentos del activo.</p>` },
@@ -5408,7 +5494,7 @@ function capexLicitacion(cx, D, recarga) {
   if ($("#pedir", cx)) $("#pedir", cx).onclick = async () => {
     const provs = (await get("/api/proveedores")).filter((s) => !invs.some((i) => i.supplier_id === s.id));
     const docs = D.documentos.filter((d) => d.licitacion);
-    const plazo = new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10);
+    const plazo = iso(new Date(Date.now() + 14 * 864e5));
     form(lic && lic.estado === "abierta" ? "Invitar a más contratistas" : "Pedir ofertas", [
       { html: `<input type="search" id="fprov" placeholder="Filtrar por nombre o actividad" style="width:100%">` },
       { k: "proveedor_ids", t: "Contratistas", type: "checks", options: provs.map((s) => [String(s.id), `${s.nombre}${s.actividad ? ` · ${s.actividad}` : ""}${s.email ? "" : " (sin correo)"}`]) },
@@ -5796,6 +5882,16 @@ async function start() {
   go(location.hash.slice(1) || "panel");
   avisoNovedades();
   vigilarResultadosOT();
+  comprobarReloj();
+}
+// El reloj de este ordenador y el del programa (Madrid) deben coincidir: si no, las fechas y horas que propone el
+// navegador salen mal. A la Dirección se le avisa además si el servidor no está en hora de Madrid.
+async function comprobarReloj() {
+  const r = await get("/api/auth/reloj").catch(() => null);
+  if (!r) return;
+  const min = Math.round((Date.now() - new Date(r.utc).getTime()) / 60000);
+  if (Math.abs(min) >= 3) toast(`El reloj de este ordenador va ${Math.abs(min)} minutos ${min > 0 ? "adelantado" : "atrasado"} respecto al programa: corríjalo (Windows: Configuración → Hora e idioma → Sincronizar ahora).`, true);
+  if (S.me.admin_grupo && !r.correcta) toast(`El servidor no está en hora de Madrid (zona ${r.zona_efectiva}, UTC${r.horas_sobre_utc >= 0 ? "+" : ""}${r.horas_sobre_utc}). Avise al responsable del servidor.`, true);
 }
 // Colaborador externo (subcontrata): solo su portal; el resto de la API le está cerrada
 async function startColaborador() {

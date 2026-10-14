@@ -39,6 +39,8 @@
 - **Revisión en el móvil de limpieza**: en el *Parte de limpieza → Revisión en el móvil* salen los enlaces de las salidas del día; **Enviar todos por WhatsApp** a limpieza. Cada enlace abre la dotación del apartamento: marcan **Falta** o **Roto** y cuántos, y envían. Recepción 1 recibe un correo si hay incidencias. También desde la salida, con el botón **Revisión en el móvil de limpieza**. El enlace caduca a los 7 días.
 - **Informe de roturas**: en *Devoluciones de fianza → Informe de roturas*, por artículo y por apartamento, con Excel.
 - **Hoja de revisión de salida**: PDF con la dotación del apartamento por zonas, con casillas **OK / Falta / Roto** y el precio de reposición. Está en la reserva (botón **Dotación**), en la salida y en el **Parte de limpieza → Hojas de revisión** (todas las salidas del día).
+- **Al hacer una reserva** sale la **dotación del apartamento**. Si su tipo de apartamento aún no tiene fijada la dotación estándar, es **obligatorio** fijarla en ese momento: pulse **Revisar y fijar la dotación estándar**, ajuste la lista y **Guarde**. Solo se hace una vez por tipo de apartamento. Lo mismo al hacer el check-in de una reserva antigua.
+- **Dotación extraordinaria** al reservar (cuna, trona, más toallas…): elija el artículo, la cantidad total y **+ Añadir**. Si no añade nada, se entrega la **dotación estándar**.
 - **Dotación especial** de una reserva: botón **Dotación** de la reserva. Quite, cambie cantidades o añada artículos (cuna, plancha extra…). Sale marcada como «dotación especial» en el anexo del contrato.
 
 ## Check-in y check-out
@@ -150,6 +152,7 @@
 - **Mantenimiento → Parte de trabajo diario**: elegir área (mantenimiento o limpieza) y día. Los botones de los últimos 15 días muestran ✔ si están validados o cuántos trabajos faltan por validar.
 - Revisar las líneas (OT, limpiezas y actuaciones anotadas), escribir las observaciones y pulsar **Validar**. Se archivan solos en **Documentos** el **PDF** y el **Excel** («Parte de trabajo»). Antes de validar no se pueden descargar.
 - **Reabrir** deshace la validación y borra los archivados, para corregir.
+- **Editar** en cada línea (con el parte abierto): hora, trabajo, lugar, quién y horas, con el motivo. Queda en la auditoría con lo que había antes.
 - **Informe quincenal** (1-15 y 16-fin de mes): totales por área, origen, tipo y persona, horas anotadas y días sin validar. **Archivar** lo guarda en Documentos en PDF y Excel.
 
 ## Vacaciones y ausencias del personal

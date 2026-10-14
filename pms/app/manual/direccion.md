@@ -78,6 +78,10 @@
 - **Borrar un usuario** (botón **Borrar** en Administración → Usuarios; solo lo tienen el Director Técnico y el administrador): deja de poder entrar y desaparece de la lista; su email queda libre. Si ya ha trabajado en el PMS, su nombre se conserva solo en el historial (partes, gastos, auditoría). Esas dos cuentas no se pueden borrar.
 - **Sociedades**, **Avisos por correo** (servidor y resumen diario) y **Auditoría** (quién hizo qué y cuándo).
 
+## Hora del programa
+- El programa trabaja siempre en **hora de Madrid**, aunque el servidor esté en otra zona. Si el reloj del ordenador de alguien va desfasado más de 3 minutos, le sale un aviso al entrar; a la Dirección, además, si el servidor no está en hora de Madrid.
+- Hasta la versión 1.49 el servidor no tenía la zona de Madrid y guardaba la hora UTC (2 horas menos en verano, 1 en invierno). Para corregir esas horas antiguas (fichajes, partes, limpiezas y OT) hay un programa que primero solo enseña lo que cambiaría: `python -m app.corregir_hora --hasta "AAAA-MM-DD HH:MM"`. Se aplica una sola vez, con copia previa.
+
 ## Seguridad y continuidad
 - Copia de seguridad **antes de cada actualización** y copia diaria **fuera del servidor** (Google Drive).
 - **Mantenimiento diario a las 06:00**: revisa servidor, copias, base de datos, documentos, correo y seguridad; arregla solo lo que puede y, si hay un fallo grave, envía un **correo URGENTE** al director técnico. Los lunes, resumen semanal.

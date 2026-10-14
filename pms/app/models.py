@@ -4,9 +4,9 @@ Jerarquía:  Sociedad -> Activo -> Unidad
 Cada activo tiene una *modalidad* de explotación (alquiler residencial,
 apartamentos turísticos, ...). Nuevas modalidades se añaden en MODALIDADES.
 """
-from datetime import date, datetime
+from datetime import date, datetime, time
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, Time, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -945,6 +945,7 @@ class WorkEntry(Base):
     ubicacion: Mapped[str | None] = mapped_column(String(160))  # zona común u otro lugar
     persona: Mapped[str | None] = mapped_column(String(160))
     horas: Mapped[float | None] = mapped_column(Numeric(5, 2))
+    hora: Mapped[time | None] = mapped_column(Time)  # hora a la que se hizo el trabajo (vacía: la de anotarlo)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     creada: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
@@ -962,6 +963,9 @@ class WorkReport(Base):
     estado: Mapped[str] = mapped_column(String(20), default="abierto")  # abierto | validado
     observaciones: Mapped[str | None] = mapped_column(Text)
     lineas: Mapped[list | None] = mapped_column(JSON)  # copia congelada al validar
+    # correcciones de las líneas que vienen de una OT o de una limpieza (hora, persona, horas, detalle), sin tocar la
+    # OT ni la limpieza: {"ot:12": {"hora": "09:30", "persona": "…", "horas": 1.5, "detalle": "…"}}
+    correcciones: Mapped[dict | None] = mapped_column(JSON)
     validado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     validado_en: Mapped[datetime | None] = mapped_column(DateTime)
     pdf_id: Mapped[int | None] = mapped_column(ForeignKey("documentos_recibidos.id"))

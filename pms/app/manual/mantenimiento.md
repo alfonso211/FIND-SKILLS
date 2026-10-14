@@ -64,7 +64,8 @@
 ## Parte de trabajo diario
 - **Mantenimiento → Parte de trabajo diario**, área *Mantenimiento*, y el día.
 - Las **OT terminadas** ese día entran solas en el parte (OT-xxxxx).
-- Lo que se hizo **sin OT** se añade con **Anotar actuación**: lugar, trabajo, quién y horas (A-xxxxx). Se puede quitar mientras el parte esté abierto.
+- Lo que se hizo **sin OT** se añade con **Anotar actuación**: lugar, trabajo, quién, **hora a la que se hizo** y horas (A-xxxxx). Se puede quitar mientras el parte esté abierto.
+- **Editar** (en cada línea, con el parte abierto): si se ha cometido un error, corrija la hora, el trabajo, el lugar, quién o las horas, y escriba el motivo. Las actuaciones las corrige quien las anotó o recepción. En una línea de OT se corrige la hora, quién, las horas y el detalle; la OT no cambia y la línea sale como «corregida».
 - Recepción 1 o Recepción 2 lo **valida**; desde ese momento no se cambia (si hace falta, recepción lo **reabre**).
 
 ## Vacaciones y ausencias
