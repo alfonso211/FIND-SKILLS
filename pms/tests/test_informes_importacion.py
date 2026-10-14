@@ -6,6 +6,7 @@ from openpyxl import Workbook, load_workbook
 
 from app import avisos
 from conftest import domicilio_fiscal, login
+from test_importacion_dotacion_153 import dotacion_fijada
 
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -37,6 +38,11 @@ def _xlsx(filas: list[list]) -> bytes:
 
 def test_importar_reservas(client, admin, ids):
     sae = ids["assets"]["SAE"]["id"]
+    with dotacion_fijada(client, admin, sae):  # obligatoria para importar (1.53)
+        _importar_reservas(client, admin, sae, ids)
+
+
+def _importar_reservas(client, admin, sae, ids):
     plantilla = client.get("/api/turistico/importar/plantilla", headers=admin)
     ws = _libro(plantilla)["Reservas"]
     assert [c.value for c in ws[1]][:4] == ["Localizador", "Unidad", "Entrada", "Salida"]

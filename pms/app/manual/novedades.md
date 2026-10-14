@@ -1,5 +1,10 @@
 # Novedades
 
+## 2026-10-14 · Versión 1.53 · Dotación al importar reservas desde Excel
+- **Recepción · importar reservas**: la dotación estándar es obligatoria, igual que al reservar a mano. Las reservas de un tipo de apartamento sin ella no se importan; la vista previa lo avisa con el botón **Fijar dotación habitual**.
+- **Dotación extraordinaria en el Excel**: columna nueva **Dotación extraordinaria** («Cuna de viaje x1; Toallas de baño x2»). Se ve en la vista previa y queda en la reserva. Si no se indica, la estándar.
+- **Asignación automática**: si el Excel no dice el apartamento, se eligen antes los que ya tienen fijada la dotación estándar.
+
 ## 2026-10-14 · Versión 1.52 · Protección del acceso
 - **Todos · intentos de acceso**: 5 contraseñas mal seguidas bloquean ese usuario 15 minutos (como hasta ahora). Además, 20 intentos fallidos desde la misma conexión la bloquean 15 minutos, aunque se prueben usuarios distintos.
 - **Enlaces públicos** (técnico, fichaje, revisión de salida, ofertas, aprobaciones): una conexión que prueba muchos enlaces no válidos se bloquea 15 minutos. El resto de enlaces y del programa siguen funcionando.

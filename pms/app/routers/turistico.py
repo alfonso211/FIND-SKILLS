@@ -19,8 +19,8 @@ from .. import (avisos, clientes, contratos, documentos, dotacion, encuesta_ine,
                importacion_ocupacion, limpiezas, nif, planos, recibos, registro_viajeros, tarifas)
 from ..facturacion import (EXENCION_INDEMNIZACION, IVA_ALOJAMIENTO, IVA_GENERAL, datos_cliente, dinero, emitir,
                            estancia_facturada, linea, lineas_servicios, serie_activo)
-from ..models import (FORMAS_DEVOLUCION, MODALIDADES_RESERVA, AccommodationContract, Asset, Contact, DepositRefund, Invoice, Lease,
-                      Reservation, ReservationGuest, Unit, User, WorkOrder)
+from ..models import (FORMAS_DEVOLUCION, MODALIDADES_RESERVA, AccommodationContract, Asset, Contact, DepositRefund,
+                      DotacionArticulo, Invoice, Lease, Reservation, ReservationGuest, Unit, User, WorkOrder)
 from ..schemas import (AccommodationContractIn, CheckoutIn, DepositChargeIn, DepositRefundIn, ExtrasPaymentIn, LimpiezaPlanIn, OccupantIn, Payment, RenewalIn,
                        ReservationIn, ReservationUpdate, SendContractIn, ServiceLine, SignatureIn, UnpaidInvoiceIn)
 from ..security import Scope, audit, get_scope
@@ -207,10 +207,7 @@ def create_reservation(data: ReservationIn, scope: Scope = Depends(get_scope), d
                     guest_id=guest.id, importe_pagado=0)
     extra = dotacion.limpiar(data.dotacion_extra or []) if unit.uso != "garaje" else []
     if extra:  # dotación extraordinaria pedida al reservar; sin ella, la estándar del apartamento
-        base = {x["codigo"] for x in dotacion.base_unidad(db, unit)[0]}
-        # un artículo que ya está en la estándar: la cantidad indicada es la total de esta reserva
-        r.dotacion = {"cambios": {x["codigo"]: x["cantidad"] for x in extra if x["codigo"] in base},
-                      "extra": [x for x in extra if x["codigo"] not in base]}
+        r.dotacion = dotacion.para_reserva(db, unit, extra)
     if not (r.localizador or "").strip():
         r.localizador = nuevo_localizador(db, asset)
     r.ocupantes.append(ReservationGuest(contact_id=guest.id, titular=True, orden=0))
@@ -1042,6 +1039,16 @@ def import_reservations(fichero: UploadFile = File(...), asset_id: int = Form(..
     ocupadas: dict[int, list[tuple[date, date]]] = {}  # reservas del propio fichero, para detectar solapes entre filas
     libre = lambda uid, e, s: (not _conflict(db, uid, e, s)  # noqa: E731
                                and all(not (e < s2 and s > e2) for e2, s2 in ocupadas.get(uid, [])))
+    # dotación estándar obligatoria (como al reservar a mano): un tipo de apartamento sin ella no se importa
+    fijadas: dict[int, bool] = {}
+
+    def fijada(u: Unit) -> bool:
+        if u.id not in fijadas:
+            fijadas[u.id] = u.uso == "garaje" or dotacion.base_unidad(db, u)[1]
+        return fijadas[u.id]
+    sin_dotacion: set[str] = set()
+    catalogo = dotacion.articulos(db, asset_id)
+    nuevos_articulos: dict[str, DotacionArticulo] = {}  # «Otra dotación» dada de alta en esta importación (por nombre)
     resultado, creadas = [], 0
     for f in filas:
         r = {"fila": f["fila"], "localizador": str(f.get("localizador") or "").strip() or None}
@@ -1071,13 +1078,19 @@ def import_reservations(fichero: UploadFile = File(...), asset_id: int = Form(..
                 if not libre(u.id, ent, sal):
                     raise ValueError(f"{u.codigo} ya está reservada en esas fechas")
                 r["asignada"] = False
-            else:  # sin unidad: la primera libre con capacidad
-                u = next((x for x in sorted(unidades.values(), key=lambda x: (x.bloque or "", x.codigo))
+            else:  # sin unidad: la primera libre con capacidad (antes las que ya tienen fijada la dotación estándar)
+                u = next((x for x in sorted(unidades.values(), key=lambda x: (not fijada(x), x.bloque or "", x.codigo))
                           if x.uso != "garaje" and x.estado not in NO_ASIGNABLE and (not x.capacidad or x.capacidad >= adultos)
                           and libre(x.id, ent, sal)), None)
                 if not u:
                     raise ValueError("no queda ningún apartamento libre para esas fechas y ocupación")
                 r["asignada"] = True
+            if not fijada(u):
+                sin_dotacion.add(u.tipologia or "sin tipología")
+                r.update(unidad=u.codigo, entrada=ent.isoformat(), salida=sal.isoformat())
+                raise ValueError(f"los apartamentos «{u.tipologia or 'sin tipología'}» no tienen fijada su dotación "
+                                 "estándar (Reservas → Dotación habitual)")
+            extra = dotacion.de_texto(f.get("dotacion_extra"), catalogo) if u.uso != "garaje" else []
             nombre = str(f.get("nombre") or "").strip()
             if not nombre:
                 raise ValueError("falta el nombre del huésped")
@@ -1086,7 +1099,8 @@ def import_reservations(fichero: UploadFile = File(...), asset_id: int = Form(..
                 existentes.add(r["localizador"])
             r.update(estado="valida", unidad=u.codigo, entrada=ent.isoformat(), salida=sal.isoformat(),
                      huesped=f"{nombre} {f.get('apellidos') or ''}".strip(), importe_total=total,
-                     adultos=adultos, ninos=ninos)
+                     adultos=adultos, ninos=ninos,
+                     dotacion=("Estándar + " + dotacion.de_texto_resumen(extra)) if extra else "Estándar")
             if confirmar:
                 doc = str(f.get("documento_num") or "").strip().upper() or None
                 g = clientes.por_documento(db, asset, "huesped", nif.normalizar(doc))
@@ -1102,6 +1116,17 @@ def import_reservations(fichero: UploadFile = File(...), asset_id: int = Form(..
                                     canal=importacion.canal(f.get("canal")), fecha_entrada=ent, fecha_salida=sal,
                                     adultos=adultos, ninos=ninos, importe_total=total,
                                     notas=(str(f.get("notas") or "").strip() or None))
+                for x in extra:
+                    if x["nuevo"]:
+                        a = nuevos_articulos.get(x["articulo"].lower())
+                        if a is None:
+                            a = DotacionArticulo(asset_id=asset.id, codigo=dotacion.nuevo_codigo(db), zona=x["zona"],
+                                                 articulo=x["articulo"], user_id=scope.user.id)
+                            db.add(a)
+                            db.flush()
+                            nuevos_articulos[x["articulo"].lower()] = a
+                        x["codigo"] = a.codigo
+                nueva.dotacion = dotacion.para_reserva(db, u, extra)
                 nueva.ocupantes.append(ReservationGuest(contact_id=g.id, titular=True, orden=0))
                 db.add(nueva)
                 db.flush()
@@ -1113,10 +1138,12 @@ def import_reservations(fichero: UploadFile = File(...), asset_id: int = Form(..
     cuenta = lambda e: sum(1 for x in resultado if x["estado"] == e)  # noqa: E731
     if confirmar:
         audit(db, scope.user, "importar_reservas", "reserva", None,
-              {"activo": asset.codigo, "fichero": fichero.filename, "importadas": creadas, "errores": cuenta("error")})
+              {"activo": asset.codigo, "fichero": fichero.filename, "importadas": creadas, "errores": cuenta("error"),
+               **({"articulos_nuevos": sorted(a.articulo for a in nuevos_articulos.values())} if nuevos_articulos else {})})
         db.commit()
     return {"filas": resultado, "validas": cuenta("valida") + cuenta("importada"), "importadas": creadas,
-            "errores": cuenta("error"), "omitidas": cuenta("omitida"), "columnas_ignoradas": ignoradas}
+            "errores": cuenta("error"), "omitidas": cuenta("omitida"), "columnas_ignoradas": ignoradas,
+            "sin_dotacion": sorted(sin_dotacion)}
 
 
 # --------------------------------------------------------------------------- ocupación actual del PMS anterior

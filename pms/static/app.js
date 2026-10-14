@@ -1598,8 +1598,8 @@ function dotacionEditor(cont, cat, items, perfil, assetId) {
   pinta();
   return () => Object.values(sel);
 }
-async function dotacionHabitual() {
-  const aid = S.asset || (await pickAsset("apartamentos_turisticos"));
+async function dotacionHabitual(assetId) {
+  const aid = assetId || S.asset || (await pickAsset("apartamentos_turisticos"));
   const [cat, tips] = await Promise.all([catalogoDotacion(aid), run(() => get("/api/dotacion/habitual", { asset_id: aid }))]);
   const f = cerrarSolo(form(`Dotación habitual · ${assetName(aid)}`, [
     { html: `<p>Lista de dotación de cada tipo de apartamento (catálogo 3 llaves). Recepción la revisa <b>una vez</b> y queda como <b>dotación habitual</b>: es la que se imprime o envía con el contrato al pulsar «Dotación habitual». Marque lo que hay, ajuste las cantidades y, si falta algo, use «Otra dotación».</p>
@@ -2506,16 +2506,21 @@ async function importarReservas(reload) {
     setTimeout(() => {
       const filas = prev.filas.map((x) => `<tr><td>${x.fila}</td><td>${esc(x.localizador || "")}</td><td>${esc(x.unidad || "")}${x.asignada ? ' <span class="muted">(auto)</span>' : ""}</td>
         <td>${fdate(x.entrada)}</td><td>${fdate(x.salida)}</td><td>${esc(x.huesped || "")}</td><td class="num">${x.importe_total != null ? eur(x.importe_total) : ""}</td>
+        <td class="peq" style="white-space:normal;min-width:160px">${esc(x.dotacion || "")}</td>
         <td style="white-space:normal;min-width:220px">${x.estado === "valida" ? '<span class="badge b-vigente">válida</span>' : x.estado === "omitida" ? `<span class="badge">omitida</span> ${esc(x.motivo)}` : `<span class="badge b-cancelada">error</span> ${esc(x.motivo)}`}</td></tr>`).join("");
-      form(`Vista previa · ${prev.validas} válidas, ${prev.errores} con error, ${prev.omitidas} omitidas`, [
+      const pv = form(`Vista previa · ${prev.validas} válidas, ${prev.errores} con error, ${prev.omitidas} omitidas`, [
         { html: `${prev.columnas_ignoradas.length ? `<p class="muted">Columnas no usadas: ${esc(prev.columnas_ignoradas.join(", "))}</p>` : ""}
-          <div class="table-wrap" style="max-height:50vh;overflow:auto"><table><thead><tr><th>Fila</th><th>Localizador</th><th>Unidad</th><th>Entrada</th><th>Salida</th><th>Huésped</th><th class="num">Importe</th><th>Resultado</th></tr></thead><tbody>${filas}</tbody></table></div>
-          <p>${prev.errores ? "Las filas con error no se importan: corríjalas en el fichero y vuelva a importarlo (las ya importadas no se duplican)." : ""}</p>` },
+          <div class="table-wrap" style="max-height:50vh;overflow:auto"><table><thead><tr><th>Fila</th><th>Localizador</th><th>Unidad</th><th>Entrada</th><th>Salida</th><th>Huésped</th><th class="num">Importe</th><th>Dotación</th><th>Resultado</th></tr></thead><tbody>${filas}</tbody></table></div>
+          ${prev.sin_dotacion?.length ? `<div class="card aviso-bloqueo"><b>Falta la dotación estándar</b> de los apartamentos «${esc(prev.sin_dotacion.join("», «"))}». Sus reservas no se importan hasta fijarla (una sola vez por tipo de apartamento).
+            <p><button type="button" class="btn sm primary" data-fijar>Fijar dotación habitual</button></p></div>` : ""}
+          <p>${prev.errores ? "Las filas con error no se importan: corríjalas en el fichero y vuelva a importarlo (las ya importadas no se duplican)." : ""}</p>
+          ${prev.filas.some((x) => (x.dotacion || "").includes("(nuevo)")) ? '<p class="muted peq">«(nuevo)»: el artículo no está en el catálogo y se dará de alta como «Otra dotación». Si es un error de escritura, corríjalo en el fichero.</p>' : ""}` },
       ], {}, async () => {
         if (!prev.validas) throw new Error("No hay ninguna reserva válida que importar");
         const r = await enviar(true);
         toast(`${r.importadas} reservas importadas`); reload && reload();
       }, `Importar ${prev.validas} reservas`);
+      if ($("[data-fijar]", pv)) $("[data-fijar]", pv).onclick = () => dotacionHabitual(aid);
     }, 0);
   }, "Comprobar fichero");
   $("[data-plantilla]", f).onclick = (e) => { e.preventDefault(); run(() => download("GET", "/api/turistico/importar/plantilla")); };
