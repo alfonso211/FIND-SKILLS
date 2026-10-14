@@ -117,8 +117,11 @@ Así, el saldo de la 560 de cada activo en gestión debe coincidir con `saldo_ac
 2. `PMS_FIANZAS_AVISOS_DESDE=AAAA-MM-DD`: el primer día que gestión contabiliza desde los avisos. Lo anterior ya
    está contabilizado con los CSV.
 
-Desde ese momento, el fichero del paquete de exportación se llama `CONTROL_FIANZAS_*.csv` en lugar de
-`FIANZAS_*.csv`. El contenido es el mismo, pero **no se contabiliza**: sirve para cuadrar. El `manifest.json` indica
+Desde ese momento, las devoluciones **a partir de la fecha de corte** van en `CONTROL_FIANZAS_*.csv` y las
+**anteriores** siguen en `FIANZAS_*.csv` (se contabilizan con el CSV, como hasta ahora). Una exportación que abarque el
+corte puede llevar los dos ficheros. Si una devolución por transferencia se registró antes del corte y la
+transferencia se hizo después, va en `FIANZAS_*.csv` como pendiente y la transferencia se contabiliza con su aviso
+`fianza.transferida`. El fichero de control tiene las mismas columnas, pero **no se contabiliza**: sirve para cuadrar. El `manifest.json` indica
 `"fianzas_origen": "avisos"` y, en ese fichero, `"contabilizar": false`. Con el nombre nuevo, un importador que busque
 `FIANZAS_*` no lo recoge, y una fianza no se apunta dos veces.
 

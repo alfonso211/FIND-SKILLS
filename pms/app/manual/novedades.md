@@ -2,6 +2,7 @@
 
 ## 2026-10-14 · Versión 1.59 · Cambio seguro de la clave de los documentos
 - **Dirección**: la clave con la que se cifran las copias de DNI y pasaportes se puede cambiar sin perder ningún documento y sin parar el PMS (procedimiento en INSTALACION.md, «Cambiar la clave de los documentos»).
+- **Fianzas y gestión**: con la contabilidad desde los avisos activada, la exportación separa las devoluciones según la fecha de corte (las anteriores en FIANZAS, las posteriores en CONTROL_FIANZAS). Se puede activar cuando se quiera sin que ninguna fianza se quede sin contabilizar ni se cuente dos veces.
 - Para el resto del equipo no cambia nada.
 
 ## 2026-10-14 · Versión 1.58 · Libro de fianzas y fianzas contabilizadas desde los avisos a gestión

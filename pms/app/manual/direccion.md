@@ -35,7 +35,7 @@
   - **Movimientos del periodo**: cobros, devoluciones y transferencias, cada uno con su asiento sugerido (560 fianzas, 570 caja, 572 bancos, 778 retenido) y si gestión ha recibido el aviso.
   - **Lo que no cuadra**: movimientos sin aviso, avisos que no llegan, devoluciones sin el cobro registrado y reservas con fianza cobrada sin devolver.
   - **Excel** con las tres partes.
-- **Fianzas contabilizadas desde los avisos**: gestión las contabiliza con los avisos de fianza cuando en el `.env` del servidor estén `PMS_FIANZAS_ORIGEN=avisos` y `PMS_FIANZAS_AVISOS_DESDE=AAAA-MM-DD` (primer día). Desde entonces el fichero de la exportación sale como **CONTROL_FIANZAS_*.csv**, solo para cuadrar. Si falta algún aviso, el botón **Generar los avisos que faltan** del libro los crea sin duplicar.
+- **Fianzas contabilizadas desde los avisos**: gestión las contabiliza con los avisos de fianza cuando en el `.env` del servidor estén `PMS_FIANZAS_ORIGEN=avisos` y `PMS_FIANZAS_AVISOS_DESDE=AAAA-MM-DD` (primer día). Desde entonces las devoluciones a partir de esa fecha salen en **CONTROL_FIANZAS_*.csv**, solo para cuadrar; las anteriores siguen en FIANZAS_*.csv, así que se puede activar en cualquier momento sin perder ninguna. Si falta algún aviso, el botón **Generar los avisos que faltan** del libro los crea sin duplicar.
 
 ## Facturación
 - **Facturas emitidas**: listado con filtros (pendientes de cobro, cobradas), PDF y **libro de facturas** para la gestoría.

@@ -108,7 +108,8 @@ def test_reservation_flow(client, admin, ids):
                        json={**body, "fecha_entrada": d(10), "fecha_salida": d(9)}).status_code == 422
     # check-in exige datos del parte de viajeros
     assert client.post(f"/api/turistico/reservas/{res['id']}/checkin", headers=admin).status_code == 400
-    guest = client.get("/api/terceros?tipo=huesped&q=Ana", headers=admin).json()[0]
+    # el titular de esta reserva (la contigua creó otra «Ana López»: buscar por nombre no distingue entre ambas)
+    guest = client.get(f"/api/terceros/{res['guest_id']}", headers=admin).json()
     upd = {**{k: guest[k] for k in ("company_id", "tipo", "nombre")}, "apellidos": "López Ruiz",
            "documento_tipo": "DNI", "documento_num": "12345678Z", "num_soporte": "BAA123456", "nacionalidad": "ESP",
            "fecha_nacimiento": "1990-01-01", "sexo": "F", "telefono": "600111222", "direccion": "C/ Alcalá 10, 3º B",

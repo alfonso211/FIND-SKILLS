@@ -133,3 +133,49 @@ def test_preautorizacion_y_permisos(client, admin, ids, desde_avisos):
     assert client.get("/api/turistico/fianzas/libro", headers=rec, params={"asset_id": sfl}).status_code == 403
     assert client.post("/api/turistico/fianzas/libro/avisos", headers=rec,
                        params={"desde": HOY.isoformat(), "hasta": HOY.isoformat()}).status_code == 403
+
+
+# --------------------------------------------------------------------------- 1.59: corte en la exportación
+def test_exportacion_separa_por_fecha_de_corte(client, admin, ids, monkeypatch):
+    import io
+    import zipfile
+    from datetime import datetime
+
+    from app import export_invergestion as ex
+    monkeypatch.setattr(settings, "fianzas_origen", "avisos")
+    hoy = HOY
+    dev = lambda creada, devuelta=None, forma="efectivo": SimpleNamespace(  # noqa: E731
+        creada=datetime.combine(creada, datetime.min.time()), devuelta_fecha=devuelta, forma=forma)
+    monkeypatch.setattr(settings, "fianzas_avisos_desde", hoy.isoformat())
+    d0, d1 = hoy - timedelta(days=7), hoy + timedelta(days=7)
+    assert ex._por_aviso(dev(hoy - timedelta(days=2)), d0, d1) == (False, False)  # antes del corte: CSV
+    assert ex._por_aviso(dev(hoy), d0, d1) == (True, False)  # desde el corte: avisos
+    # devuelta antes del corte y transferida después: la devolución va al CSV (como pendiente), la transferencia por aviso
+    assert ex._por_aviso(dev(hoy - timedelta(days=2), hoy + timedelta(days=1), "transferencia"), d0, d1) == (False, True)
+    # en otra exportación entra solo por la transferencia hecha tras el corte: control
+    assert ex._por_aviso(dev(hoy - timedelta(days=20), hoy + timedelta(days=1), "transferencia"),
+                         hoy, d1) == (True, False)
+    monkeypatch.setattr(settings, "fianzas_avisos_desde", None)
+    assert ex._por_aviso(dev(hoy - timedelta(days=2)), d0, d1) == (True, False)  # sin corte: todo por avisos
+
+    # de punta a punta: una devolución de hoy, con el corte mañana va al CSV contable y con el corte hoy a control
+    sae = ids["assets"]["SAE"]["id"]
+    r = _apto_libre(client, admin, sae, HOY - timedelta(days=2), HOY + timedelta(days=1), importe=100)
+    client.put(f"/api/turistico/reservas/{r['id']}", headers=admin, json={"estado": "checkin"})
+    client.post(f"/api/turistico/reservas/{r['id']}/fianza/cobro", headers=admin, json={"importe": 80, "forma": "efectivo"})
+    assert client.post(f"/api/turistico/reservas/{r['id']}/checkout", headers=admin,
+                       json={"fianza": {"forma": "efectivo"}}).status_code == 200
+    q = {"desde": HOY.isoformat(), "hasta": HOY.isoformat(), "tipos": "fianzas", "pdf": False}
+
+    def ficheros():
+        z = zipfile.ZipFile(io.BytesIO(client.get("/api/exportacion/invergestion", headers=admin, params=q).content))
+        return {n.split("_")[0] if not n.startswith("CONTROL") else "CONTROL": z.read(n).decode()
+                for n in z.namelist() if n.endswith(".csv")}
+    monkeypatch.setattr(settings, "fianzas_avisos_desde", (HOY + timedelta(days=1)).isoformat())
+    f = ficheros()
+    assert "FIANZAS" in f and str(r["id"]) in f["FIANZAS"] and "CONTROL" not in f
+    monkeypatch.setattr(settings, "fianzas_avisos_desde", HOY.isoformat())
+    f = ficheros()
+    assert "CONTROL" in f and str(r["id"]) in f["CONTROL"] and "FIANZAS" not in f
+    chk = client.get("/api/exportacion/invergestion/comprobar", headers=admin, params=q).json()["fianzas"]
+    assert all(n.startswith("CONTROL_FIANZAS_") for n in chk["ficheros_csv"])
