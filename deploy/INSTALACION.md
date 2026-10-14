@@ -123,7 +123,9 @@ En `.env` hay que rellenar:
 - `PMS_DOMINIO`: `pms.inversiete.es`.
 - `DB_PASSWORD`: la primera clave generada.
 - `PMS_SECRET_KEY`: la segunda clave generada.
-- `PMS_ADMIN_PASSWORD`: la tercera clave. Es la del administrador técnico; guárdela en el gestor de contraseñas de la empresa.
+- `PMS_ADMIN_PASSWORD`: la tercera clave. Es la contraseña inicial del administrador técnico; guárdela en el gestor de
+  contraseñas de la empresa. Solo se usa al instalar (base vacía): después se cambia en *Mi perfil* y esta línea ya
+  no afecta al PMS (si se quita, el programa y las copias de seguridad siguen funcionando).
 
 ## 6. Arranque
 

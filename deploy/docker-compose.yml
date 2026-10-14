@@ -30,7 +30,9 @@ services:
       PMS_DATABASE_URL: postgresql+psycopg://pms:${DB_PASSWORD}@db:5432/pms
       PMS_SECRET_KEY: ${PMS_SECRET_KEY:?Defina PMS_SECRET_KEY en .env}
       PMS_ADMIN_EMAIL: ${PMS_ADMIN_EMAIL:-admin@inversiete.es}
-      PMS_ADMIN_PASSWORD: ${PMS_ADMIN_PASSWORD:?Defina PMS_ADMIN_PASSWORD en .env}
+      # solo crea el administrador la primera vez (base vacía); sin ella el PMS arranca igual (no se exige: si
+      # faltara en el .env, docker compose dejaría de funcionar, copias de seguridad incluidas)
+      PMS_ADMIN_PASSWORD: ${PMS_ADMIN_PASSWORD:-}
       PMS_TOKEN_HOURS: ${PMS_TOKEN_HOURS:-12}
       # copias de documentos de identidad, cifradas con PMS_DOCS_KEY
       PMS_DOCS_DIR: /data/documentos
