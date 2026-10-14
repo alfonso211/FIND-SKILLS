@@ -1,5 +1,10 @@
 # Novedades
 
+## 2026-10-14 · Versión 1.58 · Libro de fianzas y fianzas contabilizadas desde los avisos a gestión
+- **Dirección y Administración**: nuevo **Libro de fianzas** en *Reservas → Devoluciones de fianza*. Muestra lo que se custodia en cada activo, los cobros, devoluciones y transferencias con su asiento sugerido y si gestión ha recibido cada aviso, y avisa de lo que no cuadra. Tiene Excel.
+- **Gestión**: los avisos de fianza llevan la empresa, el asiento sugerido y el saldo en custodia del activo, para contabilizarlos directamente. Cuando se active en el servidor, el fichero de fianzas de la exportación pasa a ser **CONTROL_FIANZAS_*.csv**, solo para cuadrar.
+- **Recepción**: nada cambia. Cobrar la fianza, la salida y «Transferencia hecha» funcionan igual.
+
 ## 2026-10-14 · Versión 1.57 · Informes más rápidos con muchas reservas
 - **Dirección y Administración**: con decenas de miles de reservas y facturas, los informes cargan mucho más rápido: encuesta del INE unas 6 veces, morosidad 6 veces, producción 3 veces, informe de presidencia (pantalla, PDF y Excel) entre 2,5 y 3,5 veces y ocupación anual 3 veces.
 - **Exportación a gestión**: la comprobación de un año completo hace 19 consultas en lugar de 643; la de un mes sigue siendo inmediata.

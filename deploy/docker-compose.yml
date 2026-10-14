@@ -53,6 +53,9 @@ services:
       PMS_GESTION_PUBLICA: ${PMS_GESTION_PUBLICA:-https://gestion.inversiete.es}
       # avisos nuevos a gestión (fianzas, ampliaciones, caja, cierre de incidencias, indicadores): 1 cuando gestión los reciba
       PMS_GESTION_EVENTOS_V2: ${PMS_GESTION_EVENTOS_V2:-0}
+      # fianzas: csv (gestión las contabiliza del CSV) o avisos (de los avisos fianza.*, el CSV queda de control)
+      PMS_FIANZAS_ORIGEN: ${PMS_FIANZAS_ORIGEN:-csv}
+      PMS_FIANZAS_AVISOS_DESDE: ${PMS_FIANZAS_AVISOS_DESDE:-}
       PMS_GESTION_USUARIOS: ${PMS_GESTION_USUARIOS:-alfonso@inversiete.es,barbara@inversiete.es}
       # informe diario de dirección, aviso de la víspera al cliente y preventivo automático
       PMS_INFORME_DIRECCION: ${PMS_INFORME_DIRECCION:-barbara@inversiete.es,alfonso@inversiete.es}

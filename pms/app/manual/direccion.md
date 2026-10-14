@@ -30,6 +30,12 @@
 - **Pedidos de reposición sin autorizar**: si un pedido de reposición lleva más de 3 días pendiente de Recepción 1, llega un correo cada día laborable con la lista hasta que se autorice.
 - **Informe de roturas** (en *Reservas → Devoluciones de fianza*): qué se rompe o falta más, en qué apartamentos y su coste, con Excel.
 - Todas las devoluciones van en la exportación a **INVERGESTION** (FIANZAS_*.csv) para la gestoría. Los avisos quedan en *Administración → Avisos* (registro de envíos).
+- **Libro de fianzas** (*Reservas → Devoluciones de fianza → Libro de fianzas*, con permiso de finanzas):
+  - **Saldo por activo**: lo que se custodia ahora (de clientes alojados y transferencias sin hacer) y las preautorizaciones de tarjeta, que no son dinero.
+  - **Movimientos del periodo**: cobros, devoluciones y transferencias, cada uno con su asiento sugerido (560 fianzas, 570 caja, 572 bancos, 778 retenido) y si gestión ha recibido el aviso.
+  - **Lo que no cuadra**: movimientos sin aviso, avisos que no llegan, devoluciones sin el cobro registrado y reservas con fianza cobrada sin devolver.
+  - **Excel** con las tres partes.
+- **Fianzas contabilizadas desde los avisos**: gestión las contabiliza con los avisos de fianza cuando en el `.env` del servidor estén `PMS_FIANZAS_ORIGEN=avisos` y `PMS_FIANZAS_AVISOS_DESDE=AAAA-MM-DD` (primer día). Desde entonces el fichero de la exportación sale como **CONTROL_FIANZAS_*.csv**, solo para cuadrar. Si falta algún aviso, el botón **Generar los avisos que faltan** del libro los crea sin duplicar.
 
 ## Facturación
 - **Facturas emitidas**: listado con filtros (pendientes de cobro, cobradas), PDF y **libro de facturas** para la gestoría.
