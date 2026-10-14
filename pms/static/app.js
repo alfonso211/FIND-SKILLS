@@ -1181,7 +1181,7 @@ function resActions(reload) {
         const d = await get(`/api/dotacion/unidad/${r.unit_id}`).catch(() => ({ fijada: true }));
         if (!d.fijada) { alert(`Antes del check-in fije la dotación estándar de los apartamentos «${d.tipologia || "sin tipología"}» (Reservas → Dotación habitual). Solo se hace una vez por tipo de apartamento.`); return dotacionHabitual(); }
       }
-      return run(() => post(`/api/turistico/reservas/${r.id}/checkin`), "Check-in realizado").then(reload).catch(() => ocupantesReserva(r, reload));
+      return run(() => post(`/api/turistico/reservas/${r.id}/checkin`), "Check-in realizado").then((x) => { reload && reload(); accesoTrasCheckin(x, reload); }).catch(() => ocupantesReserva(r, reload));
     }],
     ["confirmada", "checkin"].includes(r.estado) && r.uso !== "garaje" && ["Ampliar reserva", () => renovarEstancia(r, reload)],
     ["confirmada", "checkin"].includes(r.estado) && r.uso !== "garaje" && !r.fianza_cobro && ["Cobrar fianza", () => cobrarFianza(r, reload)],
@@ -3347,8 +3347,9 @@ async function newWorkOrder(assetId, unitId, zona, parte) {  // zona: {zona, nom
     { k: "descripcion", t: "Descripción de la avería", type: "textarea", wide: true },
     { html: parte ? `<p class="muted">Se genera desde el parte de estado <b>${esc(parte.codigo)}</b>: sus fotos se adjuntan solas.</p>` : fotosHtml("Fotos de la avería (opcional)") },
   ], { unit_id: unitId, ...(parte ? parte.ot_propuesta : {}) }, async (d, f) => {
-    const acceso = f._acceso ? f._acceso() : null;
-    const w = await post("/api/mantenimiento/ordenes", clean({ ...(puedeAsignarOT() ? datosAsignacion(d) : d), asset_id: aid, unit_id: d.unit_id ? Number(d.unit_id) : null, zona: zona?.zona, parte_estado_id: parte?.id, acceso }));
+    const acc = f._acceso ? f._acceso() : null;
+    const acceso = acc ? { acceso: acc.acceso, acceso_autoriza: acc.autoriza, acceso_medio: acc.medio } : {};
+    const w = await post("/api/mantenimiento/ordenes", clean({ ...(puedeAsignarOT() ? datosAsignacion(d) : d), asset_id: aid, unit_id: d.unit_id ? Number(d.unit_id) : null, zona: zona?.zona, parte_estado_id: parte?.id, ...acceso }));
     const n = await subirFotos(f, w.id, "averia");
     toast(`Orden de trabajo OT-${String(w.id).padStart(5, "0")} creada` + (n ? ` con ${n} foto(s)` : "") + (w.prioridad === "urgente" ? ". Se ha avisado por correo." : ""));
     resolve();
@@ -3358,25 +3359,78 @@ async function newWorkOrder(assetId, unitId, zona, parte) {  // zona: {zona, nom
 }
 // Apartamento con cliente dentro: obligatorio indicar cómo se entra (llave de recepción con su permiso, o contactar
 // con él; su teléfono sale solo de la ficha del cliente alojado)
+// Bloque de acceso con cliente alojado: llave de recepción (quién lo autoriza y cómo) o contactar (sale su teléfono)
+const MEDIOS_ACCESO = [["en_persona", "En persona"], ["telefono", "Por teléfono"], ["whatsapp", "Por WhatsApp"], ["correo", "Por correo"]];
+function accesoHtml(info, k = "acc", previo = {}) {
+  return `<fieldset data-acc="${k}"><legend>Cliente alojado: acceso al apartamento</legend>
+    <label class="check"><input type="radio" name="${k}" value="llave" ${previo.acceso === "llave" ? "checked" : ""}> El cliente autoriza entrar con la llave de recepción</label>
+    <div class="acc-llave grid2" ${previo.acceso === "llave" ? "" : "hidden"}><label>Quién lo autoriza<input data-autoriza value="${esc(previo.acceso_autoriza || info.huesped || "")}"></label>
+      <label>Cómo<select data-medio>${MEDIOS_ACCESO.map(([v, t]) => `<option value="${v}" ${v === (previo.acceso_medio || "en_persona") ? "selected" : ""}>${t}</option>`).join("")}</select></label></div>
+    <label class="check"><input type="radio" name="${k}" value="contactar" ${previo.acceso === "contactar" ? "checked" : ""}> Contactar con el cliente para el acceso · tel. <b>${esc(info.telefono || "sin teléfono en su ficha")}</b></label></fieldset>`;
+}
+function bindAccesoBloque(box, k = "acc") {
+  const fs = box.querySelector(`[data-acc="${k}"]`);
+  if (!fs) return () => null;
+  fs.querySelectorAll(`input[name="${k}"]`).forEach((r) => (r.onchange = () => { fs.querySelector(".acc-llave").hidden = fs.querySelector(`input[name="${k}"]:checked`)?.value !== "llave"; }));
+  return () => {
+    const x = fs.querySelector(`input[name="${k}"]:checked`);
+    if (!x) throw new Error("El apartamento tiene un cliente alojado: indique si autoriza la llave de recepción o hay que contactarle");
+    if (x.value !== "llave") return { acceso: "contactar" };
+    const autoriza = fs.querySelector("[data-autoriza]").value.trim();
+    if (!autoriza) throw new Error("Indique quién autoriza entrar con la llave de recepción");
+    return { acceso: "llave", autoriza, medio: fs.querySelector("[data-medio]").value };
+  };
+}
 function bindAccesoOT(f) {
   const box = $("[data-acceso]", f), sel = f.elements.unit_id;
   if (!box || !sel) return f;
-  let info = null;
+  let leer = () => null;
   const pinta = async () => {
-    info = sel.value ? await get("/api/mantenimiento/acceso", { unit_id: sel.value }).catch(() => null) : null;
-    box.innerHTML = info?.alojado ? `<fieldset><legend>Cliente alojado: acceso al apartamento</legend>
-      <label class="check"><input type="radio" name="acc" value="llave"> El cliente autoriza entrar con la llave de recepción</label>
-      <label class="check"><input type="radio" name="acc" value="contactar"> Contactar con el cliente para el acceso · tel. <b>${esc(info.telefono || "sin teléfono en su ficha")}</b></label></fieldset>` : "";
+    const info = sel.value ? await get("/api/mantenimiento/acceso", { unit_id: sel.value }).catch(() => null) : null;
+    leer = () => null;
+    if (info?.situacion === "alojado") {
+      box.innerHTML = accesoHtml(info);
+      leer = bindAccesoBloque(box);
+    } else if (info?.situacion === "llegada") {  // libre ahora: llega un cliente pronto
+      const antes = sumaDias(info.llegada, -1);
+      box.innerHTML = `<p class="aviso-llegada">🧳 <b>Llega un cliente el ${fdate(info.llegada)}</b> (${info.dias === 0 ? "hoy" : `en ${info.dias} días`}). Mejor hacerla antes de su llegada${f.elements.fecha_prevista ? ": se propone como fecha prevista el día anterior" : ""}.</p>`;
+      if (f.elements.fecha_prevista && !f.elements.fecha_prevista.value && info.dias > 0) f.elements.fecha_prevista.value = antes;
+    } else box.innerHTML = "";
   };
   sel.addEventListener("change", () => pinta());
   pinta();
-  f._acceso = () => {
-    if (!info?.alojado) return null;
-    const x = f.querySelector("input[name=acc]:checked");
-    if (!x) throw new Error("El apartamento tiene un cliente alojado: indique si autoriza la llave de recepción o hay que contactarle");
-    return x.value;
-  };
+  f._acceso = () => leer();
   return f;
+}
+const accesoBadge = (w) => {
+  const e = w.acceso_estado;
+  if (e && ["falta", "caducado"].includes(e.estado)) return `<div class="peq error">⚠ ${esc(e.texto)}</div>`;
+  const llegada = e?.estado === "llegada" ? `<div class="peq aviso-llegada-txt">🧳 ${esc(e.texto)}</div>` : "";
+  if (!w.acceso || (e && e.estado !== "vigente")) return llegada;
+  return `<div class="peq" title="${esc(w.acceso_texto || "")}">${w.acceso === "llave" ? "🔑 Llave recepción" : `📞 ${esc((w.acceso_texto || "").split("tel. ")[1] || "Contactar")}`}</div>${llegada}`;
+};
+// Anotar o cambiar el acceso de una OT ya abierta (lista de OT o check-in de un cliente con OT abierta)
+async function accesoOT(w, reload) {
+  const info = await get("/api/mantenimiento/acceso", { unit_id: w.unit_id });
+  if (info.situacion !== "alojado") return toast("El apartamento no tiene ningún cliente alojado ahora", true);
+  const vigente = w.acceso_estado?.estado === "vigente";
+  const f = form(`Acceso · ${otNum(w.id)} · ${w.unidad}`, [{ html: `<p class="peq">${esc(w.titulo)}</p>${vigente && w.acceso_texto ? `<p class="peq muted">Anotado: ${esc(w.acceso_texto)}</p>` : ""}${accesoHtml(info, "acc", vigente ? w : {})}`, wide: true }], {}, async () => {
+    await put(`/api/mantenimiento/ordenes/${w.id}/acceso`, leer());
+    toast("Acceso anotado"); reload && reload();
+  });
+  const leer = bindAccesoBloque(f);
+}
+// Check-in de un cliente con OT abiertas en su apartamento: se le pregunta en ese momento cómo se entra
+function accesoTrasCheckin(r, reload) {
+  if (!r.ot_acceso?.length) return;
+  const info = { huesped: r.huesped, telefono: r.huesped_telefono };
+  const f = form(`Órdenes de trabajo abiertas en ${r.unidad}`, [{ html: `<p>Pregunte al cliente cómo se puede entrar para hacerlas.</p>
+    ${r.ot_acceso.map((w) => `<div class="card rev"><b>${otNum(w.id)}</b> · ${esc(w.titulo)} ${badge(w.prioridad)}${accesoHtml(info, `acc${w.id}`)}</div>`).join("")}`, wide: true }], {}, async () => {
+    const datos = r.ot_acceso.map((w) => [w.id, lectores[w.id]()]);
+    for (const [id, d] of datos) await put(`/api/mantenimiento/ordenes/${id}/acceso`, d);
+    toast("Acceso anotado"); reload && reload();
+  }, "Guardar acceso");
+  const lectores = Object.fromEntries(r.ot_acceso.map((w) => [w.id, bindAccesoBloque(f, `acc${w.id}`)]));
 }
 // Bloque de fotos: en el móvil «Hacer foto» abre directamente la cámara trasera
 function fotosHtml(titulo, pdf = false) {
@@ -3452,7 +3506,7 @@ V.ordenes = async (el) => {
     const rows = await get("/api/mantenimiento/ordenes", { asset_id: S.asset, tipo: $("#tp", el).value, ...(e === "abiertas" ? { abiertas: true } : { estado: e }) });
     table($("#t", el), [
       { k: "id", t: "Nº", f: otNum }, { k: "fecha_apertura", t: "Apertura", f: fdate }, { k: "asset_id", t: "Activo", f: (v) => esc(assetName(v)) },
-      { k: "unidad", t: "Unidad", f: (v, w) => esc(v || w.zona_nombre || "Z. comunes") }, { k: "titulo", t: "Título", f: (v, w) => esc(v) + (w.acceso ? `<div class="peq" title="${esc(w.acceso_texto || "")}">${w.acceso === "llave" ? "🔑 Llave recepción" : `📞 ${esc((w.acceso_texto || "").split("tel. ")[1] || "Contactar")}`}</div>` : "") },
+      { k: "unidad", t: "Unidad", f: (v, w) => esc(v || w.zona_nombre || "Z. comunes") }, { k: "titulo", t: "Título", f: (v, w) => esc(v) + accesoBadge(w) },
       { k: "categoria", t: "Instalación" }, { k: "prioridad", t: "Prioridad", f: (v, w) => badge(v) + (w.plazo ? `<br><span class="${w.plazo.vencido ? "badge b-urgente" : "muted peq"}" title="Plazo de respuesta: urgente 4 h, alta 24 h">${w.plazo.vencido ? "⏰ fuera de plazo" : "plazo"} ${fdt(w.plazo.limite).slice(0, -3)}</span>` : "") }, { k: "abierta_por_nombre", t: "Abierta por" },
       { k: "asignado_a", t: "Asignado", f: (v, w) => esc(v || "") + (w.cae_vencida ? `<br><span class="badge b-urgente" title="Documentación CAE/PRL vencida: pídala antes de que trabaje">CAE vencida</span>` : "") }, { k: "envios", t: "Enviada", f: (v) => (v?.length ? `<span title="${esc(v.map((e) => `${fdt(e.fecha)} ${e.nombre} (${e.canal === "email" ? "correo" : "WhatsApp"})`).join("\n"))}">✉ ${esc([...new Set(v.map((e) => e.nombre))].join(", "))}</span>` : "") }, { k: "conf_mto_por_nombre", t: "Mantenimiento", f: (v, w) => check(v, w.conf_mto_fecha) },
       { k: "conf_limpieza_por_nombre", t: "Limpieza", f: (v, w) => (w.requiere_limpieza ? check(v, w.conf_limpieza_fecha) : '<span class="muted">no aplica</span>') },
@@ -3466,6 +3520,7 @@ V.ordenes = async (el) => {
       if (["cerrada", "cancelada"].includes(w.estado)) return comunes;
       const enTrabajo = !w.conf_mto_fecha;
       return [...comunes,
+        (canOpenOT() || can("reservas.editar")) && w.unit_id && ["falta", "caducado", "vigente"].includes(w.acceso_estado?.estado) && ["Acceso", () => accesoOT(w, load), w.acceso_estado.estado === "vigente" ? "" : "primary"],
         puedeAsignarOT() && enTrabajo && ["Asignar", () => asignarOT(w, load), w.alerta_tecnico === "escalar" ? "primary" : ""],
         puedeEnviarOT() && enTrabajo && ["Enviar", () => enviarAsignado(w, load)],
         puedeEnviarOT() && enTrabajo && w.asignacion && ["Enviar a otros", () => enviarOT(w, load)],
@@ -3627,7 +3682,7 @@ async function verOT(wid) {
   const w = await get(`/api/mantenimiento/ordenes/${wid}`);
   const f = form(`${otNum(w.id)} · ${w.titulo}`, [{ html: `<p>${badge(w.estado)} ${badge(w.prioridad)} · ${esc(assetName(w.asset_id))} · ${esc(w.unidad || w.zona_nombre || "Zonas comunes")}</p>
     <p class="peq">Apertura ${fdate(w.fecha_apertura)}${w.fecha_prevista ? ` · prevista ${fdate(w.fecha_prevista)}` : ""}${w.asignado_a || w.proveedor ? ` · ${esc(w.asignado_a || w.proveedor)}` : " · sin asignar"}</p>
-    <p style="white-space:pre-line">${esc(w.descripcion || "")}</p>
+    <p style="white-space:pre-line">${esc(w.descripcion || "")}</p>${accesoBadge(w)}
     <p>${puedeEnviarOT() ? '<button type="button" class="btn sm" data-a="asignar">Asignar</button> <button type="button" class="btn sm" data-a="enviar">Enviar</button> ' : ""}<button type="button" class="btn sm" data-a="docs">Fotos y documentos (${w.n_adjuntos})</button>
     <button type="button" class="btn sm" data-a="ir">Ver en órdenes de trabajo</button></p>` }], {}, async () => {}, "Cerrar");
   const acc = { asignar: () => asignarOT(w), enviar: () => enviarOT(w), docs: () => adjuntosOT(w), ir: () => { $("#modal").close(); go("ordenes"); } };

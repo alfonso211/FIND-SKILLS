@@ -13,13 +13,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import adjuntos, avisos, documentos, firma_contrato, parte_pdf, planos
+from .. import acceso_ot, adjuntos, avisos, documentos, firma_contrato, parte_pdf, planos
+from ..acceso_ot import texto as acceso_texto_ot
 from . import personal
 from ..config import settings
 from ..database import get_db
 from ..models import (RESULTADOS_TECNICO, Asset, EmailLog, PreventivePlan, Reservation, StaffMember, Supplier, Unit,
                       User, WorkOrder, WorkOrderAttachment, WorkOrderVisit)
-from ..schemas import PlanIn, PlanUpdate, WorkOrderIn, WorkOrderUpdate
+from ..schemas import AccesoIn, PlanIn, PlanUpdate, WorkOrderIn, WorkOrderUpdate
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
 
@@ -68,24 +69,12 @@ PLANTILLA_PREVENTIVO = [
 TIPOS_PREVENTIVOS = ("preventivo", "normativo")
 
 
-def alojado(db: Session, unit_id: int | None) -> Reservation | None:
-    """Reserva con el cliente dentro del apartamento (check-in hecho), si la hay."""
-    if not unit_id:
-        return None
-    return db.scalar(select(Reservation).where(Reservation.unit_id == unit_id, Reservation.estado == "checkin")
-                     .order_by(Reservation.fecha_entrada.desc()).limit(1))
+alojado = acceso_ot.alojado  # se importa desde otros módulos
 
 
-def acceso_texto(db: Session, w: WorkOrder) -> str | None:
-    """Cómo se entra en un apartamento con huésped: con la llave de recepción (autorizado) o contactando al cliente
-    (su teléfono sale solo de la ficha del cliente alojado)."""
-    if w.acceso == "llave":
-        return "Llave de recepción (el cliente autoriza el acceso)"
-    if w.acceso == "contactar":
-        r = alojado(db, w.unit_id)
-        tel = r.guest.telefono if r and r.guest else None
-        return f"Contactar con el cliente antes de entrar · tel. {tel or 'sin teléfono en su ficha: pedirlo a recepción'}"
-    return None
+def acceso_texto(db: Session, w: WorkOrder, interno: bool = False) -> str | None:
+    """Cómo se entra en un apartamento con huésped (ver app/acceso_ot.py)."""
+    return acceso_texto_ot(db, w, interno)
 
 
 def atendida(w: WorkOrder) -> None:
@@ -122,7 +111,8 @@ def _wo_out(w: WorkOrder, db: Session, n_adjuntos: int | None = None) -> dict:
     if w.conf_mto_fecha and not w.conf_mto_por and ultima:  # confirmado por el técnico desde su enlace
         d["conf_mto_por_nombre"] = f"{ultima.tecnico} (enlace)"
     d["alerta_nombre"] = RESULTADOS_TECNICO.get(w.alerta_tecnico)
-    d["acceso_texto"] = acceso_texto(db, w)
+    d["acceso_texto"] = acceso_texto(db, w, interno=True)
+    d["acceso_estado"] = acceso_ot.estado(db, w, ABIERTAS)
     from ..automatismos import SIN_RESPUESTA, limite
     lim = limite(w)  # plazo de respuesta por prioridad (urgente 4 h, alta 24 h)
     d["plazo"] = {"limite": lim.isoformat(timespec="minutes"), "vencido": w.estado in SIN_RESPUESTA and ultima is None
@@ -202,15 +192,14 @@ def _comprobar_cae(db: Session, w: WorkOrder) -> None:
 
 
 @router.get("/acceso")
-def unit_access(unit_id: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+def unit_access(unit_id: int, hasta: date | None = None, scope: Scope = Depends(get_scope),
+                db: Session = Depends(get_db)):
     """Al abrir una OT: si el apartamento tiene un cliente dentro, hay que indicar cómo se entra (llave de recepción
-    con su permiso, o contactar con él: se da su teléfono)."""
+    con su permiso, o contactar con él: se da su teléfono); si llega uno pronto, se avisa para hacerla antes."""
     u = get_or_404(db, Unit, unit_id)
     if not (scope.can_asset("mantenimiento.abrir", u.asset_id) or scope.can_asset("mantenimiento.ver", u.asset_id)):
         raise HTTPException(403, "Sin permiso en este activo")
-    r = alojado(db, u.id)
-    return {"alojado": r is not None, "telefono": r.guest.telefono if r and r.guest else None,
-            "salida": r.fecha_salida.isoformat() if r else None}
+    return acceso_ot.situacion(db, u.id, hasta)
 
 
 @router.post("/ordenes", status_code=201)
@@ -232,7 +221,7 @@ def create_order(data: WorkOrderIn, tareas: BackgroundTasks, scope: Scope = Depe
         unit = get_or_404(db, Unit, data.unit_id)
         if unit.asset_id != data.asset_id:
             bad_request("La unidad no pertenece al activo indicado")
-    valores = data.model_dump(exclude={"parte_estado_id"})
+    valores = data.model_dump(exclude={"parte_estado_id", "acceso", "acceso_autoriza", "acceso_medio"})
     # recepción (cierra OT) también asigna a personal propio o subcontrata; tipo y coste son de mantenimiento
     asigna = gestiona or scope.can_asset("mantenimiento.cerrar", data.asset_id)
     for campo in CAMPOS_GESTION:
@@ -241,6 +230,10 @@ def create_order(data: WorkOrderIn, tareas: BackgroundTasks, scope: Scope = Depe
     w = WorkOrder(**valores, abierta_por=scope.user.id)
     _asignar(db, w)
     _comprobar_cae(db, w)
+    try:
+        acceso_ot.registrar(db, w, data.acceso, data.acceso_autoriza, data.acceso_medio, scope.user)
+    except ValueError as e:
+        bad_request(str(e))
     db.add(w)
     parte = None
     if data.parte_estado_id:
@@ -319,6 +312,24 @@ def update_order(wid: int, data: WorkOrderUpdate, tareas: BackgroundTasks, scope
     db.commit()
     if "prioridad" in ch and w.prioridad == "urgente":
         tareas.add_task(avisos.ot_urgente, w.id, scope.user.id)
+    return _wo_out(w, db)
+
+
+@router.put("/ordenes/{wid}/acceso")
+def set_access(wid: int, data: AccesoIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Anota o cambia cómo se entra (también recepción, p. ej. al hacer el check-in de un cliente con OT abierta)."""
+    w = get_or_404(db, WorkOrder, wid)
+    if not any(scope.can_asset(p, w.asset_id) for p in ("mantenimiento.editar", "mantenimiento.abrir", "reservas.editar")):
+        raise HTTPException(403, "Sin permiso en este activo")
+    if w.estado not in ABIERTAS:
+        bad_request("La orden ya está cerrada")
+    try:
+        acceso_ot.registrar(db, w, data.acceso, data.autoriza, data.medio, scope.user)
+    except ValueError as e:
+        bad_request(str(e))
+    audit(db, scope.user, "acceso_ot", "orden_trabajo", wid,
+          {"acceso": w.acceso, "autoriza": w.acceso_autoriza, "medio": w.acceso_medio, "reserva": w.acceso_reserva_id})
+    db.commit()
     return _wo_out(w, db)
 
 

@@ -138,7 +138,8 @@ def test_ot_acceso_con_cliente_alojado(client, admin, ids):
         "asset_id": sfl, "unit_id": u["id"], "titulo": "Persiana del dormitorio atascada", "acceso": "contactar"}).json()
     assert "612345678" in w["acceso_texto"] and "Contactar" in w["acceso_texto"]
     w2 = client.post("/api/mantenimiento/ordenes", headers=admin, json={
-        "asset_id": sfl, "unit_id": u["id"], "titulo": "Bombilla fundida", "acceso": "llave"}).json()
+        "asset_id": sfl, "unit_id": u["id"], "titulo": "Bombilla fundida", "acceso": "llave",
+        "acceso_autoriza": "Cliente Acceso", "acceso_medio": "en_persona"}).json()
     assert "llave de recepción" in w2["acceso_texto"].lower()
     # el técnico lo ve en su enlace y en el parte
     from test_tecnico_ot import _api, _enlace

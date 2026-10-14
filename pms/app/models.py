@@ -488,6 +488,12 @@ class WorkOrder(Base):
     creada: Mapped[datetime | None] = mapped_column(DateTime, default=_now)  # fecha y hora de apertura (plazos)
     # acceso al apartamento con huésped: «llave» (el cliente autoriza usar la llave de recepción) | «contactar»
     acceso: Mapped[str | None] = mapped_column(String(12))
+    # quién autorizó entrar con la llave de recepción, cómo y quién lo anotó; vale para esa estancia (reserva)
+    acceso_autoriza: Mapped[str | None] = mapped_column(String(120))
+    acceso_medio: Mapped[str | None] = mapped_column(String(20))  # en_persona | telefono | whatsapp | correo
+    acceso_user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    acceso_fecha: Mapped[datetime | None] = mapped_column(DateTime)
+    acceso_reserva_id: Mapped[int | None] = mapped_column(ForeignKey("reservas.id"))
 
 
 AREAS_PERSONAL = {"mantenimiento": "Mantenimiento", "limpieza": "Limpieza", "conserjeria": "Conserjería",

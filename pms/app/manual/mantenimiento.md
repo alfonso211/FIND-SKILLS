@@ -19,7 +19,8 @@
 - **Averías que cierra gestión**: si una orden de trabajo de gestión deja el apartamento fuera de servicio, el PMS lo bloquea solo («Lo ha cerrado gestión…») y lo reabre cuando se cierra esa orden allí. No se puede desbloquear a mano desde el PMS.
 
 ## La orden en el móvil (enlace de la OT)
-- **🔑 Acceso**: si el apartamento tiene cliente, la orden indica si se entra con la llave de recepción (autorizado) o si hay que llamar antes al cliente (con su teléfono).
+- **🔑 Acceso**: si el apartamento tiene cliente, la orden indica si se entra con la llave de recepción (autorizado) o si hay que llamar antes al cliente (con su teléfono). Si pone «Apartamento con otro cliente: pedir a recepción cómo se entra», no entre hasta que recepción lo confirme.
+- **🧳 Llega un cliente el …**: el apartamento está libre pero llega un cliente pronto. Haga la orden antes de esa fecha.
 - Al enviarle una orden le llega por **WhatsApp** o **correo** un mensaje: «Tiene una nueva orden de trabajo OT-xxxxx en … Acceda aquí para gestionarla: enlace». Ábralo en el móvil: **no hace falta usuario ni contraseña**.
 - En esa pantalla:
   1. **Iniciar trabajo** al llegar (anota la hora de llegada).

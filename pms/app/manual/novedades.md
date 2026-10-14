@@ -1,5 +1,11 @@
 # Novedades
 
+## 2026-10-14 · Versión 1.55 · Acceso a apartamentos con cliente en las OT
+- **Llave de recepción**: se anota quién autoriza el acceso y cómo (en persona, teléfono, WhatsApp o correo), quién lo registra y cuándo. El técnico ve que hay permiso, sin los datos del cliente.
+- **El permiso vale para esa estancia**: si entra otro cliente con la OT abierta, se avisa para volver a pedirlo (botón **Acceso**).
+- **Check-in**: si el apartamento tiene OT abiertas, se pregunta al cliente cómo se entra en ese momento.
+- **Llegadas próximas**: al abrir una OT en un apartamento libre al que llega un cliente en 7 días, se avisa y se propone hacerla el día antes.
+
 ## 2026-10-14 · Versión 1.54 · Control del preventivo y de las inspecciones OCA
 - **Mantenimiento · Plan preventivo**: nuevo cuadro de control con totales y semáforo por plan (vencido, plazo de subsanación vencido, deficiencias, próximo, al día). Mantenimiento e inspecciones OCA juntos o por separado.
 - **Registrar revisión**: lista de comprobación por instalación, resultado (también los de la OCA), nº de acta o informe, próxima revisión del documento (se contrasta con la periodicidad del plan) y documentos de la empresa.
