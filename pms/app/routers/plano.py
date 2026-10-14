@@ -8,7 +8,7 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from .. import contrato_vivienda as cv
@@ -56,10 +56,14 @@ def estados(db: Session, units: list[Unit], dia: date) -> dict[int, dict]:
         Reservation.fecha_entrada <= dia, en_curso).order_by(Reservation.fecha_entrada)).all()
     por_unidad = {r.unit_id: (r, g) for r, g in res}
     # libres ese día pero con una reserva confirmada más adelante: la próxima llegada (cambio de color inmediato)
-    futuras = db.execute(select(Reservation, Contact).join(Contact, Contact.id == Reservation.guest_id).where(
+    # solo la primera de cada apartamento (no todas las reservas futuras del edificio)
+    primera = (select(Reservation.unit_id, func.min(Reservation.fecha_entrada).label("f")).where(
         Reservation.unit_id.in_(ids or [-1]), Reservation.estado == "confirmada", Reservation.fecha_entrada > dia)
-        .order_by(Reservation.fecha_entrada.desc())).all()
-    proxima = {r.unit_id: (r, g) for r, g in futuras}  # al ir de la más lejana a la más cercana, queda la próxima
+        .group_by(Reservation.unit_id).subquery())
+    futuras = db.execute(select(Reservation, Contact).join(Contact, Contact.id == Reservation.guest_id).join(
+        primera, and_(primera.c.unit_id == Reservation.unit_id, primera.c.f == Reservation.fecha_entrada)).where(
+        Reservation.estado == "confirmada").order_by(Reservation.id.desc())).all()
+    proxima = {r.unit_id: (r, g) for r, g in futuras}
     # plazas de garaje alquiladas por meses a clientes externos
     alq = {x.unit_id: (x, t) for x, t in db.execute(
         select(Lease, Contact).join(Contact, Contact.id == Lease.tenant_id).where(

@@ -258,8 +258,8 @@ class Reservation(Base):
     __tablename__ = "reservas"
     id: Mapped[int] = mapped_column(primary_key=True)
     unit_id: Mapped[int] = mapped_column(ForeignKey("unidades.id"), index=True)
-    guest_id: Mapped[int] = mapped_column(ForeignKey("terceros.id"))
-    localizador: Mapped[str | None] = mapped_column(String(60))
+    guest_id: Mapped[int] = mapped_column(ForeignKey("terceros.id"), index=True)
+    localizador: Mapped[str | None] = mapped_column(String(60), index=True)
     canal: Mapped[str] = mapped_column(String(30), default="directo")
     fecha_entrada: Mapped[date] = mapped_column(Date, index=True)
     fecha_salida: Mapped[date] = mapped_column(Date, index=True)
@@ -267,7 +267,7 @@ class Reservation(Base):
     ninos: Mapped[int] = mapped_column(Integer, default=0)
     importe_total: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
     importe_pagado: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
-    estado: Mapped[str] = mapped_column(String(20), default="confirmada")  # confirmada | checkin | checkout | cancelada | no_show
+    estado: Mapped[str] = mapped_column(String(20), default="confirmada", index=True)  # confirmada | checkin | checkout | cancelada | no_show
     notas: Mapped[str | None] = mapped_column(Text)
     # Datos del contrato de alojamiento tecleados en la reserva (se imprimen cuando llega el cliente)
     datos_contrato: Mapped[dict | None] = mapped_column(JSON)
@@ -444,14 +444,14 @@ class WorkOrder(Base):
     __tablename__ = "ordenes_trabajo"
     id: Mapped[int] = mapped_column(primary_key=True)
     asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
-    unit_id: Mapped[int | None] = mapped_column(ForeignKey("unidades.id"))
-    plan_id: Mapped[int | None] = mapped_column(ForeignKey("planes_preventivos.id"))
+    unit_id: Mapped[int | None] = mapped_column(ForeignKey("unidades.id"), index=True)
+    plan_id: Mapped[int | None] = mapped_column(ForeignKey("planes_preventivos.id"), index=True)
     # zona común del plano (p.ej. P4-A-PISCINA) cuando la incidencia no es de un apartamento
     zona: Mapped[str | None] = mapped_column(String(40), index=True)
     tipo: Mapped[str] = mapped_column(String(20), default="correctivo")  # correctivo | preventivo | mejora | normativo
     categoria: Mapped[str] = mapped_column(String(40), default="general")
     prioridad: Mapped[str] = mapped_column(String(20), default="media")  # baja | media | alta | urgente
-    estado: Mapped[str] = mapped_column(String(30), default="abierta")
+    estado: Mapped[str] = mapped_column(String(30), default="abierta", index=True)
     titulo: Mapped[str] = mapped_column(String(200))
     descripcion: Mapped[str | None] = mapped_column(Text)
     asignado_a: Mapped[str | None] = mapped_column(String(120))

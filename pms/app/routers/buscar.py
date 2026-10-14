@@ -5,7 +5,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import and_, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from .. import nif
 from ..database import get_db
@@ -117,7 +117,8 @@ def buscar(q: str, scope: Scope = Depends(get_scope), db: Session = Depends(get_
         if unidades:
             cond.append(and_(Reservation.unit_id.in_([u.id for u in unidades]), Reservation.fecha_salida >= hoy))
         stmt = scoped(select(Reservation).join(Unit), Unit.asset_id, ids_res).where(or_(*cond))
-        filas = list(db.scalars(stmt.order_by(Reservation.fecha_entrada.desc()).limit(200)))
+        filas = list(db.scalars(stmt.options(selectinload(Reservation.unit), selectinload(Reservation.guest))
+                                .order_by(Reservation.fecha_entrada.desc()).limit(200)))
         # primero las vigentes y próximas, después el histórico
         filas.sort(key=lambda r: (not (r.estado in ("confirmada", "checkin") and r.fecha_salida >= hoy), -r.fecha_entrada.toordinal()))
         out["reservas"] = [_res_out(r) for r in filas[:LIMITE]]

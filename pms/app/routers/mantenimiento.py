@@ -87,23 +87,69 @@ def requiere_limpieza(w: WorkOrder) -> bool:
     return not (w.unit_id is None and w.tipo in TIPOS_PREVENTIVOS)
 
 
-def _wo_out(w: WorkOrder, db: Session, n_adjuntos: int | None = None) -> dict:
+class _Lote:
+    """Lo que necesita cada fila de la lista de OT, cargado de golpe para todas (unas 10 consultas en total en vez de
+    una docena por orden)."""
+
+    def __init__(self, db: Session, filas: list[WorkOrder]):
+        ids = [w.id for w in filas] or [-1]
+        self.n_adjuntos = dict(db.execute(select(WorkOrderAttachment.work_order_id, func.count()).where(
+            WorkOrderAttachment.work_order_id.in_(ids)).group_by(WorkOrderAttachment.work_order_id)).all())
+        uids = {getattr(w, c) for w in filas for c in ("abierta_por", "conf_mto_por", "conf_limpieza_por",
+                                                       "cerrada_por", "acceso_user_id")} - {None}
+        self.usuarios = dict(db.execute(select(User.id, User.nombre).where(User.id.in_(uids or {-1}))).all())
+        self.unidades = dict(db.execute(select(Unit.id, Unit.codigo).where(
+            Unit.id.in_({w.unit_id for w in filas if w.unit_id} or {-1}))).all())
+        self.activos = dict(db.execute(select(Asset.id, Asset.codigo).where(
+            Asset.id.in_({w.asset_id for w in filas} or {-1}))).all())
+        self.personal = {x.id: x for x in db.scalars(select(StaffMember).where(
+            StaffMember.id.in_({w.personal_id for w in filas if w.personal_id} or {-1})))}
+        self.proveedores = {x.id: x for x in db.scalars(select(Supplier).where(
+            Supplier.id.in_({w.proveedor_id for w in filas if w.proveedor_id} or {-1})))}
+        nombres = {w.proveedor.strip().lower() for w in filas if w.proveedor and not w.proveedor_id}
+        self.por_nombre = {x.nombre.lower(): x for x in db.scalars(select(Supplier).where(
+            func.lower(Supplier.nombre).in_(nombres or {"-"})))}
+        self.visitas: dict[int, WorkOrderVisit] = {}
+        for v in db.scalars(select(WorkOrderVisit).where(WorkOrderVisit.work_order_id.in_(ids),
+                                                         WorkOrderVisit.enviado.is_not(None))
+                            .order_by(WorkOrderVisit.enviado.desc())):
+            self.visitas.setdefault(v.work_order_id, v)
+        abiertas = [w for w in filas if w.unit_id and w.estado in ABIERTAS]
+        self.acceso = acceso_ot.Contexto(db, {w.unit_id for w in abiertas},
+                                         max((w.fecha_prevista for w in abiertas if w.fecha_prevista), default=None))
+
+    def subcontrata(self, w: WorkOrder) -> Supplier | None:
+        s = self.proveedores.get(w.proveedor_id) if w.proveedor_id else None
+        return s or (self.por_nombre.get(w.proveedor.strip().lower()) if w.proveedor else None)
+
+
+def _wo_out(w: WorkOrder, db: Session, n_adjuntos: int | None = None, lote: _Lote | None = None) -> dict:
     d = w.to_dict()
+    if lote:
+        n_adjuntos = lote.n_adjuntos.get(w.id, 0)
     d["n_adjuntos"] = n_adjuntos if n_adjuntos is not None else db.scalar(
         select(func.count()).select_from(WorkOrderAttachment).where(WorkOrderAttachment.work_order_id == w.id))
     d["requiere_limpieza"] = requiere_limpieza(w)
-    quien = (db.get(StaffMember, w.personal_id) if w.asignacion == "propio" and w.personal_id
-             else _subcontrata(db, w) if w.asignacion == "subcontrata" else None)
+    if w.asignacion == "propio" and w.personal_id:
+        quien = lote.personal.get(w.personal_id) if lote else db.get(StaffMember, w.personal_id)
+    elif w.asignacion == "subcontrata":
+        quien = lote.subcontrata(w) if lote else _subcontrata(db, w)
+    else:
+        quien = None
     d["contacto"] = {"nombre": quien.nombre, "email": quien.email,
                      "whatsapp": bool(firma_contrato.movil_whatsapp(quien.telefono or ""))} if quien else None
-    d["unidad"] = db.get(Unit, w.unit_id).codigo if w.unit_id else None
-    d["zona_nombre"] = planos.zonas(db.get(Asset, w.asset_id).codigo).get(w.zona, w.zona) if w.zona else None
+    d["unidad"] = (lote.unidades.get(w.unit_id) if lote else db.get(Unit, w.unit_id).codigo) if w.unit_id else None
+    if w.zona:
+        codigo = lote.activos.get(w.asset_id) if lote else db.get(Asset, w.asset_id).codigo
+        d["zona_nombre"] = planos.zonas(codigo).get(w.zona, w.zona)
+    else:
+        d["zona_nombre"] = None
     for campo in ("abierta_por", "conf_mto_por", "conf_limpieza_por", "cerrada_por"):
         uid = getattr(w, campo)
-        d[campo + "_nombre"] = db.get(User, uid).nombre if uid else None
-    ultima = db.scalar(select(WorkOrderVisit).where(WorkOrderVisit.work_order_id == w.id,
-                                                    WorkOrderVisit.enviado.is_not(None))
-                       .order_by(WorkOrderVisit.enviado.desc()).limit(1))
+        d[campo + "_nombre"] = (lote.usuarios.get(uid) if lote else db.get(User, uid).nombre) if uid else None
+    ultima = lote.visitas.get(w.id) if lote else db.scalar(
+        select(WorkOrderVisit).where(WorkOrderVisit.work_order_id == w.id, WorkOrderVisit.enviado.is_not(None))
+        .order_by(WorkOrderVisit.enviado.desc()).limit(1))
     d["tecnico"] = {"nombre": ultima.tecnico, "empresa": ultima.empresa, "resultado": ultima.resultado,
                     "resultado_nombre": RESULTADOS_TECNICO.get(ultima.resultado), "enviado": ultima.enviado.isoformat(),
                     "fecha_propuesta": ultima.fecha_propuesta.isoformat() if ultima.fecha_propuesta else None} \
@@ -111,8 +157,9 @@ def _wo_out(w: WorkOrder, db: Session, n_adjuntos: int | None = None) -> dict:
     if w.conf_mto_fecha and not w.conf_mto_por and ultima:  # confirmado por el técnico desde su enlace
         d["conf_mto_por_nombre"] = f"{ultima.tecnico} (enlace)"
     d["alerta_nombre"] = RESULTADOS_TECNICO.get(w.alerta_tecnico)
-    d["acceso_texto"] = acceso_texto(db, w, interno=True)
-    d["acceso_estado"] = acceso_ot.estado(db, w, ABIERTAS)
+    ctx = lote.acceso if lote else None
+    d["acceso_texto"] = acceso_texto_ot(db, w, True, ctx, lote.usuarios if lote else None)
+    d["acceso_estado"] = acceso_ot.estado(db, w, ABIERTAS, ctx)
     from ..automatismos import SIN_RESPUESTA, limite
     lim = limite(w)  # plazo de respuesta por prioridad (urgente 4 h, alta 24 h)
     d["plazo"] = {"limite": lim.isoformat(timespec="minutes"), "vencido": w.estado in SIN_RESPUESTA and ultima is None
@@ -145,10 +192,8 @@ def list_orders(asset_id: int | None = None, estado: str | None = None, abiertas
         stmt = stmt.where(WorkOrder.tipo == tipo)
     stmt = stmt.order_by(WorkOrder.fecha_apertura.desc(), WorkOrder.id.desc())
     filas = list(db.scalars(stmt.limit(2000)))
-    n = dict(db.execute(select(WorkOrderAttachment.work_order_id, func.count()).where(
-        WorkOrderAttachment.work_order_id.in_([w.id for w in filas] or [-1]))
-        .group_by(WorkOrderAttachment.work_order_id)).all())
-    return [_wo_out(w, db, n.get(w.id, 0)) for w in filas]
+    lote = _Lote(db, filas)
+    return [_wo_out(w, db, lote=lote) for w in filas]
 
 
 def _subcontrata(db: Session, w: WorkOrder) -> Supplier | None:
