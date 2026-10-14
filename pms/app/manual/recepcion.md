@@ -108,6 +108,10 @@
 
 ## Averías e incidencias
 - **Apartamento con cliente alojado**: al abrir la OT hay que marcar cómo se entra: **el cliente autoriza la llave de recepción** o **contactar con el cliente** (su teléfono sale solo). El técnico lo ve en el mensaje, en su enlace y en el parte (🔑 Acceso).
+- **Con la llave hay que anotar quién lo autoriza** (sale el nombre del cliente; cámbielo si es otra persona) y **cómo**: en persona, por teléfono, por WhatsApp o por correo. Queda registrado quién lo anotó y cuándo. El técnico solo ve que hay permiso, no los datos del cliente.
+- **El permiso vale para esa estancia**: si el cliente se va y entra otro con la OT abierta, en la lista de OT sale **⚠ Acceso anotado para otro cliente** y el botón **Acceso** para volver a pedirlo.
+- **Check-in con OT abierta** en el apartamento: al hacer el check-in sale una ventana para preguntar al cliente cómo se entra en cada OT. También se puede anotar después con el botón **Acceso** de la OT.
+- **Llega un cliente pronto** (7 días): al abrir la OT se avisa (🧳) y se propone como fecha prevista el día anterior a su llegada. En la lista de OT se ve «Llega un cliente el …».
 - **Órdenes de trabajo → Nueva OT** (o desde el plano): describa la avería y **adjunte fotos**. Si es urgente, márquelo: mantenimiento recibe un correo al momento.
 - **Partes de estado** (Mantenimiento → Partes de estado): mantenimiento y limpieza ya no abren OT; registran un parte y le llega un **correo al momento**. El parte sale en el **Panel de control** hasta que se resuelve.
   - **Generar OT**: abre la orden con todo relleno (título, gremio, prioridad propuesta, descripción y fotos del parte). Asígnela y envíela a quien corresponda.

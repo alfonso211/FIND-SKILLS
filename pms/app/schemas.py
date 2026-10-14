@@ -560,6 +560,8 @@ class WorkOrderIn(BaseModel):
     fecha_prevista: date | None = None
     parte_estado_id: int | None = None  # OT generada por recepción a partir de un parte de estado
     acceso: Literal["llave", "contactar"] | None = None  # apartamento con huésped: llave de recepción o contactar
+    acceso_autoriza: str | None = Field(default=None, max_length=120)  # con la llave: quién lo autoriza
+    acceso_medio: Literal["en_persona", "telefono", "whatsapp", "correo"] | None = None  # y cómo
 
 
 class WorkOrderUpdate(BaseModel):
@@ -578,7 +580,13 @@ class WorkOrderUpdate(BaseModel):
     coste_real: float | None = None
     fecha_prevista: date | None = None
     solucion: str | None = None
-    acceso: Literal["llave", "contactar"] | None = None  # apartamento con huésped: llave de recepción o contactar
+
+
+class AccesoIn(BaseModel):
+    """Cómo se entra en el apartamento con cliente: llave de recepción (autorizada: quién y cómo) o contactar."""
+    acceso: Literal["llave", "contactar"]
+    autoriza: str | None = Field(default=None, max_length=120)
+    medio: Literal["en_persona", "telefono", "whatsapp", "correo"] | None = None
 
 
 class PlanIn(BaseModel):

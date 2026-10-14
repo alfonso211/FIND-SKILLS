@@ -441,7 +441,14 @@ def checkin(rid: int, scope: Scope = Depends(get_scope), db: Session = Depends(g
     r.unit.estado = "ocupada"
     audit(db, scope.user, "checkin", "reserva", rid)
     db.commit()
-    return _res_out(r)
+    from .. import acceso_ot
+    from .mantenimiento import ABIERTAS
+    # OT abiertas del apartamento: hay que preguntar al cliente cómo se entra (su autorización vale para esta estancia)
+    pendientes = [{"id": w.id, "titulo": w.titulo, "prioridad": w.prioridad, "estado_acceso": e["estado"]}
+                  for w in db.scalars(select(WorkOrder).where(WorkOrder.unit_id == r.unit_id,
+                                                              WorkOrder.estado.in_(ABIERTAS)).order_by(WorkOrder.id))
+                  if (e := acceso_ot.estado(db, w, ABIERTAS)) and e["estado"] in ("falta", "caducado")]
+    return {**_res_out(r), "ot_acceso": pendientes, "huesped_telefono": r.guest.telefono if r.guest else None}
 
 
 def saldo(db: Session, r: Reservation) -> dict:

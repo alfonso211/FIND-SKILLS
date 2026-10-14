@@ -776,3 +776,10 @@ details > summary { cursor: pointer; padding: 6px 0; }
 .card.rev { margin-bottom: 10px; padding: 12px; }
 .def-row input[data-d="descripcion"] { flex: 1; }
 .assign-row.def-row { grid-template-columns: 1fr 140px auto; }
+/* acceso a apartamentos con cliente (OT) */
+.aviso-llegada { background: #fff7e6; border-left: 4px solid var(--warn); padding: 8px 12px; border-radius: 8px; margin: 4px 0; }
+.aviso-llegada-txt { color: var(--warn); }
+.acc-llave { margin: 4px 0 8px 26px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+@media (max-width: 600px) { .grid2 { grid-template-columns: 1fr; } }
+.grid2[hidden] { display: none; }
