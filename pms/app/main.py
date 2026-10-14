@@ -14,7 +14,7 @@ from .migraciones import migrar
 from .routers import (admin, agenda, alquiler, auth, buscar, documentos, estructura, expedientes, exportacion, facturas,
                       garajes, gastos, historico, informes, mantenimiento, manual, panel, personal, plano, presidencia,
                       proveedores, turistico)
-from .routers import (ausencias, capex, cobros_alquiler, colaborador, documentacion_legal, limpieza, partes_estado,
+from .routers import (ausencias, capex, capex_obra, cobros_alquiler, colaborador, documentacion_legal, limpieza, partes_estado,
                       caja, dotacion, jornada, partes_trabajo, pedidos, preventivo, revision, tecnico)
 from .seed import seed
 
@@ -41,7 +41,7 @@ app = FastAPI(title="INVERPMS", version="0.1.0", lifespan=lifespan)
 for r in (auth, estructura, alquiler, garajes, gastos, turistico, plano, facturas, mantenimiento, personal, proveedores,
           informes, admin, panel, documentos, buscar, agenda, expedientes, historico, exportacion, manual, presidencia,
           limpieza, pedidos, partes_trabajo, ausencias, colaborador, documentacion_legal,
-          cobros_alquiler, partes_estado, tecnico, jornada, capex, dotacion, revision, caja, preventivo):
+          cobros_alquiler, partes_estado, tecnico, jornada, capex, capex_obra, dotacion, revision, caja, preventivo):
     app.include_router(r.router)
 app.include_router(gestion.router)
 app.include_router(colaborador.revision)
@@ -51,6 +51,7 @@ app.include_router(mantenimiento.publico)
 app.include_router(tecnico.publico)
 app.include_router(jornada.publico)
 app.include_router(capex.publico)
+app.include_router(capex_obra.publico)
 app.include_router(turistico.publico)
 app.include_router(pedidos.publico)
 app.include_router(revision.publico)

@@ -1242,11 +1242,13 @@ class TimeEntry(Base):
 ESTADOS_CAPEX = {
     "definicion": "En definición", "licitacion": "En licitación", "adjudicacion": "Comparativo y adjudicación",
     "pendiente_aprobacion": "Pendiente de aprobación (Dirección General)", "adjudicado": "Adjudicado",
-    "cancelado": "Cancelado",
+    "en_ejecucion": "En ejecución", "cancelado": "Cancelado",
 }
 ETIQUETAS_DOC_CAPEX = {
     "plano": "Plano (PDF / CAD)", "foto_previa": "Fotografía del estado previo", "pliego": "Pliego de condiciones",
     "memoria": "Memoria / informe técnico", "licencia": "Licencia / declaración responsable", "otro": "Otro",
+    # fase 2 (obra): no van a licitación
+    "prl": "Documentación PRL del contratista", "contrato": "Contrato firmado", "acta": "Acta de obra",
 }
 
 
@@ -1265,6 +1267,10 @@ class CapexProject(Base):
     presupuesto_objetivo: Mapped[float | None] = mapped_column(Numeric(12, 2))
     fecha_inicio: Mapped[date | None] = mapped_column(Date)
     fecha_fin: Mapped[date | None] = mapped_column(Date)
+    # fase 2: acta de replanteo (inicio de obra). Exige contrato firmado y la documentación PRL de cada contrata
+    replanteo_fecha: Mapped[date | None] = mapped_column(Date)
+    replanteo_doc_id: Mapped[int | None] = mapped_column(Integer)  # capex_documentos.id (sin FK: referencia circular)
+    replanteo_nota: Mapped[str | None] = mapped_column(String(500))
     gg_pct: Mapped[float] = mapped_column(Numeric(5, 2), default=13)  # gastos generales
     bi_pct: Mapped[float] = mapped_column(Numeric(5, 2), default=6)  # beneficio industrial
     iva_pct: Mapped[float] = mapped_column(Numeric(5, 2), default=21)
@@ -1404,6 +1410,44 @@ class CapexAward(Base):
     nota: Mapped[str | None] = mapped_column(String(500))
     creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
     creado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    # fase 2 (obra): condiciones del contrato y enlace del contratista para subir su documentación PRL
+    retencion_pct: Mapped[float] = mapped_column(Numeric(5, 2), default=5, server_default="5")
+    garantia_meses: Mapped[int] = mapped_column(Integer, default=12, server_default="12")
+    plazo_dias: Mapped[int | None] = mapped_column(Integer)  # días naturales desde el acta de replanteo
+    contrato_firmado: Mapped[date | None] = mapped_column(Date)
+    contrato_doc_id: Mapped[int | None] = mapped_column(ForeignKey("capex_documentos.id"))
+    clave: Mapped[str | None] = mapped_column(String(64))  # enlace de obra (None = aún no enviado)
+    enlace_enviado: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+TIPOS_PRL_CAPEX = {  # documentación PRL que cada contrata aporta antes del acta de replanteo: (nombre, caduca)
+    "rc": ("Seguro de responsabilidad civil y justificante de pago", True),
+    "hacienda": ("Certificado de estar al corriente con Hacienda", True),
+    "seg_social": ("Certificado de estar al corriente con la Seguridad Social", True),
+    "rnt": ("Alta de los trabajadores en la Seguridad Social (RNT / TC2)", True),
+    "formacion": ("Formación PRL de los trabajadores (art. 19 Ley 31/1995)", False),
+    "rea": ("Inscripción en el REA (Registro de Empresas Acreditadas, Ley 32/2006)", True),
+    "plan_ss": ("Evaluación de riesgos / Plan de Seguridad y Salud (RD 1627/1997)", False),
+    "recurso_preventivo": ("Designación del recurso preventivo", False),
+}
+
+
+class CapexPrl(Base):
+    """Documento PRL de una contrata adjudicataria. estado: falta | por_revisar (subido por el contratista) | valido |
+    rechazado | no_aplica. Válido y con fecha de caducidad pasada cuenta como vencido."""
+    __tablename__ = "capex_prl"
+    __table_args__ = (UniqueConstraint("award_id", "tipo", name="uq_capex_prl_tipo"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    award_id: Mapped[int] = mapped_column(ForeignKey("capex_adjudicaciones.id"), index=True)
+    tipo: Mapped[str] = mapped_column(String(24))
+    estado: Mapped[str] = mapped_column(String(12), default="falta")
+    document_id: Mapped[int | None] = mapped_column(ForeignKey("capex_documentos.id"))
+    vence: Mapped[date | None] = mapped_column(Date)
+    nota: Mapped[str | None] = mapped_column(String(300))
+    subido_en: Mapped[datetime | None] = mapped_column(DateTime)
+    subido_por: Mapped[str | None] = mapped_column(String(12))  # contratista | pms
+    revisado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    revisado_en: Mapped[datetime | None] = mapped_column(DateTime)
 
 
 class CapexApproval(Base):

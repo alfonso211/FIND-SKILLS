@@ -165,6 +165,13 @@
 - **Comparativo y adjudicación**: mapa de calor por partida y capítulo (azul = baja anormal, rojo = exceso; ★ = mejor oferta completa) y **PDF del comparativo**. Se adjudica todo a un contratista o cada capítulo a uno distinto.
 - **Aprobación**: por encima de 30.000 € sin IVA, la adjudicación va por correo a la **Dirección General** con el comparativo y los botones **Aprobar** y **Rechazar**. La obra queda bloqueada hasta su decisión. Si la rechaza, el proyecto vuelve al comparativo.
 - **Plantillas CAPEX tipo** y **Base de precios (BC3)**: se gestionan en sus pantallas. La forma más rápida de crear una plantilla es abrir un proyecto y pulsar **Guardar como plantilla**.
+- **Obra** (proyectos adjudicados): antes de empezar, cada contrata aporta su documentación PRL y firma el contrato.
+  - **Semáforo PRL**: verde válido, amarillo por revisar o caduca en 30 días, rojo falta, rechazado o vencido, gris no aplica.
+  - **Enviar enlace al contratista**: le llega por correo (o WhatsApp) un enlace donde ve lo que falta y sube cada documento con su fecha de caducidad. Lo que sube queda **por revisar**: **Validar** (con su fecha de caducidad) o **Rechazar** (con el motivo, que el contratista ve).
+  - La Dirección Técnica también puede **Subir** un documento (queda validado) o marcarlo **No aplica** explicando por qué.
+  - **Condiciones**: retención de garantía (5 % por defecto), meses para devolverla tras la recepción (12) y plazo de ejecución (el ofertado). La retención se fija antes del replanteo.
+  - **Contrato**: **Borrador Word** con los datos de la adjudicación; revíselo, fírmelo y súbalo con **Subir firmado**.
+  - **Acta de replanteo**: el botón solo se activa con el contrato firmado y toda la documentación en regla; si falta algo, se indica qué. Al registrarla, el proyecto pasa a **En ejecución**.
 
 ## Pasarela con INVERGESTION (gestión)
 - **Administración → Pasarela con gestión**: estado de la conexión, avisos enviados a gestión (reservas, salidas, incidencias y liquidaciones) y los que no han llegado. Si gestión no responde, el PMS reintenta solo (1 min, 5 min, 30 min, 2 h y después cada 2 h) y avisa por correo; no se pierde nada. **Reintentar ahora** adelanta el reintento.

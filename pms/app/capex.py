@@ -31,6 +31,10 @@ def r2(x) -> float:
     return round(float(x or 0) + 0.0, 2)
 
 
+def eur(v) -> str:
+    return "—" if v is None else f"{v:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 def partidas(db: Session, pid: int) -> list[CapexItem]:
     return list(db.scalars(select(CapexItem).where(CapexItem.project_id == pid)
                            .order_by(CapexItem.capitulo, CapexItem.orden, CapexItem.id)))
