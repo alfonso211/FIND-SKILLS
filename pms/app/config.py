@@ -28,6 +28,9 @@ class Settings:
     # Copias de documentos de identidad (cifradas). Sin PMS_DOCS_KEY se deriva de PMS_SECRET_KEY.
     docs_dir: Path = Path(os.environ.get("PMS_DOCS_DIR", str(BASE_DIR / "documentos")))
     docs_key: str | None = os.environ.get("PMS_DOCS_KEY") or None
+    # Solo mientras se cambia PMS_DOCS_KEY: la clave anterior, para leer lo que aún no se ha vuelto a cifrar
+    # (python -m app.rotar_documentos). Al terminar se quita.
+    docs_key_anterior: str | None = os.environ.get("PMS_DOCS_KEY_ANTERIOR") or None
     # Avisos por correo. Sin PMS_SMTP_HOST no se envía nada ("memoria" = solo pruebas automáticas).
     smtp_host: str | None = os.environ.get("PMS_SMTP_HOST") or None
     smtp_port: int = int(os.environ.get("PMS_SMTP_PORT") or "587")

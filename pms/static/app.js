@@ -3122,7 +3122,7 @@ function exportarInvergestion() {
     const q = v(); if (!q.tipos) return toast("Elija emitidas, recibidas o ambas", true);
     const r = await run(() => get("/api/exportacion/invergestion/comprobar", { desde: q.desde, hasta: q.hasta, activo: q.activo, tipos: q.tipos }));
     const paquete = r.paquete; delete r.paquete;
-    $("[data-res]", f).innerHTML = `<p>Paquete: <b>${esc(paquete || "")}</b></p>` + Object.entries(r).map(([t, x]) => `<fieldset><legend>${{ emitidas: "Facturas emitidas", recibidas: "Facturas recibidas", fianzas: "Devoluciones de fianza" }[t]} · ${esc(x.csv)}</legend>
+    $("[data-res]", f).innerHTML = `<p>Paquete: <b>${esc(paquete || "")}</b></p>` + Object.entries(r).map(([t, x]) => `<fieldset><legend>${{ emitidas: "Facturas emitidas", recibidas: "Facturas recibidas", fianzas: "Devoluciones de fianza" }[t]} · ${esc(t === "fianzas" && x.ficheros_csv && Object.keys(x.ficheros_csv).length ? Object.entries(x.ficheros_csv).map(([n, c]) => `${n} (${c})`).join(" + ") : x.csv)}</legend>
       <p>${t === "fianzas" ? `<b>${x.devoluciones}</b> devolución(es) · devuelto ${eur(x.total)}${x.devoluciones ? "" : " (sin fianzas: no va el CSV)"}` : `<b>${x.facturas}</b> factura(s) · ${x.filas} fila(s) · ${x.ficheros} PDF · total ${eur(x.total)}`}</p>
       ${(x.bloquea || []).length ? `<p class="error"><b>No se generará el paquete:</b> falta el PDF de ${x.bloquea.length} factura(s). Vuelva a subir esos documentos.</p>` : ""}
       ${x.n_avisos ? `<p class="error">${x.n_avisos} aviso(s): INVERGESTION rechazaría esas filas hasta corregirlas.</p><ul class="muted">${x.avisos.map((a) => `<li>${esc(a)}</li>`).join("")}</ul>` : '<p class="ok">✔ Sin avisos: cumple la especificación.</p>'}</fieldset>`).join("");

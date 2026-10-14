@@ -359,6 +359,24 @@ def prefijo_fianzas() -> str:
     return "CONTROL_FIANZAS" if settings.fianzas_origen == "avisos" else "FIANZAS"
 
 
+def _por_aviso(d, desde: date, hasta: date) -> tuple[bool, bool]:
+    """(la fila la contabiliza gestión desde los avisos, la transferencia hecha cae después del corte).
+    Con fecha de corte, cada devolución va al CSV que toca según su fecha: lo anterior al corte se contabiliza con el
+    CSV (FIANZAS_*) y lo demás con los avisos (CONTROL_FIANZAS_*, solo control). Así, una exportación que abarque el
+    corte no deja nada sin contabilizar ni lo cuenta dos veces."""
+    from .libro_fianzas import corte
+    if settings.fianzas_origen != "avisos":
+        return False, False
+    k = corte()
+    if k is None:
+        return True, False
+    creada = d.creada.date()
+    transferida_tras_corte = bool(d.forma == "transferencia" and d.devuelta_fecha and d.devuelta_fecha >= k)
+    if desde <= creada <= hasta:
+        return creada >= k, creada < k and transferida_tras_corte
+    return bool(d.devuelta_fecha and d.devuelta_fecha >= k), False  # solo entra por la transferencia hecha
+
+
 def fianzas(db: Session, asset_ids: set[int], desde: date, hasta: date) -> tuple[list[dict], list, list[str]]:
     """(filas, [], avisos). Las devoluciones registradas o hechas en el periodo."""
     ini, fin = datetime.combine(desde, time.min), datetime.combine(hasta, time.max)
@@ -380,9 +398,19 @@ def fianzas(db: Session, asset_ids: set[int], desde: date, hasta: date) -> tuple
             "forma_devolucion": FORMAS_FIANZA.get(d.forma, d.forma.upper()), "iban": d.iban or "",
             "fecha_devolucion": fecha(d.devuelta_fecha or d.fecha),
             "estado": "DEVUELTA" if d.estado == "devuelta" else "PENDIENTE"})
+        aviso, parcial = _por_aviso(d, desde, hasta)
+        filas[-1]["_aviso"] = aviso
+        if parcial:  # devuelta antes del corte y transferida después: el CSV solo lleva la parte anterior
+            filas[-1].update({"estado": "PENDIENTE", "fecha_devolucion": fecha(d.fecha)})
         if d.estado != "devuelta":
             avisos.append(f"Fianza de {u.codigo} ({r.localizador or r.id}): transferencia pendiente de hacer")
     return filas, [], avisos
+
+
+def fianzas_por_csv(filas: list[dict]) -> dict[str, list[dict]]:
+    """{"FIANZAS": filas que contabiliza gestión con el CSV, "CONTROL_FIANZAS": las de los avisos} (sin vacíos)."""
+    out = {"FIANZAS": [f for f in filas if not f.get("_aviso")], "CONTROL_FIANZAS": [f for f in filas if f.get("_aviso")]}
+    return {k: v for k, v in out.items() if v}
 
 
 def marcar_fianzas(db: Session, filas: list[dict]) -> None:
@@ -413,10 +441,9 @@ def paquete(db: Session, datos: dict, activo: str, desde: date, hasta: date, pdf
     errores: list[str] = []
     csvs: dict[str, tuple[bytes, int]] = {}
     for tipo, (cod, filas, adjuntos, _) in datos.items():
-        if tipo == "fianzas":  # solo si hay devoluciones en el periodo
-            if filas:
-                csvs[nombre_fichero(prefijo_fianzas(), cod, desde, hasta, "csv")] = (a_csv(COLUMNAS_FIANZAS, filas),
-                                                                                      len(filas))
+        if tipo == "fianzas":  # solo si hay devoluciones en el periodo, separadas según la fecha de corte
+            for prefijo, parte in fianzas_por_csv(filas).items():
+                csvs[nombre_fichero(prefijo, cod, desde, hasta, "csv")] = (a_csv(COLUMNAS_FIANZAS, parte), len(parte))
             continue
         if pdf:
             if tipo == "emitidas":
