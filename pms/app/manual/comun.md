@@ -25,6 +25,11 @@
 ## Mi perfil
 - **Cambiar contraseña** cuando quiera.
 - **Avisos por correo**: elija qué avisos quiere recibir (resumen diario a las 7:30, OT urgentes, agenda…).
+- **Accesos rápidos**: los botones de la barra de arriba (de serie Gmail, Outlook, Excel, Word y Teams) que abren otras páginas en una pestaña nueva.
+  - **Añadir acceso**: escriba el nombre y la dirección completa, que debe empezar por **https://**. Hasta 10.
+  - Con **↑** y **↓** cambia el orden; **Quitar** lo elimina; **Volver a los de serie** recupera los cinco iniciales.
+  - Pulse **Guardar accesos**. Cada usuario ve solo los suyos.
+  - Excel y Word se abren en su versión web; desde allí, «Abrir en la aplicación de escritorio» pasa al programa del ordenador.
 
 ## Si algo no va bien
 - Si sale **«El servidor está muy ocupado, reintente»**, espere unos segundos y repita. El programa se recupera solo.

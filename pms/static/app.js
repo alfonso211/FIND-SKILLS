@@ -4735,7 +4735,9 @@ V.perfil = async (el) => {
   el.innerHTML = `<div class="card" style="max-width:640px"><div class="perfil-cab">${avatar(S.me.nombre, "lg")}<div><h3>${esc(S.me.nombre)}</h3><div class="sub">${esc(S.me.email)} · ${esc(rolDe(S.me))}</div></div></div>
     <h4>Accesos</h4>${S.me.is_superadmin ? "<p><b>Superadministrador</b> — acceso total</p>" : S.me.ambitos.map((a) => `<p>${esc(a.rol)} · <span class="muted">${esc(a.ambito)}</span></p>`).join("") || "<p class='muted'>Sin roles asignados</p>"}
     <button class="btn" id="pw">Cambiar contraseña</button>
+    <h4>Accesos rápidos</h4><div id="accRap"><p class="muted">Cargando…</p></div>
     <h4>Avisos por correo</h4><div id="avisos"><p class="muted">Cargando…</p></div></div>`;
+  editorAccesos($("#accRap", el));
   const av = await get("/api/auth/avisos");
   $("#avisos", el).innerHTML = (av.correo_configurado ? "" : '<p class="muted">El envío de correos aún no está configurado en el servidor: puede dejar elegidos sus avisos y empezarán a llegar cuando se configure.</p>') +
     (av.tipos.length ? `<p class="muted">Se envían a ${esc(av.email)}, solo de los activos a los que tiene acceso.</p>${av.tipos.map((t) => `<label class="check"><input type="checkbox" data-av="${t.tipo}" ${t.activo ? "checked" : ""}> ${esc(t.descripcion)}</label>`).join("")}
@@ -4744,6 +4746,35 @@ V.perfil = async (el) => {
   $("#pw", el).onclick = () => form("Cambiar contraseña", [{ k: "actual", t: "Contraseña actual", type: "password", req: true }, { k: "nueva", t: "Nueva (mín. 10 caracteres)", type: "password", req: true }], {},
     async (d) => { const r = await post("/api/auth/password", d); nuevoToken(r); toast("Contraseña cambiada"); });
 };
+
+// Mi perfil → Accesos rápidos: nombre y dirección https de cada botón de la barra superior
+async function editorAccesos(box) {
+  const r = await get("/api/auth/accesos");
+  let lista = r.accesos.map((a) => ({ ...a }));
+  const lee = () => { lista = [...box.querySelectorAll(".acc-fila")].map((f) => ({ nombre: f.querySelector("[data-n]").value, url: f.querySelector("[data-u]").value })); };
+  const pinta = () => {
+    box.innerHTML = `<p class="muted">Botones de la barra de arriba para abrir otras páginas en una pestaña nueva (hasta ${r.maximo}). Solo direcciones que empiecen por https://.
+      Excel y Word se abren en su versión web; desde allí, «Abrir en la aplicación de escritorio» pasa al programa del ordenador.</p>
+      <div class="acc-editor">${lista.map((a, i) => `<div class="acc-fila"><input data-n maxlength="30" placeholder="Nombre" value="${esc(a.nombre)}">
+        <input data-u maxlength="500" placeholder="https://…" value="${esc(a.url)}"><span class="acc-botones">
+        <button type="button" class="btn sm ghost" data-sube="${i}" title="Subir" ${i ? "" : "disabled"}>↑</button><button type="button" class="btn sm ghost" data-baja="${i}" title="Bajar" ${i < lista.length - 1 ? "" : "disabled"}>↓</button>
+        <button type="button" class="btn sm" data-quita="${i}">Quitar</button></span></div>`).join("") || '<p class="muted">Sin accesos: la barra queda vacía.</p>'}</div>
+      <p><button type="button" class="btn" id="accAdd" ${lista.length >= r.maximo ? "disabled" : ""}>Añadir acceso</button>
+        <button type="button" class="btn ghost" id="accSerie">Volver a los de serie</button> <button type="button" class="btn primary" id="accSave">Guardar accesos</button></p>`;
+    const mueve = (i, d) => { lee(); [lista[i], lista[i + d]] = [lista[i + d], lista[i]]; pinta(); };
+    box.querySelectorAll("[data-sube]").forEach((b) => (b.onclick = () => mueve(+b.dataset.sube, -1)));
+    box.querySelectorAll("[data-baja]").forEach((b) => (b.onclick = () => mueve(+b.dataset.baja, 1)));
+    box.querySelectorAll("[data-quita]").forEach((b) => (b.onclick = () => { lee(); lista.splice(+b.dataset.quita, 1); pinta(); }));
+    $("#accAdd", box).onclick = () => { lee(); lista.push({ nombre: "", url: "https://" }); pinta(); box.querySelectorAll("[data-n]")[lista.length - 1].focus(); };
+    const guarda = async (accesos) => {
+      const g = await run(() => put("/api/auth/accesos", { accesos }), "Accesos guardados");
+      S.me.accesos = g.accesos; lista = g.accesos.map((a) => ({ ...a })); pintarAccesos(); pinta();
+    };
+    $("#accSerie", box).onclick = () => guarda(null).catch(() => {});
+    $("#accSave", box).onclick = () => { lee(); guarda(lista.filter((a) => a.nombre.trim() || a.url.replace("https://", "").trim())).catch(() => {}); };
+  };
+  pinta();
+}
 
 // ------------------------------------------------------------------ informe mensual a la presidencia
 const pctTxt = (x, signo) => (x == null ? "—" : `${signo && x > 0 ? "+" : ""}${x.toFixed(1).replace(".", ",")} %`);
@@ -6185,7 +6216,23 @@ function vigilarResultadosOT() {
     } catch {}
   }, 60000);
 }
+// Accesos rápidos de la barra superior: los elige cada usuario en Mi perfil y se abren en una pestaña nueva
+const ACC_COLOR = { gmail: 0, outlook: 1, excel: 2, word: 3, teams: 4, sharepoint: 6, onedrive: 1 };
+function accColor(nombre) {
+  const k = nombre.toLowerCase();
+  if (k in ACC_COLOR) return ACC_COLOR[k];
+  return [...k].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % 8;
+}
+const accEnlace = (a) => `<a class="acceso" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer" title="${esc(a.nombre)} (pestaña nueva)">` +
+  `<span class="acc-ico acc-c${accColor(a.nombre)}">${esc([...a.nombre][0].toUpperCase())}</span>${esc(a.nombre)}</a>`;
+function pintarAccesos() {
+  const acc = (S.me && S.me.accesos) || [], el = $("#accesos");
+  el.innerHTML = acc.length ? `<div class="acc-lista">${acc.map(accEnlace).join("")}</div>
+    <details><summary class="btn ghost sm">Accesos ▾</summary><div class="acc-desplegable">${acc.map(accEnlace).join("")}</div></details>` : "";
+  el.querySelectorAll(".acc-desplegable a").forEach((a) => (a.onclick = () => a.closest("details").removeAttribute("open")));
+}
 function pintarUsuario() {
+  pintarAccesos();
   $("#userAvatar").textContent = iniciales(S.me.nombre); $("#userAvatar").title = S.me.nombre;
   $("#gestionBtn").hidden = !S.me.gestion;  // solo superadministrador, Alfonso y Bárbara
   $("#userName").innerHTML = `${esc(S.me.nombre)}<small>${esc(S.me.colaborador ? S.me.colaborador.proveedor : rolDe(S.me))}</small>`;
