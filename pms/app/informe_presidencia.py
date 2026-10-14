@@ -14,7 +14,7 @@ from . import marca
 from .facturacion import bases_por_tipo, lineas_de
 from .models import Asset, Expense, Invoice, Reservation, Unit
 from .routers.historico import mensual as historico_mensual
-from .routers.informes import _facturado, _noches
+from .routers.informes import _facturado, _noches, noches_por_mes
 
 MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre",
          "noviembre", "diciembre"]
@@ -160,12 +160,16 @@ def resumen_anual(db: Session, a: Asset, anio: int, hasta_mes: int = 12) -> dict
     usos = _apartamentos(db, a.id)
     aloj = {u for u, uso in usos.items() if uso != "garaje"}
     activos = len(aloj)
-    res = [r for r in _reservas(db, a.id, desde, hasta) if r.unit_id in aloj]
+    res = [r for r in db.execute(select(Reservation.unit_id, Reservation.fecha_entrada, Reservation.fecha_salida)
+                                 .join(Unit, Unit.id == Reservation.unit_id).where(
+        Unit.asset_id == a.id, Reservation.estado.in_(ESTADOS_VALIDOS), Reservation.fecha_entrada <= hasta,
+        Reservation.fecha_salida > desde)) if r.unit_id in aloj]
+    por_mes = noches_por_mes(res, desde, hasta)
 
     def mes(y, m):
         ini, fin = date(y, m, 1), fin_mes(y, m)
         v = fact.get((a.id, f"{ini:%Y-%m}"), {})
-        noches = sum(_noches(r.fecha_entrada, r.fecha_salida, ini, fin) for r in res)
+        noches = por_mes.get(f"{ini:%Y-%m}", 0)
         hay_datos = noches or not v.get("externo")  # meses solo con datos de SYADE: sin pernoctaciones
         disp = activos * fin.day
         return {"produccion": _r(v.get("base", 0)), "pernoctaciones": noches if hay_datos else None,

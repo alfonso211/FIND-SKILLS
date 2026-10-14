@@ -10,7 +10,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from ..database import get_db
 from ..facturacion import FORMAS_PAGO, bases_por_tipo, fin_de_mes, pendientes_cobro
@@ -43,6 +43,21 @@ def _meses(desde: date, hasta: date):
 def _noches(ent: date, sal: date, ini: date, fin: date) -> int:
     """Noches de la estancia [ent, sal) que caen entre ini y fin (ambos incluidos)."""
     return max(0, (min(sal, fin + timedelta(days=1)) - max(ent, ini)).days)
+
+
+def noches_por_mes(reservas, desde: date, hasta: date) -> dict[str, int]:
+    """Noches de las estancias entre desde y hasta (ambos incluidos), repartidas por mes («AAAA-MM»), en una sola
+    pasada (con muchas reservas, mucho más rápido que contar mes a mes)."""
+    out: dict[str, int] = defaultdict(int)
+    tope = hasta + timedelta(days=1)
+    for r in reservas:
+        d, fin = max(r.fecha_entrada, desde), min(r.fecha_salida, tope)
+        while d < fin:
+            siguiente = date(d.year + 1, 1, 1) if d.month == 12 else date(d.year, d.month + 1, 1)
+            corte = min(siguiente, fin)
+            out[f"{d:%Y-%m}"] += (corte - d).days
+            d = corte
+    return out
 
 
 def _hoja(wb: Workbook, titulo: str, cabecera: list[str], filas: list[list], formatos: dict[int, str] | None = None,
@@ -91,9 +106,12 @@ def _activos(db: Session, scope: Scope, perm: str, asset_id: int | None, modalid
 
 
 def _reservas(db: Session, ids: list[int], desde: date, hasta: date):
-    return db.execute(select(Reservation, Unit.asset_id).join(Unit, Unit.id == Reservation.unit_id).where(
+    """(estancia, activo) de las reservas del periodo: solo apartamento y fechas, que es lo que se cuenta."""
+    filas = db.execute(select(Reservation.unit_id, Reservation.fecha_entrada, Reservation.fecha_salida, Unit.asset_id)
+                       .join(Unit, Unit.id == Reservation.unit_id).where(
         Unit.asset_id.in_(ids or [-1]), Reservation.estado.in_(("confirmada", "checkin", "checkout")),
         Reservation.fecha_entrada <= hasta, Reservation.fecha_salida > desde)).all()
+    return [(r, r.asset_id) for r in filas]
 
 
 # --------------------------------------------------------------------------- informes
@@ -116,20 +134,26 @@ def _ocupacion(db, scope, wb, desde, hasta, asset_id):
             plazas = {i for i, x in unidades.items() if x == "garaje"}
             leases = db.execute(select(Lease.unit_id, Lease.fecha_inicio, Lease.fecha_fin).where(
                 Lease.unit_id.in_(plazas or {-1}), Lease.estado.not_in(("borrador", "anulado")))).all()
+            del_activo = [r for r, aid in res if aid == a.id]
+            propias = [r for r in del_activo if r.unit_id in aloj]
+            noches = noches_por_mes(propias, desde, hasta)
+            noches_garaje = noches_por_mes([r for r in del_activo if r.unit_id in plazas], desde, hasta)
+            llegadas_mes = defaultdict(int)
+            for r in propias:
+                if desde <= r.fecha_entrada <= hasta:
+                    llegadas_mes[f"{r.fecha_entrada:%Y-%m}"] += 1
             for mes, ini, fin in _meses(desde, hasta):
                 dias = (fin - ini).days + 1
-                propias = [r for r, aid in res if aid == a.id and r.unit_id in aloj]
                 disp = len(aloj) * dias
-                ocup = sum(_noches(r.fecha_entrada, r.fecha_salida, ini, fin) for r in propias)
+                ocup = noches.get(f"{ini:%Y-%m}", 0)
                 v = fact.get((a.id, f"{ini:%Y-%m}"), {})
                 ingresos = round(v.get("alojamiento", 0), 2) if ver_fin else None
-                llegadas = sum(1 for r in propias if ini <= r.fecha_entrada <= fin)
+                llegadas = llegadas_mes.get(f"{ini:%Y-%m}", 0)
                 filas.append([a.nombre, mes, len(aloj), disp, ocup, ocup / disp if disp else 0, llegadas, ingresos,
                               None if ingresos is None else round(ingresos / ocup, 2) if ocup else 0,
                               None if ingresos is None else round(ingresos / disp, 2) if disp else 0])
                 if plazas:
-                    por_dias = sum(_noches(r.fecha_entrada, r.fecha_salida, ini, fin)
-                                   for r, aid in res if aid == a.id and r.unit_id in plazas)
+                    por_dias = noches_garaje.get(f"{ini:%Y-%m}", 0)
                     por_meses = sum(_noches(max(fi, ini), (ff or fin) + timedelta(days=1), ini, fin)
                                     for _, fi, ff in leases if fi <= fin and (ff is None or ff >= ini))
                     garajes.append([a.nombre, mes, len(plazas), len(plazas) * dias, por_dias, por_meses,
@@ -173,15 +197,21 @@ def _ocupacion(db, scope, wb, desde, hasta, asset_id):
                    "externo) no computan en la ocupación ni en la producción del edificio.")
 
 
+COLUMNAS_SUMA = (Invoice.id, Invoice.asset_id, Invoice.fecha_expedicion, Invoice.reservation_id, Invoice.charge_id,
+                 Invoice.concepto, Invoice.lineas, Invoice.tipo_iva, Invoice.base_imponible, Invoice.cuota_iva,
+                 Invoice.total)
+
+
 def _facturado(db, ids: list[int], desde: date, hasta: date) -> dict[tuple[int, str], dict[str, float]]:
     """Base imponible facturada por activo, mes (fecha de factura) y tipo de línea; también IVA, total y nº.
     Las facturas emitidas llevan fecha del último día del mes (criterio de la gestoría): el mes de la fecha final
     cuenta entero, aunque se consulte a mitad de mes."""
     hasta = fin_de_mes(hasta)
     out: dict[tuple[int, str], dict[str, float]] = defaultdict(lambda: defaultdict(float))
-    facturas = list(db.scalars(select(Invoice).where(Invoice.asset_id.in_(ids or [-1]),
-                                                     Invoice.fecha_expedicion >= desde,
-                                                     Invoice.fecha_expedicion <= hasta)))
+    # solo las columnas que hacen falta (sin cargar cada factura completa: con miles de facturas va mucho más rápido)
+    facturas = list(db.execute(select(*COLUMNAS_SUMA).where(Invoice.asset_id.in_(ids or [-1]),
+                                                           Invoice.fecha_expedicion >= desde,
+                                                           Invoice.fecha_expedicion <= hasta)))
     for f, bases in bases_por_tipo(db, facturas):
         acc = out[(f.asset_id, f"{f.fecha_expedicion:%Y-%m}")]
         for t, b in bases.items():
@@ -256,6 +286,7 @@ def _morosidad(db, scope, wb, desde, hasta, asset_id):
     for r, aid in db.execute(select(Reservation, Unit.asset_id).join(Unit, Unit.id == Reservation.unit_id).where(
             Unit.asset_id.in_([a.id for a in tur] or [-1]), Reservation.estado.in_(("checkin", "checkout")),
             Reservation.fecha_entrada <= hasta, Reservation.importe_total > Reservation.importe_pagado)
+            .options(selectinload(Reservation.guest), selectinload(Reservation.unit))
             .order_by(Unit.asset_id, Reservation.fecha_entrada)):
         g = r.guest
         pend = round(float(r.importe_total) - float(r.importe_pagado), 2)
