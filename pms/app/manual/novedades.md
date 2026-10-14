@@ -1,5 +1,13 @@
 # Novedades
 
+## 2026-10-14 · Versión 1.62 · CAPEX fase 2: documentación PRL, contrato y acta de replanteo
+- **Dirección Técnica**: los proyectos adjudicados tienen una pestaña nueva, **Obra**. Cada contrata tiene un **semáforo de su documentación PRL**:
+  - **Documentos**: seguro de RC, certificados de Hacienda y Seguridad Social, alta de trabajadores, formación PRL, REA, Plan de Seguridad y Salud y recurso preventivo.
+  - **Colores**: verde válido · amarillo por revisar o caduca en 30 días · rojo falta, rechazado o vencido · gris no aplica.
+- **Enlace de obra**: el contratista recibe por correo (o WhatsApp) un enlace donde ve lo que falta y sube cada documento con su fecha de caducidad. La Dirección Técnica lo **valida** o lo **rechaza** con el motivo.
+- **Contrato**: borrador en Word con los datos de la adjudicación, la **retención de garantía (5 % por defecto)**, su devolución (12 meses tras la recepción) y el plazo. Se sube firmado.
+- **Acta de replanteo**: solo se puede registrar con el contrato firmado y toda la documentación PRL en regla. El proyecto pasa a **En ejecución**.
+
 ## 2026-10-14 · Versión 1.61 · Arranque del servidor más robusto
 - **Dirección**: el servidor ya no se bloquea si en su configuración falta la contraseña inicial del administrador (`PMS_ADMIN_PASSWORD`). Solo se usa al instalar; la contraseña real es la de *Mi perfil*.
 - Para el resto del equipo no cambia nada.

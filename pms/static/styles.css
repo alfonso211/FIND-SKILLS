@@ -87,6 +87,13 @@ main { min-width: 0; }
 .acc-fila { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto; gap: 6px; align-items: center; }
 .acc-fila input { min-width: 0; }
 .acc-botones { white-space: nowrap; }
+/* CAPEX: obra (semáforo PRL) */
+.sem-prl { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin: 0 5px 0 2px; vertical-align: -1px; }
+.capex-obra, .capex-acta { margin-bottom: 14px; }
+.capex-obra td:first-child { white-space: normal; min-width: 240px; }
+.ok-card { border-left: 4px solid #2e7d4f; }
+ul.capex-faltan { margin: 4px 0 0; padding-left: 18px; }
+.capex-acta .btn:disabled { opacity: .45; cursor: not-allowed; }
 @media (max-width: 1100px) {
   .accesos .acc-lista { display: none; }
   .accesos details { display: block; }

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/static/marca/favicon.png">
+<title>Documentación de obra · Grupo INVERSIETE</title>
+<style>
+  :root { --ink: #18181b; --muted: #6f6a61; --line: #e8e3d8; --bg: #f6f4ef; --oro: #c9a45a; --oro-claro: #e6cf95; --negro: #0e0e10; --ok: #2e7d4f; --bad: #b3261e; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif; }
+  header { background: var(--negro); color: #fff; padding: 14px 18px; border-bottom: 3px solid var(--oro); }
+  header small { color: var(--oro-claro); letter-spacing: .08em; text-transform: uppercase; font-size: 11px; }
+  header h1 { margin: 2px 0 0; font-size: 19px; font-weight: 600; }
+  main { padding: 16px; max-width: 1100px; margin: 0 auto; }
+  section { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
+  h2 { font-size: 15px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .05em; color: #8a6d2f; }
+  .muted { color: var(--muted); font-size: 13px; } .error { color: var(--bad); font-weight: 600; } .ok { color: var(--ok); font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 12px; text-transform: uppercase; color: var(--muted); padding: 6px; border-bottom: 2px solid var(--line); }
+  td { padding: 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  tr.cap td { background: #f7f3ea; font-weight: 700; }
+  .desc { white-space: pre-line; } .desc small { color: var(--muted); }
+  input[type=number], input[type=text], textarea { font: inherit; padding: 7px 9px; border: 1px solid #cfc8b8; border-radius: 8px; }
+  input.precio { width: 110px; text-align: right; background: #fff8dc; }
+  input.precio:focus { outline: 2px solid var(--oro); }
+  textarea { width: 100%; min-height: 70px; }
+  .barra { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .barra .esp { flex: 1; }
+  button, .btn { font: inherit; font-weight: 600; padding: 10px 16px; border-radius: 9px; border: 1px solid #cfc8b8; background: #fff; cursor: pointer; text-decoration: none; color: var(--ink); display: inline-block; }
+  button.prim { background: var(--negro); color: #fff; border-color: var(--negro); }
+  button.oro { background: var(--oro); border-color: var(--oro); color: var(--negro); }
+  button:disabled { opacity: .5; cursor: default; }
+  .total { font-size: 18px; font-weight: 700; }
+  .aviso { border-left: 4px solid var(--oro); background: #fffaf0; padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; }
+  ul.docs { margin: 0; padding-left: 18px; }
+  @media (max-width: 720px) {
+    thead { display: none; }
+    tr.part { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+    tr.part td { border: 0; padding: 2px 0; }
+    tr.part td.desc { grid-column: 1 / -1; }
+    tr.cap td { display: block; }
+    td.cod { display: none; }
+  }
+  .sem { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+  .sem.verde { background: #2e7d4f; } .sem.amarillo { background: #e0a800; } .sem.rojo { background: #b3261e; } .sem.gris { background: #b9b3a6; }
+  .doc { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .doc:last-child { border-bottom: 0; }
+  .doc form { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .doc input[type=date] { font: inherit; padding: 6px 8px; border: 1px solid #cfc8b8; border-radius: 8px; }
+  .doc button { padding: 7px 12px; }
+</style>
+</head>
+<body>
+<header><small>Grupo INVERSIETE · Documentación para el inicio de obra</small><h1 id="tit">Cargando…</h1></header>
+<main id="app"><p class="muted">Cargando…</p></main>
+<script>
+"use strict";
+const aid = location.pathname.split("/").filter(Boolean).pop();
+const k = new URLSearchParams(location.search).get("k") || "";
+const api = (ruta = "") => `/api/publico/obra/${aid}${ruta}?k=${encodeURIComponent(k)}`;
+const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const eur = (v) => (v == null ? "—" : v.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €");
+const fecha = (d) => new Date(d.length === 10 ? d + "T00:00:00" : d).toLocaleDateString("es-ES");
+const hoy = new Date().toISOString().slice(0, 10);
+let D = null;
+async function json(r) { const j = await r.json().catch(() => null); if (!r.ok) throw new Error(j?.detail || `Error ${r.status}`); return j; }
+
+function pinta(msg = "", ok = false) {
+  const p = D.proyecto;
+  document.getElementById("tit").textContent = `${p.codigo} · ${p.titulo}`;
+  const listos = D.prl.filter((x) => x.en_regla).length;
+  document.getElementById("app").innerHTML = `
+    <section>
+      <p><b>${esc(D.proveedor)}</b>: obra adjudicada en <b>${esc(p.activo)}</b>${p.direccion ? ` (${esc(p.direccion)})` : ""}${p.ubicacion ? ` · ${esc(p.ubicacion)}` : ""}.</p>
+      <p>Importe adjudicado: <b>${eur(D.importe)}</b> sin IVA · Retención de garantía: <b>${D.retencion_pct} %</b> de cada certificación, devuelta a los ${D.garantia_meses} meses de la recepción${D.plazo_dias ? ` · Plazo: <b>${D.plazo_dias} días</b> desde el acta de replanteo` : ""}.</p>
+      ${p.replanteo ? `<p class="ok">✔ Acta de replanteo firmada el ${fecha(p.replanteo)}. Mantenga la documentación en vigor durante toda la obra.</p>`
+        : `<div class="aviso">La obra <b>no puede empezar</b> hasta que toda la documentación esté validada y en vigor y el contrato esté firmado. Suba cada documento en PDF o foto, con su fecha de caducidad cuando la tenga.</div>`}
+      <p>Contrato: ${D.contrato_firmado ? `<span class="ok">firmado el ${fecha(D.contrato_firmado)}</span>` : `pendiente de firma · <a href="${api("/contrato.docx")}">descargar el borrador (Word)</a>`}</p>
+    </section>
+    <section>
+      <div class="barra"><h2 style="margin:0">Documentación de prevención de riesgos laborales</h2><span class="esp"></span><span class="muted">${listos} de ${D.prl.length} en regla</span></div>
+      ${D.prl.map((x) => `<div class="doc"><div><span class="sem ${x.color}"></span><b>${esc(x.nombre)}</b><div class="muted">${esc(x.texto)}${x.subido_en ? ` · subido el ${fecha(x.subido_en)}` : ""}</div></div>
+        <div></div>
+        ${x.en_regla && x.estado !== "por_revisar" ? "" : `<form data-tipo="${x.tipo}"><input type="file" name="fichero" accept=".pdf,image/*" required>
+          ${x.caduca ? `<label class="muted">Válido hasta <input type="date" name="vence" min="${hoy}" required></label>` : ""}
+          <button class="prim" type="submit">${x.subido_en ? "Sustituir" : "Subir"}</button></form>`}</div>`).join("")}
+      <p id="msg" class="${ok ? "ok" : "error"}">${esc(msg)}</p>
+    </section>
+    <p class="muted">Enlace personal para ${esc(D.proveedor)}: no lo reenvíe. Para cualquier duda, responda al correo de la adjudicación.</p>`;
+  document.querySelectorAll("form[data-tipo]").forEach((f) => (f.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const b = f.querySelector("button"); b.disabled = true;
+    const fd = new FormData(f); fd.append("tipo", f.dataset.tipo);
+    if (!fd.get("vence")) fd.delete("vence");
+    try {
+      await json(await fetch(api("/prl"), { method: "POST", body: fd }));
+      D = await json(await fetch(api()));
+      pinta("✔ Documento recibido. La Dirección Técnica lo revisará.", true);
+    } catch (e) { document.getElementById("msg").textContent = e.message; b.disabled = false; }
+  }));
+}
+fetch(api()).then(json).then((d) => { D = d; pinta(); })
+  .catch((e) => { document.getElementById("tit").textContent = "Enlace no válido"; document.getElementById("app").innerHTML = `<section><p class="error">${esc(e.message)}</p></section>`; });
+</script>
+</body>
+</html>

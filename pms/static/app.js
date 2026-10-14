@@ -5556,7 +5556,7 @@ V.cobrosext = async (el) => {
 // adjudicación (completa o por capítulos) → aprobación de la Dirección General por correo (> umbral).
 const num2 = (v) => (v == null ? "" : Number(v).toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const pct = (v) => (v == null ? "" : `${v > 0 ? "+" : ""}${Number(v).toLocaleString("es-ES")} %`);
-const COLOR_EST_CAPEX = { definicion: "b-borrador", licitacion: "b-pendiente", adjudicacion: "b-pendiente", pendiente_aprobacion: "b-urgente", adjudicado: "b-vigente", cancelado: "b-anulado" };
+const COLOR_EST_CAPEX = { definicion: "b-borrador", licitacion: "b-pendiente", adjudicacion: "b-pendiente", pendiente_aprobacion: "b-urgente", adjudicado: "b-vigente", en_ejecucion: "b-vigente", cancelado: "b-anulado" };
 async function catCapex() { S.catCapex = S.catCapex || await get("/api/capex/catalogos"); return S.catCapex; }
 
 V.capex = async (el) => {
@@ -5602,7 +5602,8 @@ async function capexProyecto(el, id) {
   await cargar();
   const pinta = () => {
     const p = D.proyecto, t = D.totales, g = D.gestionar, def = p.estado === "definicion";
-    const pest = [["presupuesto", "📐 Presupuesto"], ["documentos", `📎 Documentos (${D.documentos.length})`], ["licitacion", "📨 Licitación"], ["comparativo", "📊 Comparativo y adjudicación"], ["aprobacion", `✅ Aprobación${D.aprobaciones.some((a) => a.estado === "pendiente") ? " (pendiente)" : ""}`]];
+    const pest = [["presupuesto", "📐 Presupuesto"], ["documentos", `📎 Documentos (${D.documentos.length})`], ["licitacion", "📨 Licitación"], ["comparativo", "📊 Comparativo y adjudicación"], ["aprobacion", `✅ Aprobación${D.aprobaciones.some((a) => a.estado === "pendiente") ? " (pendiente)" : ""}`],
+      ...(["adjudicado", "en_ejecucion"].includes(p.estado) ? [["obra", "🏗️ Obra"]] : [])];
     el.innerHTML = `<div class="capex-cab"><div><div class="muted peq"><a href="#capex" id="lista">← Proyectos CAPEX</a></div>
         <h3 style="margin:2px 0">${esc(p.codigo)} · ${esc(p.titulo)} <span class="badge ${COLOR_EST_CAPEX[p.estado] || ""}">${esc(p.estado_nombre)}</span></h3>
         <div class="muted">${esc(p.activo)}${p.unidad ? ` · ${esc(p.unidad)}` : ""}${p.ubicacion ? ` · ${esc(p.ubicacion)}` : ""}${p.fecha_inicio ? ` · ${fdate(p.fecha_inicio)} → ${fdate(p.fecha_fin)}` : ""}</div></div>
@@ -5614,7 +5615,7 @@ async function capexProyecto(el, id) {
         ${g ? `<button class="btn sm" id="datos">Datos del proyecto</button><button class="btn sm" id="plant">Guardar como plantilla</button>` : ""}
         <button class="btn sm" id="xls">Excel</button>
         ${g && ["licitacion", "cancelado"].includes(p.estado) && !D.licitaciones.some((l) => l.invitaciones.some((i) => i.oferta?.estado === "enviada")) ? '<button class="btn sm" id="adef">Volver a definición</button>' : ""}
-        ${g && !["adjudicado", "cancelado"].includes(p.estado) ? '<button class="btn sm danger" id="cancel">Cancelar</button>' : ""}
+        ${g && !["adjudicado", "en_ejecucion", "cancelado"].includes(p.estado) ? '<button class="btn sm danger" id="cancel">Cancelar</button>' : ""}
         ${g && def && !D.licitaciones.length ? '<button class="btn sm danger" id="borrar">Borrar</button>' : ""}</div>
       <div id="cx"></div>`;
     $("#lista", el).onclick = (e) => { e.preventDefault(); go("capex"); };
@@ -5641,7 +5642,8 @@ async function capexProyecto(el, id) {
     if ($("#cancel", el)) $("#cancel", el).onclick = estado("cancelado", "Motivo de la cancelación:", true);
     if ($("#borrar", el)) $("#borrar", el).onclick = async () => { if (confirm("¿Borrar el proyecto y sus documentos?")) { await run(() => api("DELETE", `/api/capex/${id}`), "Proyecto borrado"); go("capex"); } };
     const recarga = async () => { await cargar(); tab = S.capexTab || tab; pinta(); };
-    ({ presupuesto: capexPresupuesto, documentos: capexDocumentos, licitacion: capexLicitacion, comparativo: capexComparativo, aprobacion: capexAprobacion })[tab]($("#cx", el), D, recarga, C);
+    if (!pest.some(([k]) => k === tab)) tab = "presupuesto";
+    ({ presupuesto: capexPresupuesto, documentos: capexDocumentos, licitacion: capexLicitacion, comparativo: capexComparativo, aprobacion: capexAprobacion, obra: capexObra })[tab]($("#cx", el), D, recarga, C);
   };
   pinta();
 }
@@ -5877,6 +5879,85 @@ function capexAprobacion(cx, D, recarga, C) {
   async (d) => { await post(`/api/capex/${p.id}/aprobacion`, { decision, comentario: d.comentario }); toast(decision === "aprobar" ? "Adjudicación aprobada" : "Adjudicación rechazada"); recarga(); }, decision === "aprobar" ? "Aprobar" : "Rechazar");
   if ($("#si", cx)) { $("#si", cx).onclick = () => decide("aprobar"); $("#no", cx).onclick = () => decide("rechazar"); }
   if ($("#re", cx)) $("#re", cx).onclick = async () => { const r = await run(() => post(`/api/capex/${p.id}/aprobacion/reenviar`)); toast(r.every((x) => x.ok) ? "Correo reenviado" : "No se ha podido enviar el correo", !r.every((x) => x.ok)); recarga(); };
+}
+
+// ---- obra (fase 2): documentación PRL de cada contrata, contrato y acta de replanteo
+const SEM_PRL = { verde: "#2e7d4f", amarillo: "#e0a800", rojo: "#b3261e", gris: "#b9b3a6" };
+const semPrl = (c) => `<span class="sem-prl" style="background:${SEM_PRL[c]}"></span>`;
+async function capexObra(cx, D, recarga) {
+  const id = D.proyecto.id;
+  const O = await get(`/api/capex/${id}/obra`), g = O.gestionar, p = O.proyecto;
+  const verDoc = (d) => (d.mime.startsWith("image/") || d.mime === "application/pdf" ? abrirFichero(`/api/capex/documentos/${d.id}`) : run(() => download("GET", `/api/capex/documentos/${d.id}`)));
+  const acta = O.replanteo.fecha
+    ? `<div class="card ok-card capex-acta"><b>✔ Acta de replanteo</b> firmada el ${fdate(O.replanteo.fecha)}: obra en ejecución.${O.replanteo.nota ? `<div class="muted">${esc(O.replanteo.nota)}</div>` : ""}${O.replanteo.documento ? ` <button class="btn sm" id="vacta">Ver acta</button>` : ""}</div>`
+    : `<div class="card capex-acta"><div class="toolbar" style="margin:0"><b>Acta de replanteo (inicio de obra)</b><span class="spacer"></span>${g ? `<button class="btn primary" id="acta" ${O.puede_replanteo ? "" : "disabled"}>Registrar acta de replanteo</button>` : ""}</div>
+        ${O.faltan.length ? `<p class="muted">Para firmarla falta:</p><ul class="capex-faltan">${O.faltan.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>` : '<p class="ok">✔ Todo en regla: ya se puede firmar el acta de replanteo.</p>'}</div>`;
+  cx.innerHTML = `<p class="muted">Antes del acta de replanteo cada contrata adjudicada aporta su documentación de prevención de riesgos laborales y firma el contrato. Verde: válido · amarillo: por revisar o caduca en 30 días · rojo: falta, rechazado o vencido · gris: no aplica.</p>
+    ${acta}${O.adjudicaciones.map((a) => `<div class="card capex-obra" data-aid="${a.id}">
+      <div class="toolbar" style="margin:0 0 6px"><h4 style="margin:0">${esc(a.proveedor)}</h4><span class="muted">${eur(a.importe)} sin IVA${a.capitulos.length ? ` · ${a.capitulos.map(esc).join(" · ")}` : ""}</span><span class="spacer"></span>
+        <span>${semPrl("verde")}${a.prl_resumen.verde} ${semPrl("amarillo")}${a.prl_resumen.amarillo} ${semPrl("rojo")}${a.prl_resumen.rojo}</span></div>
+      <div class="toolbar" style="margin:0 0 8px">
+        <span>Retención <b>${a.retencion_pct} %</b> · garantía <b>${a.garantia_meses} meses</b> · plazo <b>${a.plazo_dias ? `${a.plazo_dias} días` : "sin fijar"}</b></span>
+        ${g ? '<button class="btn sm" data-cond>Cambiar</button>' : ""}<span class="spacer"></span>
+        <span>Contrato: ${a.contrato_firmado ? `<b class="ok">firmado ${fdate(a.contrato_firmado)}</b> <button class="btn sm" data-vcon>Ver</button>` : '<span class="error">sin firmar</span>'}</span>
+        ${g ? `<button class="btn sm" data-borr>Borrador Word</button>${a.contrato_firmado ? "" : '<button class="btn sm primary" data-subcon>Subir firmado</button>'}` : ""}</div>
+      ${g ? `<div class="toolbar" style="margin:0 0 8px"><span class="muted">${a.enlace_enviado ? `Enlace de obra enviado el ${fdt(a.enlace_enviado)}` : "Enlace de obra sin enviar"}: el contratista ve lo que falta y sube sus documentos.</span><span class="spacer"></span>
+        <button class="btn sm" data-enl>${a.enlace ? "Reenviar enlace" : "Enviar enlace al contratista"}</button>${a.enlace ? '<button class="btn sm" data-copia>Copiar enlace</button><button class="btn sm danger" data-nuevo title="El enlace anterior deja de valer">Enlace nuevo</button>' : ""}</div>` : ""}
+      <div class="table-wrap"><table><thead><tr><th>Documento PRL</th><th>Estado</th><th>Vence</th><th class="acc"></th></tr></thead><tbody>
+      ${a.prl.map((x) => `<tr data-x="${x.id}"><td>${esc(x.nombre)}${x.subido_por === "contratista" ? ' <span class="muted peq">(lo subió el contratista)</span>' : ""}</td>
+        <td>${semPrl(x.color)}${esc(x.texto)}</td><td>${x.vence ? fdate(x.vence) : ""}</td>
+        <td class="acc">${x.documento ? '<button class="btn sm" data-ver>Ver</button>' : ""}${g ? `<button class="btn sm" data-sub>Subir</button>${x.documento && x.estado !== "valido" ? '<button class="btn sm primary" data-val>Validar</button>' : ""}${x.documento && x.estado === "por_revisar" ? '<button class="btn sm danger" data-rec>Rechazar</button>' : ""}${x.estado === "no_aplica" ? '<button class="btn sm" data-pend>Exigir</button>' : '<button class="btn sm" data-na>No aplica</button>'}` : ""}</td></tr>`).join("")}
+      </tbody></table></div></div>`).join("") || '<p class="muted">Sin contratas adjudicadas.</p>'}`;
+  if ($("#vacta", cx)) $("#vacta", cx).onclick = () => verDoc(O.replanteo.documento);
+  if ($("#acta", cx)) $("#acta", cx).onclick = () => form("Acta de replanteo", [
+    { html: '<p class="muted">Con el acta firmada el proyecto pasa a «En ejecución». Suba el acta escaneada si la tiene.</p>' },
+    { k: "fecha", t: "Fecha del acta", type: "date", req: true, def: new Date().toISOString().slice(0, 10) },
+    { html: '<label class="wide">Acta firmada (PDF o foto)<input type="file" name="f" accept=".pdf,image/*"></label>' },
+    { k: "nota", t: "Observaciones", type: "textarea", wide: true },
+  ], {}, async (d, f) => {
+    const fd = new FormData(); fd.append("fecha", d.fecha); if (d.nota) fd.append("nota", d.nota); if (f.elements.f.files[0]) fd.append("fichero", f.elements.f.files[0]);
+    await upload(`/api/capex/${id}/replanteo`, fd); toast("Acta de replanteo registrada: obra en ejecución"); recarga();
+  }, "Registrar");
+  cx.querySelectorAll("[data-aid]").forEach((card) => {
+    const a = O.adjudicaciones.find((x) => String(x.id) === card.dataset.aid);
+    const b = (sel) => card.querySelector(sel);
+    if (b("[data-cond]")) b("[data-cond]").onclick = () => form(`Condiciones · ${a.proveedor}`, [
+      ...(p.estado === "adjudicado" ? [{ k: "retencion_pct", t: "Retención de garantía %", type: "number" }, { k: "garantia_meses", t: "Devolución de la garantía (meses desde la recepción)", type: "number" }] : []),
+      { k: "plazo_dias", t: "Plazo de ejecución (días naturales desde el replanteo)", type: "number" },
+    ], a, async (d) => { await put(`/api/capex/obra/adjudicaciones/${a.id}`, { retencion_pct: d.retencion_pct ?? null, garantia_meses: d.garantia_meses ?? null, plazo_dias: d.plazo_dias ?? null }); toast("Condiciones guardadas"); recarga(); });
+    if (b("[data-borr]")) b("[data-borr]").onclick = () => run(() => download("GET", `/api/capex/obra/adjudicaciones/${a.id}/contrato.docx`));
+    if (b("[data-vcon]")) b("[data-vcon]").onclick = () => verDoc(a.contrato);
+    if (b("[data-subcon]")) b("[data-subcon]").onclick = () => form(`Contrato firmado · ${a.proveedor}`, [
+      { k: "fecha", t: "Fecha de firma", type: "date", req: true, def: new Date().toISOString().slice(0, 10) },
+      { html: '<label class="wide">Contrato firmado (PDF o foto) *<input type="file" name="f" accept=".pdf,image/*" required></label>' },
+    ], {}, async (d, f) => { const fd = new FormData(); fd.append("fecha", d.fecha); fd.append("fichero", f.elements.f.files[0]); await upload(`/api/capex/obra/adjudicaciones/${a.id}/contrato`, fd); toast("Contrato guardado"); recarga(); }, "Subir");
+    const enlace = async (nuevo) => {
+      if (nuevo && !confirm("¿Generar un enlace nuevo? El anterior dejará de funcionar.")) return;
+      const r = await run(() => post(`/api/capex/obra/adjudicaciones/${a.id}/enlace${nuevo ? "?nuevo=true" : ""}`));
+      toast(r.ok ? `Enlace enviado a ${r.email}` : `No se ha enviado el correo: ${r.error}. ${r.whatsapp ? "Envíelo por WhatsApp." : "Copie el enlace."}`, !r.ok);
+      if (r.whatsapp && !r.ok) window.open(r.whatsapp, "_blank", "noopener");
+      recarga();
+    };
+    if (b("[data-enl]")) b("[data-enl]").onclick = () => enlace(false);
+    if (b("[data-nuevo]")) b("[data-nuevo]").onclick = () => enlace(true);
+    if (b("[data-copia]")) b("[data-copia]").onclick = () => navigator.clipboard.writeText(a.enlace).then(() => toast("Enlace copiado"));
+    card.querySelectorAll("tr[data-x]").forEach((tr) => {
+      const x = a.prl.find((y) => String(y.id) === tr.dataset.x);
+      const t = (sel) => tr.querySelector(sel);
+      const revisar = (decision, extra = {}) => run(() => post(`/api/capex/obra/prl/${x.id}/revisar`, { decision, ...extra }), "Guardado").then(recarga);
+      if (t("[data-ver]")) t("[data-ver]").onclick = () => verDoc(x.documento);
+      if (t("[data-sub]")) t("[data-sub]").onclick = () => form(x.nombre, [
+        { html: '<p class="muted">Lo que sube la Dirección Técnica queda ya validado.</p><label class="wide">Documento (PDF o foto) *<input type="file" name="f" accept=".pdf,image/*" required></label>' },
+        ...(x.caduca ? [{ k: "vence", t: "Válido hasta", type: "date", req: true }] : []),
+      ], {}, async (d, f) => { const fd = new FormData(); fd.append("tipo", x.tipo); fd.append("fichero", f.elements.f.files[0]); if (d.vence) fd.append("vence", d.vence); await upload(`/api/capex/obra/adjudicaciones/${a.id}/prl`, fd); toast("Documento guardado"); recarga(); }, "Subir");
+      if (t("[data-val]")) t("[data-val]").onclick = () => (x.caduca
+        ? form(`Validar · ${x.nombre}`, [{ k: "vence", t: "Válido hasta", type: "date", req: true }], { vence: x.vence }, (d) => revisar("validar", { vence: d.vence }), "Validar")
+        : revisar("validar"));
+      if (t("[data-rec]")) t("[data-rec]").onclick = () => form(`Rechazar · ${x.nombre}`, [{ k: "nota", t: "Motivo (lo verá el contratista)", req: true, wide: true }], {}, (d) => revisar("rechazar", { nota: d.nota }), "Rechazar");
+      if (t("[data-na]")) t("[data-na]").onclick = () => form(`No aplica · ${x.nombre}`, [{ k: "nota", t: "Por qué no aplica (queda en el expediente)", req: true, wide: true }], {}, (d) => revisar("no_aplica", { nota: d.nota }), "Guardar");
+      if (t("[data-pend]")) t("[data-pend]").onclick = () => revisar("pendiente");
+    });
+  });
 }
 
 // ---- plantillas «CAPEX tipo»

@@ -2,8 +2,8 @@
 FIEBDC-3, documentos, licitación ciega a contratistas, cuadro comparativo, adjudicación (completa o por capítulos) y
 aprobación de la Dirección General por correo cuando se supera el umbral (30.000 € sin IVA por defecto).
 
-Flujo de estados: definicion → licitacion → adjudicacion → (pendiente_aprobacion →) adjudicado. Cancelado en
-cualquier momento. Las mediciones solo se cambian en definición, para que todas las ofertas sean sobre lo mismo."""
+Flujo de estados: definicion → licitacion → adjudicacion → (pendiente_aprobacion →) adjudicado → (acta de replanteo,
+fase 2 en capex_obra.py) en_ejecucion. Cancelado hasta la adjudicación. Las mediciones solo se cambian en definición, para que todas las ofertas sean sobre lo mismo."""
 import hmac
 import io
 import secrets
@@ -175,7 +175,7 @@ def list_projects(asset_id: int | None = None, estado: str | None = None, scope:
     if asset_id:
         stmt = stmt.where(CapexProject.asset_id == asset_id)
     if estado == "abiertos":
-        stmt = stmt.where(CapexProject.estado.not_in(("adjudicado", "cancelado")))
+        stmt = stmt.where(CapexProject.estado != "cancelado")
     elif estado:
         stmt = stmt.where(CapexProject.estado == estado)
     return [_resumen(db, p) for p in db.scalars(stmt.order_by(CapexProject.creado.desc()))]
@@ -259,7 +259,7 @@ def change_state(pid: int, data: EstadoIn, scope: Scope = Depends(get_scope), db
     p = _proyecto(db, scope, pid, gestionar=True)
     enviadas = capex.ofertas(db, p.id)
     if data.estado == "cancelado":
-        if p.estado == "adjudicado":
+        if p.estado in ("adjudicado", "en_ejecucion"):
             bad_request("Un proyecto adjudicado no se cancela desde aquí")
         if not (data.motivo or "").strip():
             bad_request("Indique el motivo de la cancelación")
