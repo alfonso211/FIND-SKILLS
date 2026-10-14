@@ -159,6 +159,17 @@ def limpiar_fallos(email: str) -> None:
     _fallos.pop(email, None)
 
 
+def cuentas_bloqueadas() -> list[dict]:
+    out = []
+    for email in list(_fallos):
+        if login_bloqueado(email):
+            out.append({"tipo": "cuenta", "nombre": "Usuario", "clave": email, "intentos": len(_fallos[email]),
+                        "ultimo": "", "hasta": (_fallos[email][-MAX_INTENTOS].astimezone()
+                                                 + timedelta(minutes=BLOQUEO_MIN)).replace(tzinfo=None)
+                        .isoformat(timespec="minutes")})
+    return out
+
+
 # --------------------------------------------------------------------------- ámbitos
 class Scope:
     """Resuelve qué activos / sociedades puede tocar el usuario para cada permiso.

@@ -68,6 +68,12 @@ class Settings:
     aviso_llegada: bool = (os.environ.get("PMS_AVISO_LLEGADA") or "1") != "0"
     # Preventivo: el programador genera solo las OT que vencen en los próximos días
     preventivo_auto: bool = (os.environ.get("PMS_PREVENTIVO_AUTO") or "1") != "0"
+    # Seguridad: a quién se avisa de usuarios y conexiones bloqueados por intentos fallidos
+    seguridad_avisos: tuple[str, ...] = tuple(
+        e.strip().lower() for e in (os.environ.get("PMS_SEGURIDAD_AVISOS") or mantenimiento_email).split(",")
+        if e.strip())
+    # Política de contenido del navegador: 1 (aplicada), informe (solo la anota) o 0 (sin ella)
+    csp: str = (os.environ.get("PMS_CSP") or "1").strip().lower()
 
 
 settings = Settings()

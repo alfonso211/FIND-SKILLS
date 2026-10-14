@@ -35,6 +35,15 @@ def client():
         yield c
 
 
+@pytest.fixture(autouse=True)
+def _contadores_de_acceso():
+    # todas las pruebas llegan desde la misma «conexión»: cada prueba empieza con los contadores a cero
+    from app import proteccion
+    proteccion._fallos.clear()
+    proteccion._avisado.clear()
+    yield
+
+
 def login(client, email, password):
     r = client.post("/api/auth/login", json={"email": email, "password": password})
     assert r.status_code == 200, r.text

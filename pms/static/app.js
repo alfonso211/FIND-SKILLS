@@ -4387,7 +4387,8 @@ async function partesKpis(cuerpo) {
 V.usuarios = async (el) => {
   const [users, roles, provs] = await Promise.all([get("/api/admin/usuarios"), get("/api/admin/roles"), get("/api/proveedores").catch(() => [])]);
   const provNombre = Object.fromEntries(provs.map((p) => [p.id, p.nombre]));
-  el.innerHTML = `<div class="toolbar"><span class="spacer"></span><button class="btn primary" id="new">Nuevo usuario</button></div><div id="t"></div>`;
+  el.innerHTML = `<div class="toolbar"><span class="spacer"></span><button class="btn primary" id="new">Nuevo usuario</button></div><div id="bloq"></div><div id="t"></div>`;
+  bloqueosAcceso($("#bloq", el));
   const scopeTxt = (a) => a.asset_id ? `Activo: ${assetName(a.asset_id)}` : a.company_id ? `Sociedad: ${S.companies.find((c) => c.id === a.company_id)?.nombre}` : "Todo el grupo";
   const assignRow = (a = {}) => `<div class="assign-row">
       <select data-f="role_id">${roles.map((r) => `<option value="${r.id}" ${r.id === a.role_id ? "selected" : ""}>${esc(r.nombre)}</option>`).join("")}</select>
@@ -4425,6 +4426,22 @@ V.usuarios = async (el) => {
     { k: "activo", t: "Estado", f: (v, u) => (v ? badge("vigente") : badge("baja")) + (u.debe_cambiar_password ? ' <span class="badge b-pendiente">contraseña provisional</span>' : "") },
   ], users, (u) => [["Editar", () => edit(u)], S.me.borrar_usuarios && u.id !== S.me.id && ["Borrar", () => borrarUsuario(u), "danger"]]);
 };
+// Usuarios y conexiones bloqueados por intentos fallidos (se desbloquean solos a los 15 minutos)
+async function bloqueosAcceso(box) {
+  const b = await get("/api/admin/seguridad").catch(() => []);
+  if (!b.length) { box.innerHTML = ""; return; }
+  box.innerHTML = `<div class="card aviso-bloqueo"><h3>Accesos bloqueados por intentos fallidos</h3>
+    <p class="muted peq">Se desbloquean solos a la hora indicada. Desbloquee solo si sabe quién es (por ejemplo, alguien del equipo que se equivocó de contraseña).</p>
+    <div class="table-wrap"><table><thead><tr><th>Qué</th><th>Usuario o conexión</th><th class="num">Intentos</th><th>Último intento</th><th>Hasta</th><th class="acc"></th></tr></thead><tbody>
+    ${b.map((x, i) => `<tr><td>${esc(x.nombre)}</td><td>${esc(x.clave)}</td><td class="num">${x.intentos}</td><td class="peq">${esc(x.ultimo || "")}</td><td>${hhmm(x.hasta)}</td>
+      <td class="acc"><button type="button" class="btn sm" data-u="${i}">Desbloquear</button></td></tr>`).join("")}</tbody></table></div></div>`;
+  box.querySelectorAll("[data-u]").forEach((btn) => (btn.onclick = async () => {
+    const x = b[btn.dataset.u];
+    if (!confirm(`¿Desbloquear ${x.clave}?`)) return;
+    await run(() => post("/api/admin/seguridad/desbloquear", { tipo: x.tipo, clave: x.clave }), "Desbloqueado");
+    bloqueosAcceso(box);
+  }));
+}
 async function borrarUsuario(u) {
   if (!confirm(`¿Borrar el usuario ${u.nombre} (${u.email})?\n\nDejará de poder entrar. Si ya ha trabajado en el PMS, su nombre se conserva solo en el historial (partes, gastos, auditoría).`)) return;
   try {

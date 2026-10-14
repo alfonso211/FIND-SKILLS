@@ -58,6 +58,9 @@ services:
       PMS_INFORME_DIRECCION: ${PMS_INFORME_DIRECCION:-barbara@inversiete.es,alfonso@inversiete.es}
       PMS_AVISO_LLEGADA: ${PMS_AVISO_LLEGADA:-1}
       PMS_PREVENTIVO_AUTO: ${PMS_PREVENTIVO_AUTO:-1}
+      # seguridad: a quién se avisa de bloqueos por intentos fallidos y política de contenido (1 | informe | 0)
+      PMS_SEGURIDAD_AVISOS: ${PMS_SEGURIDAD_AVISOS:-alfonso@inversiete.es}
+      PMS_CSP: ${PMS_CSP:-1}
       TZ: Europe/Madrid
     volumes:
       - documentos:/data/documentos

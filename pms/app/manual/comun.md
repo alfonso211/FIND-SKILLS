@@ -5,6 +5,7 @@
 2. Escriba su **correo** y la **contraseña provisional** que le hayan dado.
 3. La primera vez el programa le pide **cambiar la contraseña**: elija una que solo sepa usted.
 4. Si la olvida, pida a Dirección que se la restablezca.
+5. Si se equivoca **5 veces seguidas**, su usuario queda bloqueado **15 minutos** (sale «Demasiados intentos fallidos»). Espere o pida a Dirección que lo desbloquee.
 
 ## Qué ve en pantalla
 - **Menú de la izquierda**: solo aparece lo de su puesto y de su activo (Suite Florida, Suite Aeropuerto o Babilonia 35).

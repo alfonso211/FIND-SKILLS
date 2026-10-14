@@ -1,14 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from .. import avisos
+from .. import avisos, proteccion
 from ..database import get_db
 from ..models import Asset, Company, User, Supplier
 from ..schemas import Login, PasswordChange
-from ..security import (PASSWORD_MIN, PERMISOS, Scope, audit, cerrar_sesiones, create_token, current_user, get_scope,
-                        hash_password, limpiar_fallos, login_bloqueado, registrar_fallo, verify_password)
+from ..security import (MAX_INTENTOS, PASSWORD_MIN, PERMISOS, Scope, audit, cerrar_sesiones, create_token, current_user,
+                        get_scope, hash_password, limpiar_fallos, login_bloqueado, registrar_fallo, verify_password)
 from ..gestion import puede_ir
 from .admin import puede_borrar
 
@@ -16,18 +16,24 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.post("/login")
-def login(data: Login, db: Session = Depends(get_db)):
+def login(data: Login, request: Request, db: Session = Depends(get_db)):
     email = data.email.lower().strip()
+    ip = proteccion.ip_de(request)
+    if proteccion.bloqueada("login", ip):
+        raise HTTPException(429, "Demasiados intentos fallidos desde esta conexión. Espere 15 minutos.")
     if login_bloqueado(email):
         raise HTTPException(429, "Demasiados intentos fallidos. Espere 15 minutos.")
     user = db.scalar(select(User).where(User.email == email))
     if not user or not user.activo or not verify_password(data.password, user.password_hash):
         registrar_fallo(email)
-        audit(db, None, "login_fallido", "usuario", user.id if user else None, {"email": email})
+        proteccion.fallo("login", ip, email)
+        if login_bloqueado(email) and user:  # se avisa solo si el usuario existe (no de correos inventados)
+            proteccion.avisar("cuenta", email, MAX_INTENTOS, ip)
+        audit(db, None, "login_fallido", "usuario", user.id if user else None, {"email": email, "ip": ip})
         db.commit()
         raise HTTPException(401, "Credenciales incorrectas")
     limpiar_fallos(email)
-    audit(db, user, "login", "usuario", user.id)
+    audit(db, user, "login", "usuario", user.id, {"ip": ip})
     db.commit()
     return {"token": create_token(user)}
 
