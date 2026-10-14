@@ -763,3 +763,16 @@ table.dot input[data-cant] { width: 11em; }
 details > summary { cursor: pointer; padding: 6px 0; }
 .aviso-bloqueo { margin-bottom: 14px; border-left: 4px solid var(--danger, #b3261e); }
 .aviso-bloqueo h3 { margin-bottom: 4px; }
+/* control del preventivo y OCA */
+.kpis-prev { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 14px; }
+.kpi-btn { text-align: left; cursor: pointer; font: inherit; border-left: 4px solid var(--c); }
+.kpi-btn.sel { background: var(--panel); box-shadow: 0 0 0 2px var(--c); }
+.kpi-btn b { color: var(--c); }
+.sem { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; color: #fff; background: var(--c); white-space: nowrap; }
+.check-rev { width: 100%; font-size: 13px; }
+.check-rev td { padding: 4px 6px; border-bottom: 1px solid var(--line-2); vertical-align: middle; }
+.check-rev td:first-child { width: 42%; }
+.check-rev input:not([type]) { width: 100%; }
+.card.rev { margin-bottom: 10px; padding: 12px; }
+.def-row input[data-d="descripcion"] { flex: 1; }
+.assign-row.def-row { grid-template-columns: 1fr 140px auto; }

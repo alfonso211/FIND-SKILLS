@@ -82,6 +82,11 @@
 - El programa trabaja siempre en **hora de Madrid**, aunque el servidor esté en otra zona. Si el reloj del ordenador de alguien va desfasado más de 3 minutos, le sale un aviso al entrar; a la Dirección, además, si el servidor no está en hora de Madrid.
 - Hasta la versión 1.49 el servidor no tenía la zona de Madrid y guardaba la hora UTC (2 horas menos en verano, 1 en invierno). Para corregir esas horas antiguas (fichajes, partes, limpiezas y OT) hay un programa que primero solo enseña lo que cambiaría: `python -m app.corregir_hora --hasta "AAAA-MM-DD HH:MM"`. Se aplica una sola vez, con copia previa.
 
+## Control del preventivo y OCA
+- **Mantenimiento → Plan preventivo**: semáforo de cada revisión e inspección OCA, con su último documento (informe, acta o certificado) y las deficiencias pendientes con su OT. Botón **Excel** para entregar el registro a la propiedad o a una inspección.
+- Cada **lunes** llega por correo al director técnico lo vencido, las deficiencias sin subsanar y las inspecciones OCA de los próximos 60 días (solo si hay algo).
+- La plantilla normativa incluye las inspecciones OCA habituales (BT, ascensores, PCI, eficiencia energética térmica, centro de transformación y gas). Las periodicidades son orientativas: revíselas con cada instalación.
+
 ## Seguridad y continuidad
 - Copia de seguridad **antes de cada actualización** y copia diaria **fuera del servidor** (Google Drive).
 - **Mantenimiento diario a las 06:00**: revisa servidor, copias, base de datos, documentos, correo y seguridad; arregla solo lo que puede y, si hay un fallo grave, envía un **correo URGENTE** al director técnico. Los lunes, resumen semanal.

@@ -33,6 +33,8 @@ COLUMNAS = {
     "telefono": ["telefono", "movil", "phone", "telefono movil"],
     "notas": ["notas", "observaciones", "comentarios", "remarks", "peticiones"],
     "estado": ["estado", "status"],
+    "dotacion_extra": ["dotacion extraordinaria", "dotacion extra", "dotacion", "dotacion adicional",
+                       "extras de dotacion", "dotacion especial"],
 }
 OBLIGATORIAS = ("fecha_entrada", "fecha_salida")
 CANALES = {"booking": "booking", "booking.com": "booking", "airbnb": "airbnb", "expedia": "expedia", "web": "web",
@@ -141,13 +143,14 @@ def plantilla() -> bytes:
     ws = wb.active
     ws.title = "Reservas"
     cab = ["Localizador", "Unidad", "Entrada", "Salida", "Adultos", "Niños", "Canal", "Importe total", "Nombre",
-           "Apellidos", "Documento", "Nacionalidad", "Email", "Teléfono", "Notas"]
+           "Apellidos", "Documento", "Nacionalidad", "Email", "Teléfono", "Notas", "Dotación extraordinaria"]
     ws.append(cab)
     ws.append(["BK-123456", "P1-1A", date.today() + timedelta(days=7), date.today() + timedelta(days=10), 2, 0,
-               "booking", 345.50, "María", "García López", "12345678Z", "ESP", "maria@ejemplo.com", "600000000", ""])
+               "booking", 345.50, "María", "García López", "12345678Z", "ESP", "maria@ejemplo.com", "600000000", "",
+               "Cuna de viaje x1; Toallas de baño x2"])
     for c in ws[1]:
         c.font, c.fill = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="13294B")
-    for col, ancho in zip("ABCDEFGHIJKLMNO", (14, 10, 12, 12, 9, 7, 11, 13, 14, 20, 13, 12, 24, 13, 30)):
+    for col, ancho in zip("ABCDEFGHIJKLMNOP", (14, 10, 12, 12, 9, 7, 11, 13, 14, 20, 13, 12, 24, 13, 30, 34)):
         ws.column_dimensions[col].width = ancho
     for fila in ws.iter_rows(min_row=2, min_col=3, max_col=4):
         for c in fila:
@@ -161,6 +164,10 @@ def plantilla() -> bytes:
             "Canal: directo, booking, airbnb, expedia, web, agencia u otros.",
             "Las reservas con estado «cancelada» se ignoran. Un localizador que ya existe en el activo no se duplica.",
             "Huésped: si el documento ya existe en el PMS se reutiliza su ficha; si no, se crea.",
+            "Dotación: cada tipo de apartamento debe tener fijada su dotación estándar (Reservas → Dotación habitual); "
+            "si no, sus reservas no se importan. Dotación extraordinaria: artículos separados por «;» con su cantidad "
+            "(«Cuna de viaje x1; Toallas de baño x2»). Si se deja vacía, se entrega la estándar. Un artículo que no "
+            "está en el catálogo se da de alta como «Otra dotación».",
             "Al importar no se registra ningún cobro ni se emiten facturas: los cobros se registran después en cada "
             "reserva con el botón «Cobro».",
             "También se admiten las exportaciones de Booking (columnas «Número de reserva», «Check-in», «Precio»...)."):

@@ -654,6 +654,49 @@ class PreventivePlan(Base):
     proxima_fecha: Mapped[date] = mapped_column(Date)
     proveedor: Mapped[str | None] = mapped_column(String(160))
     activo: Mapped[bool] = mapped_column(Boolean, default=True)
+    # mantenimiento (empresa mantenedora o personal propio) | oca (inspección reglamentaria por organismo de control)
+    tipo: Mapped[str] = mapped_column(String(16), default="mantenimiento", server_default="mantenimiento")
+    proveedor_id: Mapped[int | None] = mapped_column(ForeignKey("proveedores.id"))
+    # puntos a comprobar en cada revisión (si no se fijan, los de su instalación: app/preventivo.py)
+    checklist: Mapped[list | None] = mapped_column(JSON)
+
+
+class PreventiveRevision(Base):
+    """Revisión hecha de un plan preventivo o inspección OCA: fecha, resultado, próxima fecha que indica el documento,
+    puntos comprobados y deficiencias (cada una con su OT). Los documentos de la empresa van en adjuntos_revision."""
+    __tablename__ = "revisiones_preventivo"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("planes_preventivos.id"), index=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("activos.id"), index=True)
+    fecha: Mapped[date] = mapped_column(Date)
+    fecha_prevista: Mapped[date | None] = mapped_column(Date)  # la que tocaba según el plan (para ver retrasos)
+    proxima: Mapped[date | None] = mapped_column(Date)  # la que indica el documento (o la del plan si no la indica)
+    resultado: Mapped[str] = mapped_column(String(24))  # correcto | deficiencias | favorable | ... (preventivo.RESULTADOS)
+    empresa: Mapped[str | None] = mapped_column(String(160))
+    proveedor_id: Mapped[int | None] = mapped_column(ForeignKey("proveedores.id"))
+    tecnico: Mapped[str | None] = mapped_column(String(120))  # técnico o inspector
+    numero: Mapped[str | None] = mapped_column(String(60))  # nº de acta / certificado / informe
+    plazo_subsanacion: Mapped[date | None] = mapped_column(Date)
+    checklist: Mapped[list | None] = mapped_column(JSON)  # [{punto, estado: ok|deficiencia|na, nota}]
+    deficiencias: Mapped[list | None] = mapped_column(JSON)  # [{descripcion, gravedad: leve|grave|muy_grave, ot_id}]
+    observaciones: Mapped[str | None] = mapped_column(Text)
+    work_order_id: Mapped[int | None] = mapped_column(ForeignKey("ordenes_trabajo.id"))  # OT preventiva que cierra
+    creada: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+
+
+class RevisionAttachment(Base):
+    """Documento de una revisión (informe de la mantenedora, acta o certificado de la OCA, fotos), cifrado."""
+    __tablename__ = "adjuntos_revision"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    revision_id: Mapped[int] = mapped_column(ForeignKey("revisiones_preventivo.id"), index=True)
+    nombre: Mapped[str] = mapped_column(String(160))
+    fichero: Mapped[str] = mapped_column(String(64))
+    mime: Mapped[str] = mapped_column(String(60))
+    tamano: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    subido: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
 
 
 # --------------------------------------------------------------------------- seguridad

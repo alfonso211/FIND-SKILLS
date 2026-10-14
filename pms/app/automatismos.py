@@ -140,7 +140,8 @@ def generar_preventivo(db: Session, asset_ids: set[int] | None, dias_antelacion:
     creadas = 0
     for p in db.scalars(scoped(select(PreventivePlan), PreventivePlan.asset_id, asset_ids).where(
             PreventivePlan.activo, PreventivePlan.proxima_fecha <= tope)):
-        if db.scalar(select(WorkOrder.id).where(WorkOrder.plan_id == p.id, WorkOrder.estado.in_(ABIERTAS))):
+        if db.scalar(select(WorkOrder.id).where(WorkOrder.plan_id == p.id, WorkOrder.tipo == "preventivo",
+                                                WorkOrder.estado.in_(ABIERTAS))):
             continue
         db.add(WorkOrder(asset_id=p.asset_id, plan_id=p.id, tipo="preventivo", categoria=p.categoria,
                          prioridad="media", titulo=p.titulo, descripcion=p.normativa, proveedor=p.proveedor,

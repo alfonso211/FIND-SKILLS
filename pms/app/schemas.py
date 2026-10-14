@@ -590,6 +590,9 @@ class PlanIn(BaseModel):
     proxima_fecha: date
     proveedor: str | None = None
     activo: bool = True
+    tipo: Literal["mantenimiento", "oca"] = "mantenimiento"
+    proveedor_id: int | None = None
+    checklist: list[str] | None = Field(default=None, max_length=40)
 
 
 class PlanUpdate(BaseModel):
@@ -600,6 +603,35 @@ class PlanUpdate(BaseModel):
     proxima_fecha: date | None = None
     proveedor: str | None = None
     activo: bool | None = None
+    tipo: Literal["mantenimiento", "oca"] | None = None
+    proveedor_id: int | None = None
+    checklist: list[str] | None = Field(default=None, max_length=40)
+
+
+class PuntoRevision(BaseModel):
+    punto: str = Field(max_length=200)
+    estado: Literal["ok", "deficiencia", "na"] = "ok"
+    nota: str | None = Field(default=None, max_length=300)
+
+
+class DeficienciaIn(BaseModel):
+    descripcion: str = Field(max_length=300)
+    gravedad: Literal["leve", "grave", "muy_grave"] = "leve"
+
+
+class RevisionIn(BaseModel):
+    """Revisión de un plan preventivo o inspección OCA (los documentos van aparte, como ficheros)."""
+    fecha: date
+    resultado: str = Field(max_length=24)
+    proxima: date | None = None
+    empresa: str | None = Field(default=None, max_length=160)
+    proveedor_id: int | None = None
+    tecnico: str | None = Field(default=None, max_length=120)
+    numero: str | None = Field(default=None, max_length=60)
+    plazo_subsanacion: date | None = None
+    checklist: list[PuntoRevision] = Field(default_factory=list, max_length=60)
+    deficiencias: list[DeficienciaIn] = Field(default_factory=list, max_length=60)
+    observaciones: str | None = Field(default=None, max_length=4000)
 
 
 # --------------------------------------------------------------------------- usuarios

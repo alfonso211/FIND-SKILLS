@@ -1598,8 +1598,8 @@ function dotacionEditor(cont, cat, items, perfil, assetId) {
   pinta();
   return () => Object.values(sel);
 }
-async function dotacionHabitual() {
-  const aid = S.asset || (await pickAsset("apartamentos_turisticos"));
+async function dotacionHabitual(assetId) {
+  const aid = assetId || S.asset || (await pickAsset("apartamentos_turisticos"));
   const [cat, tips] = await Promise.all([catalogoDotacion(aid), run(() => get("/api/dotacion/habitual", { asset_id: aid }))]);
   const f = cerrarSolo(form(`Dotación habitual · ${assetName(aid)}`, [
     { html: `<p>Lista de dotación de cada tipo de apartamento (catálogo 3 llaves). Recepción la revisa <b>una vez</b> y queda como <b>dotación habitual</b>: es la que se imprime o envía con el contrato al pulsar «Dotación habitual». Marque lo que hay, ajuste las cantidades y, si falta algo, use «Otra dotación».</p>
@@ -2506,16 +2506,21 @@ async function importarReservas(reload) {
     setTimeout(() => {
       const filas = prev.filas.map((x) => `<tr><td>${x.fila}</td><td>${esc(x.localizador || "")}</td><td>${esc(x.unidad || "")}${x.asignada ? ' <span class="muted">(auto)</span>' : ""}</td>
         <td>${fdate(x.entrada)}</td><td>${fdate(x.salida)}</td><td>${esc(x.huesped || "")}</td><td class="num">${x.importe_total != null ? eur(x.importe_total) : ""}</td>
+        <td class="peq" style="white-space:normal;min-width:160px">${esc(x.dotacion || "")}</td>
         <td style="white-space:normal;min-width:220px">${x.estado === "valida" ? '<span class="badge b-vigente">válida</span>' : x.estado === "omitida" ? `<span class="badge">omitida</span> ${esc(x.motivo)}` : `<span class="badge b-cancelada">error</span> ${esc(x.motivo)}`}</td></tr>`).join("");
-      form(`Vista previa · ${prev.validas} válidas, ${prev.errores} con error, ${prev.omitidas} omitidas`, [
+      const pv = form(`Vista previa · ${prev.validas} válidas, ${prev.errores} con error, ${prev.omitidas} omitidas`, [
         { html: `${prev.columnas_ignoradas.length ? `<p class="muted">Columnas no usadas: ${esc(prev.columnas_ignoradas.join(", "))}</p>` : ""}
-          <div class="table-wrap" style="max-height:50vh;overflow:auto"><table><thead><tr><th>Fila</th><th>Localizador</th><th>Unidad</th><th>Entrada</th><th>Salida</th><th>Huésped</th><th class="num">Importe</th><th>Resultado</th></tr></thead><tbody>${filas}</tbody></table></div>
-          <p>${prev.errores ? "Las filas con error no se importan: corríjalas en el fichero y vuelva a importarlo (las ya importadas no se duplican)." : ""}</p>` },
+          <div class="table-wrap" style="max-height:50vh;overflow:auto"><table><thead><tr><th>Fila</th><th>Localizador</th><th>Unidad</th><th>Entrada</th><th>Salida</th><th>Huésped</th><th class="num">Importe</th><th>Dotación</th><th>Resultado</th></tr></thead><tbody>${filas}</tbody></table></div>
+          ${prev.sin_dotacion?.length ? `<div class="card aviso-bloqueo"><b>Falta la dotación estándar</b> de los apartamentos «${esc(prev.sin_dotacion.join("», «"))}». Sus reservas no se importan hasta fijarla (una sola vez por tipo de apartamento).
+            <p><button type="button" class="btn sm primary" data-fijar>Fijar dotación habitual</button></p></div>` : ""}
+          <p>${prev.errores ? "Las filas con error no se importan: corríjalas en el fichero y vuelva a importarlo (las ya importadas no se duplican)." : ""}</p>
+          ${prev.filas.some((x) => (x.dotacion || "").includes("(nuevo)")) ? '<p class="muted peq">«(nuevo)»: el artículo no está en el catálogo y se dará de alta como «Otra dotación». Si es un error de escritura, corríjalo en el fichero.</p>' : ""}` },
       ], {}, async () => {
         if (!prev.validas) throw new Error("No hay ninguna reserva válida que importar");
         const r = await enviar(true);
         toast(`${r.importadas} reservas importadas`); reload && reload();
       }, `Importar ${prev.validas} reservas`);
+      if ($("[data-fijar]", pv)) $("[data-fijar]", pv).onclick = () => dotacionHabitual(aid);
     }, 0);
   }, "Comprobar fichero");
   $("[data-plantilla]", f).onclick = (e) => { e.preventDefault(); run(() => download("GET", "/api/turistico/importar/plantilla")); };
@@ -3505,29 +3510,151 @@ V.ordenes = async (el) => {
   load();
 };
 
+// ---- control del preventivo y de las inspecciones OCA: semáforo, revisiones con documentos, deficiencias con OT
+const SEM = { rojo: "var(--bad)", naranja: "#c05621", ambar: "var(--warn)", verde: "var(--ok)", gris: "var(--muted)" };
+const semaforo = (p) => `<span class="sem" style="--c:${SEM[p.color]}">${esc(p.estado_nombre)}</span>`;
+const venceTxt = (p) => `${fdate(p.vence)}<br><span class="peq ${p.dias < 0 ? "error" : "muted"}">${p.dias < 0 ? `hace ${-p.dias} días` : p.dias === 0 ? "hoy" : `en ${p.dias} días`}</span>`;
+const sumaDias = (iso, n) => { const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() + n); return iso ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : ""; };
+
 V.preventivo = async (el) => {
-  el.innerHTML = `<div class="toolbar"><span class="spacer"></span>${can("mantenimiento.editar") ? '<button class="btn" id="tpl">Cargar plantilla normativa</button><button class="btn" id="gen">Generar OT próximas</button><button class="btn primary" id="new">Nuevo plan</button>' : ""}</div>
-    <p class="muted">La plantilla normativa es orientativa: revise periodicidades según potencia, uso y tipo de instalación de cada activo.</p><div id="t"></div>`;
+  const editar = can("mantenimiento.editar");
+  let filtro = "", tipo = "";
+  el.innerHTML = `<div class="toolbar"><select id="tipo"><option value="">Mantenimiento y OCA</option><option value="mantenimiento">Solo mantenimiento</option><option value="oca">Solo inspecciones OCA</option></select>
+    <span class="spacer"></span><button class="btn" id="xls">Excel</button>${editar ? '<button class="btn" id="tpl">Cargar plantilla normativa</button><button class="btn" id="gen">Generar OT próximas</button><button class="btn primary" id="new">Nuevo plan</button>' : ""}</div>
+    <div id="cards" class="kpis kpis-prev"></div><div id="t"></div>
+    <p class="muted peq">La plantilla normativa es orientativa: revise periodicidades según potencia, uso y tipo de instalación de cada activo. Al registrar una revisión, la próxima fecha del plan pasa a ser la del documento.</p>`;
   const fields = [
-    { k: "titulo", t: "Título", req: true, wide: true }, { k: "categoria", t: "Instalación", type: "select", req: true, options: list(S.cat.categorias_mto) },
+    { k: "titulo", t: "Título", req: true, wide: true },
+    { k: "tipo", t: "Tipo", type: "select", req: true, def: "mantenimiento", options: [["mantenimiento", "Mantenimiento preventivo"], ["oca", "Inspección OCA (organismo de control)"]] },
+    { k: "categoria", t: "Instalación", type: "select", req: true, options: list(S.cat.categorias_mto) },
     { k: "normativa", t: "Normativa / referencia" }, { k: "periodicidad_dias", t: "Periodicidad (días)", type: "number", req: true },
-    { k: "proxima_fecha", t: "Próxima fecha", type: "date", req: true }, { k: "proveedor", t: "Empresa mantenedora" },
+    { k: "proxima_fecha", t: "Próxima fecha", type: "date", req: true }, { k: "proveedor", t: "Empresa mantenedora u OCA" },
+    { k: "checklist_txt", t: "Puntos a comprobar (uno por línea; vacío = los de su instalación)", type: "textarea", wide: true },
     { k: "activo", t: "Plan activo", type: "checkbox", def: true },
   ];
-  const load = async () => table($("#t", el), [
-    { k: "asset_id", t: "Activo", f: (v) => esc(assetName(v)) }, { k: "titulo", t: "Plan" }, { k: "categoria", t: "Instalación" },
-    { k: "normativa", t: "Normativa" }, { k: "periodicidad_dias", t: "Cada (días)", num: true },
-    { k: "proxima_fecha", t: "Próxima", f: (v) => (v < today() ? `<b style="color:var(--bad)">${fdate(v)}</b>` : fdate(v)) },
-    { k: "proveedor", t: "Mantenedor" }, { k: "activo", t: "Activo", f: (v) => (v ? "Sí" : "No") },
-  ], await get("/api/mantenimiento/planes", { asset_id: S.asset }), (p) => can("mantenimiento.editar") ? [["Editar", () => sugerirProveedores(form(p.titulo, fields, p, async (d) => { await put(`/api/mantenimiento/planes/${p.id}`, d); toast("Plan guardado"); load(); await altaProveedorSiNuevo(d.proveedor, d.categoria); }), "proveedor")]] : []);
+  const guardarPlan = (d) => { const { checklist_txt, ...x } = d; const pts = (checklist_txt || "").split("\n").map((l) => l.trim()).filter(Boolean); return clean({ ...x, checklist: pts.length ? pts : null }); };
+  const load = async () => {
+    const c = await get("/api/preventivo/control", { asset_id: S.asset, tipo });
+    const t = c.totales;
+    const card = (k, n, txt, color) => `<button type="button" class="kpi kpi-btn${filtro === k ? " sel" : ""}" data-f="${k}" style="--c:${color}"><b>${n}</b><span>${txt}</span></button>`;
+    $("#cards", el).innerHTML = [card("", t.planes, `planes (${t.oca} OCA)`, "var(--ink)"), card("vencido", t.vencidos, "vencidos", SEM.rojo),
+      card("subsanacion_vencida", t.subsanacion_vencida, "plazo de subsanación vencido", SEM.rojo), card("deficiencias", t.deficiencias, "deficiencias sin subsanar", SEM.naranja),
+      card("proximo", t.proximos, "próximos 30 días", SEM.ambar), card("sin_documento", t.sin_documento, "revisiones sin documento", SEM.gris), card("al_dia", t.al_dia, "al día", SEM.verde)].join("");
+    $("#cards", el).querySelectorAll("[data-f]").forEach((b) => (b.onclick = () => { filtro = filtro === b.dataset.f ? "" : b.dataset.f; load(); }));
+    const filas = c.planes.filter((p) => !filtro || (filtro === "sin_documento" ? p.avisos.some((a) => a.includes("documento"))
+      : filtro === "deficiencias" ? p.deficiencias_abiertas.length : p.estado === filtro));
+    table($("#t", el), [
+      { k: "estado", t: "Estado", f: (_, p) => semaforo(p) },
+      { k: "titulo", t: "Plan", f: (v, p) => `${p.tipo === "oca" ? '<span class="badge b-escalada">OCA</span> ' : ""}<b>${esc(v)}</b><br><span class="peq muted">${esc(assetName(p.asset_id))} · ${esc(p.categoria)}${p.normativa ? ` · ${esc(p.normativa)}` : ""}</span>` },
+      { k: "proveedor_nombre", t: "Empresa", f: (v) => esc(v || "—") },
+      { k: "vence", t: "Vence", f: (_, p) => venceTxt(p) },
+      { k: "ultima", t: "Última revisión", f: (u) => u ? `${fdate(u.fecha)} · ${esc(u.resultado_nombre)}${u.numero ? `<br><span class="peq muted">${esc(u.numero)}</span>` : ""} ${u.documentos.length ? `<span title="Documentos">📎${u.documentos.length}</span>` : '<span class="error peq">sin documento</span>'}` : '<span class="muted">sin registrar</span>' },
+      { k: "avisos", t: "Para revisar", f: (v, p) => [...p.deficiencias_abiertas.map((d) => `<span class="error">● ${esc(d.descripcion)}</span> <a href="#" data-ot="${d.ot_id}">${otNum(d.ot_id)}</a>`), ...v.map((a) => esc(a))].map((x) => `<div class="peq">${x}</div>`).join("") || '<span class="muted">—</span>' },
+    ], filas, (p) => [
+      editar && p.activo && ["Registrar revisión", () => registrarRevision(p, load), "primary"],
+      ["Historial", () => historialPlan(p.id, load)],
+      editar && ["Editar", () => sugerirProveedores(form(p.titulo, fields, { ...p, checklist_txt: (p.checklist || []).join("\n") }, async (d) => { await put(`/api/mantenimiento/planes/${p.id}`, guardarPlan(d)); toast("Plan guardado"); load(); }), "proveedor")],
+    ]);
+    $("#t", el).querySelectorAll("[data-ot]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); verOT(Number(a.dataset.ot)); }));
+  };
+  $("#tipo", el).onchange = (e) => { tipo = e.target.value; load(); };
+  $("#xls", el).onclick = () => run(() => download("GET", `/api/preventivo/excel${S.asset ? `?asset_id=${S.asset}` : ""}`));
   if ($("#new", el)) {
-    $("#new", el).onclick = async () => { const aid = await pickAsset(); sugerirProveedores(form("Nuevo plan preventivo", fields, {}, async (d) => { await post("/api/mantenimiento/planes", clean({ ...d, asset_id: aid })); toast("Plan creado"); load(); await altaProveedorSiNuevo(d.proveedor, d.categoria); }), "proveedor"); };
+    $("#new", el).onclick = async () => { const aid = await pickAsset(); sugerirProveedores(form("Nuevo plan preventivo", fields, {}, async (d) => { await post("/api/mantenimiento/planes", { ...guardarPlan(d), asset_id: aid }); toast("Plan creado"); load(); }), "proveedor"); };
     $("#tpl", el).onclick = async () => { const aid = await pickAsset(); run(() => post("/api/mantenimiento/planes/plantilla", { asset_id: aid }), (r) => `${r.creados} planes cargados`).then(load); };
     $("#gen", el).onclick = () => form("Generar órdenes preventivas", [{ k: "dias_antelacion", t: "Días de antelación", type: "number", def: 7, req: true }], {},
       async (d) => { const r = await post("/api/mantenimiento/planes/generar", clean({ ...d, asset_id: S.asset ? Number(S.asset) : null })); toast(`${r.creadas} órdenes generadas`); load(); });
   }
   load();
 };
+
+// Registrar la revisión de un plan: lista de comprobación, resultado, próxima fecha (se contrasta con la periodicidad),
+// deficiencias (cada una genera su OT) y documentos de la empresa
+function registrarRevision(p, reload) {
+  const hoy = today();
+  const conDef = Object.fromEntries(p.resultados.map(([k, , d]) => [k, d]));
+  const grav = [["leve", "Leve"], ["grave", "Grave"], ["muy_grave", "Muy grave"]];
+  const filaDef = (d = {}) => `<div class="assign-row def-row"><input data-d="descripcion" placeholder="Deficiencia" value="${esc(d.descripcion || "")}">
+    <select data-d="gravedad">${grav.map(([k, t]) => `<option value="${k}" ${k === (d.gravedad || "leve") ? "selected" : ""}>${t}</option>`).join("")}</select><button type="button" class="btn sm danger" data-x>✕</button></div>`;
+  const f = form(`Registrar ${p.tipo === "oca" ? "inspección OCA" : "revisión"} · ${p.titulo}`, [
+    { k: "fecha", t: "Fecha de la revisión", type: "date", req: true, def: hoy },
+    { k: "resultado", t: "Resultado", type: "select", req: true, def: p.resultados[0][0], options: p.resultados.map(([k, t]) => [k, t]) },
+    { k: "empresa", t: p.tipo === "oca" ? "Organismo de control (OCA)" : "Empresa", def: p.proveedor_nombre || "" },
+    { k: "tecnico", t: p.tipo === "oca" ? "Inspector" : "Técnico" },
+    { k: "numero", t: p.tipo === "oca" ? "Nº de acta / certificado" : "Nº de informe o parte" },
+    { k: "proxima", t: "Próxima revisión (la que indica el documento)", type: "date", def: sumaDias(hoy, p.periodicidad_dias) },
+    { html: '<p class="peq" data-contraste></p>', wide: true },
+    { html: `<fieldset class="wide"><legend>Lista de comprobación</legend><table class="check-rev"><tbody>${p.puntos.map((pt, i) => `<tr><td>${esc(pt)}</td>
+      ${[["ok", "Correcto"], ["deficiencia", "Deficiencia"], ["na", "No aplica"]].map(([v, t]) => `<td><label class="check"><input type="radio" name="pt${i}" value="${v}" ${v === "ok" ? "checked" : ""}> ${t}</label></td>`).join("")}
+      <td><input data-nota="${i}" placeholder="Nota"></td></tr>`).join("")}</tbody></table></fieldset>`, wide: true },
+    { html: `<fieldset class="wide" data-defs><legend>Deficiencias (cada una genera su orden de trabajo)</legend><div data-lista></div>
+      <button type="button" class="btn sm" data-mas>+ Añadir deficiencia</button>
+      <label>Plazo de subsanación<input type="date" name="plazo_subsanacion"></label><p class="peq muted">Si el documento no fija plazo: 60 días (leve), 30 (grave) o 2 (muy grave).</p></fieldset>`, wide: true },
+    { html: `<label class="wide">Documentos de la empresa (${p.tipo === "oca" ? "acta, certificado" : "informe, parte"}, fotos)<input type="file" data-docs multiple accept=".pdf,image/*"></label>`, wide: true },
+    { k: "observaciones", t: "Observaciones", type: "textarea", wide: true },
+  ], {}, async (d, fr) => {
+    const checklist = p.puntos.map((pt, i) => ({ punto: pt, estado: fr.querySelector(`[name=pt${i}]:checked`)?.value || "ok", nota: fr.querySelector(`[data-nota="${i}"]`).value.trim() || null }));
+    const deficiencias = [...fr.querySelectorAll(".def-row")].map((r) => ({ descripcion: r.querySelector('[data-d="descripcion"]').value.trim(), gravedad: r.querySelector('[data-d="gravedad"]').value })).filter((x) => x.descripcion);
+    const datos = clean({ fecha: d.fecha, resultado: d.resultado, empresa: d.empresa, tecnico: d.tecnico, numero: d.numero, proxima: d.proxima,
+      plazo_subsanacion: fr.elements.plazo_subsanacion.value || null, observaciones: d.observaciones, checklist, deficiencias });
+    const fd = new FormData(); fd.append("datos", JSON.stringify(datos));
+    [...fr.querySelector("[data-docs]").files].forEach((x) => fd.append("ficheros", x));
+    const r = await upload(`/api/preventivo/planes/${p.id}/revisiones`, fd);
+    toast(`Revisión registrada${r.ots.length ? ` · ${r.ots.length} órdenes de trabajo generadas` : ""}`);
+    if (r.aviso) alert(r.aviso);
+    reload && reload();
+  }, "Registrar");
+  const lista = $("[data-lista]", f);
+  const bindX = () => lista.querySelectorAll("[data-x]").forEach((b) => (b.onclick = () => { b.parentElement.remove(); }));
+  $("[data-mas]", f).onclick = () => { lista.insertAdjacentHTML("beforeend", filaDef()); bindX(); };
+  const res = f.elements.resultado;
+  const verDefs = () => { $("[data-defs]", f).style.display = conDef[res.value] ? "" : "none"; if (conDef[res.value] && !lista.children.length) $("[data-mas]", f).click(); };
+  res.onchange = verDefs;
+  f.querySelectorAll('input[type=radio][value="deficiencia"]').forEach((r) => (r.onchange = () => { if (!conDef[res.value]) { res.value = p.resultados.find(([, , d]) => d)[0]; verDefs(); } }));
+  const contraste = () => {  // la próxima fecha del documento frente a la periodicidad del plan
+    const calc = sumaDias(f.elements.fecha.value, p.periodicidad_dias), prox = f.elements.proxima.value;
+    const dif = prox && calc ? Math.round((new Date(prox) - new Date(calc)) / 864e5) : 0;
+    $("[data-contraste]", f).innerHTML = Math.abs(dif) > 31 ? `<span class="error">⚠ Según la periodicidad del plan (cada ${p.periodicidad_dias} días) tocaría el ${fdate(calc)}. Compruebe la fecha del documento.</span>` : "";
+  };
+  f.elements.fecha.onchange = () => { f.elements.proxima.value = sumaDias(f.elements.fecha.value, p.periodicidad_dias); contraste(); };
+  f.elements.proxima.onchange = contraste;
+  sugerirProveedores(f, "empresa");
+  verDefs();
+}
+
+// Ficha rápida de una OT (desde el control del preventivo): datos y accesos a asignar, enviar y documentos
+async function verOT(wid) {
+  const w = await get(`/api/mantenimiento/ordenes/${wid}`);
+  const f = form(`${otNum(w.id)} · ${w.titulo}`, [{ html: `<p>${badge(w.estado)} ${badge(w.prioridad)} · ${esc(assetName(w.asset_id))} · ${esc(w.unidad || w.zona_nombre || "Zonas comunes")}</p>
+    <p class="peq">Apertura ${fdate(w.fecha_apertura)}${w.fecha_prevista ? ` · prevista ${fdate(w.fecha_prevista)}` : ""}${w.asignado_a || w.proveedor ? ` · ${esc(w.asignado_a || w.proveedor)}` : " · sin asignar"}</p>
+    <p style="white-space:pre-line">${esc(w.descripcion || "")}</p>
+    <p>${puedeEnviarOT() ? '<button type="button" class="btn sm" data-a="asignar">Asignar</button> <button type="button" class="btn sm" data-a="enviar">Enviar</button> ' : ""}<button type="button" class="btn sm" data-a="docs">Fotos y documentos (${w.n_adjuntos})</button>
+    <button type="button" class="btn sm" data-a="ir">Ver en órdenes de trabajo</button></p>` }], {}, async () => {}, "Cerrar");
+  const acc = { asignar: () => asignarOT(w), enviar: () => enviarOT(w), docs: () => adjuntosOT(w), ir: () => { $("#modal").close(); go("ordenes"); } };
+  f.querySelectorAll("[data-a]").forEach((b) => (b.onclick = () => acc[b.dataset.a]()));
+}
+
+async function historialPlan(pid, reload) {
+  const h = await get(`/api/preventivo/planes/${pid}/revisiones`);
+  const p = h.plan;
+  const f = form(`Historial · ${p.titulo}`, [{ html: `<p>${semaforo(p)} · vence ${fdate(p.vence)} · cada ${p.periodicidad_dias} días${p.normativa ? ` · ${esc(p.normativa)}` : ""}</p>
+    ${h.revisiones.length ? h.revisiones.map((r) => `<div class="card rev">
+      <b>${fdate(r.fecha)}</b> · <span class="badge ${r.con_deficiencias ? "b-cancelada" : "b-vigente"}">${esc(r.resultado_nombre)}</span>
+      ${r.numero ? ` · ${esc(r.numero)}` : ""}${r.empresa ? ` · ${esc(r.empresa)}` : ""}${r.tecnico ? ` · ${esc(r.tecnico)}` : ""}
+      <div class="peq muted">Prevista ${fdate(r.fecha_prevista)} · próxima ${fdate(r.proxima)}${r.plazo_subsanacion ? ` · subsanar antes del ${fdate(r.plazo_subsanacion)}` : ""} · registró ${esc(r.usuario || "—")}</div>
+      ${(r.deficiencias || []).map((d) => `<div class="peq">● ${esc(d.descripcion)} (${esc(d.gravedad.replace("_", " "))}) · <a href="#" data-ot="${d.ot_id}">${otNum(d.ot_id)}</a> ${d.ot_estado ? badge(d.ot_estado) : ""}</div>`).join("")}
+      ${(r.checklist || []).filter((x) => x.estado !== "ok").map((x) => `<div class="peq muted">${x.estado === "na" ? "N/A" : "✗"} ${esc(x.punto)}${x.nota ? `: ${esc(x.nota)}` : ""}</div>`).join("")}
+      ${r.observaciones ? `<div class="peq">${esc(r.observaciones)}</div>` : ""}
+      <div class="peq">${r.documentos.map((x) => `<a href="#" data-doc="${x.id}">📎 ${esc(x.nombre)}</a>`).join(" ") || '<span class="error">Sin documento</span>'}
+      ${can("mantenimiento.editar") ? `<label class="btn sm">+ Documento<input type="file" data-subir="${r.id}" multiple accept=".pdf,image/*" hidden></label>` : ""}</div></div>`).join("") : '<p class="muted">Todavía no hay revisiones registradas.</p>'}` }], {}, async () => {}, "Cerrar");
+  f.querySelectorAll("[data-doc]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); abrirFichero(`/api/preventivo/documentos/${a.dataset.doc}`); }));
+  f.querySelectorAll("[data-ot]").forEach((a) => (a.onclick = (e) => { e.preventDefault(); verOT(Number(a.dataset.ot)); }));
+  f.querySelectorAll("[data-subir]").forEach((inp) => (inp.onchange = async () => {
+    const fd = new FormData(); [...inp.files].forEach((x) => fd.append("ficheros", x));
+    await run(() => upload(`/api/preventivo/revisiones/${inp.dataset.subir}/documentos`, fd), "Documento añadido");
+    historialPlan(pid, reload); reload && reload();
+  }));
+}
 
 // ---- personal de mantenimiento y limpieza: fichas con correo y teléfono; envío de las OT y del parte de limpieza
 const AREAS = [["mantenimiento", "Mantenimiento"], ["limpieza", "Limpieza"], ["conserjeria", "Conserjería"], ["recepcion", "Recepción"], ["administracion", "Administración y oficinas"], ["otros", "Otros (por administración)"]];

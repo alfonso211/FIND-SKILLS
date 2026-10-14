@@ -1,5 +1,18 @@
 # Novedades
 
+## 2026-10-14 · Versión 1.54 · Control del preventivo y de las inspecciones OCA
+- **Mantenimiento · Plan preventivo**: nuevo cuadro de control con totales y semáforo por plan (vencido, plazo de subsanación vencido, deficiencias, próximo, al día). Mantenimiento e inspecciones OCA juntos o por separado.
+- **Registrar revisión**: lista de comprobación por instalación, resultado (también los de la OCA), nº de acta o informe, próxima revisión del documento (se contrasta con la periodicidad del plan) y documentos de la empresa.
+- **Cada deficiencia genera su orden de trabajo**, con prioridad según la gravedad y fecha hasta el plazo de subsanación. La OT preventiva del plan queda cerrada con la revisión.
+- **Historial** de cada plan con sus documentos (se pueden añadir después) y el estado de las OT de las deficiencias. **Excel** con el registro completo.
+- La plantilla normativa añade las **inspecciones OCA** (BT, ascensores, PCI, térmica, centro de transformación y gas).
+- **Aviso cada lunes** al director técnico con lo que está en rojo o naranja y las OCA de los próximos 60 días.
+
+## 2026-10-14 · Versión 1.53 · Dotación al importar reservas desde Excel
+- **Recepción · importar reservas**: la dotación estándar es obligatoria, igual que al reservar a mano. Las reservas de un tipo de apartamento sin ella no se importan; la vista previa lo avisa con el botón **Fijar dotación habitual**.
+- **Dotación extraordinaria en el Excel**: columna nueva **Dotación extraordinaria** («Cuna de viaje x1; Toallas de baño x2»). Se ve en la vista previa y queda en la reserva. Si no se indica, la estándar.
+- **Asignación automática**: si el Excel no dice el apartamento, se eligen antes los que ya tienen fijada la dotación estándar.
+
 ## 2026-10-14 · Versión 1.52 · Protección del acceso
 - **Todos · intentos de acceso**: 5 contraseñas mal seguidas bloquean ese usuario 15 minutos (como hasta ahora). Además, 20 intentos fallidos desde la misma conexión la bloquean 15 minutos, aunque se prueben usuarios distintos.
 - **Enlaces públicos** (técnico, fichaje, revisión de salida, ofertas, aprobaciones): una conexión que prueba muchos enlaces no válidos se bloquea 15 minutos. El resto de enlaces y del programa siguen funcionando.

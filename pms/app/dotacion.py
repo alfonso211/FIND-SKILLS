@@ -249,6 +249,75 @@ def limpiar(items: list[dict]) -> list[dict]:
     return sorted(out, key=lambda x: (orden.index(x["zona"]), x["codigo"]))
 
 
+# --------------------------------------------------------------------------- dotación extraordinaria escrita a mano
+def _clave(texto: str) -> str:
+    import re
+    import unicodedata
+    t = unicodedata.normalize("NFKD", str(texto or "")).encode("ascii", "ignore").decode().lower()
+    t = re.sub(r"[^a-z0-9]+", " ", t).strip()
+    return " ".join(re.sub(r"(es|s)$", "", w) if len(w) > 3 else w for w in t.split())  # sin plurales
+
+
+def _nombres(articulo: str) -> set[str]:
+    """Formas de llamar a un artículo del catálogo: el nombre entero y cada alternativa («Sofá / sofá-cama»)."""
+    import re
+    partes = [articulo] + re.split(r"\s*/\s*|\s*\(", articulo)
+    return {_clave(x.rstrip(")")) for x in partes if x.strip()}
+
+
+def de_texto(texto: str | None, catalogo: list[dict]) -> list[dict]:
+    """«Cuna x1; Toalla de baño x2; 2 almohadas» → [{codigo, zona, articulo, cantidad, nuevo}].
+    Cada artículo se busca en el catálogo del activo (código o nombre, sin tildes ni plurales); si no está, se marca
+    como nuevo (se dará de alta como «Otra dotación», en la zona auxiliar)."""
+    import re
+    out, vistos = [], set()
+    for trozo in re.split(r"[;\n|]+|,(?!\d)", str(texto or "")):
+        t = " ".join(trozo.split())
+        if not t:
+            continue
+        m = (re.fullmatch(r"(\d+)\s*(?:x|×|uds?\.?|unidades?)?\s+(.+)", t, re.I)
+             or re.fullmatch(r"(.+?)\s*(?:x|×|:|-)\s*(\d+)", t, re.I) or re.fullmatch(r"(.+?)\s*\((\d+)\)", t)
+             or re.fullmatch(r"(.+?)\s+(\d{1,2})", t))
+        if m and m.group(1).isdigit():
+            cantidad, nombre = m.group(1), m.group(2)
+        elif m:
+            nombre, cantidad = m.group(1), m.group(2)
+        else:
+            nombre, cantidad = t, "1"
+        nombre = nombre.strip(" .:-")[:160]
+        clave = _clave(nombre)
+        if not clave or clave in vistos or cantidad == "0":
+            continue
+        vistos.add(clave)
+        art = (next((a for a in catalogo if a["codigo"].upper() == nombre.upper()), None)
+               or next((a for a in catalogo if clave in _nombres(a["articulo"])), None))
+        if art is None:  # «Plancha» → «Plancha y tabla de planchar», solo si no hay duda entre varios
+            parecidos = [a for a in catalogo if any(n.startswith(clave + " ") for n in _nombres(a["articulo"]))]
+            art = parecidos[0] if len(parecidos) == 1 else None
+        if art:
+            out.append({"codigo": art["codigo"], "zona": art["zona"], "articulo": art["articulo"], "cantidad": cantidad,
+                        "nuevo": False})
+        else:
+            out.append({"codigo": None, "zona": "auxiliar", "articulo": nombre[:1].upper() + nombre[1:],
+                        "cantidad": cantidad, "nuevo": True})
+    return out
+
+
+def de_texto_resumen(items: list[dict]) -> str:
+    return ", ".join(f"{x['articulo']} ×{x['cantidad']}" + (" (nuevo)" if x["nuevo"] else "") for x in items)
+
+
+def para_reserva(db, unit, extra: list[dict]) -> dict | None:
+    """Dotación de una reserva a partir de la extraordinaria pedida: lo que ya está en la estándar del apartamento es
+    la cantidad total de esa reserva («cambios»); lo demás se añade («extra»). Sin nada pedido: la estándar (None)."""
+    extra = limpiar(extra)
+    if not extra:
+        return None
+    base = {x["codigo"] for x in base_unidad(db, unit)[0]}
+    return {"cambios": {x["codigo"]: x["cantidad"] for x in extra if x["codigo"] in base},
+            "extra": [x for x in extra if x["codigo"] not in base]}
+
+
 def de_reserva(db, r) -> dict:
     """Dotación que se entrega en una reserva: la habitual con los cambios (añadir / quitar / otra cantidad) y la
     dotación especial (artículos añadidos)."""
