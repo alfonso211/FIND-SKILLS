@@ -6,12 +6,13 @@ import secrets
 from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
-from .. import avisos
+from .. import avisos, proteccion
 from ..config import settings
 from ..database import get_db
 from ..models import Asset, Assignment, AuditLog, Base, Company, EmailLog, Role, Supplier, User
 from ..schemas import AssignmentIn, RoleIn, UserIn, UserUpdate
-from ..security import PERMISOS, Scope, audit, cerrar_sesiones, get_scope, hash_password
+from ..security import (PERMISOS, Scope, audit, cerrar_sesiones, cuentas_bloqueadas, get_scope, hash_password,
+                        limpiar_fallos)
 from ..utils import bad_request, get_or_404
 
 router = APIRouter(prefix="/api/admin", tags=["administración"])
@@ -261,3 +262,30 @@ def alerts_digest_now(scope: Scope = Depends(get_scope), db: Session = Depends(g
     audit(db, scope.user, "enviar_resumen", "avisos", None, r)
     db.commit()
     return r
+
+
+# --------------------------------------------------------------------------- bloqueos por intentos fallidos
+@router.get("/seguridad")
+def access_blocks(scope: Scope = Depends(get_scope)):
+    """Usuarios y conexiones bloqueados ahora mismo por intentos fallidos (se desbloquean solos a los 15 min)."""
+    scope.require_group("usuarios.gestionar")
+    return cuentas_bloqueadas() + proteccion.bloqueos()
+
+
+class DesbloqueoIn(BaseModel):
+    tipo: str
+    clave: str
+
+
+@router.post("/seguridad/desbloquear")
+def unblock_access(data: DesbloqueoIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    scope.require_group("usuarios.gestionar")
+    if data.tipo == "cuenta":
+        limpiar_fallos(data.clave.lower().strip())
+    elif data.tipo in proteccion.LIMITES:
+        proteccion.desbloquear(data.tipo, data.clave)
+    else:
+        bad_request("Tipo de bloqueo desconocido")
+    audit(db, scope.user, "desbloquear_acceso", "seguridad", None, {"tipo": data.tipo, "clave": data.clave})
+    db.commit()
+    return {"ok": True}

@@ -761,3 +761,5 @@ tr.cx-sep th { background: #1a1a1c; color: #fff; }
 table.dot td { padding: 3px 6px; }
 table.dot input[data-cant] { width: 11em; }
 details > summary { cursor: pointer; padding: 6px 0; }
+.aviso-bloqueo { margin-bottom: 14px; border-left: 4px solid var(--danger, #b3261e); }
+.aviso-bloqueo h3 { margin-bottom: 4px; }

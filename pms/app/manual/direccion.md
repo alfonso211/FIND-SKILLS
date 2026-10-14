@@ -87,6 +87,10 @@
 - **Mantenimiento diario a las 06:00**: revisa servidor, copias, base de datos, documentos, correo y seguridad; arregla solo lo que puede y, si hay un fallo grave, envía un **correo URGENTE** al director técnico. Los lunes, resumen semanal.
 - **Guía de emergencia** (`deploy/RECUPERACION.md`): qué hacer si el PMS no responde, si se borran datos, si se pierde el servidor o si hay un virus. Guarde impresa la guía y el **kit de emergencia** (contraseña del cifrado de las copias y `PMS_DOCS_KEY`) **fuera del servidor**.
 - Si el programa se bloquea, **se reinicia solo** en 1-3 minutos y deja un informe con la causa.
+- **Intentos de acceso**: 5 contraseñas mal bloquean ese usuario 15 minutos; 20 intentos fallidos desde la misma conexión (IP) la bloquean 15 minutos, aunque se prueben usuarios distintos. Los enlaces públicos (técnico, fichaje, revisión, ofertas, aprobaciones) se bloquean igual tras 30 enlaces no válidos desde la misma conexión.
+- Cada bloqueo llega por **correo al director técnico** (`PMS_SEGURIDAD_AVISOS`). Si es un usuario real que existe, conviene confirmar que fue él; si no, cambiar su contraseña.
+- **Administración → Usuarios** muestra arriba los **accesos bloqueados** con el botón **Desbloquear**. Úselo solo si sabe quién es (una oficina propia con varias personas equivocándose comparte la misma conexión).
+- **Protección del navegador** (`PMS_CSP`): el programa solo ejecuta su propio código. Si alguna pantalla dejara de funcionar tras una actualización, se puede poner `PMS_CSP=informe` en el `.env` (solo anota, no bloquea) y avisar al soporte.
 
 ## Partes de trabajo e informe quincenal
 - **Mantenimiento → Parte de trabajo diario**: parte de cada día de mantenimiento y limpieza (OT terminadas, limpiezas hechas y actuaciones anotadas). Recepción lo valida y queda archivado en PDF y Excel en **Documentos**.

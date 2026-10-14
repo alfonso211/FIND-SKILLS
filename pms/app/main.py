@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import OperationalError
 
-from . import avisos, gestion, vigilante
+from . import avisos, gestion, proteccion, vigilante
 from .config import BASE_DIR
 from .database import SessionLocal
 from .migraciones import migrar
@@ -82,10 +82,32 @@ async def version_interfaz(request: Request, call_next):
     return resp
 
 
+# Enlaces públicos (técnico, fichaje, revisión, ofertas, aprobaciones, facturas…): una conexión que acumula enlaces
+# rechazados (firma mala, caducada o inexistente) se bloquea un rato; así no se pueden probar enlaces a ciegas
+ENLACE_RECHAZADO = {401, 403, 404, 410}
+SCRIPT_VERSION = f'window.PMS_VERSION = "{VERSION}";'
+CSP = proteccion.politica((SCRIPT_VERSION,))
+
+
+@app.middleware("http")
+async def proteger(request: Request, call_next):
+    path = request.url.path
+    publico, ip = path.startswith("/api/publico/"), proteccion.ip_de(request)
+    if publico and proteccion.bloqueada("enlace", ip):
+        resp = JSONResponse({"detail": "Demasiados enlaces no válidos desde esta conexión. Espere 15 minutos."},
+                            status_code=429)
+    else:
+        resp = await call_next(request)
+        if publico and resp.status_code in ENLACE_RECHAZADO:
+            proteccion.fallo("enlace", ip, path)
+    resp.headers.update(proteccion.cabeceras(path, CSP))
+    return resp
+
+
 @app.get("/", include_in_schema=False)
 def index():
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     html = (html.replace('/static/app.js"', f'/static/app.js?v={VERSION}"')
                 .replace('/static/styles.css"', f'/static/styles.css?v={VERSION}"')
-                .replace("</head>", f'  <script>window.PMS_VERSION = "{VERSION}";</script>\n</head>'))
+                .replace("</head>", f'  <script>{SCRIPT_VERSION}</script>\n</head>'))
     return HTMLResponse(html, headers={"Cache-Control": "no-cache"})

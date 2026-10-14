@@ -1,5 +1,11 @@
 # Novedades
 
+## 2026-10-14 · Versión 1.52 · Protección del acceso
+- **Todos · intentos de acceso**: 5 contraseñas mal seguidas bloquean ese usuario 15 minutos (como hasta ahora). Además, 20 intentos fallidos desde la misma conexión la bloquean 15 minutos, aunque se prueben usuarios distintos.
+- **Enlaces públicos** (técnico, fichaje, revisión de salida, ofertas, aprobaciones): una conexión que prueba muchos enlaces no válidos se bloquea 15 minutos. El resto de enlaces y del programa siguen funcionando.
+- **Dirección · aviso y desbloqueo**: cada bloqueo llega por correo al director técnico. En **Usuarios** aparecen los bloqueos activos con el botón **Desbloquear** (por ejemplo, si alguien del equipo se equivocó de contraseña).
+- **Protección del navegador**: el programa solo ejecuta su propio código. Un texto malicioso guardado en una ficha no puede ejecutar nada ni enviar datos fuera.
+
 ## 2026-10-14 · Versión 1.51 · Hora de Madrid, partes de trabajo editables y dotación obligatoria
 - **Todos · hora**: el programa trabaja siempre en hora de Madrid. Corregido el día que proponía el navegador entre las 00:00 y las 02:00 (salía el anterior) y la fecha de salida que a veces salía igual a la de entrada. Aviso si el reloj del ordenador va desfasado.
 - **Partes de trabajo · Editar**: cada línea se puede corregir (hora, trabajo, lugar, quién y horas) con el motivo, mientras el parte esté abierto. Al anotar una actuación se indica la hora a la que se hizo.
