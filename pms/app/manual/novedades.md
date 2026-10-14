@@ -1,9 +1,9 @@
 # Novedades
 
 ## 2026-10-14 · Versión 1.60 · Accesos rápidos en la barra superior
-- **Todos**: en la barra de arriba, junto al título de la pantalla, hay botones para abrir **Gmail, Outlook, Excel y Word** en una pestaña nueva sin salir del PMS.
-- **Todos**: cada uno elige los suyos en *Mi perfil → Accesos rápidos*: añadir (nombre y dirección https://), quitar, cambiar el orden o volver a los de serie. Hasta 8.
-- Excel y Word se abren en su versión web; desde allí, «Abrir en la aplicación de escritorio» pasa al programa del ordenador.
+- **Todos**: en la barra de arriba, junto al título de la pantalla, hay botones para abrir **Gmail, Outlook, Excel, Word y Teams** en una pestaña nueva sin salir del PMS.
+- **Todos**: cada uno elige los suyos en *Mi perfil → Accesos rápidos*: añadir (nombre y dirección https://), quitar, cambiar el orden o volver a los de serie. Hasta 10.
+- Excel, Word y Teams se abren en su versión web; desde allí, «Abrir en la aplicación de escritorio» pasa al programa del ordenador.
 - En pantallas estrechas (portátil pequeño, tablet, móvil) los accesos se recogen en un único botón «Accesos ▾».
 
 ## 2026-10-14 · Versión 1.59 · Cambio seguro de la clave de los documentos

@@ -1,5 +1,5 @@
-"""Accesos rápidos de la barra superior: de serie Gmail, Outlook, Excel y Word; cada usuario elige los suyos
-(solo https, como máximo 8) y no ve ni toca los de otro."""
+"""Accesos rápidos de la barra superior: de serie Gmail, Outlook, Excel, Word y Teams; cada usuario elige los suyos
+(solo https, como máximo 10) y no ve ni toca los de otro."""
 from conftest import login
 
 
@@ -18,8 +18,8 @@ def test_accesos_de_serie_y_personales(client, admin, ids):
     h = _usuario(client, admin, ids, "accesos.uno@inversiete.com")
     otro = _usuario(client, admin, ids, "accesos.dos@inversiete.com")
     r = client.get("/api/auth/accesos", headers=h).json()
-    assert r["de_serie"] and r["maximo"] == 8
-    assert [a["nombre"] for a in r["accesos"]] == ["Gmail", "Outlook", "Excel", "Word"]
+    assert r["de_serie"] and r["maximo"] == 10
+    assert [a["nombre"] for a in r["accesos"]] == ["Gmail", "Outlook", "Excel", "Word", "Teams"]
     assert all(a["url"].startswith("https://") for a in r["accesos"])
     assert client.get("/api/auth/me", headers=h).json()["accesos"] == r["accesos"]
 
@@ -38,7 +38,7 @@ def test_accesos_de_serie_y_personales(client, admin, ids):
     assert client.put("/api/auth/accesos", headers=h, json={"accesos": []}).json()["accesos"] == []
     # null: vuelve a los de serie
     r = client.put("/api/auth/accesos", headers=h, json={"accesos": None}).json()
-    assert r["de_serie"] and len(r["accesos"]) == 4
+    assert r["de_serie"] and len(r["accesos"]) == 5
 
 
 def test_accesos_rechaza_direcciones_peligrosas(client, admin, ids):
@@ -51,8 +51,8 @@ def test_accesos_rechaza_direcciones_peligrosas(client, admin, ids):
         assert r.status_code == 400, url
     assert client.put("/api/auth/accesos", headers=h, json={"accesos": [{"nombre": " ", "url": "https://a.es"}]}).status_code == 400
     assert client.put("/api/auth/accesos", headers=h, json={"accesos": [{"nombre": "x" * 31, "url": "https://a.es"}]}).status_code == 400
-    nueve = [{"nombre": f"A{i}", "url": f"https://a{i}.es"} for i in range(9)]
-    assert client.put("/api/auth/accesos", headers=h, json={"accesos": nueve}).status_code == 400
-    assert client.put("/api/auth/accesos", headers=h, json={"accesos": nueve[:8]}).status_code == 200
+    once = [{"nombre": f"A{i}", "url": f"https://a{i}.es"} for i in range(11)]
+    assert client.put("/api/auth/accesos", headers=h, json={"accesos": once}).status_code == 400
+    assert client.put("/api/auth/accesos", headers=h, json={"accesos": once[:10]}).status_code == 200
     # sin sesión no hay accesos
     assert client.get("/api/auth/accesos").status_code == 401

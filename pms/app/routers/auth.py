@@ -117,8 +117,9 @@ ACCESOS_DEFECTO = [
     {"nombre": "Outlook", "url": "https://outlook.office.com/mail/"},
     {"nombre": "Excel", "url": "https://www.office.com/launch/excel"},
     {"nombre": "Word", "url": "https://www.office.com/launch/word"},
+    {"nombre": "Teams", "url": "https://teams.microsoft.com/"},
 ]
-ACCESOS_MAX, ACCESO_NOMBRE_MAX, ACCESO_URL_MAX = 8, 30, 500
+ACCESOS_MAX, ACCESO_NOMBRE_MAX, ACCESO_URL_MAX = 10, 30, 500
 
 
 def accesos_de(u: User) -> list[dict]:
