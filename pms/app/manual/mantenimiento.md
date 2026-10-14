@@ -47,6 +47,21 @@
 - Las órdenes de las revisiones que vencen en los próximos 7 días **se generan solas** cada mañana. **Generar OT próximas** sigue disponible para adelantarlas.
 - Las revisiones a 30 días o vencidas, y las OT preventivas que siguen sin hacer pasada su fecha, llegan en el **resumen diario por correo**.
 
+### Control del preventivo y de las inspecciones OCA
+- Arriba, los **totales**: vencidos, plazo de subsanación vencido, deficiencias sin subsanar, próximos 30 días, revisiones sin documento y al día. **Pulse uno** para ver solo esos planes. El selector de arriba separa **mantenimiento** e **inspecciones OCA**.
+- Cada plan tiene su **semáforo**: rojo (vencido o plazo de subsanación vencido), naranja (deficiencias sin subsanar), ámbar (vence en 30 días) y verde (al día). En «Para revisar» salen las deficiencias abiertas (con su OT, que se abre pulsándola) y los avisos.
+- **Registrar revisión** cuando la empresa haga la revisión o la OCA la inspección:
+  1. **Fecha**, **empresa** u organismo, **técnico** o inspector y **nº de informe o acta**.
+  2. **Lista de comprobación**: cada punto Correcto / Deficiencia / No aplica, con una nota si hace falta. Al marcar una deficiencia, el resultado cambia solo.
+  3. **Resultado**. Mantenimiento: correcto o con deficiencias. OCA: favorable, favorable con defectos leves, desfavorable (defectos graves) o negativa (defectos muy graves: la instalación no puede usarse).
+  4. **Deficiencias**: una línea por cada una, con su gravedad. **Cada deficiencia genera su orden de trabajo** (leve: prioridad media; grave: alta; muy grave: urgente, con aviso inmediato). **Plazo de subsanación**: el del acta; si no lo fija, 60, 30 o 2 días según la gravedad.
+  5. **Próxima revisión**: la que indica el documento. Si no cuadra con la periodicidad del plan, sale un aviso en rojo para contrastarlo.
+  6. **Documentos**: informe, acta o certificado (PDF o fotos). Si llegan después, se añaden en **Historial → + Documento**.
+- Al registrar: la **OT preventiva** abierta del plan queda **cerrada**, la próxima fecha del plan pasa a ser la del documento y la revisión queda en el **Historial** con todo lo anotado.
+- **Editar** un plan: tipo (mantenimiento u OCA), empresa y los **puntos a comprobar** (uno por línea; si se deja vacío, se usan los de su instalación).
+- **Excel**: registro con el estado de cada plan y el historial de revisiones, para la propiedad o una inspección.
+- Cada **lunes**, el director técnico recibe por correo lo que está en rojo o naranja y las inspecciones OCA de los próximos 60 días.
+
 ## Personal y proveedores
 - **Personal → Fichas del personal**: técnicos y personal (propio o subcontratas) a los que se envían las OT. No necesitan usuario en el programa.
 - **Proveedores**: fichas de empresas y autónomos (NIF, contacto, gremio).

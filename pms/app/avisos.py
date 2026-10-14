@@ -700,13 +700,14 @@ def _bucle() -> None:
                             raise
             with SessionLocal() as db:
                 recordatorios_agenda(db, ahora.replace(tzinfo=None))
-            from . import automatismos
+            from . import automatismos, preventivo
             with SessionLocal() as db:
                 automatismos.avisar_plazos(db, ahora.replace(tzinfo=None))  # OT urgentes (4 h) y altas (24 h) sin respuesta
             if (ahora.hour, ahora.minute) >= (hh, mm):
                 for nombre, tarea in (("informe de dirección", automatismos.informe_direccion),
                                       ("preventivo automático", automatismos.preventivo_automatico),
-                                      ("aviso de llegada", automatismos.avisos_llegada)):
+                                      ("aviso de llegada", automatismos.avisos_llegada),
+                                      ("control de preventivo y OCA", preventivo.aviso_semanal)):
                     try:
                         with SessionLocal() as db:
                             tarea(db, ahora.date())

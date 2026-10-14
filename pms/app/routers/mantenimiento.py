@@ -49,6 +49,15 @@ PLANTILLA_PREVENTIVO = [
     ("Mantenimiento ascensores por empresa conservadora", "ascensores", "RD 355/2024 ITC AEM 1", 30),
     ("Inspección periódica BT por OCA (verificar plazo 5/10 años según uso)", "electricidad",
      "RD 842/2002 REBT ITC-BT-05", 1825),
+    ("Inspección periódica ascensores por OCA", "ascensores",
+     "RD 355/2024 ITC AEM 1 (2 años en pública concurrencia; verificar según uso y antigüedad)", 730),
+    ("Inspección periódica PCI por OCA", "pci", "RD 513/2017 RIPCI art. 22 (cada 10 años)", 3650),
+    ("Inspección periódica eficiencia energética instalación térmica por OCA", "climatizacion",
+     "RD 1027/2007 RITE IT 4 (generadores > 70 kW cada 5 años; verificar potencia)", 1825),
+    ("Inspección periódica centro de transformación por OCA (solo si hay CT propio)", "electricidad",
+     "RD 337/2014 ITC-RAT 23 (cada 3 años)", 1095),
+    ("Inspección periódica instalación receptora de gas", "general",
+     "RD 919/2006 ITC-ICG 07 (cada 5 años, por la distribuidora)", 1825),
     ("Revisión cuadros eléctricos zonas comunes (termografía)", "electricidad", "Buenas prácticas", 180),
     ("Revisión grupo de presión y bombas", "fontaneria", "Buenas prácticas", 180),
     ("Revisión cubiertas, canalones y bajantes", "cubiertas", "Buenas prácticas (antes de otoño)", 365),
@@ -310,6 +319,13 @@ def update_order(wid: int, data: WorkOrderUpdate, tareas: BackgroundTasks, scope
     db.commit()
     if "prioridad" in ch and w.prioridad == "urgente":
         tareas.add_task(avisos.ot_urgente, w.id, scope.user.id)
+    return _wo_out(w, db)
+
+
+@router.get("/ordenes/{wid}")
+def get_work_order(wid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    w = get_or_404(db, WorkOrder, wid)
+    scope.require_asset("mantenimiento.ver", w.asset_id)
     return _wo_out(w, db)
 
 
@@ -771,6 +787,8 @@ def list_plans(asset_id: int | None = None, scope: Scope = Depends(get_scope), d
 def create_plan(data: PlanIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     scope.require_asset("mantenimiento.editar", data.asset_id)
     get_or_404(db, Asset, data.asset_id)
+    if data.proveedor_id:
+        get_or_404(db, Supplier, data.proveedor_id)
     p = PreventivePlan(**data.model_dump())
     db.add(p)
     db.flush()
@@ -783,6 +801,8 @@ def create_plan(data: PlanIn, scope: Scope = Depends(get_scope), db: Session = D
 def update_plan(pid: int, data: PlanUpdate, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     p = get_or_404(db, PreventivePlan, pid)
     scope.require_asset("mantenimiento.editar", p.asset_id)
+    if data.proveedor_id:
+        get_or_404(db, Supplier, data.proveedor_id)
     ch = apply(p, data)
     audit(db, scope.user, "editar", "plan_preventivo", pid, ch)
     db.commit()
@@ -806,7 +826,8 @@ def load_template(data: TemplateReq, scope: Scope = Depends(get_scope), db: Sess
         if titulo in existing:
             continue
         db.add(PreventivePlan(asset_id=data.asset_id, titulo=titulo, categoria=cat, normativa=norma,
-                              periodicidad_dias=dias, proxima_fecha=start))
+                              periodicidad_dias=dias, proxima_fecha=start,
+                              tipo="oca" if "OCA" in titulo or titulo.startswith("Inspección periódica") else "mantenimiento"))
         n += 1
     audit(db, scope.user, "cargar_plantilla", "plan_preventivo", None, {"asset_id": data.asset_id, "creados": n})
     db.commit()
