@@ -202,7 +202,26 @@ El instalador la genera automáticamente y la deja en `/root/pms-credenciales.tx
 
 - **Guárdela fuera del servidor**, en el gestor de contraseñas de la empresa, y borre después ese fichero.
 - **Sin esa clave no se pueden recuperar las copias de los documentos**, ni siquiera desde las copias de seguridad.
-- **No la cambie** una vez haya documentos guardados.
+- **No la cambie editando el `.env` a mano** una vez haya documentos guardados: siga el procedimiento siguiente.
+
+### Cambiar la clave de los documentos (si se ha visto o compartido)
+
+El PMS sigue funcionando durante todo el proceso; no se pierde ningún documento.
+
+1. Copia de seguridad: `cd /opt/pms/deploy && ./backup.sh`
+2. Clave nueva y antigua a la vez (no se muestran en pantalla):
+   ```
+   cd /opt/pms/deploy && cp -p .env .env.antes-docs && OLD=$(grep '^PMS_DOCS_KEY=' .env | cut -d= -f2-) && NEW=$(docker compose exec -T app python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" | tr -d '\r') && [ -n "$OLD" ] && [ -n "$NEW" ] && grep -v '^PMS_DOCS_KEY_ANTERIOR=' .env | sed "s|^PMS_DOCS_KEY=.*|PMS_DOCS_KEY=$NEW|" > .env.nuevo && echo "PMS_DOCS_KEY_ANTERIOR=$OLD" >> .env.nuevo && chmod 600 .env.nuevo && mv .env.nuevo .env && unset OLD NEW && docker compose up -d --no-deps app && sleep 20 && echo LISTO
+   ```
+3. Contar y volver a cifrar:
+   `docker compose exec app python -m app.rotar_documentos` (solo cuenta) y después
+   `docker compose exec app python -m app.rotar_documentos --aplicar`. Repetir el primero: debe decir `pendientes: 0`.
+4. Quitar la clave antigua: `sed -i '/^PMS_DOCS_KEY_ANTERIOR=/d' .env && docker compose up -d --no-deps app` y abrir un
+   DNI en el PMS para comprobarlo.
+5. Copia de seguridad nueva (`./backup.sh`) y borrar `.env.antes-docs`.
+
+Las copias de seguridad anteriores al cambio siguen cifradas con la clave antigua: guárdela en el gestor de
+contraseñas, con la fecha, hasta que caduquen (30 días en el servidor, 90 en Google Drive).
 
 Las copias de seguridad diarias incluyen la carpeta de documentos (`/var/backups/pms/documentos_*.tar.gz`).
 

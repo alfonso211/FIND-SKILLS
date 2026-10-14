@@ -35,6 +35,8 @@ services:
       # copias de documentos de identidad, cifradas con PMS_DOCS_KEY
       PMS_DOCS_DIR: /data/documentos
       PMS_DOCS_KEY: ${PMS_DOCS_KEY:-}
+      # solo durante un cambio de PMS_DOCS_KEY (ver INSTALACION.md, «Cambiar la clave de los documentos»)
+      PMS_DOCS_KEY_ANTERIOR: ${PMS_DOCS_KEY_ANTERIOR:-}
       # avisos por correo (ver INSTALACION.md, apartado 8 ter)
       PMS_URL: https://${PMS_DOMINIO}
       PMS_SMTP_HOST: ${PMS_SMTP_HOST:-}

@@ -1,5 +1,9 @@
 # Novedades
 
+## 2026-10-14 · Versión 1.59 · Cambio seguro de la clave de los documentos
+- **Dirección**: la clave con la que se cifran las copias de DNI y pasaportes se puede cambiar sin perder ningún documento y sin parar el PMS (procedimiento en INSTALACION.md, «Cambiar la clave de los documentos»).
+- Para el resto del equipo no cambia nada.
+
 ## 2026-10-14 · Versión 1.58 · Libro de fianzas y fianzas contabilizadas desde los avisos a gestión
 - **Dirección y Administración**: nuevo **Libro de fianzas** en *Reservas → Devoluciones de fianza*. Muestra lo que se custodia en cada activo, los cobros, devoluciones y transferencias con su asiento sugerido y si gestión ha recibido cada aviso, y avisa de lo que no cuadra. Tiene Excel.
 - **Gestión**: los avisos de fianza llevan la empresa, el asiento sugerido y el saldo en custodia del activo, para contabilizarlos directamente. Cuando se active en el servidor, el fichero de fianzas de la exportación pasa a ser **CONTROL_FIANZAS_*.csv**, solo para cuadrar.
