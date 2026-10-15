@@ -32,3 +32,17 @@ def test_buscador_de_gastos(client, admin, ids):
     assert r["totales"]["total"] == 96.8  # los totales son los de lo encontrado
     xls = client.get("/api/gastos/excel", headers=admin, params={"asset_id": sae, "q": "Lupa"})
     assert xls.status_code == 200 and xls.content[:2] == b"PK"
+
+
+def test_buscador_sin_tildes_y_documentos(client, admin, ids):
+    sae = ids["assets"]["SAE"]["id"]
+    a = _gasto(client, admin, sae, "Fontanería Tildes SL", "FT-1", "Reparación de cañería", 50)
+    assert a in _ids(client, admin, sae, "fontaneria tildes")      # sin tildes
+    assert a in _ids(client, admin, sae, "CANERIA reparacion")      # mayúsculas, ñ y orden de palabras
+    assert a not in _ids(client, admin, sae, "fontaneria otra")     # todas las palabras deben estar
+    r = client.post("/api/documentos-recibidos", headers=admin, data={
+        "asset_id": str(sae), "tipo": "carta", "fecha": AYER, "emisor": "Ayuntamiento de Móstoles",
+        "descripcion": "Notificación de tasa"}, files=[("ficheros", ("carta.pdf", b"%PDF-1.4\n%x\n%%EOF", "application/pdf"))])
+    assert r.status_code == 201, r.text
+    docs = client.get("/api/documentos-recibidos", headers=admin, params={"asset_id": sae, "q": "mostoles notificacion"}).json()
+    assert [d["id"] for d in docs] == [r.json()["id"]]

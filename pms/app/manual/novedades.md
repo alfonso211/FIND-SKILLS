@@ -4,6 +4,8 @@
 - **Recepción y Dirección**: la *Cuenta de gastos* tiene un **buscador**. Escriba parte del proveedor, del nº de factura, del concepto o de las notas, o un importe (por ejemplo `121,00` o `1.210,50`), y la lista se filtra mientras escribe.
 - Funciona junto con los filtros de fechas, categoría y pagados, y los totales de arriba son los de lo encontrado.
 - El botón **Excel** descarga solo lo que se está viendo.
+- El buscador no distingue **tildes ni mayúsculas** («fontaneria» encuentra «Fontanería»). Lo mismo en *Documentos recibidos*.
+- **Recepción**: en las facturas ya pasadas a contabilidad, el botón se llama **«Corregir / anular…»** (pedir corrección o anulación desde el PMS). Recepción no tiene acceso a gestión; «Abrir en gestión» solo lo ve la Dirección.
 
 ## 2026-10-14 · Versión 1.63 · Fusión con gestión: facturas, pagos y catálogo
 - **Dirección**: el PMS y gestión (INVERGESTION) funcionan como un solo programa. Lo que se registra en uno pasa solo al otro, con sus documentos:

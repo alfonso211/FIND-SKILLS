@@ -15,10 +15,10 @@ from io import BytesIO
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import adjuntos, ausencias, avisos, documentos, fusion
+from .. import adjuntos, ausencias, avisos, documentos, fusion, nif
 from ..database import get_db
 from ..facturacion import FORMAS_PAGO, dinero
 from ..models import (TIPOS_DOC_RESERVADOS, AMBITOS_GASTO, CATEGORIAS_GASTO, TIPOS_DOCUMENTO, Asset, Company, Expense,
@@ -270,13 +270,15 @@ def list_documents(asset_id: int | None = None, tipo: str | None = None, desde: 
         stmt = stmt.where(ReceivedDocument.fecha >= desde)
     if hasta:
         stmt = stmt.where(ReceivedDocument.fecha <= hasta)
-    if q:
-        like = f"%{q}%"
-        stmt = stmt.where(or_(ReceivedDocument.emisor.ilike(like), ReceivedDocument.referencia.ilike(like),
-                              ReceivedDocument.descripcion.ilike(like), ReceivedDocument.nombre.ilike(like)))
     if revision:
         stmt = stmt.where(ReceivedDocument.revision == revision)
-    docs = list(db.scalars(stmt.order_by(ReceivedDocument.fecha.desc(), ReceivedDocument.id.desc()).limit(3000)))
+    stmt = stmt.order_by(ReceivedDocument.fecha.desc(), ReceivedDocument.id.desc())
+    palabras = nif.nombre_clave(q).split() if q else []
+    if palabras:  # sin tildes ni mayúsculas: emisor, referencia, descripción y nombre del fichero
+        docs = [x for x in db.scalars(stmt) if all(
+            p in nif.nombre_clave(x.emisor, x.referencia, x.descripcion, x.nombre) for p in palabras)][:3000]
+    else:
+        docs = list(db.scalars(stmt.limit(3000)))
     # la documentación del personal de las subcontratas solo la ven dirección y Recepción 1 del activo
     reservado: dict[int, bool] = {}
     docs = [x for x in docs if x.tipo not in TIPOS_DOC_RESERVADOS or reservado.setdefault(
@@ -360,7 +362,7 @@ def read_invoice(ficheros: list[UploadFile] = File(...), scope: Scope = Depends(
     """Lee la factura (PDF o fotos) y propone sus datos para el formulario. No guarda nada.
     Los datos «dudosos» (no encontrados o que no cuadran) se marcan para revisarlos."""
     scope.require_any("documentos.editar")
-    from .. import lector_facturas, nif
+    from .. import lector_facturas
     datos, _, _ = _fichero(ficheros)
     propios = {nif.normalizar(c) for c in db.scalars(select(Company.cif)) if c}
     proveedores = {nif.normalizar(s.nif): s.nombre
@@ -450,23 +452,17 @@ def _importe_buscado(q: str) -> Decimal | None:
     return dinero(t)
 
 
-def _buscar(stmt, q: str | None):
-    """Buscador: concepto, proveedor, nº de factura, notas y detalle; si es un importe, también el total de la
-    factura (lo que figura en ella) o el total con IVA."""
-    q = " ".join((q or "").split())[:100]
-    if not q:
-        return stmt
-    like = f"%{q}%"
-    cond = [Expense.concepto.ilike(like), Expense.proveedor.ilike(like), Expense.numero_factura.ilike(like),
-            Expense.notas.ilike(like), Expense.ambito_detalle.ilike(like)]
-    imp = _importe_buscado(q)
-    if imp is not None:
-        cond += [Expense.total == imp, (Expense.total - Expense.retencion) == imp]
-    return stmt.where(or_(*cond))
+def _coincide(g: Expense, q: str, imp: Decimal | None) -> bool:
+    """Buscador: concepto, proveedor, nº de factura, notas y detalle, sin distinguir tildes ni mayúsculas; si es un
+    importe, también el total de la factura (lo que figura en ella) o el total con IVA."""
+    if imp is not None and imp in (dinero(g.total), dinero(g.total) - dinero(g.retencion or 0)):
+        return True
+    texto = nif.nombre_clave(g.concepto, g.proveedor, g.numero_factura, g.notas, g.ambito_detalle)
+    return all(p in texto for p in nif.nombre_clave(q).split())
 
 
-def _gastos_q(scope: Scope, asset_id, desde, hasta, categoria, unit_id, pagado, q=None):
-    stmt = _buscar(scoped(select(Expense), Expense.asset_id, scope.asset_ids("documentos.ver")), q)
+def _gastos_q(scope: Scope, asset_id, desde, hasta, categoria, unit_id, pagado):
+    stmt = scoped(select(Expense), Expense.asset_id, scope.asset_ids("documentos.ver"))
     if asset_id:
         stmt = stmt.where(Expense.asset_id == asset_id)
     if desde:
@@ -484,7 +480,13 @@ def _gastos_q(scope: Scope, asset_id, desde, hasta, categoria, unit_id, pagado, 
 
 def _gastos(db, scope, asset_id, desde, hasta, categoria, unit_id, pagado, q=None) -> list[dict]:
     scope.require_any("documentos.ver")
-    filas = list(db.scalars(_gastos_q(scope, asset_id, desde, hasta, categoria, unit_id, pagado, q).limit(10000)))
+    stmt = _gastos_q(scope, asset_id, desde, hasta, categoria, unit_id, pagado)
+    q = " ".join((q or "").split())[:100]
+    if q:  # sin tildes: se filtra aquí (igual en SQLite y PostgreSQL)
+        imp = _importe_buscado(q)
+        filas = [g for g in db.scalars(stmt) if _coincide(g, q, imp)][:10000]
+    else:
+        filas = list(db.scalars(stmt.limit(10000)))
     unidades, usuarios = _nombres(db, {g.unit_id for g in filas if g.unit_id},
                                   {i for g in filas for i in (g.user_id, g.pago_retenido_user_id) if i})
     activos = _activos(db)
