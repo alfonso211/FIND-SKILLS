@@ -13,7 +13,9 @@ limpiezas) y, solo para administración y dirección, vencimientos y fiscal. Las
 - Casilla «Sincronizar el calendario con gestión» (solo superadministración), apagada al desplegar: con ella apagada
   lo que llega se guarda «sin tratar» y no se manda nada.
 - Visibilidad: vencimientos y fiscal (y todo lo que gestión marque solo para administración y dirección) solo los ve
-  quien tiene «finanzas.ver» (dirección y administración); recepción y técnicos nunca, ni en pantalla ni en Outlook.
+  la superadministración y los roles de dirección y administración (ROLES_DIRECCION), cada uno solo los de sus
+  sociedades (o, si la entrada no indica sociedad, de sus activos); recepción y técnicos nunca, ni en pantalla ni en
+  Outlook.
 - Outlook: cada usuario tiene su enlace privado /cal/<clave>.ics (solo lectura). En la base solo la sha256 de la clave.
 """
 import hashlib
@@ -50,7 +52,9 @@ MANTENIMIENTO = {"OT", "PREVENTIVO", "BLOQUEO", "LIMPIEZA"}
 PERFILES_DIRECCION = {"superadmin", "administracion", "direccion"}
 ESTADOS = ("PENDIENTE", "HECHA", "CANCELADA")
 REPETICIONES = ("diaria", "laborables", "semanal", "mensual", "anual")
-PERMISO_DIRECCION = "finanzas.ver"  # dirección y administración (el mismo criterio que los hitos normativos)
+# Dirección y administración: superadministración y estos roles (no un permiso suelto: «finanzas.ver» lo tiene también
+# el Gestor Alquiler Residencial). Cada uno ve solo lo de sus sociedades y activos, salvo la superadministración.
+ROLES_DIRECCION = {"Dirección Grupo", "Dirección Sociedad", "Administración / Finanzas"}
 AJUSTE = "calendario_sync"
 UID = re.compile(r"^[A-Za-z0-9._:@-]{1,120}$")
 DIAS_CANCELADAS = 60  # las canceladas se siguen sirviendo en Outlook 60 días (para que las quite)
@@ -83,8 +87,50 @@ def correo(e: str | None) -> str:
     return e[:-len("@inversiete.com")] + "@inversiete.es" if e.endswith("@inversiete.com") else e
 
 
+def ambito(scope: Scope) -> SimpleNamespace | None:
+    """Sociedades y activos en los que el usuario es dirección o administración (None: no lo es en ninguno).
+    `grupo`: todo (superadministración o rol de dirección o administración para todo el grupo)."""
+    if hasattr(scope, "_cal_ambito"):
+        return scope._cal_ambito
+    a = None
+    if scope.user.is_superadmin:
+        a = SimpleNamespace(grupo=True, sociedades=set(), activos=set())
+    else:
+        asig = [x for x in scope.user.assignments if x.role and x.role.nombre in ROLES_DIRECCION]
+        if asig:
+            a = SimpleNamespace(grupo=any(x.company_id is None and x.asset_id is None for x in asig),
+                                sociedades=set(), activos=set())
+            if not a.grupo:
+                empresas = {x.company_id for x in asig if x.company_id and not x.asset_id}
+                activos = {x.asset_id for x in asig if x.asset_id}
+                filas = scope.db.execute(select(Asset.id, Asset.company_id)).all()
+                a.activos = activos | {i for i, c in filas if c in empresas}
+                a.sociedades = empresas | {c for i, c in filas if i in activos}
+                codigos = _codigos_sociedad(scope.db)
+                a.sociedades = {codigos[c] for c in a.sociedades if c in codigos}
+    scope._cal_ambito = a
+    return a
+
+
+def _codigos_sociedad(db: Session) -> dict[int, str]:
+    from . import fusion
+    return {c.id: cod for c in db.scalars(select(Company)) if (cod := fusion.sociedad(c))}
+
+
 def es_direccion(scope: Scope) -> bool:
-    return scope.user.is_superadmin or scope.has_any(PERMISO_DIRECCION)
+    return ambito(scope) is not None
+
+
+def en_ambito(c: CalendarioEntrada, scope: Scope) -> bool:
+    """La entrada es de una sociedad (o, si no la indica, de un activo) del ámbito de dirección del usuario."""
+    a = ambito(scope)
+    if a is None:
+        return False
+    if a.grupo:
+        return True
+    if c.sociedad:
+        return c.sociedad in a.sociedades
+    return c.asset_id is not None and c.asset_id in a.activos
 
 
 def restringida(c: CalendarioEntrada) -> bool:
@@ -94,7 +140,7 @@ def restringida(c: CalendarioEntrada) -> bool:
 
 
 def puede_ver(c: CalendarioEntrada, scope: Scope) -> bool:
-    if es_direccion(scope):
+    if en_ambito(c, scope):
         return True
     if restringida(c):
         return False  # recepción y técnicos nunca ven vencimientos ni fiscal
@@ -111,7 +157,7 @@ def puede_editar(c: CalendarioEntrada, scope: Scope) -> bool:
     if c.tipo in FINANCIEROS or not puede_ver(c, scope):
         return False
     yo = correo(scope.user.email)
-    return es_direccion(scope) or yo in {correo(x) for x in (c.responsables or []) + (c.invitados or [])}
+    return en_ambito(c, scope) or yo in {correo(x) for x in (c.responsables or []) + (c.invitados or [])}
 
 
 # --------------------------------------------------------------------------- fechas
@@ -464,10 +510,10 @@ def _ocurrencias(c: CalendarioEntrada, desde: date, hasta: date) -> list[datetim
     return [d for d in x if d.weekday() < 5] if c.repeticion == "laborables" else x
 
 
-def salida(c: CalendarioEntrada, scope: Scope, ocurrencia: datetime | None = None, direccion: bool | None = None) -> dict:
+def salida(c: CalendarioEntrada, scope: Scope, ocurrencia: datetime | None = None) -> dict:
     ini = ocurrencia or c.inicio
     fin = c.fin + (ini - c.inicio) if c.fin else None
-    direccion = es_direccion(scope) if direccion is None else direccion
+    direccion = en_ambito(c, scope)
     return {"comun": True, "id": c.id, "uid": c.uid, "version": c.version, "tipo": c.tipo, "subtipo": c.subtipo,
             "titulo": c.titulo, "descripcion": c.descripcion, "lugar": c.lugar, "ocurrencia": ini.isoformat(),
             "fin_ocurrencia": fin.isoformat() if fin else None, "inicio": _txt(c.inicio, c.todo_el_dia),
@@ -492,11 +538,10 @@ def en_agenda(desde: date, hasta: date, scope: Scope = Depends(get_scope), db: S
     q = select(CalendarioEntrada).where(CalendarioEntrada.uid.not_like("PMS-%"),
                                         CalendarioEntrada.inicio < datetime.combine(hasta + timedelta(days=1),
                                                                                     datetime.min.time()))
-    direccion = es_direccion(scope)
     out = []
     for c in _visibles(db, scope, q):
         for x in _ocurrencias(c, desde, hasta):
-            out.append(salida(c, scope, x, direccion))
+            out.append(salida(c, scope, x))
     return sorted(out, key=lambda x: (x["ocurrencia"][:10], not x["todo_el_dia"], x["ocurrencia"]))
 
 
@@ -732,8 +777,7 @@ def _euros(x) -> str:
 def ics(db: Session, user: User, mostrar_importes: bool) -> str:
     """Lo que el usuario ve en la Agenda del PMS: sus citas y las de gestión, con el mismo filtro de perfiles."""
     scope = Scope(user, db)
-    direccion = es_direccion(scope)
-    importes = mostrar_importes and direccion
+    importes = mostrar_importes and es_direccion(scope)
     sello = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     desde = datetime.combine(date.today() - timedelta(days=ANTES_ICS), datetime.min.time())
     li = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//INVERPMS//Calendario comun//ES", "CALSCALE:GREGORIAN",
@@ -757,7 +801,8 @@ def ics(db: Session, user: User, mostrar_importes: bool) -> str:
     for c in _visibles(db, scope, q):
         if c.estado == "CANCELADA" and c.actualizado < limite_canc:
             continue
-        titulo = c.titulo + (f" · {_euros(c.importe)}" if importes and c.importe is not None else "")
+        titulo = c.titulo + (f" · {_euros(c.importe)}" if importes and c.importe is not None and en_ambito(c, scope)
+                             else "")
         desc = c.descripcion or ""
         if c.url_gestion:
             desc = (desc + "\n\n" if desc else "") + f"Abrir en gestión: {c.url_gestion}"

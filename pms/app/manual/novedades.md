@@ -7,7 +7,7 @@
 - **Entradas de gestión**: las que tienen 🔒 se cambian en gestión (botón **Abrir en gestión**). Las que se pueden cambiar en los dos programas tienen **Editar** y **Cancelar**; si en gestión las cambian a la vez, se queda la versión de gestión.
 - **Lo que sale del PMS**: sus citas y tareas **compartidas o públicas** llegan solas a la agenda de gestión. Las privadas no salen nunca.
 - **Calendario en Outlook** (*Mi perfil*): un enlace privado para ver su agenda en Outlook o el móvil. Se muestra una sola vez; **Cambiar enlace** anula el anterior.
-- **Administración y dirección**: ven además los vencimientos de pagos y cobros, impuestos, contratos, seguros y avales. En Outlook, con aviso el día antes a las 9:00 y la casilla **Mostrar importes**. Recepción y técnicos no los ven nunca.
+- **Administración y dirección**: ven además los vencimientos de pagos y cobros, impuestos, contratos, seguros y avales, solo los de sus sociedades y activos. En Outlook, con aviso el día antes a las 9:00 y la casilla **Mostrar importes**. Recepción y técnicos no los ven nunca.
 - **Activación**: está **apagada** hasta que la superadministración la encienda en *Administración → Pasarela con gestión* y después se encienda en gestión.
 
 ## 2026-10-15 · Versión 1.65 · Avisos con sonido y chat del equipo

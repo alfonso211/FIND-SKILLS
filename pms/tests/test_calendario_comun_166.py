@@ -51,10 +51,11 @@ def _casilla(client, admin, valor):
     return r.json()
 
 
-def _usuario(client, admin, ids, email, rol, codigo="SFL"):
+def _usuario(client, admin, ids, email, rol, codigo="SFL", sociedad=None):
+    asig = {"role_id": ids["roles"][rol], **({"company_id": ids["companies"][sociedad]} if sociedad
+                                            else {"asset_id": ids["assets"][codigo]["id"]})}
     r = client.post("/api/admin/usuarios", headers=admin, json={
-        "email": email, "nombre": f"{rol} calendario", "password": "Provisional1",
-        "asignaciones": [{"role_id": ids["roles"][rol], "asset_id": ids["assets"][codigo]["id"]}]})
+        "email": email, "nombre": f"{rol} calendario", "password": "Provisional1", "asignaciones": [asig]})
     assert r.status_code == 201, r.text
     h = login(client, email, "Provisional1")
     r = client.post("/api/auth/password", headers=h, json={"actual": "Provisional1", "nueva": "CalendarioComun2031!"})
@@ -65,7 +66,10 @@ def _usuario(client, admin, ids, email, rol, codigo="SFL"):
 def gente(client, admin, ids):
     return {"recepcion": _usuario(client, admin, ids, "recepcion.cal@inversiete.com", "Recepción"),
             "tecnico": _usuario(client, admin, ids, "tecnico.cal@inversiete.es", "Técnico Mantenimiento"),
-            "administracion": _usuario(client, admin, ids, "admon.cal@inversiete.es", "Administración / Finanzas")}
+            "administracion": _usuario(client, admin, ids, "admon.cal@inversiete.es", "Administración / Finanzas"),
+            "gestor": _usuario(client, admin, ids, "gestor.cal@inversiete.es", "Gestor Alquiler Residencial"),
+            "dir_cdc": _usuario(client, admin, ids, "dircdc.cal@inversiete.es", "Dirección Sociedad",
+                                sociedad="COMERCIAL DEL CAMPO S.A.")}
 
 
 def _aviso(client, tipo, datos, ide=None, origen="GESTION"):
@@ -90,7 +94,7 @@ def _entrada(uid, version=1, **kw):
 
 
 def _fiscal(uid="INVG-ZZ-FIS-1", version=1):
-    return _entrada(uid, version, tipo="FISCAL", subtipo="modelo_303", titulo=f"{Z} IVA 1T", inicio="2031-04-20",
+    return _entrada(uid, version, tipo="FISCAL", subtipo="modelo_303", titulo=f"{Z} IVA 1T", inicio="2031-04-20", sociedad="INV",
                     fin="2031-04-20", todo_el_dia=True, importe=12345.67, editable_en="GESTION", solo_lectura=True,
                     roles=["superadmin", "administracion", "direccion"], responsables=[], invitados=[],
                     recordatorio=None)
@@ -318,3 +322,48 @@ def test_outlook_ics(client, admin, gente):
     assert codigos[:59].count(200) == 59 and codigos[-1] == 429  # ya hubo 1 petición antes
     assert client.delete("/api/calendario/outlook", headers=admin).status_code == 200
     assert client.get(ruta2).status_code == 404
+
+
+def _ics(client, h):
+    url = client.post("/api/calendario/outlook", headers=h).json()["url"]
+    cal = icalendar.Calendar.from_ical(client.get(url[url.index("/cal/"):]).content)
+    return {str(e["UID"]).split("@")[0] for e in cal.walk("VEVENT")}
+
+
+def test_fiscal_no_lo_ve_quien_solo_tiene_finanzas_ver(client, admin, gente):
+    """El Gestor Alquiler Residencial tiene «finanzas.ver», pero no es dirección ni administración."""
+    _casilla(client, admin, True)
+    _aviso(client, "calendario.creada", _fiscal("INVG-ZZ-FIS-G"))
+    assert "INVG-ZZ-FIS-G" not in {x["uid"] for x in _agenda(client, gente["gestor"])}
+    assert "INVG-ZZ-FIS-G" not in _ics(client, gente["gestor"])
+    assert client.get("/api/calendario/outlook", headers=gente["gestor"]).json()["puede_importes"] is False
+    r = client.put("/api/calendario/outlook", headers=gente["gestor"], json={"mostrar_importes": True})
+    assert r.status_code == 403
+    assert "INVG-ZZ-FIS-G" in {x["uid"] for x in _agenda(client, gente["administracion"])}  # INV: su sociedad
+
+
+def test_financiero_solo_de_sus_sociedades_y_activos(client, admin, gente):
+    """Dirección de Comercial del Campo: su fiscal sí, el de INVERSIETE no; sin sociedad, por el activo."""
+    _casilla(client, admin, True)
+    _aviso(client, "calendario.creada", _fiscal("INVG-ZZ-AMB-CDC") | {"sociedad": "CDC", "activo": None})
+    _aviso(client, "calendario.creada", _fiscal("INVG-ZZ-AMB-INV") | {"sociedad": "INV", "activo": None})
+    _aviso(client, "calendario.creada", _fiscal("INVG-ZZ-AMB-BAB") | {"sociedad": None, "activo": "BABILONIA35"})
+    _aviso(client, "calendario.creada", _fiscal("INVG-ZZ-AMB-SFL") | {"sociedad": None, "activo": "SFLORIDA"})
+    _aviso(client, "calendario.creada", _fiscal("INVG-ZZ-AMB-NADA") | {"sociedad": None, "activo": None})
+    amb = {"INVG-ZZ-AMB-CDC", "INVG-ZZ-AMB-INV", "INVG-ZZ-AMB-BAB", "INVG-ZZ-AMB-SFL", "INVG-ZZ-AMB-NADA"}
+    esperado = {
+        "dir_cdc": {"INVG-ZZ-AMB-CDC", "INVG-ZZ-AMB-BAB"},
+        "administracion": {"INVG-ZZ-AMB-INV", "INVG-ZZ-AMB-SFL"},  # rol en Suite Florida (de INVERSIETE)
+    }
+    for quien, uids in esperado.items():
+        assert {x["uid"] for x in _agenda(client, gente[quien])} & amb == uids, quien  # pantalla
+        assert _ics(client, gente[quien]) & amb == uids, quien  # Outlook
+    assert {x["uid"] for x in _agenda(client, admin)} & amb == amb  # superadministración: todo
+    assert _ics(client, admin) & amb == amb
+    # importes en Outlook: solo de lo suyo
+    assert client.put("/api/calendario/outlook", headers=gente["dir_cdc"], json={"mostrar_importes": True}).status_code == 200
+    url = client.post("/api/calendario/outlook", headers=gente["dir_cdc"]).json()["url"]
+    client.put("/api/calendario/outlook", headers=gente["dir_cdc"], json={"mostrar_importes": True})
+    ev = {str(e["UID"]).split("@")[0]: str(e["SUMMARY"]) for e in
+          icalendar.Calendar.from_ical(client.get(url[url.index("/cal/"):]).content).walk("VEVENT")}
+    assert ev["INVG-ZZ-AMB-CDC"].endswith("12.345,67 €") and "INVG-ZZ-AMB-INV" not in ev

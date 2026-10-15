@@ -7,7 +7,7 @@
 ## Calendario común con gestión
 - **Encendido** (solo superadministración): *Administración → Pasarela con gestión → «Sincronizar el calendario con gestión»*. Primero esta casilla y después la de gestión (*Calendario › PMS*). Apagada, lo que llega de gestión se guarda «sin tratar» y no se manda nada.
 - **Qué viaja**: citas y tareas compartidas o públicas, limpiezas programadas y, desde gestión, mantenimiento, vencimientos de pagos y cobros, impuestos, contratos, seguros y avales. Las reservas no entran.
-- **Vencimientos y fiscal**: solo los ven administración y dirección (permiso «finanzas.ver»), con su importe. Son de solo lectura en el PMS: **Abrir en gestión**. Recepción y técnicos no los ven ni en pantalla ni en su Outlook.
+- **Vencimientos y fiscal**: solo los ven la superadministración y los roles de dirección y administración (Dirección Grupo, Dirección Sociedad y Administración / Finanzas), cada uno **solo los de sus sociedades y activos**, con su importe. Son de solo lectura en el PMS: **Abrir en gestión**. Recepción y técnicos no los ven ni en pantalla ni en su Outlook.
 - **Outlook**: en *Mi perfil → Calendario en Outlook*, la casilla **Mostrar importes** añade el importe a los vencimientos; avisan el día antes a las 9:00.
 - **Conflictos**: si una cita se cambia a la vez en los dos programas, se queda la de gestión; el cambio del PMS queda guardado en el historial de la entrada.
 

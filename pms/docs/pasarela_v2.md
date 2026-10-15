@@ -367,8 +367,10 @@ PMS, AMBOS), `solo_lectura`, `roles`, `url_gestion`.
   fusión, en orden por uid (no sale un aviso mientras otro anterior de la misma entrada siga pendiente).
 - Casilla de la superadministración, apagada al desplegar: apagada, lo recibido queda «sin tratar» y no sale nada. Al
   encenderla se preparan las citas compartidas y las limpiezas de los últimos 60 días.
-- Visibilidad: lo financiero y lo que gestión limita a `["superadmin","administracion","direccion"]` solo con
-  `finanzas.ver`. Citas y tareas: responsables, invitados y dirección. Mantenimiento: por el activo del usuario.
+- Visibilidad: lo financiero y lo que gestión limita a `["superadmin","administracion","direccion"]` solo la
+  superadministración y los roles Dirección Grupo, Dirección Sociedad y Administración / Finanzas, cada uno solo lo de
+  sus sociedades (`sociedad`; si falta, el activo de la entrada). Citas y tareas: responsables, invitados y la
+  dirección de su ámbito. Mantenimiento: por el activo del usuario.
 
 ### Outlook del PMS
 `GET /cal/<clave>.ics` (clave `token_urlsafe(32)`, en la base solo su sha256). RFC 5545; UID `uid@pms.inversiete.es`;

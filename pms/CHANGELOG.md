@@ -17,8 +17,11 @@ Registro técnico de versiones. El resumen para los usuarios está en `app/manua
 - **Casilla** «Sincronizar el calendario con gestión» (solo superadministración, apagada al desplegar). Apagada: lo
   que llega se guarda «sin tratar» y no sale nada. Al encenderla se preparan las citas compartidas y las limpiezas
   de los últimos 60 días.
-- **Visibilidad**: vencimientos, fiscal y lo que gestión marca solo para administración y dirección los ve solo quien
-  tiene `finanzas.ver` (dirección y administración); recepción y técnicos nunca, ni en pantalla ni en Outlook.
+- **Visibilidad**: vencimientos, fiscal y lo que gestión marca solo para administración y dirección los ve solo la
+  superadministración y los roles Dirección Grupo, Dirección Sociedad y Administración / Finanzas (no basta
+  `finanzas.ver`: el Gestor Alquiler Residencial no los ve). Cada uno, solo los de sus sociedades (por `sociedad`; si la
+  entrada no la indica, por el activo); la superadministración, todo. Lo mismo para «Mostrar importes» en Outlook.
+  Recepción y técnicos nunca, ni en pantalla ni en Outlook.
 - **Outlook**: `GET /cal/<clave>.ics` (RFC 5545: CRLF, plegado a 75 octetos, UID `uid@pms.inversiete.es`, SEQUENCE =
   versión, STATUS:CANCELLED 60 días, horas en UTC, VALUE=DATE con DTEND exclusivo, RRULE, VALARM). Clave de 32 bytes,
   cambiar el enlace deja el anterior en 404, auditoría de cada acceso con la IP y corte con 429 a partir de 61
