@@ -39,7 +39,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import event, func, select
 from sqlalchemy.orm import Session
 
-from . import calendario_comun, documentos, gestion, nif
+from . import calendario_comun, documentos, gestion, maestros, nif
 from . import export_invergestion as ei
 from .database import SessionLocal, get_db
 from .facturacion import desglose, dinero, lineas_de
@@ -1068,6 +1068,13 @@ async def eventos_de_gestion(request: Request, db: Session = Depends(get_db)):
     fn = APLICAR.get(tipo)
     if ev.get("origen") == "PMS":
         entrada.estado = "eco"  # vuelta de un aviso nuestro: no se aplica otra vez
+    elif tipo in maestros.TIPOS_ENTRADA:  # activos y unidades: su propia casilla (no PMS_GESTION_SYNC_FACTURAS)
+        db.info[DESDE_GESTION] = True
+        try:
+            entrada.estado, entrada.resultado = maestros.recibir(db, ev)
+            db.flush()
+        finally:
+            db.info.pop(DESDE_GESTION, None)
     elif tipo in calendario_comun.TIPOS_EVENTO:  # calendario común: su propia casilla (no PMS_GESTION_SYNC_FACTURAS)
         db.info[DESDE_GESTION] = True
         try:

@@ -98,6 +98,9 @@ class Asset(Base):
     comisiones_canal: Mapped[dict | None] = mapped_column(JSON)
     # Fusión con gestión (contrato «fusion1»): sus facturas, pagos y cobros se sincronizan con INVERGESTION
     sync_facturas: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false())
+    # Maestros con gestión (maestro.catastro): datos patrimoniales y fiscales de su finca principal (propietaria,
+    # valores catastrales, uso catastral, IBI y TRUA del año, versión…). Solo lectura en el PMS: se editan en gestión.
+    catastro: Mapped[dict | None] = mapped_column(JSON)
     company: Mapped[Company] = relationship(foreign_keys=[company_id])
     propietaria: Mapped[Company | None] = relationship(foreign_keys=[propietaria_id])
 
@@ -134,6 +137,12 @@ class Unit(Base):
     situacion_user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     # «Completar más tarde» el contrato: no se vuelve a pedir ese día
     contrato_pospuesto: Mapped[date | None] = mapped_column(Date)
+    # Maestros con gestión: versión de los datos operativos (sube en cada cambio; viaja en maestro.unidad), cuándo
+    # cambiaron, baja (no se borra: tiene historial) y el catastro que manda gestión (solo lectura en el PMS)
+    maestro_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    maestro_cambiado: Mapped[datetime | None] = mapped_column(DateTime)
+    baja: Mapped[datetime | None] = mapped_column(DateTime)
+    catastro: Mapped[dict | None] = mapped_column(JSON)
     asset: Mapped[Asset] = relationship()
 
 

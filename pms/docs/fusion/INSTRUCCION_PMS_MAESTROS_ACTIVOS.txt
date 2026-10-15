@@ -1,0 +1,72 @@
+INSTRUCCIÓN PARA LA SESIÓN DEL PMS · ACTIVOS Y UNIDADES SINCRONIZADOS CON GESTIÓN
+Fecha: 15/10/2026 · Rama: maestros-activos (repositorio FIND-SKILLS) · Entrega: PR a main, sin desplegar ni encender hasta que Alfonso lo apruebe.
+
+0. REGLAS DE SIEMPRE
+- Rama nueva desde main actualizado. Cambios aditivos; migración nueva. Ninguna clave en código, PR ni chat (PMS_EVENTOS_SECRET ya existe).
+- Pruebas con datos ZZ-PRUEBA-MAE que se borran al terminar. Todo en auditoría. Subir versión y CHANGELOG.
+
+1. QUÉ ES
+Que activos y unidades (apartamentos, viviendas, plazas de garaje, locales) estén iguales en los dos programas sin tocar nada a mano.
+Decisión de Alfonso: cada programa manda en lo suyo.
+- El PMS manda en lo OPERATIVO: alta y baja de unidades, código, bloque, uso, tipología, planta, superficie, dormitorios, capacidad,
+  estado/situación, renta_base, tarifa_base_noche, anejos.
+- Gestión manda en lo PATRIMONIAL Y FISCAL: sociedad propietaria, referencia catastral, valor catastral (suelo, construcción, total),
+  uso catastral, IBI y TRUA del año.
+Gestión ya tiene (15/10/2026) las 242 plazas de Suite Aeropuerto y las 347 de Suite Florida enlazadas por pms_id, y el catastro de
+Campezo 2, Campezo 8 y de las 53 fincas de Babilonia/Bellaterra (una referencia por vivienda y por plaza).
+
+2. TRANSPORTE (el de la fusión, contrato «fusion1», firma HMAC, idempotencia por id_evento)
+Tipos nuevos:
+- PMS → gestión: maestro.unidad (creada | actualizada | baja) y maestro.activo (actualizado).
+  datos: pms_id, activo (código PMS: SFL, SAE, BAB35…), codigo, bloque, uso, tipologia, planta, superficie_m2, dormitorios, capacidad,
+  estado, situacion, renta_base, tarifa_base_noche, anejos, version (entero que sube con cada cambio), cambiado (fecha).
+- Gestión → PMS: maestro.catastro: { ambito: activo | unidad, pms_id (unidad) o activo, ref_catastral, valor_suelo, valor_construccion,
+  valor_catastral, uso_catastral, ibi_anio, trua_anio, propietaria (INV|CDC|EC|ETH), version }.
+  El PMS guarda ref_catastral en activos.ref_catastral / unidades.ref_catastral y el resto en un JSON nuevo (catastro) de cada ficha,
+  solo lectura en el PMS (candado y «Se edita en gestión»).
+- Sin eco: lo que llega del otro lado no se devuelve. Si llega un campo que no manda el emisor, se ignora y se anota en auditoría.
+
+3. CARGA INICIAL Y PUESTA AL DÍA
+- Al encender la casilla (ver 5), el PMS manda maestro.unidad «actualizada» de TODAS sus unidades y maestro.activo de sus activos.
+- Cada noche (03:30) el PMS manda un resumen maestro.cuadre: por activo, número de unidades por uso y una huella sha256 de los campos
+  operativos ordenados por pms_id. Gestión compara y, si no cuadra, pide el detalle (maestro.pedir) y avisa en Pendiente hoy.
+  Así los dos programas se mantienen al día aunque se pierda algún aviso.
+
+4. REGLAS DE NEGOCIO
+- Una baja en el PMS no borra nada en gestión: marca la unidad BAJA (tiene facturas e historial).
+- Las plazas de garaje son unidades más (uso garaje) colgadas de su activo; deben poder llevar contrato, renta y factura, igual que las viviendas.
+- Diferencia conocida: el contrato de Suite Aeropuerto habla de 258 plazas y el PMS tiene 242. No se inventan plazas: se avisa.
+
+5. INTERRUPTOR
+Casilla «Sincronizar activos y unidades con gestión» en Administración › Pasarela con gestión, solo superadministración, APAGADA al desplegar.
+Encendido: primero la del PMS y después la de gestión. Con la casilla apagada, lo que llegue se guarda «sin tratar».
+
+6. PRUEBAS
+Alta, cambio y baja de unidad en los dos sentidos; aviso repetido = un solo cambio; sin eco; campo no permitido ignorado; catastro de
+solo lectura en el PMS; cuadre nocturno que detecta una diferencia y pide el detalle; casilla apagada = sin tratar; borrado de datos de prueba.
+
+7. ENTREGA
+PR a main con migración, versión, CHANGELOG, número de pruebas pasadas y captura de una ficha de unidad con el catastro recibido.
+No desplegar ni encender: lo decide Alfonso.
+
+8. CONTRATO EXACTO (gestión YA lo tiene desplegado el 15/10/2026; si algo de arriba no coincide, manda este punto)
+- Código del activo en datos: «activo_pms» (SFL, SAE, BAB35). Gestión acepta también «activo», pero usad activo_pms.
+- maestro.unidad · datos: pms_id (entero), accion (creada | actualizada | baja), version (entero que sube en cada cambio de esa unidad),
+  activo_pms, cambiado y los operativos: codigo, bloque, uso, tipologia, planta, superficie_m2, dormitorios, capacidad, estado,
+  situacion, renta_base, tarifa_base_noche, anejos. Cualquier otro campo se ignora y se anota. uso en minúsculas:
+  apartamento | vivienda | garaje | local | trastero | habitacion | oficina. Si version no sube, gestión lo descarta (aviso repetido).
+- maestro.activo · datos: activo_pms, nombre, modalidad, direccion, municipio, provincia, cp, num_registro_turistico.
+- maestro.cuadre (03:30) · datos: { "activos": [ { "activo_pms": "SFL", "por_uso": {"apartamento": 325, "garaje": 347}, "huella": "<sha256>" } ] }
+  Huella: una línea por unidad NO dada de baja «pms_id|codigo|uso|situacion» (uso en minúsculas; vacío si no hay dato),
+  ordenadas por pms_id ascendente, unidas con «\n» (sin salto final), sha256 en hexadecimal minúsculas de UTF-8.
+  Las unidades de baja no cuentan ni en por_uso ni en la huella.
+- maestro.pedir (gestión → PMS) · datos: { "activo_pms": "SFL", "pms_ids": "todos" }. Respuesta del PMS: maestro.unidad «actualizada»
+  de todas las unidades de ese activo (con su version actual; gestión acepta la misma versión si la unidad aún no existe en gestión).
+- maestro.catastro (gestión → PMS) · datos:
+  ambito «unidad»: pms_id, activo_pms, propietaria (INV|CDC|EC|ETH), ref_catastral, valor_suelo, valor_construccion, valor_catastral,
+  uso (uso catastral), ibi_2026, trua_2026, version.
+  ambito «activo»: activo_pms, propietaria, los mismos campos de catastro (de su finca principal), y opcionalmente
+  «incluido_en» (finca que lo contiene) y «resumen» (totales del edificio, p. ej. Babilonia: fincas, valor, IBI, TRUA).
+  Los años van en el nombre del campo (ibi_2026, trua_2026): guardadlo tal cual en el JSON catastro. version por ficha: si llega una
+  version menor o igual que la guardada, se ignora.
+- Origen: los eventos del PMS llevan origen «PMS»; los de gestión llevan origen «GESTION». No reenviéis lo que llegó de gestión.

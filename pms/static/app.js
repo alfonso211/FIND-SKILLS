@@ -946,17 +946,33 @@ async function zonaComun(assetId, zona, recarga) {
   if ($("[data-estado]", f)) $("[data-estado]", f).onclick = () => { $("#modal").close(); irParteEstado(assetId, null, z.zona); };
 }
 
+// Catastro y propiedad que manda gestión (maestro.catastro): solo lectura en el PMS
+const CATASTRO_TXT = { propietaria: "Sociedad propietaria", uso: "Uso catastral", valor_suelo: "Valor del suelo", valor_construccion: "Valor de la construcción", valor_catastral: "Valor catastral", incluido_en: "Incluida en la finca" };
+const SOCIEDADES_GESTION = { INV: "INVERSIETE", CDC: "Comercial del Campo", EC: "Edificios Cameranos", ETH: "ETHOSA" };
+function catastroHtml(x) {
+  const c = x.catastro || {};
+  const valor = (k, v) => (v == null || v === "" ? "—" : /^(valor_|ibi_|trua_)/.test(k) && typeof v === "number" ? eur(v) : k === "propietaria" ? `${esc(SOCIEDADES_GESTION[v] || v)} (${esc(v)})` : esc(typeof v === "object" ? JSON.stringify(v) : v));
+  const filas = [["Referencia catastral", esc(x.ref_catastral || "—")],
+    ...["propietaria", "uso", "valor_suelo", "valor_construccion", "valor_catastral", "incluido_en"].filter((k) => k in c).map((k) => [CATASTRO_TXT[k], valor(k, c[k])]),
+    ...Object.keys(c).filter((k) => /^(ibi|trua)_\d{4}$/.test(k)).sort().map((k) => [`${k.startsWith("ibi") ? "IBI" : "TRUA"} ${k.slice(-4)}`, valor(k, c[k])])];
+  const resumen = c.resumen && typeof c.resumen === "object" ? `<p class="peq"><b>Resumen del edificio:</b> ${Object.entries(c.resumen).map(([k, v]) => `${esc(k)} ${typeof v === "number" && /valor|ibi|trua/i.test(k) ? eur(v) : esc(v)}`).join(" · ")}</p>` : "";
+  return `<fieldset class="catastro"><legend>🔒 Catastro y propiedad · Se edita en gestión</legend>
+    <div class="catastro-datos">${filas.map(([t, v]) => `<div><span class="muted peq">${esc(t)}</span><b>${v}</b></div>`).join("")}</div>${resumen}
+    <p class="muted peq">Recibido de gestión${c.recibido ? ` el ${fdt(c.recibido)}` : ""} · versión ${esc(c.version ?? "—")}. Para cambiarlo, hágalo en gestión.</p></fieldset>`;
+}
+
 V.activos = async (el) => {
   const [rows, usuarios] = await Promise.all([get("/api/activos"), get("/api/agenda/usuarios").catch(() => [])]);
   el.innerHTML = `<div class="toolbar"><span class="spacer"></span>${can("activos.editar") ? '<button class="btn primary" id="new">Nuevo activo</button>' : ""}</div><div id="t"></div>`;
-  const fields = (isNew) => [
+  const fields = (isNew, a) => [
+    ...(a?.catastro ? [{ html: catastroHtml(a) }] : []),
     ...(isNew ? [{ k: "codigo", t: "Código", req: true }] : []),
     { k: "nombre", t: "Nombre", req: true },
     { k: "company_id", t: "Sociedad gestora (explotación y accesos)", type: "select", req: true, options: opts(S.companies) },
     { k: "propietaria_id", t: "Sociedad propietaria del inmueble", type: "select", options: opts(S.companies) },
     ...(isNew ? [{ k: "modalidad", t: "Modalidad", type: "select", req: true, options: kv(S.cat.modalidades) }] : []),
     { k: "direccion", t: "Dirección", wide: true }, { k: "cp", t: "Código postal" }, { k: "municipio", t: "Población" }, { k: "provincia", t: "Provincia" },
-    { k: "pais", t: "País", def: "España" }, { k: "ref_catastral", t: "Ref. catastral" }, { k: "num_registro_turistico", t: "Nº registro turístico" },
+    { k: "pais", t: "País", def: "España" }, ...(a?.catastro ? [] : [{ k: "ref_catastral", t: "Ref. catastral" }]), { k: "num_registro_turistico", t: "Nº registro turístico" },
     { k: "ses_codigo_establecimiento", t: "Código de establecimiento SES.HOSPEDAJE" },
     { html: "<h4>Facturación</h4><p class='muted'>Factura la sociedad gestora. Cada activo tiene su serie y la numeración es correlativa por año (p.ej. SF/00001/2026). No cambie la serie de un activo que ya tiene facturas del año en curso.</p>" },
     { k: "serie_factura", t: "Serie de facturas (p.ej. B35, SF, SA)" },
@@ -970,7 +986,7 @@ V.activos = async (el) => {
     { k: "informe_emails", t: "Correos de envío (separados por comas)", wide: true }, { k: "informe_whatsapp", t: "WhatsApp de envío (teléfono)" },
     { k: "activo", t: "Activo en explotación", type: "checkbox", def: true }, { k: "notas", t: "Notas", type: "textarea", wide: true },
   ];
-  const edit = (a) => form(a ? `Editar ${a.nombre}` : "Nuevo activo", fields(!a), a || {}, async (d) => {
+  const edit = (a) => form(a ? `Editar ${a.nombre}` : "Nuevo activo", fields(!a, a), a || {}, async (d) => {
     if (d.serie_factura) d.serie_factura = d.serie_factura.trim().toUpperCase();
     if (a) await put(`/api/activos/${a.id}`, d); else await post("/api/activos", clean(d));
     toast("Activo guardado"); await loadAssets(); go("activos");
@@ -991,40 +1007,48 @@ V.unidades = async (el) => {
     ${bloques.length ? `<select id="blq"><option value="">Todos los bloques</option>${bloques.map((b) => `<option>${esc(b)}</option>`).join("")}</select>` : ""}
     <select id="uso"><option value="">Todos los usos</option>${S.cat.usos_unidad.map((u) => `<option value="${u}">${label(u)}</option>`).join("")}</select>
     <select id="est"><option value="">Todos los estados</option>${S.cat.estados_unidad.map((e) => `<option value="${e}">${label(e)}</option>`).join("")}</select>
+    <label class="check"><input type="checkbox" id="bajas"> Ver también las dadas de baja</label>
     <span class="spacer"></span>${can("activos.editar") ? '<button class="btn" id="bulk">Alta masiva</button><button class="btn primary" id="new">Nueva unidad</button>' : ""}</div><div id="t"></div>`;
-  const fields = [
+  const fields = (u) => [
     { k: "codigo", t: "Código", req: true }, { k: "bloque", t: "Bloque / portal" },
     { k: "uso", t: "Uso", type: "select", req: true, options: list(S.cat.usos_unidad), def: "vivienda" },
     { k: "tipologia", t: "Tipología" }, { k: "planta", t: "Planta" },
     { k: "superficie_m2", t: "Superficie m²", type: "number" }, { k: "dormitorios", t: "Dormitorios", type: "number", step: 1 },
-    { k: "capacidad", t: "Capacidad (plazas)", type: "number", step: 1 }, { k: "ref_catastral", t: "Ref. catastral" },
+    { k: "capacidad", t: "Capacidad (plazas)", type: "number", step: 1 }, ...(u?.catastro ? [] : [{ k: "ref_catastral", t: "Ref. catastral" }]),
     { k: "estado", t: "Estado", type: "select", req: true, options: list(S.cat.estados_unidad), def: "disponible" },
     { k: "renta_base", t: "Renta base €/mes", type: "number" }, { k: "tarifa_base_noche", t: "Tarifa base €/noche", type: "number" },
     { k: "coef_participacion", t: "Coef. participación %", type: "number" }, { k: "cuota_comunidad", t: "Cuota comunidad €/mes", type: "number" },
     { k: "anejos", t: "Anejos (trasteros, plazas)" },
     { k: "notas", t: "Notas", type: "textarea", wide: true },
+    ...(u?.catastro ? [{ html: catastroHtml(u) }] : []),
   ];
   const load = async () => {
-    const rows = await get("/api/unidades", { asset_id: S.asset, estado: $("#est", el).value, q: $("#q", el).value, uso: $("#uso", el).value, bloque: $("#blq", el)?.value });
+    const rows = await get("/api/unidades", { asset_id: S.asset, estado: $("#est", el).value, q: $("#q", el).value, uso: $("#uso", el).value, bloque: $("#blq", el)?.value, bajas: $("#bajas", el).checked || undefined });
     table($("#t", el), [
       { k: "asset_id", t: "Activo", f: (v) => esc(assetName(v)) }, { k: "bloque", t: "Bloque" }, { k: "codigo", t: "Unidad" },
       { k: "uso", t: "Uso", f: (v) => esc(label(v)) }, { k: "tipologia", t: "Tipología" },
       { k: "planta", t: "Planta" }, { k: "superficie_m2", t: "m²", num: true }, { k: "anejos", t: "Anejos" },
       { k: "coef_participacion", t: "Coef. %", num: true }, { k: "cuota_comunidad", t: "Cuota com.", num: true, f: eur },
-      { k: "estado", t: "Estado", f: badge },
+      { k: "ref_catastral", t: "Ref. catastral", f: (v, u) => (v ? `${u.catastro ? '<span title="Se edita en gestión">🔒</span> ' : ""}${esc(v)}` : "") },
+      { k: "estado", t: "Estado", f: (v, u) => (u.baja ? `${badge("baja")}<div class="muted peq">desde ${fdate(u.baja)}</div>` : badge(v)) },
     ], rows, (u) => [
       u.estado === "pendiente_limpieza" && (can("limpieza.editar") || can("activos.editar")) &&
         ["Limpia ✓", () => run(() => post(`/api/unidades/${u.id}/limpia`), "Unidad disponible").then(load)],
-      can("activos.editar") && ["Editar", () => form(`Unidad ${u.codigo}`, fields, u, async (d) => { await put(`/api/unidades/${u.id}`, d); toast("Guardado"); load(); })],
+      can("activos.editar") && ["Editar", () => form(`Unidad ${u.codigo}`, fields(u), u, async (d) => { await put(`/api/unidades/${u.id}`, d); toast("Guardado"); load(); })],
+      S.me.is_superadmin && !u.baja && ["Dar de baja", () => form(`Dar de baja la unidad ${u.codigo}`, [
+        { html: '<p class="muted">No se borra: conserva sus reservas, contratos y facturas. Queda fuera de servicio y deja de salir en las listas; gestión la marca como BAJA. Se puede reactivar.</p>' },
+        { k: "motivo", t: "Motivo", type: "textarea", wide: true, req: true }], {},
+        async (d) => { await post(`/api/maestros/unidades/${u.id}/baja`, d); toast("Unidad dada de baja"); load(); }, "Dar de baja"), "danger"],
+      S.me.is_superadmin && u.baja && ["Reactivar", () => confirm(`¿Reactivar la unidad ${u.codigo}?`) && run(() => post(`/api/maestros/unidades/${u.id}/reactivar`), "Unidad reactivada").then(load)],
       can("activos.editar") && ["vivienda", "apartamento"].includes(u.uso) && ["Ficha alquiler", () => fichaAlquiler(u)],
       canOpenOT() && ["Avería", () => newWorkOrder(u.asset_id, u.id).then(load)],
       canParteEstado() && ["Parte de estado", () => irParteEstado(u.asset_id, u.id)],
     ]);
   };
-  $("#q", el).oninput = debounce(load); $("#est", el).onchange = load; $("#uso", el).onchange = load;
+  $("#q", el).oninput = debounce(load); $("#est", el).onchange = load; $("#uso", el).onchange = load; $("#bajas", el).onchange = load;
   if ($("#blq", el)) $("#blq", el).onchange = load;
   if ($("#new", el)) {
-    $("#new", el).onclick = async () => { const aid = await pickAsset(); form("Nueva unidad", fields, {}, async (d) => { await post("/api/unidades", clean({ ...d, asset_id: aid })); toast("Unidad creada"); load(); }); };
+    $("#new", el).onclick = async () => { const aid = await pickAsset(); form("Nueva unidad", fields(null), {}, async (d) => { await post("/api/unidades", clean({ ...d, asset_id: aid })); toast("Unidad creada"); load(); }); };
     $("#bulk", el).onclick = async () => {
       const aid = await pickAsset();
       form(`Alta masiva en ${assetName(aid)}`, [
@@ -6330,7 +6354,7 @@ async function abrirGestion(destino, assetId, unitId) {
   } catch (e) { if (w) w.close(); toast(e.message); }
 }
 const CANAL_TXT = { directo: "Directo", booking: "Booking", airbnb: "Airbnb", expedia: "Expedia", web: "Web propia", agencia: "Agencia", otros: "Otros" };
-const EV_TXT = { "calendario.creada": "Calendario: alta", "calendario.actualizada": "Calendario: cambio", "calendario.cancelada": "Calendario: cancelada", "reserva.creada": "Reserva nueva", "reserva.modificada": "Reserva modificada", "reserva.cancelada": "Reserva cancelada", checkout: "Check-out", "incidencia.reportada": "Incidencia", "liquidacion.periodo": "Liquidación",
+const EV_TXT = { "maestro.unidad": "Unidad (maestros)", "maestro.activo": "Activo (maestros)", "maestro.cuadre": "Cuadre nocturno de unidades", "calendario.creada": "Calendario: alta", "calendario.actualizada": "Calendario: cambio", "calendario.cancelada": "Calendario: cancelada", "reserva.creada": "Reserva nueva", "reserva.modificada": "Reserva modificada", "reserva.cancelada": "Reserva cancelada", checkout: "Check-out", "incidencia.reportada": "Incidencia", "liquidacion.periodo": "Liquidación",
   "reserva.ampliada": "Ampliación", "fianza.cobrada": "Fianza cobrada", "fianza.devolucion": "Fianza devuelta", "fianza.transferida": "Transferencia de fianza", "caja.cierre": "Cierre de caja", "incidencia.cerrada": "Incidencia cerrada", "kpi.diario": "Indicadores del día",
   "factura_recibida.creada": "Factura recibida", "factura_recibida.actualizada": "Factura recibida (cambio)", "factura_recibida.anulacion_pedida": "Anulación pedida", "factura_recibida.anulada": "Factura anulada",
   "factura_emitida.emitida": "Factura emitida", "factura_emitida.rectificada": "Factura rectificativa", "documento.adjuntado": "Documento adjunto", "pago.registrado": "Pago", "pago.anulado": "Pago anulado",
@@ -6370,10 +6394,11 @@ V.gestion = async (el) => {
       <div class="toolbar"><select id="gla">${d.activos.map((a) => `<option value="${a.id}">${esc(a.nombre)}</option>`).join("")}</select><input id="glp" type="month" value="${mesAnt}">
       <button class="btn" id="glv">Ver</button><button class="btn primary" id="gle">Mandar a gestión</button></div><div id="glr"></div></div>
     <div class="card" id="gfus"></div>
-    ${S.me.is_superadmin ? '<div class="card" id="gcal"></div>' : ""}
+    ${S.me.is_superadmin ? '<div class="card" id="gcal"></div><div class="card" id="gmae"></div>' : ""}
     <div class="card"><h3>Últimos avisos a gestión</h3><div class="toolbar"><button class="btn" id="grt">Reintentar ahora los pendientes</button></div><div id="gev"></div></div>`;
   tarjetaFusion($("#gfus", el));
   if ($("#gcal", el)) tarjetaCalendario($("#gcal", el));
+  if ($("#gmae", el)) tarjetaMaestros($("#gmae", el));
   $("#gcom", el).innerHTML = `<div style="overflow-x:auto"><table class="tabla"><thead><tr><th>Activo</th>${d.canales.map((k) => `<th class="num">${CANAL_TXT[k] || k}</th>`).join("")}<th>Mandar sola cada mes</th><th></th></tr></thead><tbody>${d.activos.map((a) => `<tr data-a="${a.id}"><td>${esc(a.nombre)}</td>${d.canales.map((k) => `<td class="num"><input type="number" step="0.1" min="0" max="50" style="width:70px" data-k="${k}" value="${a.comisiones[k] ?? ""}"></td>`).join("")}<td><input type="checkbox" data-auto ${a.comisiones._auto ? "checked" : ""}></td><td><button class="btn sm" data-g>Guardar</button></td></tr>`).join("")}</tbody></table></div>`;
   $("#gcom", el).querySelectorAll("[data-g]").forEach((b) => (b.onclick = () => { const tr = b.closest("tr"); const com = {};
     tr.querySelectorAll("input[data-k]").forEach((i) => { if (i.value !== "") com[i.dataset.k] = Number(i.value); });
@@ -6401,6 +6426,21 @@ async function tarjetaCalendario(box) {
     const r = await run(() => put("/api/calendario/config", { activo: e.target.checked }), e.target.checked ? "Calendario sincronizado con gestión" : "Sincronización del calendario apagada").catch(() => null);
     if (r?.sin_tratar_aplicados || r?.carga_inicial) toast(`${r.sin_tratar_aplicados || 0} avisos de gestión aplicados · ${r.carga_inicial || 0} entradas preparadas para gestión${r.sin_tratar_con_error ? ` · ${r.sin_tratar_con_error} con error (siguen sin tratar)` : ""}`);
     tarjetaCalendario(box);
+  };
+}
+
+// Activos y unidades sincronizados con gestión (maestros): casilla de la superadministración (apagada al desplegar)
+async function tarjetaMaestros(box) {
+  const c = await get("/api/maestros/config");
+  box.innerHTML = `<h3>Activos y unidades con gestión</h3>
+    <p class="muted">El PMS manda en lo operativo (altas y bajas de unidades, código, uso, superficie, estado, rentas y tarifas) y gestión en el catastro y la propiedad, que aquí se ven con 🔒. Solo se sincronizan Suite Florida, Suite Aeropuerto y Babilonia 35. Cada noche a las 03:30 se manda a gestión el cuadre de unidades por activo. Orden de encendido: primero esta casilla y después la de gestión.</p>
+    <label class="check"><input type="checkbox" id="gmaeOn" ${c.activo ? "checked" : ""}> <b>Sincronizar activos y unidades con gestión</b></label>
+    <p class="muted peq">${c.activo ? "Encendida" : "Apagada: lo que llega de gestión se guarda «sin tratar» y no se manda nada"}${c.cambiado ? ` · cambiada el ${fdt(c.cambiado)}` : ""} · ${c.unidades} unidades (${c.bajas} de baja) · ${c.con_catastro} con catastro · ${c.en_cola} avisos en cola · ${c.sin_tratar} sin tratar</p>`;
+  $("#gmaeOn", box).onchange = async (e) => {
+    if (!confirm(e.target.checked ? `¿Encender la sincronización de activos y unidades? Se mandan a gestión las ${c.unidades + c.bajas} unidades y todos los activos.` : "¿Apagar la sincronización de activos y unidades?")) { e.target.checked = !e.target.checked; return; }
+    const r = await run(() => put("/api/maestros/config", { activo: e.target.checked }), e.target.checked ? "Activos y unidades sincronizados con gestión" : "Sincronización de activos y unidades apagada").catch(() => null);
+    if (r?.carga_inicial || r?.sin_tratar_aplicados) toast(`${r.carga_inicial || 0} unidades en la cola para gestión · ${r.sin_tratar_aplicados || 0} avisos de gestión aplicados${r.sin_tratar_con_error ? ` · ${r.sin_tratar_con_error} con error (siguen sin tratar)` : ""}`);
+    tarjetaMaestros(box);
   };
 }
 

@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
-from .. import avisos, clientes, fianzas, limpiezas, marca, nif, registro_viajeros
+from .. import avisos, clientes, fianzas, limpiezas, maestros, marca, nif, registro_viajeros
 from ..database import get_db
 from ..facturacion import FORMAS_PAGO
 from ..models import (ESTADOS_UNIDAD, MODALIDADES, USOS_UNIDAD, AccommodationContract, Asset, Company, Contact,
@@ -163,6 +163,7 @@ def update_asset(aid: int, data: AssetUpdate, scope: Scope = Depends(get_scope),
     _serie_libre(db, data.serie_factura, aid)
     if "recepcion1_id" in data.model_fields_set:
         _valida_r1(db, aid, data.recepcion1_id)
+    maestros.comprobar_catastro(a, data.model_dump(exclude_unset=True))
     ch = apply(a, data)
     audit(db, scope.user, "editar", "activo", aid, ch)
     db.commit()
@@ -174,10 +175,12 @@ def update_asset(aid: int, data: AssetUpdate, scope: Scope = Depends(get_scope),
 # --------------------------------------------------------------------------- unidades
 @router.get("/unidades")
 def list_units(asset_id: int | None = None, estado: str | None = None, q: str | None = None,
-               bloque: str | None = None, uso: str | None = None,
+               bloque: str | None = None, uso: str | None = None, bajas: bool = False,
                scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     ids = scope.asset_ids("activos.ver")
     stmt = scoped(select(Unit), Unit.asset_id, ids).order_by(Unit.asset_id, Unit.bloque, Unit.codigo)
+    if not bajas:  # las dadas de baja (maestros) no salen salvo que se pidan
+        stmt = stmt.where(Unit.baja.is_(None))
     if asset_id:
         stmt = stmt.where(Unit.asset_id == asset_id)
     if estado:
@@ -241,6 +244,9 @@ def update_unit(uid: int, data: UnitUpdate, scope: Scope = Depends(get_scope), d
     u = get_or_404(db, Unit, uid)
     scope.require_asset("activos.editar", u.asset_id)
     _check_estado(data.estado, data.uso)
+    maestros.comprobar_catastro(u, data.model_dump(exclude_unset=True))
+    if u.baja and "estado" in data.model_fields_set and data.estado != u.estado:
+        bad_request("La unidad está dada de baja: reactívela antes de cambiar su estado")
     ch = apply(u, data)
     audit(db, scope.user, "editar", "unidad", uid, ch)
     db.commit()

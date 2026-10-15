@@ -1,5 +1,12 @@
 # Novedades
 
+## 2026-10-15 · Versión 1.71 · Activos y unidades iguales en el PMS y en gestión
+- **Unidades con gestión** (Suite Florida, Suite Aeropuerto y Babilonia 35): cada alta, cambio o baja de una unidad (apartamento, vivienda, plaza de garaje, local…) pasa sola a gestión. El PMS manda en lo operativo: código, uso, superficie, estado, rentas y tarifas.
+- **Catastro con candado 🔒**: la referencia catastral, la sociedad propietaria, los valores catastrales, el IBI y la TRUA llegan de gestión y se ven en la ficha de la unidad y del activo con el texto «Se edita en gestión». En el PMS no se cambian.
+- **Dar de baja una unidad** (solo superadministración): *Unidades → Dar de baja* (con el motivo). No se borra: conserva reservas, contratos y facturas, queda fuera de servicio y deja de salir en las listas (casilla «Ver también las dadas de baja»). Se puede **Reactivar**.
+- **Cuadre nocturno**: cada noche a las 03:30 el PMS manda a gestión el recuento de unidades por activo; si no cuadra, gestión pide el detalle y el PMS se lo manda solo.
+- **Superadministración**: casilla **«Sincronizar activos y unidades con gestión»** en *Administración › Pasarela con gestión*. Viene **apagada**; al encenderla se mandan todas las unidades y activos.
+
 ## 2026-10-15 · Versión 1.70 · Órdenes de trabajo más sencillas
 - **Recepción** abre todas las órdenes de trabajo (OT). **Limpieza** avisa con un **parte de estado** (ahora solo los genera limpieza) y **mantenimiento** con el botón **«🛠 Pedir OT a recepción»** del parte diario.
 - **Para terminar cualquier OT** hacen falta siempre el **tiempo** (hora de llegada y de salida) y **al menos una foto de la reparación**.
