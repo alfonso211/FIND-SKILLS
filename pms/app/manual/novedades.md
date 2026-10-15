@@ -1,5 +1,9 @@
 # Novedades
 
+## 2026-10-15 · Versión 1.67 · Calendario común: ajustes para el encendido
+- **Superadministración**: al encender *«Sincronizar el calendario con gestión»* se aplica todo lo que gestión mandó mientras la casilla estaba apagada, en orden y sin duplicados. Un aviso dice cuántos se han aplicado.
+- **Todos**: una cita de varios días que se cambia en gestión conserva su último día.
+
 ## 2026-10-15 · Versión 1.66 · Calendario común con gestión y Outlook
 - **Todos**: la *Agenda* muestra también lo que llega de gestión, con un color por tipo y la etiqueta «gestión»:
   - citas y tareas en las que usted está;

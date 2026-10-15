@@ -6298,7 +6298,7 @@ async function tarjetaCalendario(box) {
   $("#gcalOn", box).onchange = async (e) => {
     if (!confirm(e.target.checked ? "¿Encender la sincronización del calendario? Se mandan a gestión las citas compartidas y las limpiezas de los últimos 60 días." : "¿Apagar la sincronización del calendario?")) { e.target.checked = !e.target.checked; return; }
     const r = await run(() => put("/api/calendario/config", { activo: e.target.checked }), e.target.checked ? "Calendario sincronizado con gestión" : "Sincronización del calendario apagada").catch(() => null);
-    if (r?.carga_inicial) toast(`${r.carga_inicial} entradas preparadas para gestión`);
+    if (r?.sin_tratar_aplicados || r?.carga_inicial) toast(`${r.sin_tratar_aplicados || 0} avisos de gestión aplicados · ${r.carga_inicial || 0} entradas preparadas para gestión${r.sin_tratar_con_error ? ` · ${r.sin_tratar_con_error} con error (siguen sin tratar)` : ""}`);
     tarjetaCalendario(box);
   };
 }

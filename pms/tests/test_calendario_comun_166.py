@@ -367,3 +367,62 @@ def test_financiero_solo_de_sus_sociedades_y_activos(client, admin, gente):
     ev = {str(e["UID"]).split("@")[0]: str(e["SUMMARY"]) for e in
           icalendar.Calendar.from_ical(client.get(url[url.index("/cal/"):]).content).walk("VEVENT")}
     assert ev["INVG-ZZ-AMB-CDC"].endswith("12.345,67 €") and "INVG-ZZ-AMB-INV" not in ev
+
+
+def test_al_encender_se_aplican_los_sin_tratar_en_orden(client, admin):
+    """Gestión encendió antes: lo que llegó con la casilla apagada se aplica al encenderla, sin duplicados."""
+    _casilla(client, admin, False)
+    _aviso(client, "calendario.creada", _entrada("INVG-ZZ-ST1", titulo=f"{Z} v1"))
+    _aviso(client, "calendario.actualizada", _entrada("INVG-ZZ-ST1", 2, titulo=f"{Z} v2"))
+    _aviso(client, "calendario.actualizada", _entrada("INVG-ZZ-ST1", 2, titulo=f"{Z} v2 repetida"))
+    _aviso(client, "calendario.creada", _entrada("INVG-ZZ-ST2", titulo=f"{Z} otra"))
+    _aviso(client, "calendario.cancelada", _entrada("INVG-ZZ-ST2", 2, titulo=f"{Z} otra"))
+    with SessionLocal() as db:
+        assert not db.scalar(select(CalendarioEntrada.id).where(CalendarioEntrada.uid.in_(("INVG-ZZ-ST1", "INVG-ZZ-ST2"))))
+    r = _casilla(client, admin, True)
+    assert r["sin_tratar_aplicados"] >= 5 and r["sin_tratar_con_error"] == 0 and r["sin_tratar"] == 0
+    with SessionLocal() as db:
+        st1 = db.scalar(select(CalendarioEntrada).where(CalendarioEntrada.uid == "INVG-ZZ-ST1"))
+        st2 = db.scalar(select(CalendarioEntrada).where(CalendarioEntrada.uid == "INVG-ZZ-ST2"))
+        assert (st1.version, st1.titulo) == (2, f"{Z} v2")  # la repetida (misma versión) no cambia nada
+        assert (st2.version, st2.estado) == (2, "CANCELADA")
+    assert not [x for x in _cola() if x[1] in ("INVG-ZZ-ST1", "INVG-ZZ-ST2")]  # sin eco
+    _casilla(client, admin, False)
+    assert _casilla(client, admin, True)["sin_tratar_aplicados"] == 0  # volver a encender no repite nada
+
+
+def test_historial_solo_con_choque(client, admin, gente, monkeypatch):
+    """Un cambio del PMS ya entregado no es un choque: el cambio posterior de gestión no deja historial."""
+    _casilla(client, admin, True)
+    _aviso(client, "calendario.creada", _entrada("INVG-ZZ-HIS", titulo=f"{Z} sin choque"))
+    cid = [x for x in _agenda(client, gente["recepcion"]) if x["uid"] == "INVG-ZZ-HIS"][0]["id"]
+    client.put(f"/api/calendario/entradas/{cid}", headers=gente["recepcion"], json={
+        "titulo": f"{Z} sin choque (PMS)", "inicio": "2031-03-10T16:00", "estado": "PENDIENTE"})
+    monkeypatch.setattr(gestion, "_enviar", lambda ev: (True, "{}"))
+    with SessionLocal() as db:
+        gestion.procesar_cola(db, limite=500)
+    _aviso(client, "calendario.actualizada", _entrada("INVG-ZZ-HIS", 3, titulo=f"{Z} sin choque (gestión)"))
+    with SessionLocal() as db:
+        c = db.scalar(select(CalendarioEntrada).where(CalendarioEntrada.uid == "INVG-ZZ-HIS"))
+        assert c.titulo == f"{Z} sin choque (gestión)" and c.version == 3 and not c.historial
+
+
+def test_cita_de_varios_dias_conserva_el_fin(client, admin):
+    """Una cita de varios días del PMS cambiada en gestión mantiene su último día, también si gestión no manda «fin»."""
+    _casilla(client, admin, True)
+    r = client.post("/api/agenda", headers=admin, json={"tipo": "evento", "titulo": f"{Z} congreso", "todo_el_dia": True,
+                                                         "inicio": "2031-07-06T00:00:00", "fin": "2031-07-08T00:00:00",
+                                                         "visibilidad": "publica"})
+    eid, uid = r.json()["id"], f"PMS-AG-{r.json()['id']}"
+    d = [x for x in _cola() if x[1] == uid][-1][4]["datos"]
+    assert (d["inicio"], d["fin"], d["todo_el_dia"]) == ("2031-07-06", "2031-07-08", True)
+    v = d["version"]
+    _aviso(client, "calendario.actualizada", {**d, "version": v + 1, "titulo": f"{Z} congreso (gestión)"})
+    sin_fin = {k: v for k, v in d.items() if k != "fin"}
+    _aviso(client, "calendario.actualizada", {**sin_fin, "version": v + 2, "titulo": f"{Z} congreso (gestión 2)"})
+    with SessionLocal() as db:
+        e = db.get(AgendaEvent, eid)
+        assert e.titulo == f"{Z} congreso (gestión 2)" and e.fin.isoformat() == "2031-07-08T00:00:00"
+    ag = [x for x in client.get("/api/agenda", headers=admin, params={"desde": "2031-07-01", "hasta": "2031-07-31"}).json()
+          if x["id"] == eid]
+    assert ag and ag[0]["fin"].startswith("2031-07-08")
