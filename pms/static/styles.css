@@ -896,3 +896,60 @@ details > summary { cursor: pointer; padding: 6px 0; }
 .chat-menc[hidden] { display: none; }
 .chat-menc button { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: none; padding: 6px 10px; cursor: pointer; font: inherit; text-align: left; }
 .chat-menc button:hover, .chat-menc button.sel { background: #f5f0e4; }
+
+/* ---------- móvil y plegables: Galaxy Fold cerrado (≈ 344-412 px) y abierto (≈ 700-900 px) (1.69) ---------- */
+/* barra superior: título en una línea; debajo, activo, avisos, chat, usuario, Gestión y Salir, sin salirse */
+@media (max-width: 1100px) {
+  .topbar { flex-wrap: wrap; row-gap: 8px; padding: 8px 16px; }
+  .topbar h2 { flex: 1 1 0; min-width: 0; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topbar-right { width: 100%; gap: 8px; }
+  .topbar-right select { flex: 1; min-width: 0; }
+  .usuario { padding-left: 8px; }
+  .usuario .user { display: none; }
+}
+@media (max-width: 600px) {
+  .topbar { gap: 6px; padding: 6px 10px; }
+  .topbar h2 { font-size: 16px; }
+  .back-btn .txt { display: none; }
+  .topbar .btn.ghost { padding: 6px 8px; }
+  .topbar-right { gap: 4px; }
+  .topbar-right #gestionBtn, .topbar-right #logoutBtn { font-size: 12.5px; }
+  .usuario { padding-left: 4px; border-left: 0; }
+  .view { padding: 12px 10px 20px; }
+  .toolbar { gap: 6px; }
+  .toolbar > select, .toolbar > input { flex: 1 1 140px; min-width: 0; }
+  dialog { width: calc(100vw - 16px); max-width: none; margin: auto; }
+  #modalForm { padding-left: 14px; padding-right: 14px; }
+  #modalForm .actions { margin-left: -14px; margin-right: -14px; padding-left: 14px; padding-right: 14px; }
+  .toast { left: 10px; right: 10px; bottom: 12px; max-width: none; }
+}
+/* listas como fichas: cada registro es una tarjeta con «dato: valor» y sus botones debajo, en una columna con el
+   móvil cerrado y en dos con el móvil abierto. Las tablas con casillas para rellenar siguen siendo tablas. */
+@media (max-width: 900px) {
+  .table-wrap:has(> table.t-tarjeta) { background: none; border: 0; box-shadow: none; overflow: visible; border-radius: 0; }
+  table.t-tarjeta, table.t-tarjeta > tbody, table.t-tarjeta > tbody > tr, table.t-tarjeta > tbody > tr > td { display: block; }
+  table.t-tarjeta > thead { display: none; }
+  table.t-tarjeta > tbody { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 10px; }
+  table.t-tarjeta > tbody > tr { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px;
+    box-shadow: var(--sombra); min-width: 0; }
+  table.t-tarjeta > tbody > tr > td { display: grid; grid-template-columns: minmax(78px, 34%) minmax(0, 1fr); gap: 8px; align-items: baseline;
+    padding: 2px 0; border: 0; white-space: normal; overflow-wrap: anywhere; text-align: left; background: none; }
+  table.t-tarjeta > tbody > tr > td > * { justify-self: start; max-width: 100%; }
+  table.t-tarjeta > tbody > tr > td::before { content: attr(data-label); color: var(--muted); font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .05em; }
+  table.t-tarjeta > tbody > tr > td:not([data-label]), table.t-tarjeta > tbody > tr > td[data-label=""] { grid-template-columns: minmax(0, 1fr); }
+  table.t-tarjeta > tbody > tr > td:not([data-label])::before, table.t-tarjeta > tbody > tr > td[data-label=""]::before { display: none; }
+  table.t-tarjeta > tbody > tr > td:empty { display: none; }
+  table.t-tarjeta > tbody > tr > td.acc { display: flex; flex-wrap: wrap; gap: 6px; position: static; box-shadow: none; background: none;
+    margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--line-2); white-space: normal; }
+  table.t-tarjeta > tbody > tr > td.acc::before { display: none; }
+  table.t-tarjeta > tbody > tr > td.acc .btn { min-height: 36px; padding: 6px 12px; }
+  /* tablas que siguen siendo tablas: los botones se reparten en varias líneas en vez de empujar los datos fuera */
+  td.acc { white-space: normal; min-width: 120px; }
+}
+@media (max-width: 400px) {
+  .topbar-right { flex-wrap: wrap; }
+  .topbar-right select { flex: 1 1 100%; }
+}
+.desliza { overflow-x: auto; max-width: 100%; }
+.informe-pres .inf-cols > * { min-width: 0; }
