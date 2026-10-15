@@ -215,8 +215,9 @@ def recibir(db: Session, ev: dict) -> tuple[str, dict | None]:
     if c is None:
         c = CalendarioEntrada(uid=uid, historial=[], origen="GESTION", version=version)
         db.add(c)
-    elif c.ultimo_cambio == "PMS":
-        # gestión manda: lo del PMS queda en el historial y su aviso pendiente, si lo hay, se descarta
+    elif c.cambio_local:
+        # choque: el PMS tiene un cambio que gestión aún no ha recibido. Gestión manda: lo del PMS queda en el historial
+        # y su aviso pendiente se descarta. (Si el cambio del PMS ya se entregó, no hay choque: es un cambio posterior.)
         c.historial = [*(c.historial or []), {"fecha": datetime.now().isoformat(timespec="seconds"),
                                               "motivo": "Sustituido por la versión de gestión",
                                               "version": c.version, "pendiente_de_enviar": c.cambio_local,
@@ -225,7 +226,10 @@ def recibir(db: Session, ev: dict) -> tuple[str, dict | None]:
             x.estado, x.ultimo_error = "descartado", "Sustituido por la versión de gestión (manda gestión)"
     inicio, dia = _fecha(d.get("inicio"), "inicio")
     todo_el_dia = bool(d.get("todo_el_dia")) if "todo_el_dia" in d else dia
-    fin = _fecha(d.get("fin"), "fin")[0] if d.get("fin") else None
+    if "fin" in d:
+        fin = _fecha(d["fin"], "fin")[0] if d.get("fin") else None
+    else:  # gestión no la manda: se conserva la que había (citas de varios días)
+        fin = c.fin if c.id else None
     if fin and fin < inicio:
         bad_request("El final no puede ser anterior al inicio")
     asset = _activo_pms(db, d.get("activo") or ev.get("activo"))
@@ -271,7 +275,7 @@ def _a_agenda(db: Session, c: CalendarioEntrada) -> None:
         return
     e.titulo, e.descripcion, e.lugar = c.titulo[:200], c.descripcion, (c.lugar or "")[:200] or None
     e.inicio, e.todo_el_dia = c.inicio, c.todo_el_dia
-    e.fin = (c.fin + timedelta(hours=23, minutes=59) if c.todo_el_dia and c.fin else c.fin)
+    e.fin = c.fin  # día completo: último día incluido a las 00:00, como lo guarda la Agenda del PMS
     if e.tipo == "tarea" and c.estado in ("HECHA", "PENDIENTE"):
         e.hecha = c.estado == "HECHA"
 
@@ -643,10 +647,36 @@ def guardar_config(data: ConfigIn, scope: Scope = Depends(get_scope), db: Sessio
     antes = activo(db)
     poner(db, data.activo, scope.user)
     db.flush()
+    aplicados = reprocesar_sin_tratar(db) if data.activo and not antes else {"aplicados": 0, "con_error": 0}
     n = carga_inicial(db) if data.activo and not antes else 0
-    audit(db, scope.user, "calendario_sync", "ajustes", None, {"antes": antes, "ahora": data.activo, "carga": n})
+    audit(db, scope.user, "calendario_sync", "ajustes", None, {"antes": antes, "ahora": data.activo, "carga": n,
+                                                              **aplicados})
     db.commit()
-    return {**ver_config(scope, db), "carga_inicial": n}
+    return {**ver_config(scope, db), "carga_inicial": n, "sin_tratar_aplicados": aplicados["aplicados"],
+            "sin_tratar_con_error": aplicados["con_error"]}
+
+
+def reprocesar_sin_tratar(db: Session) -> dict:
+    """Al encender la casilla: los avisos calendario.* que llegaron con ella apagada se aplican en el orden en que
+    llegaron. La versión de cada entrada evita duplicados (uno repetido o más viejo se ignora)."""
+    from . import fusion
+    from .models import FusionEntrada
+    ok = mal = 0
+    for x in list(db.scalars(select(FusionEntrada).where(FusionEntrada.tipo.in_(TIPOS_EVENTO),
+                                                         FusionEntrada.estado == "sin_tratar")
+                              .order_by(FusionEntrada.recibido, FusionEntrada.id))):
+        db.info[fusion.DESDE_GESTION] = True
+        try:
+            with db.begin_nested():
+                x.estado, x.resultado = recibir(db, x.cuerpo or {})
+                db.flush()
+            ok += 1
+        except HTTPException as e:
+            x.resultado = {"error": str(e.detail)[:300]}  # sigue «sin tratar»: no se pierde
+            mal += 1
+        finally:
+            db.info.pop(fusion.DESDE_GESTION, None)
+    return {"aplicados": ok, "con_error": mal}
 
 
 # --------------------------------------------------------------------------- Outlook (enlace privado .ics)

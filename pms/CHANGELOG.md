@@ -2,6 +2,16 @@
 
 Registro técnico de versiones. El resumen para los usuarios está en `app/manual/novedades.md` (se muestra en el PMS).
 
+## 1.67 · 15/10/2026 · Calendario común: encendido después de gestión
+- Al encender la casilla del PMS se aplican, en el orden en que llegaron, los avisos `calendario.*` que quedaron «sin
+  tratar» (gestión encendió antes). La versión de cada entrada evita duplicados; uno que no se pueda aplicar sigue «sin
+  tratar» con el motivo. Sin migración.
+- Historial: solo se apunta «Sustituido por la versión de gestión» cuando hay choque (un cambio del PMS que gestión aún
+  no ha recibido); un cambio de gestión posterior a uno ya entregado no deja historial.
+- Citas de varios días: si gestión no manda `fin`, se conserva el que había; en las de día completo el último día se
+  guarda como lo guarda la Agenda (00:00), sin cambiar su forma.
+- 3 pruebas nuevas en `tests/test_calendario_comun_166.py`.
+
 ## 1.66 · 15/10/2026 · Calendario común PMS ↔ gestión
 - **Migración 0061**: tablas `calendario_comun` (una fila por uid, con versión, historial y espejo de lo que manda el
   PMS), `calendario_enlaces` (enlace de Outlook por usuario; solo la sha256 de la clave) y `ajustes` (interruptores de

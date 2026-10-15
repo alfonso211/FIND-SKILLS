@@ -366,7 +366,10 @@ PMS, AMBOS), `solo_lectura`, `roles`, `url_gestion`.
   AMBOS (versión + 1). Nunca vencimientos, fiscal ni entradas de solo lectura. Sin eco. Cola con los reintentos de la
   fusión, en orden por uid (no sale un aviso mientras otro anterior de la misma entrada siga pendiente).
 - Casilla de la superadministración, apagada al desplegar: apagada, lo recibido queda «sin tratar» y no sale nada. Al
-  encenderla se preparan las citas compartidas y las limpiezas de los últimos 60 días.
+  encenderla (1.67) se aplican primero, en orden de llegada, los avisos `calendario.*` «sin tratar» (la versión evita
+  duplicados) y después se preparan las citas compartidas y las limpiezas de los últimos 60 días.
+- Historial (1.67): solo con choque, es decir, cuando el PMS tiene un cambio que gestión aún no ha recibido. Si un aviso
+  de gestión no trae `fin`, el PMS conserva el que tenía.
 - Visibilidad: lo financiero y lo que gestión limita a `["superadmin","administracion","direccion"]` solo la
   superadministración y los roles Dirección Grupo, Dirección Sociedad y Administración / Finanzas, cada uno solo lo de
   sus sociedades (`sociedad`; si falta, el activo de la entrada). Citas y tareas: responsables, invitados y la
