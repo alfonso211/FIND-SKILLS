@@ -1,5 +1,8 @@
 # Limpieza
 
+## Avisos y chat
+- Con el PMS abierto (también en el móvil), la **campana 🔔** suena cuando hay algo que atender y el **chat 💬** le permite hablar con recepción y con el equipo. Ver *Primeros pasos*.
+
 ## Apartamentos pendientes de limpieza
 - Tras el **check-out**, el apartamento pasa a **pendiente de limpieza**. Lo verá en el **Plano de apartamentos** y en **Unidades**.
 - Cuando esté limpio, en **Unidades** pulse **Limpia ✓**: el apartamento queda **disponible** para reservar.

@@ -41,6 +41,8 @@
         <nav id="accesos" class="accesos" aria-label="Accesos rápidos"></nav>
         <div class="topbar-right">
           <select id="assetFilter" title="Filtrar por activo"></select>
+          <button id="avisosBtn" class="btn ghost icono" type="button" hidden title="Avisos: lo que tiene que atender en el PMS" aria-label="Avisos">🔔<span id="avisosN" class="contador" hidden></span></button>
+          <button id="chatBtn" class="btn ghost icono" type="button" hidden title="Chat del equipo" aria-label="Chat del equipo">💬<span id="chatN" class="contador" hidden></span></button>
           <div class="usuario"><span id="userAvatar" class="avatar"></span><span id="userName" class="user"></span></div>
           <button id="gestionBtn" class="btn ghost" hidden title="Abrir INVERGESTION (gestión del grupo) en una pestaña nueva">Gestión</button>
           <button id="logoutBtn" class="btn ghost">Salir</button>
@@ -49,6 +51,9 @@
       <section id="view" class="view"></section>
     </main>
   </div>
+
+  <div id="avisosPanel" class="avisos-panel" hidden></div>
+  <aside id="chatPanel" class="chat-panel" hidden aria-label="Chat del equipo"></aside>
 
   <dialog id="modal"><form method="dialog" id="modalForm"></form></dialog>
   <div id="toast" class="toast"></div>

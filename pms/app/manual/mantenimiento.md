@@ -1,7 +1,7 @@
 # Mantenimiento
 
 ## Órdenes de trabajo (OT)
-- **Órdenes de trabajo**: todas las averías de su activo. Las **urgentes** le llegan además por **correo al momento**.
+- **Órdenes de trabajo**: todas las averías de su activo. Las **urgentes** le llegan además por **correo al momento** y **suenan** en la campana 🔔 (tres pitidos) si tiene el PMS abierto. Para coordinarse con recepción o con un compañero, use el **chat 💬**.
 - Recorrido de una OT:
   1. **Abierta**: la abre recepción (o la dirección), normalmente a partir de un **parte de estado** suyo o de limpieza, con sus fotos.
   2. **Asignada**: recepción o dirección la asignan a **personal propio** o a una **subcontrata** y la **envían**: llega un enlace por WhatsApp o correo.

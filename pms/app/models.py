@@ -400,6 +400,56 @@ class FusionDocumento(Base):
     creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
+class Notificacion(Base):
+    """Aviso dentro del PMS (campana de la barra superior, con sonido): lo que el usuario tiene que atender. Se crea
+    junto con cada aviso que el PMS envía por correo al usuario (los que tiene elegidos en «Mi perfil»)."""
+    __tablename__ = "notificaciones"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"), index=True)
+    tipo: Mapped[str] = mapped_column(String(40))
+    titulo: Mapped[str] = mapped_column(String(200))
+    texto: Mapped[str | None] = mapped_column(String(600))
+    vista: Mapped[str | None] = mapped_column(String(40))  # pantalla del PMS a la que lleva
+    urgente: Mapped[bool] = mapped_column(Boolean, default=False)
+    creada: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+    leida: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class ChatConversacion(Base):
+    """Chat interno. «todos»: todo el equipo (los usuarios internos activos, sin lista de miembros). «directo»: dos
+    personas. «grupo»: las que elige quien la crea, que es quien puede añadir o quitar personas."""
+    __tablename__ = "chat_conversaciones"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tipo: Mapped[str] = mapped_column(String(10), default="grupo")  # todos | directo | grupo
+    titulo: Mapped[str | None] = mapped_column(String(120))
+    creador_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"))
+    creada: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    ultimo: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)  # último mensaje
+
+
+class ChatMiembro(Base):
+    __tablename__ = "chat_miembros"
+    __table_args__ = (UniqueConstraint("conversacion_id", "user_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    conversacion_id: Mapped[int] = mapped_column(ForeignKey("chat_conversaciones.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"), index=True)
+    activo: Mapped[bool] = mapped_column(Boolean, default=True)  # False: salió o le quitaron
+    leido_hasta: Mapped[int] = mapped_column(Integer, default=0)  # último mensaje leído
+    anadido_por: Mapped[int | None] = mapped_column(Integer)
+    anadido: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class ChatMensaje(Base):
+    __tablename__ = "chat_mensajes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    conversacion_id: Mapped[int] = mapped_column(ForeignKey("chat_conversaciones.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"))
+    texto: Mapped[str] = mapped_column(Text)
+    sistema: Mapped[bool] = mapped_column(Boolean, default=False)  # «Ana ha añadido a Luis»
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    borrado: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 class ContactDocument(Base):
     """Copia escaneada de un documento de identidad. El fichero se guarda cifrado fuera de la base de datos."""
     __tablename__ = "documentos_terceros"

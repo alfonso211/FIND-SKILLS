@@ -24,12 +24,29 @@
 
 ## Mi perfil
 - **Cambiar contraseña** cuando quiera.
-- **Avisos por correo**: elija qué avisos quiere recibir (resumen diario a las 7:30, OT urgentes, agenda…).
+- **Avisos por correo**: elija qué avisos quiere recibir (resumen diario a las 7:30, OT urgentes, agenda…). Los mismos le llegan a la campana 🔔.
+- **Avisos en pantalla y sonido**: sonido sí o no, probar los tonos y aviso de Windows / del móvil (en cada ordenador).
 - **Accesos rápidos**: los botones de la barra de arriba (de serie Gmail, Outlook, Excel, Word y Teams) que abren otras páginas en una pestaña nueva.
   - **Añadir acceso**: escriba el nombre y la dirección completa, que debe empezar por **https://**. Hasta 10.
   - Con **↑** y **↓** cambia el orden; **Quitar** lo elimina; **Volver a los de serie** recupera los cinco iniciales.
   - Pulse **Guardar accesos**. Cada usuario ve solo los suyos.
   - Excel y Word se abren en su versión web; desde allí, «Abrir en la aplicación de escritorio» pasa al programa del ordenador.
+
+## Avisos con sonido 🔔 y chat del equipo 💬
+- **Campana 🔔** (arriba a la derecha): cuando el PMS le necesita, suena y aparece un número rojo con los avisos sin ver. Pulse la campana para verlos y pulse un aviso para ir a su pantalla.
+  - Le llegan los avisos que tiene elegidos en *Mi perfil → Avisos por correo*.
+  - **Sonidos**: aviso normal, «ding-dong»; **urgente**, tres pitidos dos veces (OT urgente, bloqueo de gestión, descuadre de caja); **mensaje de chat**, un «pop» corto.
+  - Para que suene, el PMS tiene que estar abierto, aunque sea en otra pestaña. Tras entrar, haga un clic en cualquier sitio: el navegador no deja sonar hasta el primer clic.
+- **Chat 💬**: hable con sus compañeros sin salir del PMS.
+  1. Pulse **💬**. A la izquierda verá sus conversaciones; el número rojo indica los mensajes sin leer.
+  2. **Todo el equipo**: mensajes para todo el personal.
+  3. **Nueva**: marque una persona para una conversación privada, o varias para un **grupo** (puede ponerle nombre y escribir el primer mensaje).
+  4. Escriba abajo y pulse **Intro** para enviar (**Mayús + Intro** cambia de línea).
+  5. **Personas…**: quien creó el grupo puede **añadir** a más gente, **quitar** a alguien o **cambiar el nombre**. Los demás ven quién está.
+  6. **Salir**: deja la conversación. En *Todo el equipo* no se puede salir.
+  7. Debajo de sus mensajes, **borrar**: los demás verán «Mensaje eliminado».
+  - Solo los miembros ven una conversación. Los colaboradores externos no tienen chat.
+- **Mi perfil → Avisos en pantalla y sonido**: quitar o poner el sonido, **probar** los tres tonos y activar el **aviso de Windows / del móvil** cuando el PMS está minimizado. Se elige en cada ordenador o móvil.
 
 ## Si algo no va bien
 - Si sale **«El servidor está muy ocupado, reintente»**, espere unos segundos y repita. El programa se recupera solo.
