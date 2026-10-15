@@ -79,10 +79,12 @@ def test_informe_mensual(client, admin, ids):
     assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")
     import pypdfium2 as pdfium
     doc = pdfium.PdfDocument(pdf.content)
-    assert len(doc) == 3
-    textos = [doc[i].get_textpage().get_text_range() for i in range(3)]
-    assert "Contratos inferiores a 1 semana" in textos[0] and "RESULTADO DE PRODUCCIÓN" in textos[0]
-    assert f"Resumen mensual {HOY.year - 1}" in textos[1] and f"Resumen mensual {HOY.year}" in textos[2]
+    # producción del mes (una página, o más si el mes tiene muchos gastos y servicios) y los dos resúmenes anuales
+    assert len(doc) >= 3
+    textos = [doc[i].get_textpage().get_text_range() for i in range(len(doc))]
+    produccion = "".join(textos[:-2])
+    assert "Contratos inferiores a 1 semana" in textos[0] and "RESULTADO DE PRODUCCIÓN" in produccion
+    assert f"Resumen mensual {HOY.year - 1}" in textos[-2] and f"Resumen mensual {HOY.year}" in textos[-1]
     xl = client.get("/api/presidencia/excel", headers=admin, params={"asset_id": sae, "anio": HOY.year,
                                                                      "mes": HOY.month})
     wb = load_workbook(io.BytesIO(xl.content))

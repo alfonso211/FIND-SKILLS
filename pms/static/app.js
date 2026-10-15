@@ -4466,9 +4466,10 @@ V.gastos = async (el) => {
   el.innerHTML = `<div class="toolbar"><label>Desde<input type="date" id="d" value="${ini}"></label><label>Hasta<input type="date" id="h" value="${today()}"></label>
     <select id="c"><option value="">Todas las categorías</option>${Object.entries(C.categorias).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select>
     <select id="p"><option value="">Pagados y pendientes</option><option value="false">Pendientes de pago</option><option value="true">Pagados</option></select>
+    <input id="q" type="search" placeholder="Buscar: proveedor, nº de factura, concepto o importe">
     <span class="spacer"></span><button class="btn" id="xls">Excel</button>${editar ? '<button class="btn" id="sin">Gasto sin documento</button><button class="btn primary" id="doc">Subir factura / ticket</button>' : ""}</div>
     <div class="kpis" id="k"></div><div id="t"></div>`;
-  const filtros = () => ({ asset_id: S.asset, desde: $("#d", el).value, hasta: $("#h", el).value, categoria: $("#c", el).value, pagado: $("#p", el).value });
+  const filtros = () => ({ asset_id: S.asset, desde: $("#d", el).value, hasta: $("#h", el).value, categoria: $("#c", el).value, pagado: $("#p", el).value, q: $("#q", el).value.trim() });
   const load = async () => {
     const r = await get("/api/gastos", filtros());
     const t = r.totales;
@@ -4506,7 +4507,7 @@ V.gastos = async (el) => {
       editar && !g.fusion?.gestionada && ["Borrar", async () => { if (confirm(`¿Borrar el gasto «${g.concepto}»?`)) { await run(() => api("DELETE", `/api/gastos/${g.id}`), "Gasto borrado"); load(); } }, "danger"],
     ]);
   };
-  ["#d", "#h", "#c", "#p"].forEach((s) => ($(s, el).onchange = load));
+  ["#d", "#h", "#c", "#p"].forEach((s) => ($(s, el).onchange = load)); $("#q", el).oninput = debounce(load);
   $("#xls", el).onclick = () => run(() => download("GET", `/api/gastos/excel?${new URLSearchParams(Object.entries(filtros()).filter(([k, v]) => v && k !== "pagado"))}`));
   if ($("#sin", el)) { $("#sin", el).onclick = () => editarGasto(null, load); $("#doc", el).onclick = () => subirDocumento(load); }
   load();

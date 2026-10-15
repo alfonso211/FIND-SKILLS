@@ -440,8 +440,33 @@ def delete_document(did: int, scope: Scope = Depends(get_scope), db: Session = D
 
 
 # --------------------------------------------------------------------------- cuenta de gastos
-def _gastos_q(scope: Scope, asset_id, desde, hasta, categoria, unit_id, pagado):
-    stmt = scoped(select(Expense), Expense.asset_id, scope.asset_ids("documentos.ver"))
+def _importe_buscado(q: str) -> Decimal | None:
+    """«121», «121,5», «1.210,50» o «121.50» → importe a buscar (None si el texto no es un importe)."""
+    t = q.strip().replace("€", "").replace(" ", "")
+    if not re.fullmatch(r"\d{1,3}(\.\d{3})*(,\d{1,2})?|\d+([.,]\d{1,2})?", t):
+        return None
+    if "," in t:
+        t = t.replace(".", "").replace(",", ".")
+    return dinero(t)
+
+
+def _buscar(stmt, q: str | None):
+    """Buscador: concepto, proveedor, nº de factura, notas y detalle; si es un importe, también el total de la
+    factura (lo que figura en ella) o el total con IVA."""
+    q = " ".join((q or "").split())[:100]
+    if not q:
+        return stmt
+    like = f"%{q}%"
+    cond = [Expense.concepto.ilike(like), Expense.proveedor.ilike(like), Expense.numero_factura.ilike(like),
+            Expense.notas.ilike(like), Expense.ambito_detalle.ilike(like)]
+    imp = _importe_buscado(q)
+    if imp is not None:
+        cond += [Expense.total == imp, (Expense.total - Expense.retencion) == imp]
+    return stmt.where(or_(*cond))
+
+
+def _gastos_q(scope: Scope, asset_id, desde, hasta, categoria, unit_id, pagado, q=None):
+    stmt = _buscar(scoped(select(Expense), Expense.asset_id, scope.asset_ids("documentos.ver")), q)
     if asset_id:
         stmt = stmt.where(Expense.asset_id == asset_id)
     if desde:
@@ -457,9 +482,9 @@ def _gastos_q(scope: Scope, asset_id, desde, hasta, categoria, unit_id, pagado):
     return stmt.order_by(Expense.fecha.desc(), Expense.id.desc())
 
 
-def _gastos(db, scope, asset_id, desde, hasta, categoria, unit_id, pagado) -> list[dict]:
+def _gastos(db, scope, asset_id, desde, hasta, categoria, unit_id, pagado, q=None) -> list[dict]:
     scope.require_any("documentos.ver")
-    filas = list(db.scalars(_gastos_q(scope, asset_id, desde, hasta, categoria, unit_id, pagado).limit(10000)))
+    filas = list(db.scalars(_gastos_q(scope, asset_id, desde, hasta, categoria, unit_id, pagado, q).limit(10000)))
     unidades, usuarios = _nombres(db, {g.unit_id for g in filas if g.unit_id},
                                   {i for g in filas for i in (g.user_id, g.pago_retenido_user_id) if i})
     activos = _activos(db)
@@ -478,8 +503,8 @@ def _gastos(db, scope, asset_id, desde, hasta, categoria, unit_id, pagado) -> li
 @router.get("/gastos")
 def list_expenses(asset_id: int | None = None, desde: date | None = None, hasta: date | None = None,
                   categoria: str | None = None, unit_id: int | None = None, pagado: bool | None = None,
-                  scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    filas = _gastos(db, scope, asset_id, desde, hasta, categoria, unit_id, pagado)
+                  q: str | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    filas = _gastos(db, scope, asset_id, desde, hasta, categoria, unit_id, pagado, q)
     por_cat = defaultdict(float)
     for g in filas:
         por_cat[g["categoria_nombre"]] += g["base"]
@@ -641,13 +666,13 @@ def delete_expense(gid: int, scope: Scope = Depends(get_scope), db: Session = De
 
 @router.get("/gastos/excel")
 def expenses_excel(asset_id: int | None = None, desde: date | None = None, hasta: date | None = None,
-                   categoria: str | None = None, unit_id: int | None = None, scope: Scope = Depends(get_scope),
-                   db: Session = Depends(get_db)):
+                   categoria: str | None = None, unit_id: int | None = None, q: str | None = None,
+                   scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     """Cuenta de gastos en Excel: detalle, resumen por categoría y mes, y gasto por apartamento."""
     from openpyxl import Workbook
 
     from .informes import ENTERO, EUR, FECHA, _hoja
-    filas = _gastos(db, scope, asset_id, desde, hasta, categoria, unit_id, None)
+    filas = _gastos(db, scope, asset_id, desde, hasta, categoria, unit_id, None, q)
     wb = Workbook()
     wb.remove(wb.active)
     periodo = f"{desde:%d/%m/%Y} – {hasta:%d/%m/%Y}" if desde and hasta else "todo el periodo"
@@ -689,7 +714,7 @@ def expenses_excel(asset_id: int | None = None, desde: date | None = None, hasta
     out = BytesIO()
     wb.save(out)
     audit(db, scope.user, "exportar", "gastos", None, {"desde": str(desde), "hasta": str(hasta),
-                                                       "asset_id": asset_id})
+                                                       "asset_id": asset_id, "buscar": q})
     db.commit()
     return Response(out.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": 'attachment; filename="Cuenta_de_gastos.xlsx"'})
