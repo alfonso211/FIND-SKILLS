@@ -2,6 +2,19 @@
 
 Registro técnico de versiones. El resumen para los usuarios está en `app/manual/novedades.md` (se muestra en el PMS).
 
+## 1.68 · 15/10/2026 · Chat con fotos, PDF y @menciones · reinicio nocturno del servidor
+- **Migración 0062**: tabla `chat_adjuntos` (fichero cifrado fuera de la base de datos, como los de las OT) y columna
+  `chat_mensajes.menciones`.
+- Chat: `POST /api/chat/conversaciones/{id}/adjuntos` (hasta 5 fotos JPG/PNG o PDF de 20 MB; las fotos se reducen y
+  pierden la ubicación GPS) y `GET /api/chat/adjuntos/{id}` (solo miembros; los de un mensaje borrado dejan de
+  servirse y su fichero se borra del disco).
+- Menciones: «@Nombre Apellido» (sin importar tildes ni mayúsculas) de una persona de la conversación deja un aviso en
+  su campana (`chat_mencion`) que abre la conversación. Sin correo.
+- Servidor: `deploy/actualizar_servidor.sh` (actualizaciones de seguridad y reinicio cada día a las 03:00 de Madrid,
+  con copia previa y comprobación tras el arranque); `mantenimiento.sh` avisa si la noche falló. Ver
+  `deploy/INSTALACION.md`, apartado 8 sexies. Se activa una sola vez con `--instalar`.
+- 2 pruebas nuevas (`tests/test_chat_adjuntos_168.py`).
+
 ## 1.67 · 15/10/2026 · Calendario común: encendido después de gestión
 - Al encender la casilla del PMS se aplican, en el orden en que llegaron, los avisos `calendario.*` que quedaron «sin
   tratar» (gestión encendió antes). La versión de cada entrada evita duplicados; uno que no se pueda aplicar sigue «sin

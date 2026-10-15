@@ -6623,7 +6623,7 @@ function vigilarAvisos() {
       const urg = r.nuevas.some((n) => n.urgente), ult = r.nuevas[r.nuevas.length - 1];
       urg ? Sonido.urgente() : Sonido.aviso();
       toast(r.nuevas.length === 1 ? `🔔 ${ult.titulo}` : `🔔 ${r.nuevas.length} avisos nuevos (último: ${ult.titulo})`, urg);
-      escritorio(r.nuevas.length === 1 ? ult.titulo : `${r.nuevas.length} avisos nuevos en el PMS`, ult.texto, () => abrirAvisos());
+      escritorio(r.nuevas.length === 1 ? ult.titulo : `${r.nuevas.length} avisos nuevos en el PMS`, ult.texto, () => (r.nuevas.length === 1 ? irAviso(ult.vista || "panel") : abrirAvisos()));
       if (!$("#avisosPanel").hidden) pintarAvisos();
     }
     S._avDesde = Math.max(r.ultima, S._avDesde || 0);
@@ -6656,7 +6656,7 @@ async function pintarAvisos() {
     <div class="avp-pie"><a href="#perfil" id="avpPerfil">Elegir avisos y sonido en Mi perfil</a></div>`;
   $("#avpCerrar", box).onclick = () => (box.hidden = true);
   $("#avpPerfil", box).onclick = () => (box.hidden = true);
-  box.querySelectorAll(".avp-item").forEach((b) => (b.onclick = () => { box.hidden = true; go(b.dataset.v); }));
+  box.querySelectorAll(".avp-item").forEach((b) => (b.onclick = () => { box.hidden = true; irAviso(b.dataset.v); }));
 }
 async function abrirAvisos() {
   const box = $("#avisosPanel");
@@ -6675,7 +6675,19 @@ document.addEventListener("click", (e) => {
 // ---- chat
 const horaChat = (d) => { const x = new Date(d), h = new Date(); return x.toDateString() === h.toDateString() ? x.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : x.toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); };
 const icoChat = (c) => (c.tipo === "todos" ? "👥" : c.tipo === "grupo" ? "💬" : "");
-const textoChat = (t) => esc(t).replace(/(https:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>').replace(/\n/g, "<br>");
+const textoChat = (t, nombres = []) => {
+  let h = esc(t).replace(/(https:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+  [...nombres].sort((a, b) => b.length - a.length).forEach((n) => { const e = esc("@" + n); h = h.split(e).join(`<b class="mencion">${e}</b>`); });
+  return h.replace(/\n/g, "<br>");
+};
+// Aviso de la campana: su pantalla, o la conversación del chat si es una mención (vista «chat:<id>»)
+function irAviso(v) { const m = /^chat:(\d+)$/.exec(v || ""); return m ? abrirChat(Number(m[1])) : go(v || "panel"); }
+const tamTxt = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1).replace(".", ",")} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+function adjuntosHtml(m) {
+  return (m.adjuntos || []).map((a) => a.mime.startsWith("image/")
+    ? `<button type="button" class="chat-foto" data-adj="${a.id}" title="${esc(a.nombre)}"><img alt="${esc(a.nombre)}" data-mini="${a.id}"></button>`
+    : `<button type="button" class="chat-doc" data-adj="${a.id}">📄 ${esc(a.nombre)} <span class="muted">(${tamTxt(a.tamano)})</span></button>`).join("");
+}
 
 function abrirChat(cid) {
   $("#avisosPanel").hidden = true;
@@ -6731,17 +6743,23 @@ async function abrirConversacion(cid) {
       <button type="button" class="btn sm" id="chPersonas">${c.tipo === "todos" ? "Personas" : c.es_creador && c.tipo === "grupo" ? "Personas…" : "Personas"}</button>
       ${c.tipo === "todos" ? "" : '<button type="button" class="btn sm ghost" id="chSalir">Salir</button>'}</div>
     <div class="chat-msgs" id="chMsgs"></div>
-    <form class="chat-escribir" id="chForm"><textarea id="chTexto" rows="2" maxlength="4000" placeholder="Escriba un mensaje… (Intro envía, Mayús + Intro cambia de línea)"></textarea>
+    <div class="chat-menc" id="chMenc" hidden></div>
+    <form class="chat-escribir" id="chForm"><button type="button" class="btn ghost chat-clip" id="chClip" title="Adjuntar fotos o PDF" aria-label="Adjuntar fotos o PDF">📎</button>
+      <input type="file" id="chFich" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.pdf" multiple hidden>
+      <textarea id="chTexto" rows="2" maxlength="4000" placeholder="Escriba un mensaje… Con @ avisa a una persona (Intro envía, Mayús + Intro cambia de línea)"></textarea>
       <button class="btn primary" type="submit">Enviar</button></form>`;
+  const nombresConv = c.miembros.map((m) => m.nombre);
   const msgs = $("#chMsgs", box);
   const pinta = (lista) => {
     const abajo = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 60;
     msgs.insertAdjacentHTML("beforeend", lista.map((m) => m.sistema ? `<div class="chat-sis">${esc(m.texto)} · ${esc(horaChat(m.creado))}</div>` :
       `<div class="chat-msg ${m.user_id === S.me.id ? "mio" : ""} ${m.borrado ? "borrado" : ""}" data-m="${m.id}">${m.user_id === S.me.id ? "" : `<span class="chat-autor">${esc(m.autor)}</span>`}
-        <div class="chat-burbuja">${m.borrado ? "<i>Mensaje eliminado</i>" : textoChat(m.texto)}</div><span class="chat-hora">${esc(horaChat(m.creado))}${m.user_id === S.me.id && !m.borrado ? ` · <a href="#" data-borra="${m.id}">borrar</a>` : ""}</span></div>`).join(""));
+        <div class="chat-burbuja${(m.menciones || []).includes(S.me.id) ? " me-menciona" : ""}">${m.borrado ? "<i>Mensaje eliminado</i>" : (m.texto ? textoChat(m.texto, nombresConv) : "") + adjuntosHtml(m)}</div><span class="chat-hora">${esc(horaChat(m.creado))}${m.user_id === S.me.id && !m.borrado ? ` · <a href="#" data-borra="${m.id}">borrar</a>` : ""}</span></div>`).join(""));
     if (lista.length) S.chat.ultimo = lista[lista.length - 1].id;
     if (abajo || !S.chat._pintado) msgs.scrollTop = msgs.scrollHeight;
     S.chat._pintado = true;
+    msgs.querySelectorAll("img[data-mini]:not([src])").forEach((img) => blobUrl(`/api/chat/adjuntos/${img.dataset.mini}`).then((u) => { img.src = u; if (abajo || msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 400) msgs.scrollTop = msgs.scrollHeight; }).catch(() => (img.alt = "Foto no disponible")));
+    msgs.querySelectorAll("[data-adj]").forEach((b) => (b.onclick = () => abrirFichero(`/api/chat/adjuntos/${b.dataset.adj}`)));
     msgs.querySelectorAll("[data-borra]").forEach((a) => (a.onclick = async (e) => {
       e.preventDefault();
       if (!confirm("¿Borrar este mensaje? Los demás verán «Mensaje eliminado».")) return;
@@ -6755,7 +6773,43 @@ async function abrirConversacion(cid) {
   pintarConversaciones();
   const ta = $("#chTexto", box);
   ta.focus();
-  ta.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("#chForm", box).requestSubmit(); } };
+  // @nombre: al escribir @ se proponen las personas de la conversación; Tab, Intro o un clic eligen
+  const menc = $("#chMenc", box), plano = (x) => x.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  let opciones = [];
+  const buscaMencion = () => {
+    const m = /(^|\s)@([^@\n]{0,30})$/.exec(ta.value.slice(0, ta.selectionStart));
+    opciones = m ? c.miembros.filter((x) => x.id !== S.me.id && plano(x.nombre).startsWith(plano(m[2]))).slice(0, 6) : [];
+    menc.hidden = !opciones.length;
+    menc.innerHTML = opciones.map((x, i) => `<button type="button" class="${i ? "" : "sel"}" data-i="${i}">${avatar(x.nombre, "sm")} ${esc(x.nombre)}</button>`).join("");
+    menc.querySelectorAll("[data-i]").forEach((b) => (b.onmousedown = (e) => { e.preventDefault(); elige(opciones[+b.dataset.i]); }));
+  };
+  const elige = (x) => {
+    const antes = ta.value.slice(0, ta.selectionStart).replace(/@([^@\n]{0,30})$/, `@${x.nombre} `);
+    ta.value = antes + ta.value.slice(ta.selectionStart);
+    ta.setSelectionRange(antes.length, antes.length); menc.hidden = true; opciones = []; ta.focus();
+  };
+  ta.oninput = buscaMencion;
+  ta.onblur = () => setTimeout(() => (menc.hidden = true), 150);
+  ta.onkeydown = (e) => {
+    if (!menc.hidden && opciones.length && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) { e.preventDefault(); return elige(opciones[0]); }
+    if (e.key === "Escape") menc.hidden = true;
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("#chForm", box).requestSubmit(); }
+  };
+  // 📎 fotos o PDF (hasta 5), con el texto escrito como comentario
+  $("#chClip", box).onclick = () => $("#chFich", box).click();
+  $("#chFich", box).onchange = async (e) => {
+    const fs = [...e.target.files];
+    e.target.value = "";
+    if (!fs.length) return;
+    if (fs.length > 5) return toast("Como mucho 5 ficheros por mensaje", true);
+    const fd = new FormData();
+    fs.forEach((f) => fd.append("ficheros", f));
+    fd.append("texto", ta.value.trim());
+    ta.disabled = true; toast(`Enviando ${fs.length} fichero(s)…`);
+    try { await upload(`/api/chat/conversaciones/${cid}/adjuntos`, fd); ta.value = ""; await nuevos(); }
+    catch (err) { toast(err.message, true); }
+    ta.disabled = false; ta.focus();
+  };
   $("#chForm", box).onsubmit = async (e) => {
     e.preventDefault();
     const texto = ta.value.trim();

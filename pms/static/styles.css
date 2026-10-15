@@ -884,3 +884,15 @@ details > summary { cursor: pointer; padding: 6px 0; }
 .cita.comun { background: #f7f9fd; }
 .cita.cancelada .cita-tit { text-decoration: line-through; opacity: .6; }
 .cita.comun .toolbar a.btn { text-decoration: none; }
+
+/* ---------- chat: adjuntos y menciones (1.68) ---------- */
+.chat-escribir .chat-clip { font-size: 18px; padding: 6px 8px; align-self: center; }
+.chat-foto { display: block; border: 0; padding: 0; margin-top: 6px; background: none; cursor: zoom-in; }
+.chat-foto img { display: block; max-width: min(260px, 100%); max-height: 220px; border-radius: 10px; background: #eee; min-width: 60px; min-height: 40px; }
+.chat-doc { display: block; margin-top: 6px; border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 6px 10px; cursor: pointer; font: inherit; text-align: left; max-width: 100%; overflow-wrap: anywhere; }
+.mencion { color: var(--oro-oscuro); }
+.chat-burbuja.me-menciona { box-shadow: 0 0 0 2px var(--oro); }
+.chat-menc { margin: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; box-shadow: var(--sombra); overflow: hidden; }
+.chat-menc[hidden] { display: none; }
+.chat-menc button { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: none; padding: 6px 10px; cursor: pointer; font: inherit; text-align: left; }
+.chat-menc button:hover, .chat-menc button.sel { background: #f5f0e4; }
