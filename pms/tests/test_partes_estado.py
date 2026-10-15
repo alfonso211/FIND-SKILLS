@@ -1,5 +1,5 @@
-"""Partes de estado: mantenimiento y limpieza no abren órdenes de trabajo; registran un parte con listas encadenadas y
-foto obligatoria. El motor de reglas propone departamento y prioridad, el parte crítico deja la unidad fuera de
+"""Partes de estado: solo los genera limpieza (1.70), con listas encadenadas y foto obligatoria; mantenimiento y
+limpieza no abren órdenes de trabajo. El motor de reglas propone departamento y prioridad, el parte crítico deja la unidad fuera de
 servicio, recepción genera la OT (o lo descarta) y, al cerrarse la OT, el parte queda resuelto (tiempo de reparación)."""
 import io
 
@@ -59,12 +59,14 @@ def test_flujo_parte_de_estado(client, admin, ids):
 
     # validaciones: foto obligatoria, estancia de la tipología, elemento de la estancia
     base = {"estancia": "cocina", "elemento": "lavavajillas", "deficiencia": "fuga", "gravedad": "media"}
-    assert _parte(client, tec, sfl, u1["id"], foto=False, **base).status_code in (400, 422)
-    assert _parte(client, tec, sfl, u1["id"], **{**base, "estancia": "aseo"}).status_code == 400
-    assert _parte(client, tec, sfl, u1["id"], **{**base, "estancia": "bano", "elemento": "cama"}).status_code == 400
+    assert _parte(client, tec, sfl, u1["id"], **base).status_code == 403  # mantenimiento: al parte diario o «Pedir OT»
+    assert _parte(client, rec, sfl, u1["id"], **base).status_code == 403  # recepción abre la OT directamente
+    assert _parte(client, lim, sfl, u1["id"], foto=False, **base).status_code in (400, 422)
+    assert _parte(client, lim, sfl, u1["id"], **{**base, "estancia": "aseo"}).status_code == 400
+    assert _parte(client, lim, sfl, u1["id"], **{**base, "estancia": "bano", "elemento": "cama"}).status_code == 400
 
     avisos.BANDEJA.clear()
-    r = _parte(client, tec, sfl, u1["id"], lat=40.4, lon=-3.7, precision=12, **base)
+    r = _parte(client, lim, sfl, u1["id"], lat=40.4, lon=-3.7, precision=12, **base)
     assert r.status_code == 201, r.text
     p = r.json()
     assert (p["departamento"], p["prioridad"], p["estado"], p["bloquea_unidad"]) == ("mantenimiento", "urgente",
@@ -76,7 +78,7 @@ def test_flujo_parte_de_estado(client, admin, ids):
                gravedad="leve").json()
     assert (z["tipologia"], z["departamento"], z["ubicacion"]) == ("ZC", "limpieza", "Zonas comunes")
     # cada uno ve los suyos; recepción los de su activo y en el panel hasta resolverlos
-    assert {x["id"] for x in client.get("/api/partes-estado", headers=lim).json()} == {z["id"]}
+    assert {x["id"] for x in client.get("/api/partes-estado", headers=lim).json()} == {p["id"], z["id"]}
     pend = {x["id"] for x in client.get("/api/panel", headers=rec).json()["partes_estado"]}
     assert {p["id"], z["id"]} <= pend
     assert client.post(f"/api/partes-estado/{z['id']}/descartar", headers=lim, json={"motivo": "No procede"}).status_code == 403
@@ -103,10 +105,10 @@ def test_flujo_parte_de_estado(client, admin, ids):
         "asset_id": sfl, "unit_id": u2["id"], "titulo": "Otra", "parte_estado_id": c["id"]}).status_code == 400
     lista = {x["id"]: x for x in client.get("/api/partes-estado", headers=rec).json()}
     assert lista[c["id"]]["estado"] == "ot_generada" and lista[c["id"]]["ot"]["id"] == w["id"]
-    client.post(f"/api/mantenimiento/ordenes/{w['id']}/confirmar-mantenimiento", headers=tec, json={"solucion": "Cambiado"})
-    client.post(f"/api/mantenimiento/ordenes/{w['id']}/confirmar-limpieza", headers=lim)
-    assert client.post(f"/api/mantenimiento/ordenes/{w['id']}/cerrar", headers=rec, json={}).json()["estado"] == "cerrada"
-    assert _estado(client, rec, sfl, u2["id"]) == "disponible"
+    # personal propio: la cierra el técnico con foto, tiempo y firma; limpieza ya no confirma: queda pendiente de limpieza
+    from conftest import trabajo_realizado
+    assert trabajo_realizado(client, tec, w["id"], "Cambiado").json()["estado"] == "cerrada"
+    assert _estado(client, rec, sfl, u2["id"]) == "pendiente_limpieza"
     lista = {x["id"]: x for x in client.get("/api/partes-estado", headers=rec).json()}
     assert lista[c["id"]]["estado"] == "resuelto"
     assert c["id"] not in {x["id"] for x in client.get("/api/panel", headers=rec).json()["partes_estado"]}

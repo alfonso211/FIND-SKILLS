@@ -101,6 +101,8 @@ def add_entry(data: EntryIn, scope: Scope = Depends(get_scope), db: Session = De
         bad_request("No se anotan trabajos de días futuros")
     if data.unit_id is not None and get_or_404(db, Unit, data.unit_id).asset_id != data.asset_id:
         bad_request("La unidad no es de este activo")
+    if not data.horas:
+        bad_request("Indique el tiempo dedicado (horas): es obligatorio en cada trabajo del parte")
     _abierto(db, data.asset_id, area, data.fecha)
     e = WorkEntry(**data.model_dump(), user_id=scope.user.id)
     e.persona = (data.persona or "").strip() or scope.user.nombre
@@ -164,6 +166,8 @@ def edit_line(asset_id: int, area: str, fecha: date, data: LineaIn, scope: Scope
             bad_request("La unidad no es de este activo")
         if "descripcion" in campos and not data.descripcion:
             bad_request("Indique el trabajo realizado")
+        if "horas" in campos and not data.horas:
+            bad_request("Indique el tiempo dedicado (horas): es obligatorio en cada trabajo del parte")
         antes = {k: getattr(e, k) for k in ("fecha", "hora", "descripcion", "unit_id", "ubicacion", "persona", "horas")}
         for k in campos & set(antes):
             v = getattr(data, k)
@@ -236,10 +240,14 @@ def validate(data: ValidateIn, scope: Scope = Depends(get_scope), db: Session = 
                                            WorkReport.fecha == data.fecha))
     if r is not None and r.estado == "validado":
         bad_request("Este parte ya está validado")
+    lineas = pt.lineas(db, a.id, area, data.fecha)
+    sin_tiempo = [x["ref"] for x in lineas if not x.get("horas")]
+    if area == "mantenimiento" and sin_tiempo:
+        bad_request(f"Falta el tiempo dedicado en: {', '.join(sin_tiempo)}. Corríjalo (✎) antes de validar el parte")
     if r is None:
         r = WorkReport(asset_id=a.id, area=area, fecha=data.fecha)
         db.add(r)
-    r.lineas = pt.lineas(db, a.id, area, data.fecha)
+    r.lineas = lineas
     r.estado, r.observaciones = "validado", data.observaciones
     r.validado_por, r.validado_en = scope.user.id, datetime.now()
     db.flush()

@@ -1,6 +1,7 @@
 """Mantenimiento correctivo y preventivo (órdenes de trabajo y planes periódicos)."""
 import hashlib
 import hmac
+import secrets
 from html import escape
 import time
 from datetime import date, datetime, timedelta
@@ -82,9 +83,49 @@ def atendida(w: WorkOrder) -> None:
     w.alerta_tecnico = w.alerta_fecha = None
 
 
-def requiere_limpieza(w: WorkOrder) -> bool:
-    """Las OT preventivas/normativas de zonas comunes (sin unidad) no pasan por limpieza."""
-    return not (w.unit_id is None and w.tipo in TIPOS_PREVENTIVOS)
+# Flujo (1.70): recepción abre la OT y la asigna. El personal propio la cierra él mismo (firma, fecha, foto de la
+# reparación y tiempo); la subcontrata la da por finalizada (datos, al menos una foto y tiempo) y la cierran el Director
+# Técnico o recepción. Limpieza ya no confirma: al cerrarla, la unidad queda pendiente de limpieza.
+REABRIR_DIAS = 7  # días en los que recepción o el Director Técnico pueden reabrir una OT cerrada
+
+
+def minutos_visitas(visitas) -> int:
+    """Tiempo de trabajo de una OT: suma de llegada → salida de sus intervenciones."""
+    return sum(round((v.salida - v.llegada).total_seconds() / 60) for v in visitas
+               if v.llegada and v.salida and v.salida > v.llegada)
+
+
+def minutos_ot(db: Session, w: WorkOrder) -> int:
+    return minutos_visitas(db.scalars(select(WorkOrderVisit).where(WorkOrderVisit.work_order_id == w.id)))
+
+
+def fotos_trabajo(db: Session, w: WorkOrder) -> int:
+    """Fotos de la reparación (del técnico o subidas como «trabajo terminado»)."""
+    return db.scalar(select(func.count()).select_from(WorkOrderAttachment).where(
+        WorkOrderAttachment.work_order_id == w.id, WorkOrderAttachment.tipo == "trabajo",
+        WorkOrderAttachment.mime.like("image/%"))) or 0
+
+
+def exigir_finalizacion(db: Session, w: WorkOrder) -> None:
+    """Para dar por finalizada o cerrar una OT: tiempo de trabajo y al menos una foto de la reparación."""
+    if minutos_ot(db, w) <= 0:
+        bad_request("Falta el tiempo de trabajo: indique la hora de llegada y la de salida")
+    if not fotos_trabajo(db, w):
+        bad_request("Falta al menos una foto de la reparación")
+
+
+def cerrar_ot(db: Session, w: WorkOrder, user_id: int | None, cancelada: bool = False,
+              motivo: str | None = None) -> None:
+    """Cierra (o cancela) la orden: libera la unidad y cierra sus partes de estado."""
+    w.estado = "cancelada" if cancelada else "cerrada"
+    if not cancelada:
+        w.conformidad_en = datetime.now()  # usuario y fecha de quien la cierra
+    w.fecha_cierre = date.today()
+    w.cerrada_por = user_id
+    atendida(w)
+    _release_unit(db, w)
+    from .partes_estado import cerrar_partes
+    cerrar_partes(db, w, motivo)
 
 
 class _Lote:
@@ -95,8 +136,8 @@ class _Lote:
         ids = [w.id for w in filas] or [-1]
         self.n_adjuntos = dict(db.execute(select(WorkOrderAttachment.work_order_id, func.count()).where(
             WorkOrderAttachment.work_order_id.in_(ids)).group_by(WorkOrderAttachment.work_order_id)).all())
-        uids = {getattr(w, c) for w in filas for c in ("abierta_por", "conf_mto_por", "conf_limpieza_por",
-                                                       "cerrada_por", "acceso_user_id")} - {None}
+        uids = {getattr(w, c) for w in filas for c in ("abierta_por", "conf_mto_por", "cerrada_por",
+                                                       "acceso_user_id")} - {None}
         self.usuarios = dict(db.execute(select(User.id, User.nombre).where(User.id.in_(uids or {-1}))).all())
         self.unidades = dict(db.execute(select(Unit.id, Unit.codigo).where(
             Unit.id.in_({w.unit_id for w in filas if w.unit_id} or {-1}))).all())
@@ -106,14 +147,20 @@ class _Lote:
             StaffMember.id.in_({w.personal_id for w in filas if w.personal_id} or {-1})))}
         self.proveedores = {x.id: x for x in db.scalars(select(Supplier).where(
             Supplier.id.in_({w.proveedor_id for w in filas if w.proveedor_id} or {-1})))}
+        self.fotos = dict(db.execute(select(WorkOrderAttachment.work_order_id, func.count()).where(
+            WorkOrderAttachment.work_order_id.in_(ids), WorkOrderAttachment.tipo == "trabajo",
+            WorkOrderAttachment.mime.like("image/%")).group_by(WorkOrderAttachment.work_order_id)).all())
         nombres = {w.proveedor.strip().lower() for w in filas if w.proveedor and not w.proveedor_id}
         self.por_nombre = {x.nombre.lower(): x for x in db.scalars(select(Supplier).where(
             func.lower(Supplier.nombre).in_(nombres or {"-"})))}
         self.visitas: dict[int, WorkOrderVisit] = {}
-        for v in db.scalars(select(WorkOrderVisit).where(WorkOrderVisit.work_order_id.in_(ids),
-                                                         WorkOrderVisit.enviado.is_not(None))
+        todas: dict[int, list] = {}
+        for v in db.scalars(select(WorkOrderVisit).where(WorkOrderVisit.work_order_id.in_(ids))
                             .order_by(WorkOrderVisit.enviado.desc())):
-            self.visitas.setdefault(v.work_order_id, v)
+            todas.setdefault(v.work_order_id, []).append(v)
+            if v.enviado is not None:
+                self.visitas.setdefault(v.work_order_id, v)
+        self.minutos = {k: minutos_visitas(x) for k, x in todas.items()}
         abiertas = [w for w in filas if w.unit_id and w.estado in ABIERTAS]
         self.acceso = acceso_ot.Contexto(db, {w.unit_id for w in abiertas},
                                          max((w.fecha_prevista for w in abiertas if w.fecha_prevista), default=None))
@@ -129,7 +176,10 @@ def _wo_out(w: WorkOrder, db: Session, n_adjuntos: int | None = None, lote: _Lot
         n_adjuntos = lote.n_adjuntos.get(w.id, 0)
     d["n_adjuntos"] = n_adjuntos if n_adjuntos is not None else db.scalar(
         select(func.count()).select_from(WorkOrderAttachment).where(WorkOrderAttachment.work_order_id == w.id))
-    d["requiere_limpieza"] = requiere_limpieza(w)
+    d["minutos"] = lote.minutos.get(w.id, 0) if lote else minutos_ot(db, w)
+    d["fotos_trabajo"] = lote.fotos.get(w.id, 0) if lote else fotos_trabajo(db, w)
+    d["reabrible"] = bool(w.estado == "cerrada" and w.fecha_cierre
+                          and w.fecha_cierre >= date.today() - timedelta(days=REABRIR_DIAS))
     if w.asignacion == "propio" and w.personal_id:
         quien = lote.personal.get(w.personal_id) if lote else db.get(StaffMember, w.personal_id)
     elif w.asignacion == "subcontrata":
@@ -144,7 +194,7 @@ def _wo_out(w: WorkOrder, db: Session, n_adjuntos: int | None = None, lote: _Lot
         d["zona_nombre"] = planos.zonas(codigo).get(w.zona, w.zona)
     else:
         d["zona_nombre"] = None
-    for campo in ("abierta_por", "conf_mto_por", "conf_limpieza_por", "cerrada_por"):
+    for campo in ("abierta_por", "conf_mto_por", "cerrada_por"):
         uid = getattr(w, campo)
         d[campo + "_nombre"] = (lote.usuarios.get(uid) if lote else db.get(User, uid).nombre) if uid else None
     ultima = lote.visitas.get(w.id) if lote else db.scalar(
@@ -711,39 +761,63 @@ def mensaje_ot(db: Session, w: WorkOrder, nota: str | None = None, enlace: str |
 class ConfirmWork(BaseModel):
     solucion: str = Field(min_length=3)
     coste_real: float | None = Field(default=None, ge=0)
+    llegada: datetime  # tiempo de trabajo: obligatorio para finalizar
+    salida: datetime
+    firma: str | None = Field(default=None, max_length=600_000)  # data:image/png;base64 (obligatoria al personal propio)
+
+
+def _visita_pms(db: Session, w: WorkOrder, scope: Scope, data, empresa: str, tecnico: str,
+                firma_png: bytes | None) -> WorkOrderVisit:
+    """Intervención anotada desde el PMS (no desde el enlace del técnico): llegada, salida, trabajos y firma."""
+    if data.salida <= data.llegada:
+        bad_request("La hora de salida tiene que ser posterior a la de llegada")
+    if data.salida > datetime.now() + timedelta(minutes=10):
+        bad_request("La hora de salida no puede ser futura")
+    v = WorkOrderVisit(work_order_id=w.id, empresa=empresa[:160], tecnico=tecnico[:120],
+                       llegada=data.llegada.replace(tzinfo=None, microsecond=0),
+                       salida=data.salida.replace(tzinfo=None, microsecond=0), trabajos=w.solucion,
+                       resultado="resuelta", enviado=datetime.now().replace(microsecond=0),
+                       firma=documentos.guardar(firma_png) if firma_png else None)
+    db.add(v)
+    db.flush()
+    return v
 
 
 @router.post("/ordenes/{wid}/confirmar-mantenimiento")
 def confirm_work(wid: int, data: ConfirmWork, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    """Mantenimiento da el trabajo por realizado."""
+    """Trabajo realizado. Personal propio: lo cierra él mismo con su firma, la fecha, al menos una foto de la reparación
+    y el tiempo (llegada y salida). Subcontrata: queda finalizada para que la cierren el Director Técnico o recepción."""
     w = _open_order(db, wid)
     scope.require_asset("mantenimiento.editar", w.asset_id)
     if w.conf_mto_fecha:
-        bad_request("El trabajo ya está confirmado por mantenimiento")
+        bad_request("El trabajo ya está dado por finalizado")
+    propio = w.asignacion != "subcontrata"
+    if not fotos_trabajo(db, w):
+        bad_request("Añada al menos una foto de la reparación")
+    firma_png = None
+    if propio:
+        if not data.firma:
+            bad_request("Firme el trabajo realizado")
+        from .tecnico import _png_firma
+        firma_png = _png_firma(data.firma)
+    elif data.firma:
+        from .tecnico import _png_firma
+        firma_png = _png_firma(data.firma)
     w.solucion = data.solucion
     if data.coste_real is not None:
         w.coste_real = data.coste_real
+    empresa = "Personal propio" if propio else (w.proveedor or "Subcontrata")
+    tecnico = scope.user.nombre if propio else (w.asignado_a or scope.user.nombre)
+    _visita_pms(db, w, scope, data, empresa, tecnico, firma_png)
+    exigir_finalizacion(db, w)
     w.conf_mto_por, w.conf_mto_fecha = scope.user.id, datetime.now()
-    w.estado = "trabajo_realizado" if requiere_limpieza(w) else "pendiente_cierre"
-    audit(db, scope.user, "confirmar_mantenimiento", "orden_trabajo", wid, data.model_dump())
-    db.commit()
-    return _wo_out(w, db)
-
-
-@router.post("/ordenes/{wid}/confirmar-limpieza")
-def confirm_cleaning(wid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    """Limpieza revisa la unidad / zona tras el trabajo y la da por correcta."""
-    w = _open_order(db, wid)
-    scope.require_asset("limpieza.confirmar_ot", w.asset_id)
-    if not requiere_limpieza(w):
-        bad_request("Las OT preventivas de zonas comunes no requieren confirmación de limpieza")
-    if not w.conf_mto_fecha:
-        bad_request("Mantenimiento aún no ha confirmado el trabajo")
-    if w.conf_limpieza_por:
-        bad_request("Ya está confirmada por limpieza")
-    w.conf_limpieza_por, w.conf_limpieza_fecha = scope.user.id, datetime.now()
-    w.estado = "pendiente_cierre"
-    audit(db, scope.user, "confirmar_limpieza", "orden_trabajo", wid)
+    if propio:
+        cerrar_ot(db, w, scope.user.id)
+    else:
+        w.estado = "pendiente_cierre"
+    audit(db, scope.user, "cerrar_propio" if propio else "finalizar_subcontrata", "orden_trabajo", wid,
+          {"solucion": data.solucion, "coste_real": data.coste_real, "llegada": str(data.llegada),
+           "salida": str(data.salida), "firma": bool(firma_png)})
     db.commit()
     return _wo_out(w, db)
 
@@ -754,14 +828,12 @@ class Reject(BaseModel):
 
 @router.post("/ordenes/{wid}/rechazar")
 def reject_work(wid: int, data: Reject, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    """Limpieza o recepción devuelven la orden a mantenimiento (trabajo no conforme)."""
+    """El Director Técnico o recepción devuelven a la subcontrata una OT finalizada que no es conforme."""
     w = _open_order(db, wid)
-    puede_limpieza = requiere_limpieza(w) and scope.can_asset("limpieza.confirmar_ot", w.asset_id)
-    if not (puede_limpieza or scope.can_asset("mantenimiento.cerrar", w.asset_id)):
-        raise HTTPException(403, "Sin permiso para rechazar el trabajo")
+    scope.require_asset("mantenimiento.cerrar", w.asset_id)
     if not w.conf_mto_fecha:
-        bad_request("No hay trabajo confirmado que rechazar")
-    w.conf_mto_por = w.conf_mto_fecha = w.conf_limpieza_por = w.conf_limpieza_fecha = None
+        bad_request("No hay trabajo finalizado que rechazar")
+    w.conf_mto_por = w.conf_mto_fecha = None
     w.estado = "en_curso"
     atendida(w)
     w.descripcion = f"{w.descripcion or ''}\n[Rechazada {date.today():%d/%m/%Y} por {scope.user.nombre}] {data.motivo}".strip()
@@ -773,6 +845,9 @@ def reject_work(wid: int, data: Reject, scope: Scope = Depends(get_scope), db: S
 class CloseOrder(BaseModel):
     cancelar: bool = False
     motivo: str | None = None
+    # si la OT no tiene aún el tiempo de trabajo (órdenes antiguas), se anota al cerrar
+    llegada: datetime | None = None
+    salida: datetime | None = None
 
 
 @router.post("/ordenes/{wid}/revocar-enlace")
@@ -788,7 +863,9 @@ def revoke_link(wid: int, scope: Scope = Depends(get_scope), db: Session = Depen
     return _wo_out(w, db)
 
 
-def _release_unit(db: Session, w: WorkOrder, cancelada: bool) -> None:
+def _release_unit(db: Session, w: WorkOrder) -> None:
+    """Al cerrar o cancelar: si nada más lo retiene, el apartamento pasa a pendiente de limpieza y entra en el parte de
+    limpieza del día (limpieza lo deja listo antes de volver a alquilarlo). El resto de unidades quedan disponibles."""
     if not (w.unit_id and w.bloquea_unidad):
         return
     unit = db.get(Unit, w.unit_id)
@@ -797,39 +874,91 @@ def _release_unit(db: Session, w: WorkOrder, cancelada: bool) -> None:
                                                   WorkOrder.bloquea_unidad, WorkOrder.estado.in_(ABIERTAS))) \
         or bloqueo_por_partes(db, unit.id)
     if unit.estado == "mantenimiento" and not others:
-        # cerrada: limpieza ya confirmó la unidad -> disponible; cancelada: hay que revisarla
-        unit.estado = "pendiente_limpieza" if cancelada else "disponible"
+        if unit.uso != "apartamento":  # viviendas, garajes, trasteros y locales: disponibles
+            unit.estado = "disponible"
+            return
+        unit.estado = "pendiente_limpieza"
+        from ..models import CleaningTask
+        if not db.scalar(select(CleaningTask.id).where(CleaningTask.unit_id == unit.id,
+                                                       CleaningTask.estado == "pendiente")):
+            # entra en el parte de limpieza de hoy; al validarla, el apartamento queda disponible
+            db.add(CleaningTask(asset_id=unit.asset_id, unit_id=unit.id, fecha=date.today(), tipo="extra",
+                                clave=f"ot:{w.id}:{secrets.token_hex(6)}",  # única aunque se reabra y cierre
+                                nota=f"Tras la reparación OT-{w.id:05d}: dejar el apartamento listo"))
 
 
 @router.post("/ordenes/{wid}/cerrar")
 def close_order(wid: int, data: CloseOrder, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    """Recepción cierra la orden cuando mantenimiento y limpieza la han confirmado (o la cancela)."""
+    """El Director Técnico o recepción cierran la OT finalizada por la subcontrata (o la cancelan)."""
     w = _open_order(db, wid)
     scope.require_asset("mantenimiento.cerrar", w.asset_id)
     if data.cancelar:
         if not data.motivo:
             bad_request("Indique el motivo de la cancelación")
-        w.estado = "cancelada"
         w.solucion = f"{w.solucion or ''}\n[Cancelada] {data.motivo}".strip()
     else:
         if not w.conf_mto_fecha:
-            bad_request("Falta la confirmación de mantenimiento")
-        if requiere_limpieza(w) and not w.conf_limpieza_por:
-            bad_request("Falta la confirmación de limpieza")
-        w.estado = "cerrada"
-        w.conformidad_en = datetime.now()  # conformidad de la propiedad: usuario y fecha de quien cierra
-    w.fecha_cierre = date.today()
-    w.cerrada_por = scope.user.id
-    atendida(w)
-    _release_unit(db, w, cancelada=data.cancelar)
-    from .partes_estado import cerrar_partes
-    cerrar_partes(db, w, data.motivo)
-    audit(db, scope.user, w.estado, "orden_trabajo", wid, data.model_dump())
+            bad_request("El trabajo aún no está dado por finalizado")
+        if minutos_ot(db, w) <= 0 and data.llegada and data.salida:
+            _visita_pms(db, w, scope, data, w.proveedor or ("Personal propio" if w.asignacion == "propio" else "—"),
+                        w.asignado_a or "—", None)
+        exigir_finalizacion(db, w)
+    cerrar_ot(db, w, scope.user.id, cancelada=data.cancelar, motivo=data.motivo)
+    audit(db, scope.user, w.estado, "orden_trabajo", wid, data.model_dump(mode="json"))
     db.commit()
     return _wo_out(w, db)
 
 
-# --------------------------------------------------------------------------- planes preventivos
+@router.post("/ordenes/{wid}/reabrir")
+def reopen_order(wid: int, data: Reject, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Recepción o el Director Técnico reabren una OT cerrada en los últimos 7 días que no es conforme: vuelve a
+    quien la tenía asignada, con el motivo."""
+    w = get_or_404(db, WorkOrder, wid)
+    scope.require_asset("mantenimiento.cerrar", w.asset_id)
+    if w.estado != "cerrada":
+        bad_request("Solo se reabre una orden cerrada")
+    if not w.fecha_cierre or w.fecha_cierre < date.today() - timedelta(days=REABRIR_DIAS):
+        bad_request(f"Solo se reabre en los {REABRIR_DIAS} días siguientes al cierre: abra una orden nueva")
+    w.estado = "en_curso"
+    w.conf_mto_por = w.conf_mto_fecha = w.cerrada_por = w.fecha_cierre = w.conformidad_en = None
+    w.descripcion = f"{w.descripcion or ''}\n[Reabierta {date.today():%d/%m/%Y} por {scope.user.nombre}] {data.motivo}".strip()
+    if w.unit_id and w.bloquea_unidad:
+        u = db.get(Unit, w.unit_id)
+        if u.estado in ("pendiente_limpieza", "disponible"):
+            u.estado = "mantenimiento"
+    from ..models import CleaningTask  # la limpieza de después de la reparación espera al nuevo cierre
+    for t in db.scalars(select(CleaningTask).where(CleaningTask.clave.like(f"ot:{w.id}:%"),
+                                                   CleaningTask.estado == "pendiente")):
+        t.estado = "anulada"
+    audit(db, scope.user, "reabrir", "orden_trabajo", wid, data.model_dump())
+    db.commit()
+    return _wo_out(w, db)
+
+
+class PeticionOT(BaseModel):
+    asset_id: int
+    unit_id: int | None = None
+    ubicacion: str | None = Field(default=None, max_length=160)
+    descripcion: str = Field(min_length=5, max_length=1000)
+    urgente: bool = False
+
+
+@router.post("/peticiones")
+def request_order(data: PeticionOT, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Mantenimiento ve en sus rondas una avería que necesita una OT: se la pide a recepción (aviso en la campana y por
+    correo). La OT la abre recepción."""
+    scope.require_asset("mantenimiento.editar", data.asset_id)
+    a = get_or_404(db, Asset, data.asset_id)
+    u = get_or_404(db, Unit, data.unit_id) if data.unit_id else None
+    if u and u.asset_id != a.id:
+        bad_request("La unidad no es de este activo")
+    lugar = " · ".join(x for x in (f"{u.uso} {u.codigo}" if u else "", (data.ubicacion or "").strip()) if x) or a.nombre
+    n = avisos.peticion_ot(db, scope.user, a, lugar, data.descripcion.strip(), data.urgente)
+    audit(db, scope.user, "pedir_ot", "activo", a.id, data.model_dump())
+    db.commit()
+    return {"ok": True, "avisados": n}
+
+
 @router.get("/planes")
 def list_plans(asset_id: int | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     ids = scope.asset_ids("mantenimiento.ver")

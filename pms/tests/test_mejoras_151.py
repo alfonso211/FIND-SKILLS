@@ -67,7 +67,8 @@ def test_editar_lineas_del_parte(client, admin, ids):
     assert (x["trabajo"], x["hora"], x["horas"]) == ("Revisión de las bombas de ACS", "09:00", 2.0)
     # línea de una OT: se corrige la hora y la persona en el parte, sin tocar la OT
     w = client.post("/api/mantenimiento/ordenes", headers=admin, json={"asset_id": sfl, "titulo": "Grifo 151"}).json()
-    client.post(f"/api/mantenimiento/ordenes/{w['id']}/confirmar-mantenimiento", headers=admin, json={"solucion": "Hecho"})
+    from conftest import trabajo_realizado
+    trabajo_realizado(client, admin, w["id"], "Hecho")
     r = client.put("/api/partes-trabajo/lineas", headers=rec, params=q, json={
         "origen": "ot", "id": w["id"], "hora": "11:30", "persona": "Pedro", "motivo": "Se confirmó más tarde"})
     assert r.status_code == 200, r.text

@@ -22,7 +22,7 @@ const badge = (v) => (v == null || v === "" ? "" : `<span class="badge b-${esc(v
 const assetName = (id) => S.assets.find((a) => a.id === id)?.nombre ?? id;
 const PLURAL = { vivienda: "viviendas", apartamento: "apartamentos", garaje: "garajes", trastero: "trasteros", local: "locales", oficina: "oficinas" };
 const plural = (u) => PLURAL[u] || u;
-const canOpenOT = () => can("mantenimiento.abrir");  // mantenimiento y limpieza avisan con un parte de estado
+const canOpenOT = () => can("mantenimiento.abrir");  // recepción; limpieza avisa con un parte de estado y mantenimiento pide la OT
 const canParteEstado = () => can("partes_estado.crear");
 const irParteEstado = (aid, uid, zona) => go(`estado?a=${aid}${uid ? `&u=${uid}` : ""}${zona != null ? `&z=${encodeURIComponent(zona)}` : ""}`);
 const assetsOf = (mod) => S.assets.filter((a) => !mod || a.modalidad === mod);
@@ -3544,6 +3544,30 @@ function accesoTrasCheckin(r, reload) {
   const lectores = Object.fromEntries(r.ot_acceso.map((w) => [w.id, bindAccesoBloque(f, `acc${w.id}`)]));
 }
 // Bloque de fotos: en el móvil «Hacer foto» abre directamente la cámara trasera
+// Firma táctil en un formulario (OT de personal propio): devuelve () => imagen PNG, o null si no ha firmado
+const FIRMA_HTML = '<div class="firma-lienzo" data-firmaot><canvas data-canvas></canvas><span class="firma-guia">Firme aquí</span><button type="button" class="btn sm" data-borrar>Borrar</button></div>';
+function lienzoFirma(caja) {
+  if (!caja) return () => null;
+  const cv = caja.querySelector("canvas"), ctx = cv.getContext("2d"), guia = caja.querySelector(".firma-guia");
+  let trazos = 0, dibujando = false;
+  const ajustar = () => {
+    const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    cv.width = r.width * dpr; cv.height = r.height * dpr;
+    ctx.scale(dpr, dpr); ctx.lineWidth = 2.4; ctx.lineCap = ctx.lineJoin = "round"; ctx.strokeStyle = "#0e0e10";
+    trazos = 0; guia.hidden = false;
+  };
+  requestAnimationFrame(ajustar);
+  const pos = (e) => { const b = cv.getBoundingClientRect(); return [e.clientX - b.left, e.clientY - b.top]; };
+  cv.onpointerdown = (e) => { dibujando = true; cv.setPointerCapture(e.pointerId); ctx.beginPath(); ctx.moveTo(...pos(e)); guia.hidden = true; };
+  cv.onpointermove = (e) => { if (dibujando) { ctx.lineTo(...pos(e)); ctx.stroke(); trazos++; } };
+  cv.onpointerup = cv.onpointercancel = () => { dibujando = false; };
+  caja.querySelector("[data-borrar]").onclick = () => { ctx.clearRect(0, 0, cv.width, cv.height); ajustar(); };
+  return () => (trazos > 10 ? cv.toDataURL("image/png") : null);
+}
+// Fecha y hora local para <input type="datetime-local">
+const horaLocal = (d = new Date()) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+const tiempoTxt = (min) => (min ? `${Math.floor(min / 60) ? `${Math.floor(min / 60)} h ` : ""}${min % 60 ? `${min % 60} min` : ""}`.trim() : "");
+
 function fotosHtml(titulo, pdf = false) {
   return `<fieldset><legend>${esc(titulo)}</legend><div class="toolbar" style="margin:0">
     <label class="btn">📷 Hacer foto<input type="file" accept="image/*" capture="environment" multiple data-fotos hidden></label>
@@ -3564,6 +3588,31 @@ async function subirFotos(f, wid, tipo, descripcion) {
   const fd = new FormData(); fd.append("tipo", tipo); if (descripcion) fd.append("descripcion", descripcion);
   files.forEach((x) => fd.append("ficheros", x));
   return (await upload(`/api/mantenimiento/ordenes/${wid}/adjuntos`, fd)).length;
+}
+// «Trabajo realizado»: tiempo (llegada y salida), al menos una foto de la reparación y, el personal propio, su firma
+function trabajoRealizadoOT(w, reload) {
+  const propio = w.asignacion !== "subcontrata";
+  let firma = () => null;
+  const f = bindFotos(form(`${otNum(w.id)}: trabajo realizado`, [
+    { html: propio ? '<p class="aviso-ok">Personal propio: al guardar, la orden queda <b>cerrada</b> con su firma, la fecha y la hora. Recepción puede reabrirla en 7 días si no es conforme.</p>'
+      : `<p class="muted">Subcontrata${w.asignado_a ? ` (${esc(w.asignado_a)})` : ""}: queda <b>finalizada</b>; la cierran el Director Técnico o recepción.</p>` },
+    { k: "solucion", t: "Trabajo realizado / solución", type: "textarea", wide: true, req: true },
+    { k: "llegada", t: "Llegada", type: "datetime-local", req: true }, { k: "salida", t: "Salida", type: "datetime-local", req: true },
+    { k: "coste_real", t: "Coste real €", type: "number" },
+    { html: fotosHtml(`Fotos de la reparación (obligatoria al menos una${w.fotos_trabajo ? `; ya hay ${w.fotos_trabajo}` : ""})`) },
+    ...(propio ? [{ html: `<fieldset><legend>Firma de quien hizo el trabajo (${esc(S.me.nombre)}) *</legend>${FIRMA_HTML}</fieldset>` }] : []),
+  ], { salida: horaLocal() }, async (d, fm) => {
+    if (new Date(d.salida) <= new Date(d.llegada)) throw new Error("La salida tiene que ser posterior a la llegada");
+    if (!w.fotos_trabajo && !ficherosElegidos(fm).length) throw new Error("Añada al menos una foto de la reparación");
+    const png = firma();
+    if (propio && !png) throw new Error("Firme el trabajo realizado");
+    const n = await subirFotos(fm, w.id, "trabajo");
+    if (n) w.fotos_trabajo = (w.fotos_trabajo || 0) + n;  // si falla el guardado, no se vuelven a pedir
+    const r = await post(`/api/mantenimiento/ordenes/${w.id}/confirmar-mantenimiento`, { ...d, firma: png });
+    toast(r.estado === "cerrada" ? `OT cerrada · ${tiempoTxt(r.minutos)}` : "Trabajo finalizado: pendiente de cierre (Director Técnico o recepción)");
+    reload();
+  }, propio ? "Firmar y cerrar" : "Dar por finalizada"));
+  firma = lienzoFirma(f.querySelector("[data-firmaot]"));
 }
 async function adjuntosOT(w, reload) {
   const editar = can("mantenimiento.editar");
@@ -3610,7 +3659,7 @@ V.ordenes = async (el) => {
   el.innerHTML = `<div class="toolbar"><select id="e"><option value="abiertas">Abiertas</option><option value="">Todas</option>${S.cat.estados_ot.map((x) => `<option value="${x}">${label(x)}</option>`).join("")}</select>
     <select id="tp"><option value="">Todos los tipos</option>${["correctivo", "preventivo", "normativo", "mejora"].map((x) => `<option>${x}</option>`).join("")}</select>
     <span class="spacer"></span>${canOpenOT() ? '<button class="btn primary" id="new">Nueva OT</button>' : ""}</div>
-    <p class="muted">Flujo: recepción abre y asigna la OT (personal propio o subcontrata) → «Enviar» manda el enlace por WhatsApp o correo → el técnico la gestiona desde el móvil y firma → limpieza confirma la unidad → recepción da la conformidad de la propiedad y cierra. Las preventivas de zonas comunes no pasan por limpieza.</p><div id="t"></div>`;
+    <p class="muted">Flujo: recepción abre y asigna la OT (personal propio o subcontrata) → «Enviar» manda el enlace por WhatsApp o correo → el técnico la gestiona desde el móvil. Para terminar hacen falta <b>el tiempo (llegada y salida)</b> y <b>al menos una foto de la reparación</b>. El <b>personal propio</b> la cierra él mismo con su firma; la de <b>subcontrata</b> la cierran el Director Técnico o recepción. Recepción puede reabrir en 7 días la que no esté bien. Al cerrarla, el apartamento queda pendiente de limpieza.</p><div id="t"></div>`;
   const check = (who, when) => (who ? `<span title="${esc(fdt(when))}">✓ ${esc(who)}</span>` : '<span class="muted">pendiente</span>');
   const load = async () => {
     const e = $("#e", el).value;
@@ -3619,8 +3668,8 @@ V.ordenes = async (el) => {
       { k: "id", t: "Nº", f: otNum }, { k: "fecha_apertura", t: "Apertura", f: fdate }, { k: "asset_id", t: "Activo", f: (v) => esc(assetName(v)) },
       { k: "unidad", t: "Unidad", f: (v, w) => esc(v || w.zona_nombre || "Z. comunes") }, { k: "titulo", t: "Título", f: (v, w) => esc(v) + accesoBadge(w) },
       { k: "categoria", t: "Instalación" }, { k: "prioridad", t: "Prioridad", f: (v, w) => badge(v) + (w.plazo ? `<br><span class="${w.plazo.vencido ? "badge b-urgente" : "muted peq"}" title="Plazo de respuesta: urgente 4 h, alta 24 h">${w.plazo.vencido ? "⏰ fuera de plazo" : "plazo"} ${fdt(w.plazo.limite).slice(0, -3)}</span>` : "") }, { k: "abierta_por_nombre", t: "Abierta por" },
-      { k: "asignado_a", t: "Asignado", f: (v, w) => esc(v || "") + (w.cae_vencida ? `<br><span class="badge b-urgente" title="Documentación CAE/PRL vencida: pídala antes de que trabaje">CAE vencida</span>` : "") }, { k: "envios", t: "Enviada", f: (v) => (v?.length ? `<span title="${esc(v.map((e) => `${fdt(e.fecha)} ${e.nombre} (${e.canal === "email" ? "correo" : "WhatsApp"})`).join("\n"))}">✉ ${esc([...new Set(v.map((e) => e.nombre))].join(", "))}</span>` : "") }, { k: "conf_mto_por_nombre", t: "Mantenimiento", f: (v, w) => check(v, w.conf_mto_fecha) },
-      { k: "conf_limpieza_por_nombre", t: "Limpieza", f: (v, w) => (w.requiere_limpieza ? check(v, w.conf_limpieza_fecha) : '<span class="muted">no aplica</span>') },
+      { k: "asignado_a", t: "Asignado", f: (v, w) => esc(v || "") + (w.cae_vencida ? `<br><span class="badge b-urgente" title="Documentación CAE/PRL vencida: pídala antes de que trabaje">CAE vencida</span>` : "") }, { k: "envios", t: "Enviada", f: (v) => (v?.length ? `<span title="${esc(v.map((e) => `${fdt(e.fecha)} ${e.nombre} (${e.canal === "email" ? "correo" : "WhatsApp"})`).join("\n"))}">✉ ${esc([...new Set(v.map((e) => e.nombre))].join(", "))}</span>` : "") }, { k: "conf_mto_por_nombre", t: "Terminada por", f: (v, w) => check(v, w.conf_mto_fecha) },
+      { k: "minutos", t: "Tiempo", f: (v, w) => (v ? `⏱ ${tiempoTxt(v)}` : '<span class="muted">sin anotar</span>') + (w.fotos_trabajo ? ` · 📷 ${w.fotos_trabajo}` : "") },
       { k: "coste_real", t: "Coste", num: true, f: eur }, { k: "estado", t: "Estado", f: (v, w) => badge(v) + (w.alerta_nombre ? `<br><span class="badge ${w.alerta_tecnico === "escalar" ? "b-urgente" : "b-pendiente"}" title="Resultado del técnico sin atender">⚑ ${esc(w.alerta_nombre)}</span>` : "") + (w.tecnico?.fecha_propuesta && w.estado === "pendiente_visita" ? `<br><span class="muted peq">visita ${fdate(w.tecnico.fecha_propuesta)}</span>` : "") },
     ], rows, (w) => {
       const comunes = [
@@ -3628,7 +3677,11 @@ V.ordenes = async (el) => {
         ["Parte PDF", () => run(() => download("GET", `/api/mantenimiento/ordenes/${w.id}/parte`))],
         w.tecnico && ["Intervenciones", () => intervencionesOT(w)],
       ];
-      if (["cerrada", "cancelada"].includes(w.estado)) return comunes;
+      if (["cerrada", "cancelada"].includes(w.estado)) return [...comunes,
+        can("mantenimiento.cerrar") && w.reabrible && ["Reabrir", () => form(`${otNum(w.id)}: reabrir (no conforme)`, [
+          { html: '<p class="muted">Vuelve a quien la tenía asignada, con el motivo. Solo en los 7 días siguientes al cierre.</p>' },
+          { k: "motivo", t: "Qué no está bien", type: "textarea", wide: true, req: true }], {},
+          async (d) => { await post(`/api/mantenimiento/ordenes/${w.id}/reabrir`, d); toast("OT reabierta"); load(); }, "Reabrir"), "danger"]];
       const enTrabajo = !w.conf_mto_fecha;
       return [...comunes,
         (canOpenOT() || can("reservas.editar")) && w.unit_id && ["falta", "caducado", "vigente"].includes(w.acceso_estado?.estado) && ["Acceso", () => accesoOT(w, load), w.acceso_estado.estado === "vigente" ? "" : "primary"],
@@ -3646,26 +3699,22 @@ V.ordenes = async (el) => {
           const x = await put(`/api/mantenimiento/ordenes/${w.id}`, datosAsignacion(d)); toast("OT actualizada"); load(); await altaProveedorSiNuevo(d.proveedor, d.categoria);
           if (x.asignacion && (x.asignado_a !== w.asignado_a) && confirm(`¿Enviar ahora la ${otNum(x.id)} a ${x.asignado_a}?`)) enviarAsignado(x, load);
         })), "proveedor"); }],
-        can("mantenimiento.editar") && enTrabajo && ["Trabajo realizado", () => bindFotos(form(`OT ${w.id}: confirmar trabajo realizado`, [
-          { k: "solucion", t: "Trabajo realizado / solución", type: "textarea", wide: true, req: true }, { k: "coste_real", t: "Coste real €", type: "number" },
-          { html: fotosHtml("Fotos del trabajo terminado (opcional)") }],
-          {}, async (d, f) => {
-            const n = await subirFotos(f, w.id, "trabajo");
-            const r = await post(`/api/mantenimiento/ordenes/${w.id}/confirmar-mantenimiento`, d);
-            toast((r.requiere_limpieza ? "Trabajo confirmado. Pendiente de limpieza" : "Trabajo confirmado. Pendiente de cierre") + (n ? ` · ${n} foto(s)` : "")); load();
-          }))],
-        can("limpieza.confirmar_ot") && w.requiere_limpieza && w.conf_mto_fecha && !w.conf_limpieza_por && ["Unidad OK", () => run(() => post(`/api/mantenimiento/ordenes/${w.id}/confirmar-limpieza`), "Confirmado por limpieza. Pendiente de cierre").then(load)],
-        (can("mantenimiento.cerrar") || (can("limpieza.confirmar_ot") && w.requiere_limpieza)) && w.conf_mto_fecha && ["Rechazar", () => form(`OT ${w.id}: devolver a mantenimiento`, [
+        can("mantenimiento.editar") && enTrabajo && ["Trabajo realizado", () => trabajoRealizadoOT(w, load), "primary"],
+        can("mantenimiento.cerrar") && w.estado === "pendiente_cierre" && ["Rechazar", () => form(`OT ${w.id}: devolver a quien la hizo`, [
           { k: "motivo", t: "Motivo (qué no está bien)", type: "textarea", wide: true, req: true }], {},
-          async (d) => { await post(`/api/mantenimiento/ordenes/${w.id}/rechazar`, d); toast("Devuelta a mantenimiento"); load(); }), "danger"],
-        can("mantenimiento.cerrar") && w.estado === "pendiente_cierre" && ["Conformidad y cierre", () => form(`${otNum(w.id)}: conformidad de la propiedad`, [
-          { html: `<p>${w.tecnico ? `Trabajo enviado por <b>${esc(w.tecnico.nombre)}</b> (${esc(w.tecnico.empresa || "")}): ${esc(w.tecnico.resultado_nombre)} · ${fdt(w.tecnico.enviado)} (botón «Intervenciones» para ver el detalle y la firma).` : `Trabajo confirmado por ${esc(w.conf_mto_por_nombre || "mantenimiento")}.`}</p>` },
-          { k: "ok", t: "He revisado el trabajo y la deficiencia está subsanada: doy la conformidad de la propiedad", type: "checkbox", wide: true, req: true },
-          { html: `<p class="muted peq">Queda registrada con su usuario (${esc(S.me.nombre)}), la fecha y la hora, y aparece en el parte PDF. La orden pasa a cerrada y archivable.</p>` },
+          async (d) => { await post(`/api/mantenimiento/ordenes/${w.id}/rechazar`, d); toast("Devuelta: sigue abierta"); load(); }), "danger"],
+        can("mantenimiento.cerrar") && w.estado === "pendiente_cierre" && ["Cerrar", () => form(`${otNum(w.id)}: cerrar (conformidad de la propiedad)`, [
+          { html: `<p>${w.tecnico ? `Terminada por <b>${esc(w.tecnico.nombre)}</b> (${esc(w.tecnico.empresa || "")}) el ${fdt(w.tecnico.enviado)} (botón «Intervenciones» para ver el detalle y la firma).` : `Terminada por ${esc(w.conf_mto_por_nombre || "mantenimiento")}.`}
+            Tiempo: <b>${w.minutos ? tiempoTxt(w.minutos) : "sin anotar"}</b> · Fotos de la reparación: <b>${w.fotos_trabajo || 0}</b> (botón 📎).</p>` },
+          ...(w.minutos ? [] : [{ html: '<p class="error">Falta el tiempo de trabajo: indíquelo para poder cerrarla.</p>' },
+            { k: "llegada", t: "Llegada", type: "datetime-local", req: true }, { k: "salida", t: "Salida", type: "datetime-local", req: true }]),
+          { k: "ok", t: "He revisado el trabajo, las fotos y el tiempo, y la deficiencia está subsanada: doy la conformidad de la propiedad", type: "checkbox", wide: true, req: true },
+          { html: `<p class="muted peq">Queda registrada con su usuario (${esc(S.me.nombre)}), la fecha y la hora, y aparece en el parte PDF.</p>` },
         ], {}, async (d) => {
           if (!d.ok) throw new Error("Marque la conformidad");
-          await post(`/api/mantenimiento/ordenes/${w.id}/cerrar`, {}); toast("Conformidad registrada: OT cerrada"); load();
-        }, "Dar conformidad y cerrar"), "primary"],
+          await post(`/api/mantenimiento/ordenes/${w.id}/cerrar`, w.minutos ? {} : { llegada: d.llegada, salida: d.salida });
+          toast("OT cerrada"); load();
+        }, "Cerrar la orden"), "primary"],
         can("mantenimiento.cerrar") && ["Anular", () => form(`Anular OT ${w.id}`, [{ k: "motivo", t: "Motivo", type: "textarea", wide: true, req: true }], {},
           async (d) => { await post(`/api/mantenimiento/ordenes/${w.id}/cerrar`, { cancelar: true, motivo: d.motivo }); toast("OT anulada"); load(); }), "danger"],
       ];
@@ -4589,7 +4638,7 @@ V.gastos = async (el) => {
   load();
 };
 
-// ---- partes de estado (mantenimiento y limpieza revisan una vivienda o zona común; recepción genera la OT)
+// ---- partes de estado (limpieza revisa una vivienda o zona común; recepción genera la OT)
 V.estado = async (el) => {
   const crea = canParteEstado(), gestiona = can("mantenimiento.abrir");
   const pestanas = [crea && ["nuevo", "➕ Nuevo parte"], ["lista", "📋 Partes"], gestiona && ["kpis", "📈 Panel técnico"]].filter(Boolean);
@@ -5353,7 +5402,7 @@ async function editarLineaParte(x, p, aid, load) {
       { k: "unit_id", t: "Apartamento / unidad", type: "select", options: [["", "—"], ...uds.filter((u) => u.uso !== "garaje").map((u) => [u.id, u.codigo])] },
       { k: "ubicacion", t: "Zona / ubicación" }] : [{ k: "detalle", t: "Detalle", type: "textarea", wide: true }]),
     { k: "hora", t: "Hora a la que se hizo", type: "time", req: true }, { k: "persona", t: "Quién lo hizo" },
-    { k: "horas", t: "Horas", type: "number", step: "0.25" },
+    { k: "horas", t: "Tiempo dedicado (horas, p. ej. 0,5)", type: "number", step: "0.25", req: act || x.origen === "ot" },
     { k: "motivo", t: "Motivo de la corrección", req: true, wide: true },
   ], { fecha: p.fecha, descripcion: x.trabajo, unit_id: x.unit_id || "", ubicacion: x.ubicacion_texto ?? "", detalle: x.detalle, hora: x.hora, persona: x.persona, horas: x.horas ?? "" },
   async (d) => {
@@ -5377,10 +5426,13 @@ V.partestrabajo = async (el) => {
     $("#dias", el).innerHTML = dias.map((d) => `<button type="button" class="btn sm ${d.fecha === p.fecha ? "primary" : ""}" data-dia="${d.fecha}" title="${d.trabajos} trabajo(s)">${Number(d.fecha.slice(8))}/${Number(d.fecha.slice(5, 7))} ${d.validado ? "✔" : d.trabajos ? `<span class="badge b-pendiente">${d.trabajos}</span>` : ""}</button>`).join("");
     $("#dias", el).querySelectorAll("[data-dia]").forEach((b) => (b.onclick = () => { $("#f", el).value = b.dataset.dia; load(); }));
     const val = p.estado === "validado";
-    $("#cab", el).innerHTML = `<div class="${val ? "aviso-ok" : "aviso-vencidas"}" style="margin:8px 0"><b>Parte de ${esc(p.area_nombre.toLowerCase())} · ${fdate(p.fecha)}</b> ·
+    const sinTiempo = p.lineas.filter((x) => !x.horas).length;
+    $("#cab", el).innerHTML = `${p.area === "mantenimiento" ? `<div class="aviso-hito" style="margin:8px 0"><b>Mantenimiento:</b> todo trabajo que no sea una orden de trabajo (rondas, visitas, revisiones, pequeños arreglos) se anota aquí <b>con el tiempo dedicado</b>; es obligatorio. Si ve una avería que necesita una OT, pídala a recepción con <b>«Pedir OT»</b>: la abre recepción.${sinTiempo ? `<br><span class="error">${sinTiempo} trabajo(s) sin tiempo: corríjalos (Editar) antes de validar.</span>` : ""}</div>` : ""}
+      <div class="${val ? "aviso-ok" : "aviso-vencidas"}" style="margin:8px 0"><b>Parte de ${esc(p.area_nombre.toLowerCase())} · ${fdate(p.fecha)}</b> ·
       ${val ? `validado por ${esc(p.validado_por)} (${fdt(p.validado_en)})` : "pendiente de validar por recepción (hasta entonces no se imprime)"} · ${p.lineas.length} trabajo(s)
       ${p.observaciones ? `<br>Observaciones: ${esc(p.observaciones)}` : ""}
       <div class="toolbar">${p.puede_anotar ? '<button class="btn sm" data-x="anotar">＋ Anotar actuación (sin parte)</button>' : ""}
+      ${p.area === "mantenimiento" && can("mantenimiento.editar") ? '<button class="btn sm" data-x="pedir">🛠 Pedir OT a recepción</button>' : ""}
       ${!val && p.puede_validar ? '<button class="btn sm primary" data-x="validar">Validar parte</button>' : ""}
       ${val && p.puede_validar ? '<button class="btn sm" data-x="reabrir">Reabrir</button>' : ""}
       ${val ? '<button class="btn sm" data-x="pdf">PDF</button><button class="btn sm" data-x="xlsx">Excel</button>' : ""}</div></div>`;
@@ -5398,8 +5450,21 @@ V.partestrabajo = async (el) => {
           { k: "descripcion", t: "Trabajo realizado", type: "textarea", req: true, wide: true },
           { k: "unit_id", t: "Apartamento / unidad (si es en una)", type: "select", options: [["", "—"], ...uds.filter((u) => u.uso !== "garaje").map((u) => [u.id, u.codigo])] },
           { k: "ubicacion", t: "Zona / ubicación (zonas comunes, sala de máquinas…)" },
-          { k: "persona", t: "Quién lo hizo (en blanco: usted)" }, { k: "hora", t: "Hora a la que se hizo", type: "time" }, { k: "horas", t: "Horas", type: "number", step: "0.25" },
+          { k: "persona", t: "Quién lo hizo (en blanco: usted)" }, { k: "hora", t: "Hora a la que se hizo", type: "time" },
+          { k: "horas", t: "Tiempo dedicado (horas, p. ej. 0,5)", type: "number", step: "0.25", req: true },
         ], { hora: p.fecha === today() ? new Date().toTimeString().slice(0, 5) : "" }, async (d) => { await post("/api/partes-trabajo/actuaciones", clean({ ...q(), ...d, unit_id: d.unit_id ? Number(d.unit_id) : null, horas: d.horas ? Number(d.horas) : null })); toast("Actuación anotada en el parte"); load(); }, "Anotar");
+      },
+      pedir: async () => {
+        const uds = await get("/api/unidades", { asset_id: aid }).catch(() => []);
+        form("Pedir una orden de trabajo a recepción", [
+          { html: '<p class="muted">Para averías que no puede resolver en la ronda. Recepción recibe el aviso al momento y abre la OT. Lo que sí resuelva en la ronda, anótelo en el parte con su tiempo.</p>' },
+          { k: "descripcion", t: "Qué pasa y dónde", type: "textarea", req: true, wide: true },
+          { k: "unit_id", t: "Apartamento / unidad (si es en una)", type: "select", options: [["", "—"], ...uds.filter((u) => u.uso !== "garaje").map((u) => [u.id, u.codigo])] },
+          { k: "ubicacion", t: "Zona / ubicación" }, { k: "urgente", t: "Urgente (avisa también a la dirección)", type: "checkbox" },
+        ], {}, async (d) => {
+          const r = await post("/api/mantenimiento/peticiones", clean({ asset_id: aid, descripcion: d.descripcion, unit_id: d.unit_id ? Number(d.unit_id) : null, ubicacion: d.ubicacion || null, urgente: !!d.urgente }));
+          toast(r.avisados ? `Petición enviada a recepción (${r.avisados} aviso(s))` : "Petición registrada: no hay nadie de recepción con avisos en este activo");
+        }, "Enviar a recepción");
       },
       validar: () => form(`Validar el parte de ${p.area_nombre.toLowerCase()} · ${fdate(p.fecha)}`, [
         { html: `<p>Se validan <b>${p.lineas.length} trabajo(s)</b>. El parte queda cerrado, se puede imprimir y su PDF y Excel se archivan en los documentos del activo.</p>` },
@@ -6385,7 +6450,7 @@ const MENU = [
   ["", [["perfil", "Mi perfil", null]]],
 ];
 const allowed = (p) => !p || (p === "admin" ? S.me.admin_grupo : p === "informes" ? ["reservas.ver", "alquiler.ver", "finanzas.ver", "mantenimiento.ver"].some(can)
-  : p === "personal" ? ["mantenimiento.ver", "limpieza.editar", "limpieza.confirmar_ot"].some(can)
+  : p === "personal" ? ["mantenimiento.ver", "limpieza.editar"].some(can)
   : p === "proveedores" ? verProveedores() : p === "pedidos" ? verPedidos() : p === "partes" ? verPartes()
   : p === "partesestado" ? canParteEstado() || can("mantenimiento.abrir")
   : p === "gestpersonal" ? can("personal.autorizar") || can("partes.validar")

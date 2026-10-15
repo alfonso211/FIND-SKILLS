@@ -658,8 +658,8 @@ class WorkOrder(Base):
     fecha_prevista: Mapped[date | None] = mapped_column(Date)
     fecha_cierre: Mapped[date | None] = mapped_column(Date)
     solucion: Mapped[str | None] = mapped_column(Text)
-    # Flujo: abre (recepción/limpieza/mantenimiento) -> mantenimiento confirma trabajo -> limpieza confirma
-    # la unidad -> recepción cierra.
+    # Flujo (1.70): abre recepción -> personal propio: la cierra él (firma, foto y tiempo); subcontrata: la da por
+    # finalizada y la cierran el Director Técnico o recepción. conf_limpieza_* ya no se usan (históricas).
     abierta_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     conf_mto_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     conf_mto_fecha: Mapped[datetime | None] = mapped_column(DateTime)

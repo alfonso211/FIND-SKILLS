@@ -107,11 +107,20 @@ def test_flujo_del_tecnico(client, admin, ids):
     with SessionLocal() as db:
         assert avisos.recordatorio_ot_pausadas(db, date.today() + timedelta(days=1)) == 0
 
-    # resuelta: finalizada por el técnico (confirma el trabajo) con fotos; el enlace queda en solo lectura
+    # resuelta (subcontrata): hace falta al menos una foto de la reparación y el tiempo (hora de llegada); queda
+    # finalizada para que la cierre recepción o el Director Técnico; el enlace queda en solo lectura
+    sin_foto = client.post(_api(enlace, "/finalizar"), json=_fin(resultado="resuelta"))
+    assert sin_foto.status_code == 400 and "foto" in sin_foto.json()["detail"]
     fotos = {"ficheros": ("trabajo.png", io.BytesIO(base64.b64decode(_firma().split(",")[1])).getvalue(), "image/png")}
     assert client.post(_api(enlace, "/fotos"), files=fotos).status_code == 201
-    r = client.post(_api(enlace, "/finalizar"), json=_fin(resultado="resuelta", observaciones="Revisar en 6 meses"))
-    assert r.json()["estado"] == "trabajo_realizado"
+    sin_llegada = client.post(_api(enlace, "/finalizar"), json=_fin(resultado="resuelta"))
+    assert sin_llegada.status_code == 400 and "llegada" in sin_llegada.json()["detail"]
+    from datetime import datetime
+    llegada = (datetime.now() - timedelta(minutes=90)).replace(microsecond=0).isoformat()
+    r = client.post(_api(enlace, "/finalizar"), json=_fin(resultado="resuelta", observaciones="Revisar en 6 meses",
+                                                         llegada=llegada))
+    assert r.status_code == 200, r.text
+    assert r.json()["estado"] == "pendiente_cierre"
     assert client.get(_api(enlace, "/datos")).json()["finalizada"]
     assert client.post(_api(enlace, "/finalizar"), json=_fin(resultado="resuelta")).status_code == 400
     vis = client.get(f"/api/mantenimiento/ordenes/{w['id']}/intervenciones", headers=rec).json()
@@ -123,9 +132,36 @@ def test_flujo_del_tecnico(client, admin, ids):
                         params={"desde": (date.today() - timedelta(days=1)).isoformat()}).json()
     assert nuevos[-1]["resultado"] == "resuelta"
 
-    # limpieza confirma y recepción da la conformidad de la propiedad: cerrada; el parte lleva firma y conformidad
-    client.post(f"/api/mantenimiento/ordenes/{w['id']}/confirmar-limpieza", headers=admin)
+    # recepción la cierra (conformidad de la propiedad): el parte lleva firma y conformidad
     c = client.post(f"/api/mantenimiento/ordenes/{w['id']}/cerrar", headers=rec, json={}).json()
     assert c["estado"] == "cerrada" and c["conformidad_en"] and c["conf_mto_por_nombre"].endswith("(enlace)")
+    assert c["minutos"] >= 90
     pdf = client.get(f"/api/mantenimiento/ordenes/{w['id']}/parte", headers=rec)
     assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")
+
+
+def test_personal_propio_cierra_desde_su_enlace(client, admin, ids):
+    """1.70: el personal propio que termina desde su enlace (foto, llegada y salida, firma) deja la OT cerrada; la
+    unidad queda pendiente de limpieza y recepción puede reabrirla en 7 días."""
+    from datetime import datetime
+    sfl = ids["assets"]["SFL"]["id"]
+    rec = _new_user(client, admin, "rec.propio170@inversiete.com",
+                    [{"role_id": ids["roles"]["Recepción"], "asset_id": sfl}])
+    propio = client.post("/api/personal", headers=admin, json={
+        "asset_id": sfl, "area": "mantenimiento", "nombre": "Juan Propio", "telefono": "600111333"}).json()
+    unit = client.get(f"/api/unidades?asset_id={sfl}&q=P3-1B", headers=admin).json()[0]
+    w = client.post("/api/mantenimiento/ordenes", headers=rec, json={
+        "asset_id": sfl, "unit_id": unit["id"], "titulo": "Enchufe sin corriente", "bloquea_unidad": True}).json()
+    client.post(f"/api/mantenimiento/ordenes/{w['id']}/asignar", headers=rec,
+                json={"asignacion": "propio", "personal_id": propio["id"]})
+    enlace = _enlace(client, rec, w["id"])
+    fotos = {"ficheros": ("enchufe.png", base64.b64decode(_firma().split(",")[1]), "image/png")}
+    assert client.post(_api(enlace, "/fotos"), files=fotos).status_code == 201
+    llegada = (datetime.now() - timedelta(minutes=30)).replace(microsecond=0).isoformat()
+    r = client.post(_api(enlace, "/finalizar"), json=_fin(resultado="resuelta", empresa="Personal propio",
+                                                         tecnico="Juan Propio", llegada=llegada))
+    assert r.status_code == 200 and r.json()["estado"] == "cerrada", r.text
+    o = next(x for x in client.get(f"/api/mantenimiento/ordenes?asset_id={sfl}&abiertas=false", headers=rec).json()
+             if x["id"] == w["id"])
+    assert o["minutos"] >= 30 and o["fotos_trabajo"] == 1 and o["reabrible"]
+    assert client.get(f"/api/unidades?asset_id={sfl}&q=P3-1B", headers=admin).json()[0]["estado"] == "pendiente_limpieza"

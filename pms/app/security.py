@@ -21,11 +21,11 @@ PERMISOS: dict[str, str] = {
     "reservas.ver": "Ver reservas y huéspedes",
     "reservas.editar": "Gestionar reservas, check-in / check-out",
     "limpieza.editar": "Cambiar estado de limpieza de unidades",
-    "limpieza.confirmar_ot": "Confirmar (o rechazar) la unidad tras una orden de trabajo",
     "mantenimiento.ver": "Ver órdenes de trabajo y planes preventivos",
-    "mantenimiento.abrir": "Abrir órdenes de trabajo (avisos de avería)",
-    "mantenimiento.editar": "Ejecutar órdenes de trabajo, confirmar trabajo realizado y gestionar preventivo",
-    "mantenimiento.cerrar": "Cerrar órdenes de trabajo confirmadas por mantenimiento y limpieza",
+    "mantenimiento.abrir": "Abrir órdenes de trabajo y encargarlas (recepción)",
+    "mantenimiento.editar": "Ejecutar órdenes de trabajo (el personal propio las cierra con firma, foto y tiempo), "
+                            "pedir OT a recepción y gestionar el preventivo",
+    "mantenimiento.cerrar": "Cerrar las órdenes de trabajo finalizadas por subcontratas y reabrir en 7 días las cerradas",
     "finanzas.ver": "Ver indicadores económicos del panel (facturación, deuda)",
     "facturas.ver": "Ver, imprimir y exportar facturas emitidas",
     "facturas.rectificar": "Emitir facturas rectificativas (anula el cobro facturado)",
@@ -34,7 +34,7 @@ PERMISOS: dict[str, str] = {
     "pedidos.crear": "Hacer pedidos de material (los autoriza Recepción 1 del activo)",
     "pedidos.autorizar": "Autorizar pedidos de material e intercambiar el catálogo con INVERGESTION",
     "partes.validar": "Validar los partes de trabajo diarios de mantenimiento y limpieza",
-    "partes_estado.crear": "Partes de estado: señalar deficiencias al revisar una vivienda o zona común",
+    "partes_estado.crear": "Partes de estado (limpieza): señalar deficiencias al revisar una vivienda o zona común",
     "personal.autorizar": "Aprobar las ausencias de recepción, limpieza, conserjería y oficinas",
     "personal.autorizar_mto": "Director técnico: autorizar las ausencias del personal de mantenimiento",
     "legal.ver": "Ver la documentación legal de los activos (licencias, certificados, seguros…)",
@@ -55,27 +55,27 @@ NO_DIRECCION = (*SOLO_DIRECCION_TECNICA, "colaborador.portal")
 ROLES_POR_DEFECTO: dict[str, tuple[str, list[str]]] = {
     "Dirección Grupo": ("Acceso completo de consulta y gestión",
                         [p for p in PERMISOS if p not in NO_DIRECCION]),
-    "Dirección Técnica": ("Director técnico: autoriza las ausencias de mantenimiento (se suma a su otro rol)",
-                          ["activos.ver", "mantenimiento.ver", *SOLO_DIRECCION_TECNICA]),
+    "Dirección Técnica": ("Director técnico: cierra las OT de subcontratas y autoriza las ausencias de mantenimiento "
+                          "(se suma a su otro rol)",
+                          ["activos.ver", "mantenimiento.ver", "mantenimiento.cerrar", *SOLO_DIRECCION_TECNICA]),
     "Dirección Sociedad": ("Gestión completa de los activos de su ámbito", [
         "activos.ver", "activos.editar", "alquiler.ver", "alquiler.editar", "reservas.ver", "reservas.editar",
-        "limpieza.editar", "limpieza.confirmar_ot", "mantenimiento.ver", "mantenimiento.abrir", "mantenimiento.editar",
-        "mantenimiento.cerrar", "partes_estado.crear",
+        "limpieza.editar", "mantenimiento.ver", "mantenimiento.abrir", "mantenimiento.editar", "mantenimiento.cerrar",
         "finanzas.ver", "facturas.ver", "facturas.rectificar", "auditoria.ver", "documentos.ver", "documentos.editar",
         "pedidos.crear", "pedidos.autorizar", "partes.validar", "personal.autorizar", "legal.ver",
         "legal.editar", "capex.ver"]),
     "Gestor Alquiler Residencial": ("Contratos, inquilinos y cobros", [
         "activos.ver", "alquiler.ver", "alquiler.editar", "mantenimiento.ver", "finanzas.ver", "facturas.ver",
         "documentos.ver", "documentos.editar", "legal.ver", "legal.editar"]),
-    "Recepción": ("Reservas, llegadas y salidas. Abre y cierra órdenes de trabajo", [
+    "Recepción": ("Reservas, llegadas y salidas. Abre las órdenes de trabajo y cierra las de subcontratas", [
         "activos.ver", "reservas.ver", "reservas.editar", "facturas.ver", "limpieza.editar", "mantenimiento.ver",
         "mantenimiento.abrir", "mantenimiento.cerrar", "documentos.ver", "documentos.editar", "pedidos.crear",
-        "partes.validar", "partes_estado.crear", "legal.ver", "legal.editar"]),
-    "Gobernanta / Limpieza": ("Limpieza de unidades. Partes de estado y confirma la unidad tras la reparación", [
-        "activos.ver", "limpieza.editar", "limpieza.confirmar_ot", "mantenimiento.ver", "partes_estado.crear",
-        "pedidos.crear"]),
-    "Técnico Mantenimiento": ("Ejecuta y confirma órdenes de trabajo; preventivo; partes de estado", [
-        "activos.ver", "mantenimiento.ver", "mantenimiento.editar", "partes_estado.crear", "pedidos.crear"]),
+        "partes.validar", "legal.ver", "legal.editar"]),
+    "Gobernanta / Limpieza": ("Limpieza de unidades. Genera los partes de estado", [
+        "activos.ver", "limpieza.editar", "mantenimiento.ver", "partes_estado.crear", "pedidos.crear"]),
+    "Técnico Mantenimiento": ("Ejecuta las órdenes de trabajo (las de personal propio las cierra él), parte diario "
+                              "con el tiempo y preventivo", [
+        "activos.ver", "mantenimiento.ver", "mantenimiento.editar", "pedidos.crear"]),
     "Administración / Finanzas": ("Consulta económica y cobros", [
         "activos.ver", "alquiler.ver", "alquiler.editar", "reservas.ver", "mantenimiento.ver", "finanzas.ver",
         "facturas.ver", "facturas.rectificar", "documentos.ver", "documentos.editar"]),

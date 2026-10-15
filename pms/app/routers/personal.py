@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/personal", tags=["personal"])
 # permiso para dar de alta y editar el personal de cada área
 PERMISO_AREA = {"mantenimiento": "mantenimiento.editar", "limpieza": "limpieza.editar"}
 # quien puede consultar el personal (para enviarle trabajo)
-PERMISOS_VER = ("mantenimiento.ver", "limpieza.editar", "limpieza.confirmar_ot")
+PERMISOS_VER = ("mantenimiento.ver", "limpieza.editar")
 
 
 class StaffIn(BaseModel):

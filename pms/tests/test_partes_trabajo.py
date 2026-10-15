@@ -19,14 +19,18 @@ def test_parte_diario_validacion_e_informe(client, admin, ids):
     hoy = HOY.isoformat()
     # OT terminada hoy: entra sola en el parte de mantenimiento
     w = client.post("/api/mantenimiento/ordenes", headers=admin, json={"asset_id": sfl, "titulo": "Grifo que gotea"}).json()
-    client.post(f"/api/mantenimiento/ordenes/{w['id']}/confirmar-mantenimiento", headers=admin,
-                json={"solucion": "Cambio de cartucho"})
-    # tarea sin OT anotada por el técnico
+    from conftest import trabajo_realizado
+    trabajo_realizado(client, admin, w["id"], "Cambio de cartucho", minutos=45)
+    # tarea sin OT anotada por el técnico: el tiempo dedicado es obligatorio
+    sin_tiempo = client.post("/api/partes-trabajo/actuaciones", headers=tec, json={
+        "asset_id": sfl, "area": "mantenimiento", "fecha": hoy, "descripcion": "Ronda de revisión"})
+    assert sin_tiempo.status_code == 400 and "tiempo" in sin_tiempo.json()["detail"]
     p = client.post("/api/partes-trabajo/actuaciones", headers=tec, json={
         "asset_id": sfl, "area": "mantenimiento", "fecha": hoy, "descripcion": "Revisión del grupo de presión",
         "ubicacion": "Sala de máquinas", "horas": 1.5}).json()
     refs = {x["ref"]: x for x in p["lineas"]}
     assert f"OT-{w['id']:05d}" in refs and refs[f"OT-{w['id']:05d}"]["detalle"] == "Cambio de cartucho"
+    assert refs[f"OT-{w['id']:05d}"]["horas"] == 0.75  # el tiempo de la OT (llegada → salida) entra solo
     anotada = next(x for x in p["lineas"] if x["origen"] == "actuacion")
     assert anotada["persona"] == "tecnico.partes" and not p["puede_validar"]
     # limpieza: la hecha hoy y la zona común según el programa
@@ -37,7 +41,7 @@ def test_parte_diario_validacion_e_informe(client, admin, ids):
         "asset_id": sfl, "area": "mantenimiento", "fecha": hoy, "descripcion": "no es su área"}).status_code == 403
     pl = client.post("/api/partes-trabajo/actuaciones", headers=lim, json={
         "asset_id": sfl, "area": "limpieza", "fecha": hoy, "descripcion": "Limpieza de portal y escaleras (programa)",
-        "ubicacion": "Zonas comunes · Portal A"}).json()
+        "ubicacion": "Zonas comunes · Portal A", "horas": 0.5}).json()
     assert {x["origen"] for x in pl["lineas"]} >= {"limpieza", "actuacion"}
 
     # sin validar no se imprime; valida recepción y queda archivado
@@ -64,7 +68,7 @@ def test_parte_diario_validacion_e_informe(client, admin, ids):
     inf = client.get("/api/partes-trabajo/quincenal", headers=rec,
                      params={"asset_id": sfl, "anio": HOY.year, "mes": HOY.month, "quincena": qn}).json()
     m, li = inf["areas"]["mantenimiento"], inf["areas"]["limpieza"]
-    assert m["por_origen"]["ot"] >= 1 and m["por_origen"]["actuacion"] == 1 and m["horas_anotadas"] == 1.5
+    assert m["por_origen"]["ot"] >= 1 and m["por_origen"]["actuacion"] == 1 and m["horas_anotadas"] >= 2.25
     assert li["total"] >= 2 and hoy in li["sin_validar"] and hoy not in m["sin_validar"]
     r = client.get("/api/partes-trabajo/quincenal/descargar", headers=rec, params={
         "asset_id": sfl, "anio": HOY.year, "mes": HOY.month, "quincena": qn, "archivar": True})

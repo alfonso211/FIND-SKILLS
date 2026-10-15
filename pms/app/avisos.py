@@ -54,9 +54,9 @@ TIPOS = {
                          "(resumen diario)", "finanzas.ver"),
     "documentacion_legal": ("Documentación legal de los activos que falta o ha caducado (cada lunes): a Recepción 1 "
                             "la de su activo y a la dirección la de todos", "legal.ver"),
-    "partes_estado": ("Partes de estado de mantenimiento y limpieza: aviso al momento a recepción de su activo (los "
-                      "críticos, también a la dirección) y, en el resumen diario, los pendientes y abiertos hasta "
-                      "resolverlos", "mantenimiento.abrir"),
+    "partes_estado": ("Partes de estado de limpieza y peticiones de OT de mantenimiento: aviso al momento a recepción "
+                      "de su activo (los críticos y urgentes, también a la dirección) y, en el resumen diario, los "
+                      "partes pendientes y abiertos hasta resolverlos", "mantenimiento.abrir"),
     "ot_tecnico": ("Órdenes de trabajo: resultado del técnico al momento (resuelta, pendiente de material, otra visita, "
                    "derivar a subcontrata…) y recordatorio diario de las que quedan en pausa hasta que se actúe",
                    "mantenimiento.cerrar"),
@@ -137,7 +137,7 @@ def _enviar_registrado(db, user: User | None, destino: str, clave: str, tipo: st
 
 
 # Avisos dentro del PMS (campana con sonido): pantalla a la que lleva cada tipo y cuáles suenan como urgentes
-VISTA_AVISO = {"ot_urgente": "ordenes", "ot_tecnico": "ordenes", "parte_estado": "estado", "partes_estado": "estado",
+VISTA_AVISO = {"ot_urgente": "ordenes", "ot_tecnico": "ordenes", "peticion_ot": "ordenes", "parte_estado": "estado", "partes_estado": "estado",
                "pagos_retenidos": "gastos", "agenda": "agenda", "bloqueo_gestion": "reservas",
                "informe_presidencia": "presidencia", "documentacion_legal": "legal", "preventivo": "preventivo",
                "pedidos_reposicion": "pedidos", "caja": "caja", "resumen": "panel"}
@@ -303,6 +303,20 @@ def parte_estado(pid: int) -> int:
         return enviados
 
 
+# --------------------------------------------------------------------------- petición de OT de mantenimiento
+def peticion_ot(db, autor: User, a: Asset, lugar: str, texto: str, urgente: bool) -> int:
+    """Mantenimiento pide una OT a recepción (la OT la abre recepción): aviso en la campana de recepción del activo;
+    si es urgente, también a la dirección. Lo guarda quien llama (commit)."""
+    titulo = f"{'URGENTE · ' if urgente else ''}Mantenimiento pide una OT · {a.nombre} · {lugar}"
+    n = 0
+    for user, ids in suscritos(db, "partes_estado"):
+        if user.id == autor.id or (ids is not None and a.id not in ids) or (ids is None and not urgente):
+            continue
+        notificar(db, user, None, "peticion_ot", titulo, f"{autor.nombre}: {texto}", urgente=urgente)
+        n += 1
+    return n
+
+
 # --------------------------------------------------------------------------- resultado del técnico (al momento)
 def _destinatarios_ot(db, w: WorkOrder) -> list[User]:
     """Recepción del activo y dirección (suscritos al aviso) y quien emitió la orden."""
@@ -341,7 +355,10 @@ def resultado_tecnico(visita_id: int) -> int:
             filas.append(("Justificación", v.justificacion))
         if v.observaciones:
             filas.append(("Observaciones", v.observaciones))
-        siguiente = ("Revise el trabajo y dé la conformidad de la propiedad para cerrarla." if v.resultado == "resuelta"
+        siguiente = (("Cerrada por el personal propio con su firma, la foto y el tiempo. Si no es conforme, puede "
+                      "reabrirla en los 7 días siguientes." if w.estado == "cerrada" else
+                      "Revise el trabajo, las fotos y el tiempo, y ciérrela (Director Técnico o recepción).")
+                     if v.resultado == "resuelta"
                      else "Asigne la orden a una subcontrata desde Órdenes de trabajo → Asignar." if v.resultado == "escalar"
                      else "Actúe sobre la orden: se recordará cada día hasta que se reprograme o se le dé un estado.")
         texto = f"{titulo}\n\n" + "\n".join(f"{k}: {x}" for k, x in filas) + f"\n\n{siguiente}" + (f"\n{settings.url}/#ordenes" if settings.url else "")

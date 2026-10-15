@@ -71,3 +71,37 @@ def domicilio_fiscal(client, admin):
                 **{k: c[k] for k in ("nombre", "cif", "parent_id", "activa")},
                 "direccion": "Calle de Prueba 1", "cp": "28001", "municipio": "Madrid", "provincia": "Madrid"})
             assert r.status_code == 200, r.text
+
+
+def png_bytes() -> bytes:
+    import io as _io
+    from PIL import Image as _Image
+    out = _io.BytesIO()
+    _Image.new("RGB", (300, 120), "white").save(out, "PNG")
+    return out.getvalue()
+
+
+def firma_png() -> str:
+    import base64 as _b64
+    return "data:image/png;base64," + _b64.b64encode(png_bytes()).decode()
+
+
+def foto_trabajo(client, h, wid):
+    """Foto de la reparación (obligatoria para finalizar o cerrar una OT, 1.70)."""
+    r = client.post(f"/api/mantenimiento/ordenes/{wid}/adjuntos", headers=h, data={"tipo": "trabajo"},
+                    files={"ficheros": ("reparacion.png", png_bytes(), "image/png")})
+    assert r.status_code == 201, r.text
+
+
+def trabajo_realizado(client, h, wid, solucion="Trabajo realizado", coste_real=None, minutos=45, foto=True):
+    """«Trabajo realizado» desde el PMS con foto, tiempo (llegada y salida) y firma. Personal propio: queda cerrada;
+    subcontrata: pendiente de cierre."""
+    from datetime import datetime as _dt, timedelta as _td
+    if foto:
+        foto_trabajo(client, h, wid)
+    salida = _dt.now().replace(microsecond=0) - _td(minutes=1)
+    body = {"solucion": solucion, "llegada": (salida - _td(minutes=minutos)).isoformat(), "salida": salida.isoformat(),
+            "firma": firma_png()}
+    if coste_real is not None:
+        body["coste_real"] = coste_real
+    return client.post(f"/api/mantenimiento/ordenes/{wid}/confirmar-mantenimiento", headers=h, json=body)

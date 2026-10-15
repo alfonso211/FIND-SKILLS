@@ -1,4 +1,4 @@
-"""Partes de estado: mantenimiento y limpieza revisan una vivienda o zona común y señalan deficiencias con listas
+"""Partes de estado: limpieza (desde 1.70, solo limpieza) revisa una vivienda o zona común y señala deficiencias con listas
 encadenadas (app/partes_estado.py). Recepción genera la orden de trabajo (y la encarga a quien considere) o descarta
 el parte. Un parte crítico deja la unidad fuera de servicio hasta que se cierra su orden de trabajo.
 Indicadores para la dirección técnica: Pareto de elementos, tiempo medio de reparación e intervenciones por unidad."""

@@ -1,5 +1,14 @@
 # Novedades
 
+## 2026-10-15 · Versión 1.70 · Órdenes de trabajo más sencillas
+- **Recepción** abre todas las órdenes de trabajo (OT). **Limpieza** avisa con un **parte de estado** (ahora solo los genera limpieza) y **mantenimiento** con el botón **«🛠 Pedir OT a recepción»** del parte diario.
+- **Para terminar cualquier OT** hacen falta siempre el **tiempo** (hora de llegada y de salida) y **al menos una foto de la reparación**.
+- **Personal propio**: cierra él mismo su OT con **Trabajo realizado** (o desde el enlace del móvil), con su **firma**; la fecha y la hora quedan solas.
+- **Subcontrata**: da la OT por **finalizada** con todos sus datos; la **cierran el Director Técnico o recepción** (botón **Cerrar**, o **Rechazar** si no está bien).
+- **Reabrir**: recepción o el Director Técnico pueden reabrir una OT cerrada en los **7 días** siguientes, con el motivo.
+- **Limpieza ya no confirma las OT**: al cerrarse una OT de un apartamento, este queda **pendiente de limpieza** y entra solo en el parte de limpieza del día.
+- **Parte diario de mantenimiento**: todo lo que no sea una OT (rondas, visitas, pequeños arreglos) se anota ahí con el **tiempo dedicado, obligatorio**. Sin el tiempo de todas las líneas no se valida.
+
 ## 2026-10-15 · Versión 1.69 · Móviles plegables (Galaxy Fold), cerrado y abierto
 - **Todos**: en el móvil, las listas (órdenes de trabajo, unidades, activos, proveedores…) se ven como **fichas**: cada dato con su nombre y los botones debajo. Con el Galaxy Fold **cerrado**, una ficha debajo de otra; **abierto**, dos por fila.
 - **Barra de arriba**: el título cabe en una línea y debajo quedan el activo, la campana, el chat, Gestión y Salir, sin salirse de la pantalla.

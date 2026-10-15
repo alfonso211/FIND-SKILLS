@@ -12,7 +12,7 @@ from datetime import date, datetime, time, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import AREAS_PARTE, CleaningTask, Unit, User, WorkEntry, WorkOrder, WorkReport
+from .models import AREAS_PARTE, CleaningTask, Unit, User, WorkEntry, WorkOrder, WorkOrderVisit, WorkReport
 
 TIPOS_LIMPIEZA = {"salida": "Limpieza de salida", "contratada": "Limpieza contratada", "extra": "Limpieza extra"}
 ORIGENES = {"ot": "Orden de trabajo", "limpieza": "Limpieza del parte", "actuacion": "Actuación anotada"}
@@ -36,11 +36,17 @@ def lineas(db: Session, asset_id: int, area: str, f: date) -> list[dict]:
         ots = list(db.scalars(select(WorkOrder).where(WorkOrder.asset_id == asset_id, WorkOrder.conf_mto_fecha >= ini,
                                                       WorkOrder.conf_mto_fecha < fin)))
         nombres = _nombres(db, [w.conf_mto_por for w in ots])
+        from .routers.mantenimiento import minutos_visitas
+        visitas: dict[int, list] = {}
+        for v in db.scalars(select(WorkOrderVisit).where(WorkOrderVisit.work_order_id.in_([w.id for w in ots] or [-1]))):
+            visitas.setdefault(v.work_order_id, []).append(v)
         for w in ots:
+            minutos = minutos_visitas(visitas.get(w.id, []))
             out.append({"origen": "ot", "id": w.id, "ref": f"OT-{w.id:05d}", "hora": f"{w.conf_mto_fecha:%H:%M}",
                         "ubicacion": _lugar(db, asset_id, w.unit_id, w.zona), "trabajo": w.titulo,
                         "detalle": w.solucion or "", "categoria": w.categoria,
-                        "persona": w.asignado_a or nombres.get(w.conf_mto_por) or "", "horas": None})
+                        "persona": w.asignado_a or nombres.get(w.conf_mto_por) or "",
+                        "horas": round(minutos / 60, 2) if minutos else None})  # tiempo de la OT (llegada → salida)
     else:
         tareas = list(db.scalars(select(CleaningTask).where(CleaningTask.asset_id == asset_id,
                                                             CleaningTask.estado == "hecha", CleaningTask.hecha >= ini,

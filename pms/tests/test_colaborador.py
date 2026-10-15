@@ -3,7 +3,7 @@ OT, partes validados y envíos); sube documentos que quedan pendientes de revisa
 solo la ven Recepción 1 y dirección."""
 from datetime import date
 
-from conftest import login
+from conftest import login, trabajo_realizado
 
 PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 
@@ -39,10 +39,8 @@ def test_portal_colaborador(client, admin, ids):
     client.post(f"/api/mantenimiento/ordenes/{w2['id']}/enviar", headers=admin, json={
         "personal_ids": [ajena["id"]], "canal": "whatsapp"})
     hoy = date.today().isoformat()
-    client.post(f"/api/mantenimiento/ordenes/{w1['id']}/confirmar-mantenimiento", headers=admin,
-                json={"solucion": "Hecho con máquina"})
-    client.post(f"/api/mantenimiento/ordenes/{w2['id']}/confirmar-mantenimiento", headers=admin,
-                json={"solucion": "Trabajo de otros"})
+    assert trabajo_realizado(client, admin, w1["id"], "Hecho con máquina").json()["estado"] == "pendiente_cierre"
+    trabajo_realizado(client, admin, w2["id"], "Trabajo de otros")
     v = client.post("/api/partes-trabajo/validar", headers=admin, json={"asset_id": bab, "area": "mantenimiento",
                                                                          "fecha": hoy})
     assert v.status_code == 200, v.text
