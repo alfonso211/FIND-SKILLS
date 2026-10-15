@@ -654,6 +654,8 @@ class WorkOrder(Base):
     coste_estimado: Mapped[float | None] = mapped_column(Numeric(10, 2))
     coste_real: Mapped[float | None] = mapped_column(Numeric(10, 2))
     bloquea_unidad: Mapped[bool] = mapped_column(Boolean, default=False)
+    # correctivas y de mejora abiertas desde la 1.70: no se finalizan sin la foto del «antes» (adjunto «averia»)
+    exige_foto_antes: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false())
     fecha_apertura: Mapped[date] = mapped_column(Date, default=date.today)
     fecha_prevista: Mapped[date | None] = mapped_column(Date)
     fecha_cierre: Mapped[date | None] = mapped_column(Date)
@@ -722,6 +724,9 @@ class StaffMember(Base):
     vacaciones_dias: Mapped[int | None] = mapped_column(Integer)  # días de vacaciones al año (convenio)
     vacaciones_tipo: Mapped[str | None] = mapped_column(String(12))  # laborables | naturales
     fichaje_clave: Mapped[str | None] = mapped_column(String(40))  # enlace personal para fichar (revocable)
+    # coste por hora para la empresa (salario + Seguridad Social): coste de la mano de obra propia en el informe de
+    # mantenimiento (horas de OT y del parte diario × coste/hora)
+    coste_hora: Mapped[float | None] = mapped_column(Numeric(8, 2))
 
 
 # --------------------------------------------------------------------------- documentos recibidos y gastos

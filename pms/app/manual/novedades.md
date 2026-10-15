@@ -8,6 +8,9 @@
 - **Reabrir**: recepción o el Director Técnico pueden reabrir una OT cerrada en los **7 días** siguientes, con el motivo.
 - **Limpieza ya no confirma las OT**: al cerrarse una OT de un apartamento, este queda **pendiente de limpieza** y entra solo en el parte de limpieza del día.
 - **Parte diario de mantenimiento**: todo lo que no sea una OT (rondas, visitas, pequeños arreglos) se anota ahí con el **tiempo dedicado, obligatorio**. Sin el tiempo de todas las líneas no se valida.
+- **Foto del «antes»**: al abrir una OT correctiva o de mejora, recepción hace o elige la foto de cómo está la avería (si viene de un parte de estado, sirven sus fotos). Si falta, el técnico la hace desde su enlace con **«📷 Foto del antes»**; sin ella la OT no se puede terminar. En la lista sale **«📷 falta foto del antes»**.
+- **OT de subcontrata sin cerrar**: si pasan **más de 48 h** desde que la subcontrata la dio por finalizada, recepción y el Director Técnico reciben un aviso cada día (campana y correo) y la OT sale marcada **«⏰ +48 h sin cerrar»**.
+- **Coste de la mano de obra**: el Director Técnico indica el **coste/hora** en la ficha de cada empleado propio (*Personal*). El informe **Costes de mantenimiento** suma ahora las **horas** y la **mano de obra propia** por OT, por técnico y por apartamento. El coste/hora solo lo ven el Director Técnico y dirección; recepción ve las horas.
 
 ## 2026-10-15 · Versión 1.69 · Móviles plegables (Galaxy Fold), cerrado y abierto
 - **Todos**: en el móvil, las listas (órdenes de trabajo, unidades, activos, proveedores…) se ven como **fichas**: cada dato con su nombre y los botones debajo. Con el Galaxy Fold **cerrado**, una ficha debajo de otra; **abierto**, dos por fila.

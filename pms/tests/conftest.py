@@ -86,11 +86,16 @@ def firma_png() -> str:
     return "data:image/png;base64," + _b64.b64encode(png_bytes()).decode()
 
 
-def foto_trabajo(client, h, wid):
-    """Foto de la reparación (obligatoria para finalizar o cerrar una OT, 1.70)."""
-    r = client.post(f"/api/mantenimiento/ordenes/{wid}/adjuntos", headers=h, data={"tipo": "trabajo"},
-                    files={"ficheros": ("reparacion.png", png_bytes(), "image/png")})
+def foto_trabajo(client, h, wid, tipo="trabajo"):
+    """Foto de la reparación (obligatoria para finalizar o cerrar una OT, 1.70); con tipo «averia», la del «antes»."""
+    r = client.post(f"/api/mantenimiento/ordenes/{wid}/adjuntos", headers=h, data={"tipo": tipo},
+                    files={"ficheros": (f"{tipo}.png", png_bytes(), "image/png")})
     assert r.status_code == 201, r.text
+
+
+def foto_antes(client, h, wid):
+    """Foto del «antes» (obligatoria en las OT correctivas y de mejora, 1.70)."""
+    foto_trabajo(client, h, wid, "averia")
 
 
 def trabajo_realizado(client, h, wid, solucion="Trabajo realizado", coste_real=None, minutos=45, foto=True):
@@ -98,6 +103,7 @@ def trabajo_realizado(client, h, wid, solucion="Trabajo realizado", coste_real=N
     subcontrata: pendiente de cierre."""
     from datetime import datetime as _dt, timedelta as _td
     if foto:
+        foto_antes(client, h, wid)
         foto_trabajo(client, h, wid)
     salida = _dt.now().replace(microsecond=0) - _td(minutes=1)
     body = {"solucion": solucion, "llegada": (salida - _td(minutes=minutos)).isoformat(), "salida": salida.isoformat(),

@@ -57,7 +57,7 @@ def test_lista_negra_con_documento_en_otro_formato(client, admin, ids):
         "unit_id": unidades[5]["id"], "fecha_entrada": (HOY + timedelta(days=300)).isoformat(),
         "fecha_salida": (HOY + timedelta(days=301)).isoformat(),
         "guest": {"nombre": "Formato", "documento_tipo": "DNI", "documento_num": "22222222J"}})
-    assert no.status_code == 409 and "Impago" in no.json()["detail"]
+    assert no.status_code == 409 and "Impago" in no.json()["detail"], no.text
 
 
 def test_fichaje_olvidado_no_cierra_el_de_hoy(client, admin, ids):

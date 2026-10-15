@@ -116,7 +116,7 @@
 - **El permiso vale para esa estancia**: si el cliente se va y entra otro con la OT abierta, en la lista de OT sale **⚠ Acceso anotado para otro cliente** y el botón **Acceso** para volver a pedirlo.
 - **Check-in con OT abierta** en el apartamento: al hacer el check-in sale una ventana para preguntar al cliente cómo se entra en cada OT. También se puede anotar después con el botón **Acceso** de la OT.
 - **Llega un cliente pronto** (7 días): al abrir la OT se avisa (🧳) y se propone como fecha prevista el día anterior a su llegada. En la lista de OT se ve «Llega un cliente el …».
-- **Órdenes de trabajo → Nueva OT** (o desde el plano): describa la avería y **adjunte fotos**. Si es urgente, márquelo: mantenimiento recibe un correo al momento.
+- **Órdenes de trabajo → Nueva OT** (o desde el plano): describa la avería y **haga la foto del «antes»** (obligatoria en las correctivas y de mejora; si la OT sale de un parte de estado, valen sus fotos). Si es urgente, márquelo: mantenimiento recibe un correo al momento.
 - **Las OT las abre siempre recepción.** Limpieza avisa con un **parte de estado** y mantenimiento con **«Pedir OT»** (le suena la campana 🔔: «Mantenimiento pide una OT…»); usted abre la orden.
 - **Partes de estado** (Mantenimiento → Partes de estado): solo los genera limpieza; le llega un **correo al momento**. El parte sale en el **Panel de control** hasta que se resuelve.
   - **Generar OT**: abre la orden con todo relleno (título, gremio, prioridad propuesta, descripción y fotos del parte). Asígnela y envíela a quien corresponda.
@@ -129,7 +129,7 @@
   - **Pendiente de material** / **Requiere otra visita** / **Otro**: la orden queda en pausa y se le recuerda **cada día por correo** hasta que la reprograme (Asignar → fecha prevista), la reasigne o cambie su estado.
   - **Derivar a subcontrata** (en rojo): el personal propio no puede hacerla. Pulse **Asignar**, elija la subcontrata y envíela.
 - **Intervenciones**: tiempos, trabajos, material, estado y firma del técnico.
-- **Cerrar** (OT de subcontrata **pendiente de cierre**): revise el trabajo, las fotos (📎) y el tiempo, marque la conformidad de la propiedad y ciérrela. Queda registrada con su usuario, fecha y hora en el parte PDF. Si no está bien, **Rechazar** la devuelve con el motivo.
+- **Cerrar** (OT de subcontrata **pendiente de cierre**): revise el trabajo, las fotos (📎) y el tiempo, marque la conformidad de la propiedad y ciérrela. Queda registrada con su usuario, fecha y hora en el parte PDF. Si no está bien, **Rechazar** la devuelve con el motivo. Si pasan **más de 48 h** sin cerrarla, le llega un aviso cada día y la OT sale con **«⏰ +48 h sin cerrar»**.
 - **Reabrir**: una OT cerrada que no está bien se reabre en los **7 días** siguientes, con el motivo. Pasado ese plazo, abra una OT nueva.
 - Al cerrarse una OT de un apartamento, este pasa a **pendiente de limpieza** y entra solo en el parte de limpieza del día. Al marcar esa limpieza **Hecha**, queda disponible.
 

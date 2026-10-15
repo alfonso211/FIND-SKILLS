@@ -10,6 +10,7 @@ from PIL import Image
 
 from app import avisos
 from app.database import SessionLocal
+from app.models import WorkOrder
 from test_pms import _new_user
 
 
@@ -109,9 +110,18 @@ def test_flujo_del_tecnico(client, admin, ids):
 
     # resuelta (subcontrata): hace falta al menos una foto de la reparación y el tiempo (hora de llegada); queda
     # finalizada para que la cierre recepción o el Director Técnico; el enlace queda en solo lectura
-    sin_foto = client.post(_api(enlace, "/finalizar"), json=_fin(resultado="resuelta"))
-    assert sin_foto.status_code == 400 and "foto" in sin_foto.json()["detail"]
+    # correctiva: primero la foto del «antes» (el técnico la hace al llegar desde su enlace)
     fotos = {"ficheros": ("trabajo.png", io.BytesIO(base64.b64decode(_firma().split(",")[1])).getvalue(), "image/png")}
+    sin_antes = client.post(_api(enlace, "/finalizar"), json=_fin(resultado="resuelta"))
+    assert sin_antes.status_code == 400 and "antes" in sin_antes.json()["detail"]
+    d = client.get(_api(enlace, "/datos")).json()
+    assert d["exige_foto_antes"] and d["fotos_antes"] == 0
+    assert client.post(_api(enlace, "/fotos") + "&tipo=otro", files=fotos).status_code == 400
+    assert client.post(_api(enlace, "/fotos") + "&tipo=averia", files=fotos).status_code == 201
+    d = client.get(_api(enlace, "/datos")).json()
+    assert d["fotos_antes"] == 1 and d["fotos_trabajo"] == 0
+    sin_foto = client.post(_api(enlace, "/finalizar"), json=_fin(resultado="resuelta"))
+    assert sin_foto.status_code == 400 and "reparación" in sin_foto.json()["detail"]
     assert client.post(_api(enlace, "/fotos"), files=fotos).status_code == 201
     sin_llegada = client.post(_api(enlace, "/finalizar"), json=_fin(resultado="resuelta"))
     assert sin_llegada.status_code == 400 and "llegada" in sin_llegada.json()["detail"]
@@ -122,6 +132,19 @@ def test_flujo_del_tecnico(client, admin, ids):
     assert r.status_code == 200, r.text
     assert r.json()["estado"] == "pendiente_cierre"
     assert client.get(_api(enlace, "/datos")).json()["finalizada"]
+    # más de 48 h sin cerrar: aviso diario a recepción y al Director Técnico (una vez al día)
+    with SessionLocal() as db:
+        avisos.BANDEJA.clear()
+        assert avisos.recordatorio_ot_sin_cerrar(db, date.today()) == 0  # aún no han pasado 48 h
+        o = db.get(WorkOrder, w["id"])
+        o.conf_mto_fecha = o.conf_mto_fecha - timedelta(hours=49)
+        db.commit()
+        assert avisos.recordatorio_ot_sin_cerrar(db, date.today()) >= 1
+        assert avisos.recordatorio_ot_sin_cerrar(db, date.today()) == 0
+    assert any("sin cerrar" in x["asunto"] for x in avisos.BANDEJA if x["para"] == "rec.tecnico@inversiete.com")
+    o = next(x for x in client.get(f"/api/mantenimiento/ordenes?asset_id={sfl}&abiertas=true", headers=rec).json()
+             if x["id"] == w["id"])
+    assert o["sin_cerrar_48h"]
     assert client.post(_api(enlace, "/finalizar"), json=_fin(resultado="resuelta")).status_code == 400
     vis = client.get(f"/api/mantenimiento/ordenes/{w['id']}/intervenciones", headers=rec).json()
     assert [v["resultado"] for v in vis] == ["escalar", "pendiente_material", "otra_visita", "resuelta"]
@@ -156,6 +179,7 @@ def test_personal_propio_cierra_desde_su_enlace(client, admin, ids):
                 json={"asignacion": "propio", "personal_id": propio["id"]})
     enlace = _enlace(client, rec, w["id"])
     fotos = {"ficheros": ("enchufe.png", base64.b64decode(_firma().split(",")[1]), "image/png")}
+    assert client.post(_api(enlace, "/fotos") + "&tipo=averia", files=fotos).status_code == 201
     assert client.post(_api(enlace, "/fotos"), files=fotos).status_code == 201
     llegada = (datetime.now() - timedelta(minutes=30)).replace(microsecond=0).isoformat()
     r = client.post(_api(enlace, "/finalizar"), json=_fin(resultado="resuelta", empresa="Personal propio",

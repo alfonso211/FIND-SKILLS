@@ -28,8 +28,8 @@ from ..models import RESULTADOS_TECNICO, Asset, StaffMember, WorkOrder, WorkOrde
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request, get_or_404, scoped
 from . import personal
-from .mantenimiento import (ABIERTAS, PAUSADAS, _subcontrata, acceso_texto, cerrar_ot, exigir_finalizacion,
-                            fotos_trabajo, token_valido)
+from .mantenimiento import (ABIERTAS, FALTA_FOTO_ANTES, PAUSADAS, _subcontrata, acceso_texto, cerrar_ot,
+                            exigir_finalizacion, fotos_antes, fotos_trabajo, token_valido)
 
 publico = APIRouter(tags=["técnico (enlace)"])
 router = APIRouter(prefix="/api/mantenimiento", tags=["mantenimiento"])
@@ -96,7 +96,8 @@ def data(wid: int, c: int, f: str, db: Session = Depends(get_db)):
                      "empresa": abierta.empresa, "tecnico": abierta.tecnico} if abierta else None,
         "ultima": {"resultado": ultima.resultado, "resultado_nombre": RESULTADOS_TECNICO[ultima.resultado],
                    "enviado": ultima.enviado.isoformat(), "tecnico": ultima.tecnico} if ultima else None,
-        "fotos": fotos, "fotos_trabajo": fotos_trabajo(db, w),
+        "fotos": fotos, "fotos_trabajo": fotos_trabajo(db, w), "fotos_antes": fotos_antes(db, w),
+        "exige_foto_antes": bool(w.exige_foto_antes),
         "cierra": "tecnico" if w.asignacion != "subcontrata" else "recepcion",  # quién cierra al marcar «resuelta»
     }
 
@@ -140,10 +141,13 @@ def start(wid: int, c: int, f: str, body: InicioIn, request: Request, db: Sessio
 
 
 @publico.post("/api/publico/ot/{wid}/fotos", status_code=201)
-def upload_photos(wid: int, c: int, f: str, ficheros: list[UploadFile] = File(...), db: Session = Depends(get_db)):
-    """Fotos del trabajo terminado (o del material que falta)."""
+def upload_photos(wid: int, c: int, f: str, ficheros: list[UploadFile] = File(...), tipo: str = "trabajo",
+                  db: Session = Depends(get_db)):
+    """Fotos del trabajo terminado (o del material que falta) o, con tipo=averia, del «antes» (la avería al llegar)."""
     w = _orden(db, wid, c, f)
     _editable(w)
+    if tipo not in ("trabajo", "averia"):
+        bad_request("Tipo de foto no válido")
     if len(ficheros) > 6:
         bad_request("Máximo 6 fotos por envío")
     n = 0
@@ -152,7 +156,8 @@ def upload_photos(wid: int, c: int, f: str, ficheros: list[UploadFile] = File(..
             datos, mime, nombre = adjuntos.normalizar(x.file.read(adjuntos.TAM_MAX + 1), (x.filename or "foto")[-150:])
         except ValueError as e:
             bad_request(f"{x.filename}: {e}")
-        db.add(WorkOrderAttachment(work_order_id=w.id, tipo="trabajo", nombre=nombre, descripcion="Foto del técnico",
+        db.add(WorkOrderAttachment(work_order_id=w.id, tipo=tipo, nombre=nombre,
+                                   descripcion="Foto del antes (técnico)" if tipo == "averia" else "Foto del técnico",
                                    fichero=documentos.guardar(datos), mime=mime, tamano=len(datos),
                                    sha256=documentos.huella(datos)))
         n += 1
@@ -203,7 +208,9 @@ def finish(wid: int, c: int, f: str, body: FinIn, request: Request, tareas: Back
         bad_request("Proponga la fecha de la siguiente visita (hoy o posterior)")
     if body.resultado == "otro" and len((body.justificacion or "").strip()) < 5:
         bad_request("Describa el resultado o el motivo técnico del bloqueo")
-    if body.resultado == "resuelta":  # antes de guardar nada: tiempo y foto de la reparación
+    if body.resultado == "resuelta":  # antes de guardar nada: fotos del antes y de la reparación, y tiempo
+        if w.exige_foto_antes and not fotos_antes(db, w):
+            bad_request(FALTA_FOTO_ANTES + ": hágala con «📷 Foto del antes»")
         if not fotos_trabajo(db, w):
             bad_request("Añada al menos una foto de la reparación antes de enviar el resultado")
         previa = _abierta(db, w)

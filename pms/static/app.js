@@ -3079,7 +3079,7 @@ V.informes = async (el) => {
     ["ocupacion", "Ocupación", "Turísticos: noches disponibles y ocupadas, % de ocupación, ADR y RevPAR por mes. Residencial: unidades alquiladas por uso.", can("reservas.ver") || can("alquiler.ver")],
     ["produccion", "Producción", "Lo facturado cada mes según la fecha de factura: alojamiento, rentas y servicios (sin IVA), IVA y total, por activo.", can("finanzas.ver")],
     ["morosidad", "Morosidad", "Recibos vencidos sin cobrar y reservas con saldo, con contacto del cliente y antigüedad de la deuda (a la fecha final).", can("alquiler.ver") || can("reservas.ver")],
-    ["mantenimiento", "Costes de mantenimiento", "Órdenes de trabajo del periodo con sus costes, y resúmenes por instalación, tipo y proveedor.", can("mantenimiento.ver")],
+    ["mantenimiento", "Costes de mantenimiento", "Órdenes de trabajo del periodo con sus costes, horas y mano de obra propia; resúmenes por instalación, tipo, proveedor, técnico y apartamento.", can("mantenimiento.ver")],
     ["cobros", "Facturas pendientes de cobro", "Facturas emitidas sin cobrar a la fecha final con los días pendientes, y las cobradas en el periodo (fecha, forma, referencia y quién lo comprobó).", can("facturas.ver")],
   ].filter((x) => x[3]);
   el.innerHTML = `<div class="toolbar"><label>Desde<input type="date" id="d" value="${y}-01-01"></label><label>Hasta<input type="date" id="h" value="${today()}"></label>
@@ -3456,8 +3456,10 @@ async function newWorkOrder(assetId, unitId, zona, parte) {  // zona: {zona, nom
     ...(can("mantenimiento.editar") ? [{ k: "coste_estimado", t: "Coste estimado €", type: "number" }] : []),
     ...(zona ? [] : [{ k: "bloquea_unidad", t: "Bloquear unidad (fuera de venta hasta cierre)", type: "checkbox", wide: true }]),
     { k: "descripcion", t: "Descripción de la avería", type: "textarea", wide: true },
-    { html: parte ? `<p class="muted">Se genera desde el parte de estado <b>${esc(parte.codigo)}</b>: sus fotos se adjuntan solas.</p>` : fotosHtml("Fotos de la avería (opcional)") },
+    { html: parte ? `<p class="muted">Se genera desde el parte de estado <b>${esc(parte.codigo)}</b>: sus fotos se adjuntan solas (son la foto del «antes»).</p>` : fotosHtml("Foto del «antes»: cómo está la avería (obligatoria en correctivas y mejoras) *") },
   ], { unit_id: unitId, ...(parte ? parte.ot_propuesta : {}) }, async (d, f) => {
+    if (!parte && ["correctivo", "mejora"].includes(d.tipo || "correctivo") && !ficherosElegidos(f).length)
+      throw new Error("Haga o elija la foto del «antes» (cómo está la avería): es obligatoria para poder cerrar la orden");
     const acc = f._acceso ? f._acceso() : null;
     const acceso = acc ? { acceso: acc.acceso, acceso_autoriza: acc.autoriza, acceso_medio: acc.medio } : {};
     const w = await post("/api/mantenimiento/ordenes", clean({ ...(puedeAsignarOT() ? datosAsignacion(d) : d), asset_id: aid, unit_id: d.unit_id ? Number(d.unit_id) : null, zona: zona?.zona, parte_estado_id: parte?.id, ...acceso }));
@@ -3599,6 +3601,7 @@ function trabajoRealizadoOT(w, reload) {
     { k: "solucion", t: "Trabajo realizado / solución", type: "textarea", wide: true, req: true },
     { k: "llegada", t: "Llegada", type: "datetime-local", req: true }, { k: "salida", t: "Salida", type: "datetime-local", req: true },
     { k: "coste_real", t: "Coste real €", type: "number" },
+    ...(w.falta_foto_antes ? [{ html: '<p class="error">Falta la foto del «antes» (cómo estaba la avería): añádala con el botón 📎, tipo «Foto de la avería», antes de terminar.</p>' }] : []),
     { html: fotosHtml(`Fotos de la reparación (obligatoria al menos una${w.fotos_trabajo ? `; ya hay ${w.fotos_trabajo}` : ""})`) },
     ...(propio ? [{ html: `<fieldset><legend>Firma de quien hizo el trabajo (${esc(S.me.nombre)}) *</legend>${FIRMA_HTML}</fieldset>` }] : []),
   ], { salida: horaLocal() }, async (d, fm) => {
@@ -3659,7 +3662,7 @@ V.ordenes = async (el) => {
   el.innerHTML = `<div class="toolbar"><select id="e"><option value="abiertas">Abiertas</option><option value="">Todas</option>${S.cat.estados_ot.map((x) => `<option value="${x}">${label(x)}</option>`).join("")}</select>
     <select id="tp"><option value="">Todos los tipos</option>${["correctivo", "preventivo", "normativo", "mejora"].map((x) => `<option>${x}</option>`).join("")}</select>
     <span class="spacer"></span>${canOpenOT() ? '<button class="btn primary" id="new">Nueva OT</button>' : ""}</div>
-    <p class="muted">Flujo: recepción abre y asigna la OT (personal propio o subcontrata) → «Enviar» manda el enlace por WhatsApp o correo → el técnico la gestiona desde el móvil. Para terminar hacen falta <b>el tiempo (llegada y salida)</b> y <b>al menos una foto de la reparación</b>. El <b>personal propio</b> la cierra él mismo con su firma; la de <b>subcontrata</b> la cierran el Director Técnico o recepción. Recepción puede reabrir en 7 días la que no esté bien. Al cerrarla, el apartamento queda pendiente de limpieza.</p><div id="t"></div>`;
+    <p class="muted">Flujo: recepción abre y asigna la OT (personal propio o subcontrata) → «Enviar» manda el enlace por WhatsApp o correo → el técnico la gestiona desde el móvil. Las correctivas se abren con la <b>foto del «antes»</b>. Para terminar hacen falta <b>el tiempo (llegada y salida)</b> y <b>al menos una foto de la reparación</b>. El <b>personal propio</b> la cierra él mismo con su firma; la de <b>subcontrata</b> la cierran el Director Técnico o recepción. Las de subcontrata finalizadas hace más de 48 h sin cerrar se avisan cada día. Recepción puede reabrir en 7 días la que no esté bien. Al cerrarla, el apartamento queda pendiente de limpieza.</p><div id="t"></div>`;
   const check = (who, when) => (who ? `<span title="${esc(fdt(when))}">✓ ${esc(who)}</span>` : '<span class="muted">pendiente</span>');
   const load = async () => {
     const e = $("#e", el).value;
@@ -3669,8 +3672,8 @@ V.ordenes = async (el) => {
       { k: "unidad", t: "Unidad", f: (v, w) => esc(v || w.zona_nombre || "Z. comunes") }, { k: "titulo", t: "Título", f: (v, w) => esc(v) + accesoBadge(w) },
       { k: "categoria", t: "Instalación" }, { k: "prioridad", t: "Prioridad", f: (v, w) => badge(v) + (w.plazo ? `<br><span class="${w.plazo.vencido ? "badge b-urgente" : "muted peq"}" title="Plazo de respuesta: urgente 4 h, alta 24 h">${w.plazo.vencido ? "⏰ fuera de plazo" : "plazo"} ${fdt(w.plazo.limite).slice(0, -3)}</span>` : "") }, { k: "abierta_por_nombre", t: "Abierta por" },
       { k: "asignado_a", t: "Asignado", f: (v, w) => esc(v || "") + (w.cae_vencida ? `<br><span class="badge b-urgente" title="Documentación CAE/PRL vencida: pídala antes de que trabaje">CAE vencida</span>` : "") }, { k: "envios", t: "Enviada", f: (v) => (v?.length ? `<span title="${esc(v.map((e) => `${fdt(e.fecha)} ${e.nombre} (${e.canal === "email" ? "correo" : "WhatsApp"})`).join("\n"))}">✉ ${esc([...new Set(v.map((e) => e.nombre))].join(", "))}</span>` : "") }, { k: "conf_mto_por_nombre", t: "Terminada por", f: (v, w) => check(v, w.conf_mto_fecha) },
-      { k: "minutos", t: "Tiempo", f: (v, w) => (v ? `⏱ ${tiempoTxt(v)}` : '<span class="muted">sin anotar</span>') + (w.fotos_trabajo ? ` · 📷 ${w.fotos_trabajo}` : "") },
-      { k: "coste_real", t: "Coste", num: true, f: eur }, { k: "estado", t: "Estado", f: (v, w) => badge(v) + (w.alerta_nombre ? `<br><span class="badge ${w.alerta_tecnico === "escalar" ? "b-urgente" : "b-pendiente"}" title="Resultado del técnico sin atender">⚑ ${esc(w.alerta_nombre)}</span>` : "") + (w.tecnico?.fecha_propuesta && w.estado === "pendiente_visita" ? `<br><span class="muted peq">visita ${fdate(w.tecnico.fecha_propuesta)}</span>` : "") },
+      { k: "minutos", t: "Tiempo", f: (v, w) => (v ? `⏱ ${tiempoTxt(v)}` : '<span class="muted">sin anotar</span>') + (w.fotos_trabajo ? ` · 📷 ${w.fotos_trabajo}` : "") + (w.falta_foto_antes ? '<br><span class="badge b-pendiente" title="Obligatoria para terminar: botón 📎, tipo «Foto de la avería»">📷 falta foto del antes</span>' : "") },
+      { k: "coste_real", t: "Coste", num: true, f: eur }, { k: "estado", t: "Estado", f: (v, w) => badge(v) + (w.sin_cerrar_48h ? '<br><span class="badge b-urgente" title="Finalizada por la subcontrata hace más de 48 h: revísela y ciérrela o recházela">⏰ +48 h sin cerrar</span>' : "") + (w.alerta_nombre ? `<br><span class="badge ${w.alerta_tecnico === "escalar" ? "b-urgente" : "b-pendiente"}" title="Resultado del técnico sin atender">⚑ ${esc(w.alerta_nombre)}</span>` : "") + (w.tecnico?.fecha_propuesta && w.estado === "pendiente_visita" ? `<br><span class="muted peq">visita ${fdate(w.tecnico.fecha_propuesta)}</span>` : "") },
     ], rows, (w) => {
       const comunes = [
         [`📎 ${w.n_adjuntos || ""}`.trim(), () => adjuntosOT(w, load)],
@@ -4052,6 +4055,7 @@ V.personal = async (el) => {
     { k: "dni", t: "DNI / NIE" }, { k: "puesto", t: "Puesto" },
     { k: "tipo_contrato", t: "Contrato", type: "select", options: Object.entries(catP.contratos) },
     { k: "jornada_semanal", t: "Jornada (horas / semana)", type: "number" },
+    { k: "coste_hora", t: "Coste/hora para la empresa € (salario + S. Social)", type: "number" },
     { k: "fecha_alta", t: "Fecha de alta", type: "date" }, { k: "fecha_baja", t: "Fecha de baja", type: "date" },
     { k: "vacaciones_dias", t: "Días de vacaciones al año (convenio)", type: "number" },
     { k: "vacaciones_tipo", t: "Los días son", type: "select", options: [["laborables", "Laborables"], ["naturales", "Naturales"]] },
@@ -4065,9 +4069,9 @@ V.personal = async (el) => {
     if (!sub && (d.empresa || "").trim()) throw new Error("El personal propio no lleva empresa: elija «Subcontrata» o deje la empresa vacía");
     delete d.tipo;
     const body = { ...d, asset_id: d.asset_id ? Number(d.asset_id) : null, user_id: d.user_id ? Number(d.user_id) : null,
-      jornada_semanal: d.jornada_semanal ? Number(d.jornada_semanal) : null, vacaciones_dias: d.vacaciones_dias !== undefined && d.vacaciones_dias !== null && d.vacaciones_dias !== "" ? Number(d.vacaciones_dias) : null,
+      jornada_semanal: d.jornada_semanal ? Number(d.jornada_semanal) : null, coste_hora: d.coste_hora !== undefined && d.coste_hora !== null && d.coste_hora !== "" ? Number(d.coste_hora) : null, vacaciones_dias: d.vacaciones_dias !== undefined && d.vacaciones_dias !== null && d.vacaciones_dias !== "" ? Number(d.vacaciones_dias) : null,
       tipo_contrato: d.tipo_contrato || null, vacaciones_tipo: d.vacaciones_tipo || null, fecha_alta: d.fecha_alta || null, fecha_baja: d.fecha_baja || null };
-    if (!dt || sub) ["user_id", "dni", "puesto", "tipo_contrato", "jornada_semanal", "fecha_alta", "fecha_baja", "vacaciones_dias", "vacaciones_tipo"].forEach((k) => { if (p && !(k in d)) body[k] = p[k] ?? null; });
+    if (!dt || sub) ["user_id", "dni", "puesto", "tipo_contrato", "jornada_semanal", "coste_hora", "fecha_alta", "fecha_baja", "vacaciones_dias", "vacaciones_tipo"].forEach((k) => { if (p && !(k in d)) body[k] = p[k] ?? null; });
     await (p ? put(`/api/personal/${p.id}`, body) : post("/api/personal", body));
     toast(p ? "Ficha guardada" : "Persona dada de alta"); load();
     if (sub) await altaProveedorSiNuevo(d.empresa, d.area === "limpieza" ? "Limpieza" : d.area === "mantenimiento" ? "Mantenimiento" : "Otros");

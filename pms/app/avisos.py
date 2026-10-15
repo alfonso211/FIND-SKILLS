@@ -58,7 +58,8 @@ TIPOS = {
                       "de su activo (los críticos y urgentes, también a la dirección) y, en el resumen diario, los "
                       "partes pendientes y abiertos hasta resolverlos", "mantenimiento.abrir"),
     "ot_tecnico": ("Órdenes de trabajo: resultado del técnico al momento (resuelta, pendiente de material, otra visita, "
-                   "derivar a subcontrata…) y recordatorio diario de las que quedan en pausa hasta que se actúe",
+                   "derivar a subcontrata…), recordatorio diario de las que quedan en pausa hasta que se actúe y de las de "
+                   "subcontrata finalizadas hace más de 48 h sin cerrar",
                    "mantenimiento.cerrar"),
     "personal": ("Personal: documentos del empleado que vencen en 30 días o ya vencidos (contrato, PRL, "
                  "reconocimiento médico…) y fichajes sin salida (resumen diario)", "personal.autorizar"),
@@ -403,6 +404,47 @@ def recordatorio_ot_pausadas(db, dia: date) -> int:
     return enviados
 
 
+HORAS_CIERRE = 48  # OT de subcontrata finalizadas que nadie ha cerrado en este tiempo: aviso diario
+
+
+def recordatorio_ot_sin_cerrar(db, dia: date) -> int:
+    """Cada día, a recepción y al Director Técnico (quien cierra OT en el activo): OT de subcontrata que el técnico dio
+    por finalizadas hace más de 48 h y siguen sin cerrar ni rechazar."""
+    if not configurado():
+        return 0
+    from .routers.personal import _lugar
+    limite = datetime.combine(dia, datetime.now().time()) - timedelta(hours=HORAS_CIERRE)
+    ots = list(db.scalars(select(WorkOrder).where(WorkOrder.estado == "pendiente_cierre",
+                                                  WorkOrder.asignacion == "subcontrata",
+                                                  WorkOrder.conf_mto_fecha <= limite)
+                          .order_by(WorkOrder.conf_mto_fecha)))
+    if not ots:
+        return 0
+    por_usuario: dict[int, tuple[User, list]] = {}
+    destinos = suscritos(db, "ot_tecnico")
+    for w in ots:
+        horas = int((datetime.combine(dia, datetime.now().time()) - w.conf_mto_fecha).total_seconds() // 3600)
+        fila = [db.get(Asset, w.asset_id).nombre, f"OT-{w.id:05d}", _lugar(db, w.asset_id, w.unit_id, w.zona),
+                w.titulo, w.proveedor or "", w.conf_mto_fecha.strftime("%d/%m/%Y %H:%M"), f"{horas} h"]
+        for u, ids in destinos:
+            if ids is None or w.asset_id in ids:
+                por_usuario.setdefault(u.id, (u, []))[1].append(fila)
+    enviados = 0
+    cab = ["Activo", "Orden", "Ubicación", "Trabajo", "Subcontrata", "Finalizada", "Sin cerrar"]
+    pie = "Revise el trabajo, las fotos y el tiempo, y ciérrela o recházela en Órdenes de trabajo."
+    for u, filas in por_usuario.values():
+        clave = f"ot_sin_cerrar:{dia.isoformat()}"
+        if db.scalar(select(EmailLog.id).where(EmailLog.clave == clave, EmailLog.user_id == u.id, EmailLog.ok)):
+            continue
+        texto = "\n".join(" · ".join(f) for f in filas) + f"\n\n{pie}"
+        enviados += _enviar_registrado(db, u, u.email, clave, "ot_tecnico",
+                                       f"PMS · {len(filas)} OT de subcontrata sin cerrar (más de {HORAS_CIERRE} h)",
+                                       texto, _html(f"OT de subcontrata pendientes de cierre más de {HORAS_CIERRE} h",
+                                                    _tabla(cab, filas) + f"<p>{escape(pie)}</p>"))
+    db.commit()
+    return enviados
+
+
 # --------------------------------------------------------------------------- pago retenido (al momento)
 def _euros(x) -> str:
     return f"{float(x):,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -613,6 +655,7 @@ def resumen_diario(db, dia: date | None = None, forzar: bool = False) -> dict:
     for nombre, tarea in (("informe mensual", lambda: informe_mensual(db, dia)),
                           ("documentación legal", lambda: recordatorio_semanal(db, dia)),
                           ("OT pausadas", lambda: recordatorio_ot_pausadas(db, dia)),
+                          ("OT sin cerrar", lambda: recordatorio_ot_sin_cerrar(db, dia)),
                           ("recibos de garaje", lambda: garajes_al_dia(db, hoy=dia))):  # aunque nadie entre en el PMS
         try:
             tarea()

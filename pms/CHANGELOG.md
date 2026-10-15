@@ -27,7 +27,20 @@ Registro técnico de versiones. El resumen para los usuarios está en `app/manua
   intervenciones); no se valida el de mantenimiento con líneas sin tiempo.
 - Pantallas: «Trabajo realizado» con llegada, salida, fotos (obligatoria una) y firma táctil; «Cerrar», «Rechazar» y
   «Reabrir»; columna Tiempo/fotos en lugar de Limpieza; parte diario con aviso a mantenimiento y «Pedir OT».
-- Pruebas reescritas para el flujo nuevo (+1: personal propio cierra desde su enlace).
+- **Foto del «antes»** (migración 0063: `ordenes_trabajo.exige_foto_antes`, por defecto falso; las abiertas antes
+  quedan exentas): se marca al crear OT `correctivo` o `mejora`. `exigir_finalizacion`, `confirmar-mantenimiento` y
+  «Resuelta» del enlace exigen al menos una imagen `averia`. El enlace sube fotos con `?tipo=averia` (por defecto
+  `trabajo`); `datos` devuelve `fotos_antes` y `exige_foto_antes`. OT: `falta_foto_antes`. Nueva OT: foto
+  obligatoria en pantalla salvo si viene de un parte de estado (copia sus fotos como `averia`).
+- **Aviso 48 h** (`avisos.recordatorio_ot_sin_cerrar`, en el resumen diario): OT de subcontrata en `pendiente_cierre`
+  con `conf_mto_fecha` de hace más de 48 h, a los suscritos a `ot_tecnico` con `mantenimiento.cerrar` en el activo;
+  una vez al día (clave `ot_sin_cerrar:<día>`). OT: `sin_cerrar_48h`.
+- **Coste de mano de obra** (migración 0063: `personal_servicio.coste_hora`, campo de la ficha, solo para quien
+  gestiona al empleado): informe `mantenimiento` con columnas Horas, Mano de obra propia y Coste total por OT y hojas
+  nuevas «Horas por técnico» (OT + parte diario) y «Por apartamento». Las columnas de coste solo para el Director
+  Técnico o `personal.autorizar` de grupo.
+- Pruebas reescritas para el flujo nuevo (+1: personal propio cierra desde su enlace; +1: coste de mano de obra;
+  foto del antes y aviso 48 h en `test_tecnico_ot`).
 
 ## 1.69 · 15/10/2026 · Móviles plegables (Galaxy Fold cerrado y abierto)
 - Hasta 900 px de ancho (Fold cerrado ≈ 344-412 px, abierto ≈ 700-900 px) las tablas de lista se pintan como fichas

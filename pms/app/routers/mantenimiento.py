@@ -106,8 +106,23 @@ def fotos_trabajo(db: Session, w: WorkOrder) -> int:
         WorkOrderAttachment.mime.like("image/%"))) or 0
 
 
+def fotos_antes(db: Session, w: WorkOrder) -> int:
+    """Fotos del «antes» (la avería tal como estaba: las sube recepción al abrir, vienen del parte de estado o las
+    hace el técnico al llegar)."""
+    return db.scalar(select(func.count()).select_from(WorkOrderAttachment).where(
+        WorkOrderAttachment.work_order_id == w.id, WorkOrderAttachment.tipo == "averia",
+        WorkOrderAttachment.mime.like("image/%"))) or 0
+
+
+TIPOS_FOTO_ANTES = ("correctivo", "mejora")  # OT con foto del «antes» obligatoria (no preventivo ni normativo)
+FALTA_FOTO_ANTES = "Falta la foto del «antes»: cómo estaba la avería antes de la reparación"
+
+
 def exigir_finalizacion(db: Session, w: WorkOrder) -> None:
-    """Para dar por finalizada o cerrar una OT: tiempo de trabajo y al menos una foto de la reparación."""
+    """Para dar por finalizada o cerrar una OT: tiempo de trabajo, al menos una foto de la reparación y, en las
+    correctivas y de mejora abiertas desde la 1.70, la foto del «antes»."""
+    if w.exige_foto_antes and not fotos_antes(db, w):
+        bad_request(FALTA_FOTO_ANTES)
     if minutos_ot(db, w) <= 0:
         bad_request("Falta el tiempo de trabajo: indique la hora de llegada y la de salida")
     if not fotos_trabajo(db, w):
@@ -150,6 +165,9 @@ class _Lote:
         self.fotos = dict(db.execute(select(WorkOrderAttachment.work_order_id, func.count()).where(
             WorkOrderAttachment.work_order_id.in_(ids), WorkOrderAttachment.tipo == "trabajo",
             WorkOrderAttachment.mime.like("image/%")).group_by(WorkOrderAttachment.work_order_id)).all())
+        self.fotos_antes = dict(db.execute(select(WorkOrderAttachment.work_order_id, func.count()).where(
+            WorkOrderAttachment.work_order_id.in_(ids), WorkOrderAttachment.tipo == "averia",
+            WorkOrderAttachment.mime.like("image/%")).group_by(WorkOrderAttachment.work_order_id)).all())
         nombres = {w.proveedor.strip().lower() for w in filas if w.proveedor and not w.proveedor_id}
         self.por_nombre = {x.nombre.lower(): x for x in db.scalars(select(Supplier).where(
             func.lower(Supplier.nombre).in_(nombres or {"-"})))}
@@ -180,6 +198,10 @@ def _wo_out(w: WorkOrder, db: Session, n_adjuntos: int | None = None, lote: _Lot
     d["fotos_trabajo"] = lote.fotos.get(w.id, 0) if lote else fotos_trabajo(db, w)
     d["reabrible"] = bool(w.estado == "cerrada" and w.fecha_cierre
                           and w.fecha_cierre >= date.today() - timedelta(days=REABRIR_DIAS))
+    d["sin_cerrar_48h"] = bool(w.estado == "pendiente_cierre" and w.conf_mto_fecha
+                               and w.conf_mto_fecha <= datetime.now() - timedelta(hours=48))
+    d["falta_foto_antes"] = bool(w.exige_foto_antes and w.estado not in ("cerrada", "cancelada")
+                                 and not (lote.fotos_antes.get(w.id, 0) if lote else fotos_antes(db, w)))
     if w.asignacion == "propio" and w.personal_id:
         quien = lote.personal.get(w.personal_id) if lote else db.get(StaffMember, w.personal_id)
     elif w.asignacion == "subcontrata":
@@ -323,6 +345,7 @@ def create_order(data: WorkOrderIn, tareas: BackgroundTasks, scope: Scope = Depe
         if not gestiona and (campo in ("coste_estimado", "tipo") or not asigna):
             valores.pop(campo, None)
     w = WorkOrder(**valores, abierta_por=scope.user.id)
+    w.exige_foto_antes = (w.tipo or "correctivo") in TIPOS_FOTO_ANTES
     _asignar(db, w)
     _comprobar_cae(db, w)
     try:
@@ -792,6 +815,8 @@ def confirm_work(wid: int, data: ConfirmWork, scope: Scope = Depends(get_scope),
     if w.conf_mto_fecha:
         bad_request("El trabajo ya está dado por finalizado")
     propio = w.asignacion != "subcontrata"
+    if w.exige_foto_antes and not fotos_antes(db, w):
+        bad_request(FALTA_FOTO_ANTES)
     if not fotos_trabajo(db, w):
         bad_request("Añada al menos una foto de la reparación")
     firma_png = None

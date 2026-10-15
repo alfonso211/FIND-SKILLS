@@ -73,7 +73,9 @@
 - Recepción o dirección asignan la OT (personal propio o subcontrata) y la envían: el técnico recibe un **enlace firmado** (caduca a los 30 días) para gestionarla desde el móvil sin usuario, con llegada y salida, trabajos, material, estado al finalizar y **firma**.
 - Los resultados llegan al momento (aviso sonoro en el PMS y correo); **derivar a subcontrata** va en rojo. Las OT en pausa (material, otra visita, otro) se recuerdan cada día hasta que alguien actúa.
 - **Quién cierra**: el **personal propio** cierra sus OT al terminar (firma, fecha, foto de la reparación y tiempo); las de **subcontrata** quedan finalizadas y las cierra el **Director Técnico o recepción** con la conformidad de la propiedad. Recepción o el Director Técnico pueden **reabrir** una OT cerrada en los 7 días siguientes.
-- Sin **tiempo** (llegada y salida) y **al menos una foto de la reparación** ninguna OT se puede dar por terminada ni cerrar.
+- Sin **tiempo** (llegada y salida) y **al menos una foto de la reparación** ninguna OT se puede dar por terminada ni cerrar. Las correctivas y de mejora necesitan además la **foto del «antes»**.
+- Las OT de **subcontrata** finalizadas hace **más de 48 h** sin cerrar le llegan cada día (campana y correo) y salen con **«⏰ +48 h sin cerrar»**.
+- **Coste de la mano de obra**: en *Personal*, ficha de cada empleado propio, indique el **coste/hora para la empresa** (salario + Seguridad Social). El informe **Costes de mantenimiento** (Excel) añade **Horas**, **Mano de obra propia** y **Coste total** por OT, y las hojas **Horas por técnico** (OT + parte diario) y **Por apartamento**. El coste/hora solo lo ven el Director Técnico y dirección.
 
 ## Pedidos de material y catálogo
 - **Mantenimiento → Pedidos de material**: los de Dirección y Recepción 1 quedan autorizados; los demás los autoriza Recepción 1 (Dirección también puede). Se envían al proveedor en PDF y se marcan como recibidos.

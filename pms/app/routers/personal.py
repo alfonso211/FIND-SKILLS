@@ -46,10 +46,11 @@ class StaffIn(BaseModel):
     jornada_semanal: float | None = Field(default=None, ge=0, le=60)
     vacaciones_dias: int | None = Field(default=None, ge=0, le=60)
     vacaciones_tipo: str | None = None
+    coste_hora: float | None = Field(default=None, ge=0, le=500)  # coste/hora de empresa (informe de mantenimiento)
 
 
 CAMPOS_FICHA = ("user_id", "dni", "puesto", "tipo_contrato", "fecha_alta", "fecha_baja", "jornada_semanal",
-                "vacaciones_dias", "vacaciones_tipo")
+                "vacaciones_dias", "vacaciones_tipo", "coste_hora")
 
 
 class SendIn(BaseModel):

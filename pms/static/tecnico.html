@@ -101,6 +101,8 @@ async function carga() {
     <details style="margin-top:8px"><summary class="muted">Corregir horas a mano</summary>
       <div class="fila"><label>Llegada<input type="datetime-local" name="llegada"></label><label>Salida<input type="datetime-local" name="salida"></label></div>
       <p class="muted">Si no las corrige, la salida es la hora a la que pulse «Enviar resultado».</p></details>
+    <label class="btn ancho" style="margin-top:10px">📷 Foto del antes (cómo está la avería al llegar)<input type="file" id="antes" accept="image/*" capture="environment" multiple hidden></label>
+    <p class="muted" id="amsg">${D.fotos_antes ? `Ya hay ${D.fotos_antes} foto(s) del antes.` : D.exige_foto_antes ? "<b>Obligatoria</b>: hágala antes de empezar a reparar." : "Recomendable antes de empezar a reparar."}</p>
   </section>
   <section><h2>2. Trabajos y material</h2>
     <label>Trabajos realizados / diagnóstico<textarea name="trabajos" required maxlength="4000">${esc(b.trabajos || "")}</textarea></label>
@@ -114,7 +116,7 @@ async function carga() {
     <div class="estados">${Object.entries(D.resultados).filter(([k]) => k !== "escalar" || D.permite_escalar).map(([k, t]) => `<label class="estado${k === "escalar" ? " rojo" : ""}"><input type="radio" name="resultado" value="${k}"${b.resultado === k ? " checked" : ""}> ${esc(k === "escalar" ? "Notificar a subcontrata (supera nuestra capacidad)" : t)}</label>`).join("")}</div>
     <div id="cVisita" class="hidden"><label>Fecha propuesta para la siguiente visita<input type="date" name="fecha_propuesta"></label></div>
     <div id="cOtro" class="hidden"><label>Describa el resultado o el motivo técnico del bloqueo<textarea name="justificacion" maxlength="2000"></textarea></label></div>
-    <p id="cResuelta" class="muted hidden">${D.cierra === "tecnico" ? "Al enviar <b>Resuelta</b> la orden queda <b>cerrada</b> con su firma, la fecha y la hora." : "Al enviar <b>Resuelta</b> la orden queda finalizada; la cierran el Director Técnico o recepción."} Hacen falta la hora de llegada (botón «Iniciar trabajo» o «Corregir horas a mano») y al menos una foto de la reparación.</p>
+    <p id="cResuelta" class="muted hidden">${D.cierra === "tecnico" ? "Al enviar <b>Resuelta</b> la orden queda <b>cerrada</b> con su firma, la fecha y la hora." : "Al enviar <b>Resuelta</b> la orden queda finalizada; la cierran el Director Técnico o recepción."} Hacen falta la hora de llegada (botón «Iniciar trabajo» o «Corregir horas a mano»)${D.exige_foto_antes ? ", la foto del antes" : ""} y al menos una foto de la reparación.</p>
   </section>
   <section><h2>4. Firma del técnico</h2>
     <canvas id="firma" aria-label="Firme aquí con el dedo"></canvas>
@@ -149,6 +151,18 @@ async function carga() {
     } catch (e) { $("#err").textContent = e.message; }
   };
   if (llegada) { $("#ini").textContent = "✔ Trabajo iniciado"; $("#ini").disabled = true; }
+  $("#antes").onchange = async (e) => {
+    const sel = [...e.target.files].slice(0, 6);
+    if (!sel.length) return;
+    const fd = new FormData(); sel.forEach((x) => fd.append("ficheros", x));
+    $("#amsg").textContent = "Enviando…";
+    try {
+      await pide("/fotos?tipo=averia", { method: "POST", body: fd });
+      D.fotos_antes = (D.fotos_antes || 0) + sel.length;
+      $("#amsg").textContent = `✔ ${D.fotos_antes} foto(s) del antes enviada(s).`;
+    } catch (x) { $("#amsg").textContent = x.message; }
+    e.target.value = "";
+  };
   let fotosPend = [];
   $("#fotos").onchange = (e) => { fotosPend = [...fotosPend, ...e.target.files].slice(0, 6); $("#fmsg").textContent = `${fotosPend.length} foto(s) para enviar`; };
   // firma táctil
@@ -169,6 +183,7 @@ async function carga() {
       : !d.resultado ? "Marque el estado al finalizar" : d.resultado === "otra_visita" && !d.fecha_propuesta ? "Proponga la fecha de la siguiente visita"
       : d.resultado === "otro" && (d.justificacion || "").length < 5 ? "Describa el resultado o el motivo del bloqueo"
       : d.resultado === "resuelta" && !d.llegada ? "Indique la hora de llegada: pulse «Iniciar trabajo» o corrija las horas a mano"
+      : d.resultado === "resuelta" && D.exige_foto_antes && !D.fotos_antes ? "Falta la foto del antes: pulse «📷 Foto del antes»"
       : d.resultado === "resuelta" && !fotosPend.length && !D.fotos_trabajo ? "Añada al menos una foto de la reparación"
       : trazos < 5 ? "Firme en el recuadro" : "";
     if (falta) { err.textContent = falta; return; }
