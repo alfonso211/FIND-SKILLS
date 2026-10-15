@@ -173,7 +173,7 @@ def create_report(tareas: BackgroundTasks, asset_id: int = Form(...), unit_id: i
 # --------------------------------------------------------------------------- consulta
 @router.get("")
 def list_reports(asset_id: int | None = None, estado: str | None = None, abiertos: bool = False,
-                 scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+                 id: int | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     """Recepción y dirección ven los de sus activos; quien solo registra partes ve los suyos."""
     ids = scope.asset_ids("mantenimiento.ver")
     stmt = select(StatusReport)
@@ -185,6 +185,10 @@ def list_reports(asset_id: int | None = None, estado: str | None = None, abierto
         stmt = scoped(stmt, StatusReport.asset_id, ids)
         if not scope.has_any("mantenimiento.abrir") and not scope.has_any("mantenimiento.editar"):
             stmt = stmt.where(StatusReport.user_id == scope.user.id)
+    if id:  # un solo parte (aviso de la campana): sin los demás filtros
+        stmt = stmt.where(StatusReport.id == id)
+        asset_id = estado = None
+        abiertos = False
     if asset_id:
         stmt = stmt.where(StatusReport.asset_id == asset_id)
     if estado:

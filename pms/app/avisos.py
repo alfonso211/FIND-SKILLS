@@ -124,7 +124,7 @@ def enviar(destino: str, asunto: str, texto: str, html: str,
 
 
 def _enviar_registrado(db, user: User | None, destino: str, clave: str, tipo: str, asunto: str, texto: str,
-                       html: str) -> bool:
+                       html: str, vista: str | None = None) -> bool:
     try:
         enviar(destino, asunto, texto, html)
         ok, error = True, None
@@ -133,15 +133,17 @@ def _enviar_registrado(db, user: User | None, destino: str, clave: str, tipo: st
         log.warning("Aviso %s a %s no enviado: %s", clave, destino, error)
     db.add(EmailLog(clave=clave, tipo=tipo, user_id=user.id if user else None, destinatario=destino,
                     asunto=asunto[:200], ok=ok, error=error))
-    notificar(db, user, destino, tipo, asunto, texto)
+    notificar(db, user, destino, tipo, asunto, texto, vista=vista)
     return ok
 
 
 # Avisos dentro del PMS (campana con sonido): pantalla a la que lleva cada tipo y cuáles suenan como urgentes
-VISTA_AVISO = {"ot_urgente": "ordenes", "ot_tecnico": "ordenes", "peticion_ot": "ordenes", "parte_estado": "estado", "partes_estado": "estado",
-               "pagos_retenidos": "gastos", "agenda": "agenda", "bloqueo_gestion": "reservas",
-               "informe_presidencia": "presidencia", "documentacion_legal": "legal", "preventivo": "preventivo",
-               "pedidos_reposicion": "pedidos", "caja": "caja", "resumen": "panel"}
+# (los que se refieren a un registro concreto llevan además su id: «ordenes?id=12», «estado?id=3», «gastos?id=7»)
+VISTA_AVISO = {"ot_urgente": "ordenes", "ot_tecnico": "ordenes", "ot_plazo": "ordenes", "peticion_ot": "ordenes",
+               "parte_estado": "estado", "partes_estado": "estado", "pagos_retenidos": "gastos", "agenda": "agenda",
+               "bloqueo_gestion": "reservas", "informe_presidencia": "presidencia", "documentacion_legal": "legal",
+               "preventivo": "preventivo", "pedidos_reposicion": "pedidos", "caja": "caja", "resumen": "panel",
+               "informe_direccion": "panel", "seguridad": "usuarios", "sistema": "gestion", "personal": "personal"}
 AVISO_URGENTE = {"ot_urgente", "bloqueo_gestion", "seguridad", "caja"}
 SIN_CAMPANA = {"aviso_llegada"}  # correos a huéspedes y terceros
 
@@ -236,7 +238,8 @@ def ot_urgente(wid: int, autor_id: int | None) -> int:
             clave = f"ot_urgente:{wid}"
             if db.scalar(select(EmailLog.id).where(EmailLog.clave == clave, EmailLog.user_id == user.id, EmailLog.ok)):
                 continue  # ya avisado de esta OT
-            enviados += _enviar_registrado(db, user, user.email, clave, "ot_urgente", asunto, texto, html)
+            enviados += _enviar_registrado(db, user, user.email, clave, "ot_urgente", asunto, texto, html,
+                                           vista=f"ordenes?id={w.id}")
         enviados += _ot_urgente_personal(db, w)
         db.commit()
         return enviados
@@ -299,7 +302,7 @@ def parte_estado(pid: int) -> int:
             if user.id == p.user_id or (ids is None and not critico) or (ids is not None and p.asset_id not in ids):
                 continue
             enviados += _enviar_registrado(db, user, user.email, f"parte_estado:{pid}", "parte_estado", asunto,
-                                           texto, html)
+                                           texto, html, vista=f"estado?id={pid}")
         db.commit()
         return enviados
 
@@ -366,7 +369,8 @@ def resultado_tecnico(visita_id: int) -> int:
         rojo = ' style="color:#b3261e"' if v.resultado == "escalar" else ""
         html = _html(titulo, f"<p{rojo}><b>{escape(titulo)}</b></p>" + _tabla([], [[k, x] for k, x in filas])
                      + f"<p>{escape(siguiente)}</p>")
-        enviados = sum(_enviar_registrado(db, u, u.email, f"ot_tecnico:{v.id}", "ot_tecnico", asunto[:200], texto, html)
+        enviados = sum(_enviar_registrado(db, u, u.email, f"ot_tecnico:{v.id}", "ot_tecnico", asunto[:200], texto, html,
+                                          vista=f"ordenes?id={w.id}")
                        for u in _destinatarios_ot(db, w))
         db.commit()
         return enviados
@@ -484,7 +488,8 @@ def pago_retenido(gid: int, autor_id: int | None) -> int:
                 continue
             if db.scalar(select(EmailLog.id).where(EmailLog.clave == clave, EmailLog.user_id == user.id, EmailLog.ok)):
                 continue
-            enviados += _enviar_registrado(db, user, user.email, clave, "pagos_retenidos", asunto, texto, html)
+            enviados += _enviar_registrado(db, user, user.email, clave, "pagos_retenidos", asunto, texto, html,
+                                           vista=f"gastos?id={gid}")
         db.commit()
         return enviados
 
