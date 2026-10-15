@@ -394,6 +394,7 @@ Activos y unidades iguales en los dos programas. Mismo transporte, firma, idempo
   operativo), `maestro.activo` y `maestro.cuadre` (03:30, por activo `por_uso` y `huella`).
 - **Gestión → PMS**: `maestro.catastro` (unidad por `pms_id`, activo por `activo_pms`; versión por ficha) y
   `maestro.pedir` (`pms_ids`: «todos» o lista). Lo operativo que mande gestión se ignora y se anota en auditoría.
-- **Baja**: no borra; la unidad queda con fecha de baja, fuera de servicio y fuera de las listas, del `por_uso` y de la
+- **Activos**: solo SFL, SAE y BAB35 (los que gestión conoce); los demás no salen.
+- **Baja** (solo superadministración, sin reservas pendientes ni contrato vigente): no borra; la unidad queda con fecha de baja, fuera de servicio y fuera de las listas, del `por_uso` y de la
   huella. Gestión la marca BAJA.
 - **Casilla** de la superadministración, apagada al desplegar. Encendido: primero la del PMS y después la de gestión.

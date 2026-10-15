@@ -1035,11 +1035,11 @@ V.unidades = async (el) => {
       u.estado === "pendiente_limpieza" && (can("limpieza.editar") || can("activos.editar")) &&
         ["Limpia ✓", () => run(() => post(`/api/unidades/${u.id}/limpia`), "Unidad disponible").then(load)],
       can("activos.editar") && ["Editar", () => form(`Unidad ${u.codigo}`, fields(u), u, async (d) => { await put(`/api/unidades/${u.id}`, d); toast("Guardado"); load(); })],
-      can("activos.editar") && !u.baja && ["Dar de baja", () => form(`Dar de baja la unidad ${u.codigo}`, [
+      S.me.is_superadmin && !u.baja && ["Dar de baja", () => form(`Dar de baja la unidad ${u.codigo}`, [
         { html: '<p class="muted">No se borra: conserva sus reservas, contratos y facturas. Queda fuera de servicio y deja de salir en las listas; gestión la marca como BAJA. Se puede reactivar.</p>' },
         { k: "motivo", t: "Motivo", type: "textarea", wide: true, req: true }], {},
         async (d) => { await post(`/api/maestros/unidades/${u.id}/baja`, d); toast("Unidad dada de baja"); load(); }, "Dar de baja"), "danger"],
-      can("activos.editar") && u.baja && ["Reactivar", () => confirm(`¿Reactivar la unidad ${u.codigo}?`) && run(() => post(`/api/maestros/unidades/${u.id}/reactivar`), "Unidad reactivada").then(load)],
+      S.me.is_superadmin && u.baja && ["Reactivar", () => confirm(`¿Reactivar la unidad ${u.codigo}?`) && run(() => post(`/api/maestros/unidades/${u.id}/reactivar`), "Unidad reactivada").then(load)],
       can("activos.editar") && ["vivienda", "apartamento"].includes(u.uso) && ["Ficha alquiler", () => fichaAlquiler(u)],
       canOpenOT() && ["Avería", () => newWorkOrder(u.asset_id, u.id).then(load)],
       canParteEstado() && ["Parte de estado", () => irParteEstado(u.asset_id, u.id)],
@@ -6433,7 +6433,7 @@ async function tarjetaCalendario(box) {
 async function tarjetaMaestros(box) {
   const c = await get("/api/maestros/config");
   box.innerHTML = `<h3>Activos y unidades con gestión</h3>
-    <p class="muted">El PMS manda en lo operativo (altas y bajas de unidades, código, uso, superficie, estado, rentas y tarifas) y gestión en el catastro y la propiedad, que aquí se ven con 🔒. Cada noche a las 03:30 se manda a gestión el cuadre de unidades por activo. Orden de encendido: primero esta casilla y después la de gestión.</p>
+    <p class="muted">El PMS manda en lo operativo (altas y bajas de unidades, código, uso, superficie, estado, rentas y tarifas) y gestión en el catastro y la propiedad, que aquí se ven con 🔒. Solo se sincronizan Suite Florida, Suite Aeropuerto y Babilonia 35. Cada noche a las 03:30 se manda a gestión el cuadre de unidades por activo. Orden de encendido: primero esta casilla y después la de gestión.</p>
     <label class="check"><input type="checkbox" id="gmaeOn" ${c.activo ? "checked" : ""}> <b>Sincronizar activos y unidades con gestión</b></label>
     <p class="muted peq">${c.activo ? "Encendida" : "Apagada: lo que llega de gestión se guarda «sin tratar» y no se manda nada"}${c.cambiado ? ` · cambiada el ${fdt(c.cambiado)}` : ""} · ${c.unidades} unidades (${c.bajas} de baja) · ${c.con_catastro} con catastro · ${c.en_cola} avisos en cola · ${c.sin_tratar} sin tratar</p>`;
   $("#gmaeOn", box).onchange = async (e) => {

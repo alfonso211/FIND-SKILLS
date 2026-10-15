@@ -21,7 +21,11 @@ Registro técnico de versiones. El resumen para los usuarios está en `app/manua
 - Casilla «Sincronizar activos y unidades con gestión» (`GET/PUT /api/maestros/config`, solo superadministración),
   apagada: no se encola nada, lo encolado espera y lo recibido queda «sin tratar». Al encender: se aplican los
   catastros sin tratar y se encolan todas las unidades y activos.
-- `POST /api/maestros/unidades/{id}/baja` (motivo; no con reservas pendientes ni contrato vigente) y `/reactivar`.
+- Solo los activos que gestión conoce (`maestros.SINCRONIZADOS` = SFL, SAE, BAB35): los demás no generan
+  `maestro.unidad` ni `maestro.activo`, no entran en la carga inicial ni en el cuadre, y su `maestro.pedir` queda
+  «sin tratar».
+- `POST /api/maestros/unidades/{id}/baja` (solo superadministración; motivo; no con reservas pendientes ni contrato
+  vigente) y `/reactivar` (solo superadministración).
   `GET /api/unidades` oculta las bajas salvo `bajas=true`. La referencia catastral no se cambia en el PMS si hay
   catastro de gestión (400 «Se edita en gestión»).
 - Pantallas: ficha de unidad y activo con el bloque «🔒 Catastro y propiedad · Se edita en gestión», columna Ref.

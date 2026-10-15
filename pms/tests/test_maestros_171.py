@@ -38,6 +38,9 @@ def _borrar_al_terminar():
         for a in db.scalars(select(Asset).where(Asset.catastro.is_not(None))):
             a.catastro = None
         db.commit()
+        for a in db.scalars(select(Asset).where(Asset.codigo == "ZZMAE")):  # activo de prueba que no se sincroniza
+            db.delete(a)
+        db.commit()
         assert not db.scalar(select(Unit.id).where(Unit.codigo.like(f"{Z}%")))
         assert not db.scalar(select(GestionEvento.id).where(GestionEvento.id_evento.like("pms-mae-%")))
 
@@ -137,7 +140,8 @@ def test_maestros_en_los_dos_sentidos(client, admin, ids, monkeypatch):
     assert [x["datos"]["accion"] for x in ev] == ["creada", "actualizada"]
     assert ev[-1]["datos"]["version"] == 2 and ev[-1]["datos"]["renta_base"] == 95
 
-    # baja: no se borra; sale «baja», la unidad deja de listarse y no se reserva
+    # baja: solo la superadministración; no se borra; sale «baja», deja de listarse y no se reserva
+    assert client.post(f"/api/maestros/unidades/{u2['id']}/baja", headers=rec, json={"motivo": "Plaza anulada"}).status_code == 403
     assert client.post(f"/api/maestros/unidades/{u2['id']}/baja", headers=admin, json={"motivo": "x"}).status_code == 422
     b = client.post(f"/api/maestros/unidades/{u2['id']}/baja", headers=admin, json={"motivo": "Plaza anulada"}).json()
     assert b["baja"] and b["estado"] == "fuera_servicio"
@@ -158,6 +162,24 @@ def test_maestros_en_los_dos_sentidos(client, admin, ids, monkeypatch):
     nuestros = [x for x in enviados if x["tipo"] == "maestro.unidad" and x["datos"]["pms_id"] == u2["id"]]
     assert [x["datos"]["version"] for x in nuestros] == [1, 2, 3]
     assert all(not k.startswith("_") for x in nuestros for k in x)
+
+    # solo los activos que gestión conoce (SFL, SAE y BAB35): otro activo no manda nada ni entra en el cuadre
+    otro = client.post("/api/activos", headers=admin, json={
+        "company_id": ids["companies"]["COMERCIAL DEL CAMPO S.A."], "codigo": "ZZMAE", "nombre": f"{Z} activo",
+        "modalidad": "apartamentos_turisticos"})
+    assert otro.status_code == 201, otro.text
+    ux = client.post("/api/unidades", headers=admin, json={"asset_id": otro.json()["id"], "codigo": f"{Z}-X",
+                                                           "uso": "apartamento"}).json()
+    client.put(f"/api/activos/{otro.json()['id']}", headers=admin, json={"nombre": f"{Z} activo 2"})
+    assert not _cola(ux["id"])
+    assert all(x["datos"]["activo_pms"] != "ZZMAE" for x in _cola(tipo="maestro.activo"))
+    with SessionLocal() as db:
+        assert {x["activo_pms"] for x in maestros.datos_cuadre(db)["activos"]} <= {"SFL", "SAE", "BAB35"}
+    assert _entrada(_aviso(client, "maestro.pedir", {"activo_pms": "ZZMAE", "pms_ids": "todos"}))[0] == "sin_tratar"
+    with SessionLocal() as db:
+        db.delete(db.get(Unit, ux["id"]))
+        db.commit()
+    assert not _cola(ux["id"])  # borrado físico en un activo no sincronizado: tampoco sale
 
     # catastro de gestión: guarda la referencia y el resto en el JSON; un aviso repetido es un solo cambio
     antes = len(_cola(u1["id"]))

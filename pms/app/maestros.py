@@ -12,6 +12,7 @@ PMS → gestión (cola de la fusión, mismos reintentos y firma):
   cambio). La baja no borra: la unidad queda con fecha de baja (tiene historial).
 - maestro.activo cuando cambian nombre, modalidad, dirección, municipio, provincia, C.P. o nº de registro turístico.
 - maestro.cuadre cada noche a las 03:30 (Madrid): por activo, unidades por uso y huella sha256 (punto 8).
+Solo de los activos que gestión conoce (SINCRONIZADOS: SFL, SAE y BAB35); los demás no salen.
 Gestión → PMS (POST /api/gestion/eventos, idempotente por id_evento):
 - maestro.catastro: guarda ref_catastral y el resto en `catastro` si su versión es mayor que la guardada.
 - maestro.pedir: vuelve a mandar maestro.unidad de todas las unidades del activo.
@@ -55,6 +56,8 @@ CABECERA = ("ambito", "pms_id", "activo_pms", "activo")
 ANUAL = re.compile(r"^(ibi|trua)_\d{4}$")
 HORA_CUADRE = (3, 30)
 SIN_TRATAR = "sin_tratar"
+# Solo los activos que gestión conoce (contrato del 15/10/2026): cualquier otro código lo rechazaría
+SINCRONIZADOS = frozenset(gestion.ACTIVOS)  # SFL, SAE, BAB35
 
 router = APIRouter(prefix="/api/maestros", tags=["maestros"])
 
@@ -75,6 +78,10 @@ def poner(db: Session, valor: bool, user: User | None) -> None:
 
 def es_aviso(ev: GestionEvento) -> bool:
     return ev.tipo in TIPOS_SALIDA
+
+
+def sincronizado(a: Asset | None) -> bool:
+    return bool(a and a.codigo in SINCRONIZADOS)
 
 
 # --------------------------------------------------------------------------- datos que se mandan
@@ -112,15 +119,19 @@ def _sobre(db: Session, a: Asset | None, datos: dict) -> dict:
 
 
 def encolar_unidad(db: Session, u: Unit, accion: str, a: Asset | None = None,
-                   causa: str | None = None) -> GestionEvento:
+                   causa: str | None = None) -> GestionEvento | None:
     a = a or db.get(Asset, u.asset_id)
+    if not sincronizado(a):
+        return None
     sobre = _sobre(db, a, datos_unidad(u, a.codigo, accion))
     sobre["id_evento_causa"] = causa
     clave = f"pms-mae-u{u.id}-v{int(u.maestro_version or 0)}-{uuid.uuid4().hex[:10]}"
     return gestion.encolar(db, "maestro.unidad", sobre, clave=clave)
 
 
-def encolar_activo(db: Session, a: Asset) -> GestionEvento:
+def encolar_activo(db: Session, a: Asset) -> GestionEvento | None:
+    if not sincronizado(a):
+        return None
     return gestion.encolar(db, "maestro.activo", _sobre(db, a, datos_activo(a)),
                            clave=f"pms-mae-a{a.id}-{uuid.uuid4().hex[:10]}")
 
@@ -194,6 +205,8 @@ def _encolar(session: Session, _ctx) -> None:
             else:
                 datos = dict(accion)
                 a = session.get(Asset, datos.pop("_asset"))
+                if not sincronizado(a):
+                    continue
                 gestion.encolar(session, "maestro.unidad", _sobre(session, a, datos),
                                 clave=f"pms-mae-u{ref}-v{datos['version']}-{uuid.uuid4().hex[:10]}")
     except Exception:  # noqa: BLE001 — un fallo al preparar el aviso a gestión no debe impedir la operación
@@ -206,7 +219,7 @@ def carga_inicial(db: Session, asset: Asset | None = None, causa: str | None = N
     """Todas las unidades (de un activo o de todos) como maestro.unidad «actualizada» con su versión actual; las de
     baja, como «baja». Y maestro.activo de cada activo."""
     n = 0
-    q = select(Asset).order_by(Asset.id)
+    q = select(Asset).where(Asset.codigo.in_(SINCRONIZADOS)).order_by(Asset.id)
     if asset is not None:
         q = q.where(Asset.id == asset.id)
     for a in db.scalars(q):
@@ -228,7 +241,7 @@ def huella(unidades) -> str:
 
 def datos_cuadre(db: Session) -> dict:
     activos = []
-    for a in db.scalars(select(Asset).order_by(Asset.codigo)):
+    for a in db.scalars(select(Asset).where(Asset.codigo.in_(SINCRONIZADOS)).order_by(Asset.codigo)):
         unidades = [u for u in db.scalars(select(Unit).where(Unit.asset_id == a.id)) if not u.baja]
         por_uso: dict[str, int] = {}
         for u in unidades:
@@ -316,8 +329,8 @@ def _aplicar_pedir(db: Session, ev: dict) -> tuple[str, dict | None]:
     _anotar_ignorados(db, str(ev.get("id_evento")), "maestro.pedir",
                       [k for k in d if k not in ("activo_pms", "activo", "pms_ids")])
     a = _activo_de(db, d)
-    if a is None:
-        return SIN_TRATAR, {"motivo": "Activo que no está en el PMS", "activo_pms": d.get("activo_pms")}
+    if a is None or not sincronizado(a):
+        return SIN_TRATAR, {"motivo": "Activo que no está en el PMS o no se sincroniza", "activo_pms": d.get("activo_pms")}
     ids = d.get("pms_ids", "todos")
     causa = str(ev.get("id_evento"))
     if ids == "todos":
@@ -381,6 +394,11 @@ def reprocesar_sin_tratar(db: Session) -> dict:
 
 
 # --------------------------------------------------------------------------- reglas en el PMS
+def _superadmin(scope: Scope) -> None:
+    if not scope.user.is_superadmin:
+        raise HTTPException(403, "Solo la superadministración")
+
+
 def comprobar_catastro(ficha, valores: dict) -> None:
     """La referencia catastral la manda gestión: con el catastro recibido no se cambia en el PMS."""
     if ficha.catastro and "ref_catastral" in valores and (valores["ref_catastral"] or None) != (ficha.ref_catastral or None):
@@ -393,10 +411,10 @@ class BajaIn(BaseModel):
 
 @router.post("/unidades/{uid}/baja")
 def dar_baja(uid: int, data: BajaIn, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    """Baja de una unidad: no se borra (tiene reservas, contratos y facturas). Queda fuera de servicio y gestión la
-    marca BAJA."""
+    """Baja de una unidad (solo superadministración): no se borra (tiene reservas, contratos y facturas). Queda fuera
+    de servicio y gestión la marca BAJA."""
+    _superadmin(scope)
     u = get_or_404(db, Unit, uid)
-    scope.require_asset("activos.editar", u.asset_id)
     if u.baja:
         bad_request("La unidad ya está dada de baja")
     hoy = date.today()
@@ -413,8 +431,8 @@ def dar_baja(uid: int, data: BajaIn, scope: Scope = Depends(get_scope), db: Sess
 
 @router.post("/unidades/{uid}/reactivar")
 def reactivar(uid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    _superadmin(scope)
     u = get_or_404(db, Unit, uid)
-    scope.require_asset("activos.editar", u.asset_id)
     if not u.baja:
         bad_request("La unidad no está dada de baja")
     u.baja, u.estado = None, "disponible"
@@ -424,9 +442,6 @@ def reactivar(uid: int, scope: Scope = Depends(get_scope), db: Session = Depends
 
 
 # --------------------------------------------------------------------------- casilla (superadministración)
-def _superadmin(scope: Scope) -> None:
-    if not scope.user.is_superadmin:
-        raise HTTPException(403, "Solo la superadministración")
 
 
 @router.get("/config")
@@ -440,8 +455,11 @@ def ver_config(scope: Scope = Depends(get_scope), db: Session = Depends(get_db))
             "sin_tratar": contar(select(func.count()).select_from(FusionEntrada).where(
                 FusionEntrada.tipo.in_(TIPOS_ENTRADA), FusionEntrada.estado == SIN_TRATAR)),
             "con_catastro": contar(select(func.count()).select_from(Unit).where(Unit.catastro.is_not(None))),
-            "unidades": contar(select(func.count()).select_from(Unit).where(Unit.baja.is_(None))),
-            "bajas": contar(select(func.count()).select_from(Unit).where(Unit.baja.is_not(None)))}
+            "unidades": contar(select(func.count()).select_from(Unit).join(Asset, Asset.id == Unit.asset_id).where(
+                Asset.codigo.in_(SINCRONIZADOS), Unit.baja.is_(None))),
+            "bajas": contar(select(func.count()).select_from(Unit).join(Asset, Asset.id == Unit.asset_id).where(
+                Asset.codigo.in_(SINCRONIZADOS), Unit.baja.is_not(None))),
+            "activos": sorted(SINCRONIZADOS)}
 
 
 class ConfigIn(BaseModel):
