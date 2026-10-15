@@ -203,6 +203,21 @@ if [ -f /etc/apt/apt.conf.d/20auto-upgrades ] && grep -q 'Unattended-Upgrade "1"
 else
   anota AVISO Seguridad "Las actualizaciones de seguridad automáticas no están activadas («dpkg-reconfigure -plow unattended-upgrades»)"
 fi
+# Actualización y reinicio nocturno (actualizar_servidor.sh, 03:00): ¿se hizo bien esta noche?
+if crontab -l 2>/dev/null | grep -q 'deploy/actualizar_servidor.sh'; then
+  ULT_ACT=/var/lib/pms-actualizacion/ultimo.txt
+  if [ ! -f "$ULT_ACT" ]; then
+    anota OK Actualizacion "Actualización y reinicio nocturno programados (aún sin ejecutar)"
+  elif grep -q "ERROR" "$ULT_ACT"; then
+    anota AVISO Actualizacion "La actualización nocturna ha fallado: $(cut -c1-300 "$ULT_ACT")"
+  elif [ -n "$(find "$ULT_ACT" -mmin +1560 2>/dev/null)" ]; then
+    anota AVISO Actualizacion "La actualización nocturna no se ejecuta desde hace más de 26 h (último: $(cut -c1-120 "$ULT_ACT"))"
+  elif grep -q "REINICIANDO" "$ULT_ACT"; then
+    anota AVISO Actualizacion "El servidor se reinició esta noche pero no consta que el PMS arrancara después: revisar /var/log/pms-actualizacion.log"
+  else
+    anota OK Actualizacion "Actualización nocturna: $(cut -c1-160 "$ULT_ACT")"
+  fi
+fi
 if [ -f /var/run/reboot-required ]; then
   anota AVISO Seguridad "El servidor necesita reiniciarse para aplicar actualizaciones de seguridad. Hacerlo fuera de horario con «reboot» (el PMS arranca solo en 1-2 minutos)."
 fi

@@ -448,6 +448,21 @@ class ChatMensaje(Base):
     sistema: Mapped[bool] = mapped_column(Boolean, default=False)  # «Ana ha añadido a Luis»
     creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
     borrado: Mapped[bool] = mapped_column(Boolean, default=False)
+    menciones: Mapped[list | None] = mapped_column(JSON)  # usuarios citados con @nombre (reciben aviso)
+
+
+class ChatAdjunto(Base):
+    """Foto o PDF de un mensaje del chat. El fichero va cifrado fuera de la base de datos (como los de las OT)."""
+    __tablename__ = "chat_adjuntos"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    mensaje_id: Mapped[int] = mapped_column(ForeignKey("chat_mensajes.id", ondelete="CASCADE"), index=True)
+    nombre: Mapped[str] = mapped_column(String(200))
+    mime: Mapped[str] = mapped_column(String(80))
+    tamano: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    fichero: Mapped[str] = mapped_column(String(80))
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"))
+    subido: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
 class Ajuste(Base):

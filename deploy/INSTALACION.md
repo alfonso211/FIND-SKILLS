@@ -302,10 +302,32 @@ Son **avisos** (correo normal, solo la primera vez que aparecen): actualizacione
 pendiente por actualizaciones, puertos abiertos no previstos, SSH con contraseña sin fail2ban, usuarios con contraseña
 provisional, cuelgues, errores en el registro y ficheros modificados a mano en `/opt/pms`. Si arregla algo, también
 lo comunica. Los **lunes** envía un resumen aunque todo esté bien, para confirmar que el mantenimiento sigue en marcha.
-Nunca reinicia el servidor ni instala programas por su cuenta.
+El mantenimiento nunca reinicia el servidor ni instala programas por su cuenta: eso lo hace, si se activa, la
+actualización nocturna (apartado 8 sexies).
 
 - Último informe: `cat /var/lib/pms-mantenimiento/ultimo.txt`. Histórico: `/var/log/pms-mantenimiento.log`.
 - Si no llega ningún correo un lunes, revisar el histórico y la configuración del correo (apartado 8 ter).
+
+## 8 sexies. Actualizaciones de seguridad y reinicio nocturno
+
+Cada día a las **03:00 (hora de Madrid)** `actualizar_servidor.sh` instala las actualizaciones de **seguridad** del
+sistema y **reinicia el servidor**. El PMS queda parado 1-2 minutos y arranca solo; a los 90 s comprueba que está en
+marcha y, si no, lo levanta. Antes de tocar nada exige una copia de seguridad de las últimas 26 h (si no la hay, la
+hace; si la copia falla, esa noche no actualiza ni reinicia). Activarlo una sola vez:
+
+```bash
+/opt/pms/deploy/actualizar_servidor.sh --probar     # qué se actualizaría (no instala ni reinicia)
+/opt/pms/deploy/actualizar_servidor.sh --instalar   # lo programa en cron (03:00 de Madrid y comprobación al arrancar)
+```
+
+- **Una noche sin reinicio** (por ejemplo, con trabajo pendiente en el servidor): `touch /etc/pms-sin-reinicio`.
+  Mientras exista el fichero, actualiza pero no reinicia. Para volver a reiniciar: `rm /etc/pms-sin-reinicio`.
+- **Hacerlo ya, a mano:** `/opt/pms/deploy/actualizar_servidor.sh --ahora` (actualiza y reinicia en el momento).
+- **Quitarlo:** `/opt/pms/deploy/actualizar_servidor.sh --quitar`.
+- **Resultado:** `cat /var/lib/pms-actualizacion/ultimo.txt`. Histórico: `/var/log/pms-actualizacion.log`. El
+  mantenimiento de las 06:00 avisa por correo si la actualización falló o el PMS no arrancó tras el reinicio.
+- Solo instala lo de seguridad del sistema operativo. Docker y el PMS se actualizan como siempre (apartado 9).
+- **Gestión** está en el mismo servidor: sus contenedores también se reinician; deben tener `restart: unless-stopped`.
 
 ## 9. Actualizaciones del PMS
 

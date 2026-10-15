@@ -56,6 +56,9 @@
   5. **Personas…**: quien creó el grupo puede **añadir** a más gente, **quitar** a alguien o **cambiar el nombre**. Los demás ven quién está.
   6. **Salir**: deja la conversación. En *Todo el equipo* no se puede salir.
   7. Debajo de sus mensajes, **borrar**: los demás verán «Mensaje eliminado».
+  8. **📎 Fotos y PDF**: pulse 📎 y elija hasta 5 fotos (JPG, PNG) o PDF. Lo que haya escrito va como comentario. Pulse una foto o un PDF para abrirlo. Solo los ven las personas de la conversación.
+  9. **@menciones**: escriba **@** y empiece el nombre; elija a la persona con un clic o con Tab. A esa persona le suena un aviso en la campana 🔔 que abre la conversación.
+- **Por la noche (03:00)** el servidor se actualiza y se reinicia: si usa el PMS a esa hora, espere 1-2 minutos y recargue.
   - Solo los miembros ven una conversación. Los colaboradores externos no tienen chat.
 - **Mi perfil → Avisos en pantalla y sonido**: quitar o poner el sonido, **probar** los tres tonos y activar el **aviso de Windows / del móvil** cuando el PMS está minimizado. Se elige en cada ordenador o móvil.
 

@@ -1,5 +1,10 @@
 # Novedades
 
+## 2026-10-15 · Versión 1.68 · Chat: fotos, PDF y menciones con @
+- **Todos**: en el chat 💬, el botón **📎** envía fotos o PDF (hasta 5 a la vez). Lo escrito en el mensaje va como comentario. Las fotos se ven en pequeño; al pulsarlas se abren en grande.
+- **@menciones**: escriba **@** y elija a la persona de la lista. Le suena un aviso en la campana 🔔 y, al pulsarlo, se abre la conversación. Los mensajes en los que le mencionan aparecen remarcados.
+- **Servidor**: cada noche a las 03:00 se instalan las actualizaciones de seguridad y el servidor se reinicia. El PMS deja de estar disponible 1-2 minutos.
+
 ## 2026-10-15 · Versión 1.67 · Calendario común: ajustes para el encendido
 - **Superadministración**: al encender *«Sincronizar el calendario con gestión»* se aplica todo lo que gestión mandó mientras la casilla estaba apagada, en orden y sin duplicados. Un aviso dice cuántos se han aplicado.
 - **Todos**: una cita de varios días que se cambia en gestión conserva su último día.

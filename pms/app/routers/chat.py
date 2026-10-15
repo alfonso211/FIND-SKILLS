@@ -6,15 +6,18 @@
   grupo elige a las personas y es quien puede añadir o quitar a otras más adelante; cualquiera puede salir. Solo ven
   los mensajes los miembros (tampoco la Dirección ve chats ajenos). Los colaboradores externos no tienen chat.
 """
+import re
+import unicodedata
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .. import adjuntos, avisos, documentos
 from ..database import get_db
-from ..models import ChatConversacion, ChatMensaje, ChatMiembro, Notificacion, User
+from ..models import ChatAdjunto, ChatConversacion, ChatMensaje, ChatMiembro, Notificacion, User
 from ..security import current_user
 from ..utils import bad_request
 
@@ -22,6 +25,7 @@ router = APIRouter(prefix="/api", tags=["chat y avisos"])
 
 MAX_TEXTO = 4000
 MAX_MIEMBROS = 100
+MAX_ADJUNTOS = 5  # por mensaje (fotos o PDF de hasta 20 MB; las fotos se reducen y pierden la ubicación GPS)
 
 
 def _interno(u: User | None) -> bool:
@@ -158,10 +162,46 @@ def _conv_out(db: Session, c: ChatConversacion, user: User) -> dict:
             if ult else "", "miembros": [{"id": u.id, "nombre": u.nombre} for u in miembros]}
 
 
-def _msg_out(m: ChatMensaje, nombres: dict) -> dict:
+def _msg_out(m: ChatMensaje, nombres: dict, adj: dict | None = None) -> dict:
     return {"id": m.id, "user_id": m.user_id, "autor": nombres.get(m.user_id, ""), "sistema": m.sistema,
             "texto": "Mensaje eliminado" if m.borrado else m.texto, "borrado": m.borrado,
-            "creado": m.creado.isoformat(timespec="seconds")}
+            "creado": m.creado.isoformat(timespec="seconds"), "menciones": [] if m.borrado else (m.menciones or []),
+            "adjuntos": [] if m.borrado else [{"id": a.id, "nombre": a.nombre, "mime": a.mime, "tamano": a.tamano}
+                                             for a in (adj or {}).get(m.id, [])]}
+
+
+def _adjuntos_de(db: Session, ids: list[int]) -> dict[int, list[ChatAdjunto]]:
+    out: dict[int, list[ChatAdjunto]] = {}
+    for a in db.scalars(select(ChatAdjunto).where(ChatAdjunto.mensaje_id.in_(ids or [-1])).order_by(ChatAdjunto.id)):
+        out.setdefault(a.mensaje_id, []).append(a)
+    return out
+
+
+def _plano(t: str) -> str:
+    """Sin tildes ni mayúsculas, para reconocer «@josé» como «@Jose»."""
+    return "".join(x for x in unicodedata.normalize("NFD", t or "") if unicodedata.category(x) != "Mn").casefold()
+
+
+def _menciones(db: Session, c: ChatConversacion, autor: User, texto: str) -> list[User]:
+    """Personas de la conversación citadas con @nombre (el nombre completo, como lo propone el chat)."""
+    plano = _plano(texto)
+    if "@" not in plano:
+        return []
+    out = []
+    for u in sorted(_activos(db, c), key=lambda x: -len(x.nombre or "")):  # «@Ana María» antes que «@Ana»
+        if u.id == autor.id or not u.nombre:
+            continue
+        if re.search(r"@" + re.escape(_plano(u.nombre)) + r"(?![\w])", plano):
+            out.append(u)
+    return out
+
+
+def _avisar_menciones(db: Session, c: ChatConversacion, autor: User, msg: ChatMensaje) -> None:
+    citados = _menciones(db, c, autor, msg.texto)
+    msg.menciones = [u.id for u in citados] or None
+    titulo = f"{autor.nombre} le menciona en «{_titulo(db, c, autor) if c.tipo != 'directo' else 'conversación privada'}»"
+    for u in citados:  # a la campana (suena); el chat solo se ve en el PMS, no se manda por correo
+        avisos.notificar(db, u, None, "chat_mencion", titulo[:200], msg.texto[:600] or "(adjunto)", vista=f"chat:{c.id}")
 
 
 def _sistema(db: Session, c: ChatConversacion, texto: str) -> None:
@@ -332,21 +372,24 @@ def mensajes(cid: int, despues: int = 0, antes: int | None = None, user: User = 
         m.leido_hasta = filas[-1].id
     nombres = dict(db.execute(select(User.id, User.nombre).where(
         User.id.in_({x.user_id for x in filas if x.user_id} or {-1}))).all())
+    adj = _adjuntos_de(db, [x.id for x in filas])
     db.commit()
-    return {"conversacion": _conv_out(db, c, user), "mensajes": [_msg_out(x, nombres) for x in filas]}
+    return {"conversacion": _conv_out(db, c, user), "mensajes": [_msg_out(x, nombres, adj) for x in filas]}
 
 
 class MensajeIn(BaseModel):
     texto: str = Field(min_length=1, max_length=MAX_TEXTO)
 
 
-def _escribir(db: Session, c: ChatConversacion, user: User, texto: str) -> ChatMensaje:
-    texto = texto.strip()
-    if not texto:
+def _escribir(db: Session, c: ChatConversacion, user: User, texto: str, vacio: bool = False) -> ChatMensaje:
+    texto = (texto or "").strip()
+    if not texto and not vacio:
         bad_request("Escriba el mensaje")
     msg = ChatMensaje(conversacion_id=c.id, user_id=user.id, texto=texto)
     db.add(msg)
     db.flush()
+    if texto:
+        _avisar_menciones(db, c, user, msg)
     c.ultimo = msg.creado
     m = _miembro(db, c, user, crear=True)
     if m:
@@ -362,6 +405,45 @@ def escribir(cid: int, data: MensajeIn, user: User = Depends(current_user), db: 
     return _msg_out(msg, {user.id: user.nombre})
 
 
+@router.post("/chat/conversaciones/{cid}/adjuntos", status_code=201)
+def adjuntar(cid: int, ficheros: list[UploadFile] = File(...), texto: str = Form(""), user: User = Depends(current_user),
+             db: Session = Depends(get_db)):
+    """Fotos (JPG, PNG) o PDF en un mensaje, con un texto opcional. Se guardan cifrados."""
+    c = _conversacion(db, cid, user)
+    if not ficheros or len(ficheros) > MAX_ADJUNTOS:
+        bad_request(f"Adjunte entre 1 y {MAX_ADJUNTOS} ficheros")
+    if len(texto) > MAX_TEXTO:
+        bad_request(f"El mensaje no puede pasar de {MAX_TEXTO} caracteres")
+    partes = []
+    for f in ficheros:
+        try:
+            partes.append(adjuntos.normalizar(f.file.read(adjuntos.TAM_MAX + 1), (f.filename or "fichero")[-150:]))
+        except ValueError as e:
+            bad_request(f"{f.filename}: {e}")
+    msg = _escribir(db, c, user, texto, vacio=True)
+    for datos, mime, nombre in partes:
+        db.add(ChatAdjunto(mensaje_id=msg.id, nombre=nombre[:200], mime=mime, tamano=len(datos),
+                           sha256=documentos.huella(datos), fichero=documentos.guardar(datos), user_id=user.id))
+    db.flush()
+    out = _msg_out(msg, {user.id: user.nombre}, _adjuntos_de(db, [msg.id]))
+    db.commit()
+    return out
+
+
+@router.get("/chat/adjuntos/{aid}")
+def ver_adjunto(aid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Solo los miembros de la conversación; los de un mensaje borrado ya no se sirven."""
+    a = db.get(ChatAdjunto, aid)
+    msg = db.get(ChatMensaje, a.mensaje_id) if a else None
+    if msg is None or msg.borrado:
+        raise HTTPException(404, "Adjunto no encontrado")
+    _conversacion(db, msg.conversacion_id, user)
+    nombre = re.sub(r'[^\w.\- ]', "_", a.nombre)[:150]
+    return Response(documentos.leer(a.fichero), media_type=a.mime, headers={
+        "Content-Disposition": f'inline; filename="{nombre}"', "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff"})
+
+
 @router.delete("/chat/mensajes/{mid}")
 def borrar(mid: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Cada uno borra sus propios mensajes (queda «Mensaje eliminado»)."""
@@ -372,5 +454,8 @@ def borrar(mid: int, user: User = Depends(current_user), db: Session = Depends(g
     if msg.user_id != user.id:
         raise HTTPException(403, "Solo puede borrar sus propios mensajes")
     msg.borrado = True
+    for a in db.scalars(select(ChatAdjunto).where(ChatAdjunto.mensaje_id == msg.id)):
+        documentos.borrar(a.fichero)  # el fichero cifrado se borra del disco
+        db.delete(a)
     db.commit()
     return {"ok": True}
