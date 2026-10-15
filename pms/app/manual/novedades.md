@@ -1,5 +1,15 @@
 # Novedades
 
+## 2026-10-15 · Versión 1.66 · Calendario común con gestión y Outlook
+- **Todos**: la *Agenda* muestra también lo que llega de gestión, con un color por tipo y la etiqueta «gestión»:
+  - citas y tareas en las que usted está;
+  - mantenimiento de su activo (órdenes programadas, preventivo, bloqueos y limpiezas).
+- **Entradas de gestión**: las que tienen 🔒 se cambian en gestión (botón **Abrir en gestión**). Las que se pueden cambiar en los dos programas tienen **Editar** y **Cancelar**; si en gestión las cambian a la vez, se queda la versión de gestión.
+- **Lo que sale del PMS**: sus citas y tareas **compartidas o públicas** llegan solas a la agenda de gestión. Las privadas no salen nunca.
+- **Calendario en Outlook** (*Mi perfil*): un enlace privado para ver su agenda en Outlook o el móvil. Se muestra una sola vez; **Cambiar enlace** anula el anterior.
+- **Administración y dirección**: ven además los vencimientos de pagos y cobros, impuestos, contratos, seguros y avales. En Outlook, con aviso el día antes a las 9:00 y la casilla **Mostrar importes**. Recepción y técnicos no los ven nunca.
+- **Activación**: está **apagada** hasta que la superadministración la encienda en *Administración → Pasarela con gestión* y después se encienda en gestión.
+
 ## 2026-10-15 · Versión 1.65 · Avisos con sonido y chat del equipo
 - **Todos**: arriba a la derecha hay una **campana 🔔**. Cuando el PMS le necesita (OT urgente, resultado de un técnico, parte de estado, pago retenido, tarea de agenda…), **suena** y el número rojo indica los avisos sin ver. Pulse la campana para verlos; cada aviso lleva a su pantalla.
 - **Sonidos**: aviso normal «ding-dong»; **urgente** (OT urgente, bloqueo de gestión, descuadre de caja), tres pitidos dos veces; **chat**, un «pop» corto.

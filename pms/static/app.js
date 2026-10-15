@@ -383,6 +383,11 @@ V.panel = async (el) => {
 // ------------------------------------------------------------------ agenda (calendario de todos los usuarios)
 // Reuniones, tareas, recordatorios y eventos: privados (solo yo), para personas concretas o públicos (todos).
 const AG_TIPOS = { reunion: ["Reunión", "#2b6cb0"], tarea: ["Tarea", "#b7791f"], recordatorio: ["Recordatorio", "#2f855a"], evento: ["Evento", "#6b46c1"] };
+// Calendario común con gestión: color por tipo (los vencimientos y el fiscal solo los ven administración y dirección)
+const CAL_TIPOS = { CITA: ["Cita (gestión)", "#2b6cb0"], TAREA: ["Tarea (gestión)", "#b7791f"], OT: ["Orden de trabajo", "#c05621"],
+  PREVENTIVO: ["Preventivo", "#2c7a7b"], BLOQUEO: ["Bloqueo", "#742a2a"], LIMPIEZA: ["Limpieza", "#38a169"],
+  VENCIMIENTO_PAGO: ["Vencimiento de pago", "#b3261e"], VENCIMIENTO_COBRO: ["Vencimiento de cobro", "#2f855a"], FISCAL: ["Fiscal", "#6b46c1"],
+  CONTRATO: ["Contrato", "#4a5568"], SEGURO: ["Seguro", "#2a4365"], AVAL: ["Aval", "#975a16"] };
 const AG_VIS = [["privada", "🔒 Privada (solo yo)"], ["compartida", "👥 Solo las personas indicadas"], ["publica", "🌐 Pública (todos los usuarios)"]];
 const AG_REP = [["", "No se repite"], ["diaria", "Cada día"], ["semanal", "Cada semana"], ["mensual", "Cada mes"], ["anual", "Cada año"]];
 const AG_AVISO = [["", "Sin aviso por correo"], ["0", "A la hora de la cita"], ["15", "15 minutos antes"], ["60", "1 hora antes"], ["1440", "1 día antes"], ["2880", "2 días antes"], ["10080", "1 semana antes"]];
@@ -430,7 +435,7 @@ function citaHtml(e, conFecha = false) {
   return `<div class="cita${e.hecha ? " hecha" : ""}${e.nuevo ? " nueva" : ""}" style="border-left-color:${color}">
     <div><b>${conFecha ? fdate(e.ocurrencia.slice(0, 10)) + " · " : ""}${e.todo_el_dia ? "Todo el día" : hora(e.ocurrencia)}${e.fin_ocurrencia ? "–" + hora(e.fin_ocurrencia) : ""}</b> · <span style="color:${color}">${esc(t)}</span>
       ${e.prioridad === "alta" ? '<span class="badge b-urgente">alta</span>' : ""}${e.nuevo ? ' <span class="badge b-pendiente">nueva</span>' : ""}
-      ${e.vencida ?  ' <span class="badge b-urgente">vencida</span>' : ""}${e.hecha ? ` <span class="badge b-cerrada">hecha${e.hecha_por_nombre ? " por " + esc(e.hecha_por_nombre) : ""}</span>` : ""}
+      ${e.vencida ?  ' <span class="badge b-urgente">vencida</span>' : ""}${e.cancelada_en_gestion ? ' <span class="badge b-urgente" title="La han cancelado en gestión">cancelada en gestión</span>' : ""}${e.hecha ? ` <span class="badge b-cerrada">hecha${e.hecha_por_nombre ? " por " + esc(e.hecha_por_nombre) : ""}</span>` : ""}
       <span class="muted peq">${{ privada: "🔒", compartida: "👥", publica: "🌐" }[e.visibilidad]}${e.repeticion ? " 🔁" : ""}</span></div>
     <div class="cita-tit">${esc(e.titulo)}${e.lugar ? ` <span class="muted">· ${esc(e.lugar)}</span>` : ""}</div>
     ${e.descripcion ? `<div class="muted peq">${esc(e.descripcion)}</div>` : ""}
@@ -442,6 +447,34 @@ function citaHtml(e, conFecha = false) {
       ${e.puede_editar ? `<button class="btn sm danger" data-ag="borrar" data-id="${e.id}">Borrar</button>` : ""}</div></div>`;
 }
 
+function comunHtml(e, conFecha = false) {
+  const [t, color] = CAL_TIPOS[e.tipo] || [e.tipo, "#666"];
+  const cancelada = e.estado === "CANCELADA";
+  return `<div class="cita comun${cancelada ? " cancelada" : ""}${e.estado === "HECHA" ? " hecha" : ""}" style="border-left-color:${color}">
+    <div><b>${conFecha ? fdate(e.ocurrencia.slice(0, 10)) + " · " : ""}${e.todo_el_dia ? "Todo el día" : hora(e.ocurrencia)}${e.fin_ocurrencia && !e.todo_el_dia ? "–" + hora(e.fin_ocurrencia) : ""}</b> · <span style="color:${color}">${esc(t)}</span>
+      <span class="badge b-gestion" title="Viene de gestión (INVERGESTION)">gestión</span>${cancelada ? ' <span class="badge b-urgente">cancelada</span>' : ""}${e.estado === "HECHA" ? ' <span class="badge b-cerrada">hecha</span>' : ""}
+      ${e.solo_lectura ? '<span class="muted peq" title="Solo lectura: se cambia en gestión">🔒</span>' : ""}${e.repeticion ? '<span class="muted peq"> 🔁</span>' : ""}</div>
+    <div class="cita-tit">${esc(e.titulo)}${e.importe != null ? ` <b>· ${eur(e.importe)}</b>` : ""}${e.lugar ? ` <span class="muted">· ${esc(e.lugar)}</span>` : ""}</div>
+    ${e.descripcion ? `<div class="muted peq">${esc(e.descripcion)}</div>` : ""}
+    ${e.activo || e.unidad ? `<div class="muted peq">${esc([e.activo, e.unidad].filter(Boolean).join(" · "))}</div>` : ""}
+    <div class="toolbar">${e.url_gestion ? `<a class="btn sm" href="${esc(e.url_gestion)}" target="_blank" rel="noopener noreferrer">Abrir en gestión</a>` : ""}
+      ${e.editable ? `<button class="btn sm" data-cal="editar" data-id="${e.id}">Editar</button><button class="btn sm danger" data-cal="cancelar" data-id="${e.id}">Cancelar</button>` : ""}</div></div>`;
+}
+function editarComun(e, recargar) {
+  const ini = e.inicio || "", dia = e.todo_el_dia;
+  form("Cambiar la cita de gestión", [
+    { html: '<p class="muted">Viene de gestión y se puede cambiar en los dos programas. Si en gestión la cambian a la vez, se queda la versión de gestión.</p>' },
+    { k: "titulo", t: "Título", req: true, wide: true },
+    { k: "inicio", t: dia ? "Día" : "Inicio", type: dia ? "date" : "datetime-local", req: true },
+    { k: "fin", t: dia ? "Último día" : "Fin", type: dia ? "date" : "datetime-local" },
+    { k: "lugar", t: "Lugar" }, { k: "estado", t: "Estado", type: "select", req: true, options: [["PENDIENTE", "Pendiente"], ["HECHA", "Hecha"]] },
+    { k: "descripcion", t: "Descripción", type: "textarea", wide: true },
+  ], { titulo: e.titulo, inicio: ini, fin: e.fin || "", lugar: e.lugar || "", estado: e.estado === "HECHA" ? "HECHA" : "PENDIENTE", descripcion: e.descripcion || "" }, async (d) => {
+    await put(`/api/calendario/entradas/${e.id}`, { ...d, todo_el_dia: dia });
+    toast("Cita cambiada: se avisa a gestión"); recargar();
+  });
+}
+
 // Calendario mensual con los días que tienen citas marcados; al pulsar un día se ven sus citas al lado.
 function agendaWidget(cont, grande = false, compacta = false) {
   const hoy = new Date();
@@ -450,7 +483,10 @@ function agendaWidget(cont, grande = false, compacta = false) {
     const ini = new Date(mes), dow = (ini.getDay() + 6) % 7;
     const desde = new Date(ini); desde.setDate(1 - dow);
     const hasta = new Date(desde); hasta.setDate(desde.getDate() + 41);
-    [citas, pend] = await Promise.all([get("/api/agenda", { desde: isoLocal(desde), hasta: isoLocal(hasta) }), get("/api/agenda/pendientes")]);
+    let comunes;
+    [citas, pend, comunes] = await Promise.all([get("/api/agenda", { desde: isoLocal(desde), hasta: isoLocal(hasta) }), get("/api/agenda/pendientes"),
+      get("/api/calendario/agenda", { desde: isoLocal(desde), hasta: isoLocal(hasta) }).catch(() => [])]);
+    citas = [...citas, ...comunes].sort((a, b) => (a.ocurrencia.slice(0, 10) + (a.todo_el_dia ? "0" : "1") + a.ocurrencia).localeCompare(b.ocurrencia.slice(0, 10) + (b.todo_el_dia ? "0" : "1") + b.ocurrencia));
     pintar(desde);
   };
   const pintar = (desde) => {
@@ -459,7 +495,7 @@ function agendaWidget(cont, grande = false, compacta = false) {
     const celdas = [...Array(42)].map((_, i) => {
       const d = new Date(desde); d.setDate(desde.getDate() + i);
       const k = isoLocal(d), cs = porDia[k] || [], fuera = d.getMonth() !== mes.getMonth();
-      const puntos = [...new Set(cs.map((c) => c.tipo))].map((t) => `<i style="background:${AG_TIPOS[t][1]}"></i>`).join("");
+      const puntos = [...new Set(cs.map((c) => c.tipo))].map((t) => `<i style="background:${(AG_TIPOS[t] || CAL_TIPOS[t] || ["", "#666"])[1]}"></i>`).join("");
       return `<button type="button" class="ag-dia${fuera ? " fuera" : ""}${k === isoLocal(hoy) ? " hoy" : ""}${k === sel ? " sel" : ""}${cs.some((c) => c.nuevo) ? " con-nueva" : ""}" data-dia="${k}">
         <span>${d.getDate()}</span>${cs.length ? `<span class="ag-puntos">${puntos}</span>${grande ? `<span class="ag-n">${cs.length}</span>` : ""}` : ""}</button>`;
     }).join("");
@@ -475,7 +511,7 @@ function agendaWidget(cont, grande = false, compacta = false) {
           <span><b>${esc(AG_TIPOS[n.tipo][0])}</b> de ${esc(n.creador)} · ${fdate(n.ocurrencia.slice(0, 10))}${n.todo_el_dia ? "" : " " + hora(n.ocurrencia)} · ${esc(n.titulo)}</span>
           <span><button class="btn sm" data-ag="ir" data-id="${n.id}" data-fecha="${n.ocurrencia.slice(0, 10)}">Ver día</button><button class="btn sm" data-ag="visto" data-id="${n.id}">Entendido</button></span></div>`).join("")}</div>` : ""}
         <h4>${f.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })}</h4>
-        ${delDia.length ? delDia.map(citaHtml).join("") : '<p class="muted">Sin citas este día.</p>'}
+        ${delDia.length ? delDia.map((c) => (c.comun ? comunHtml(c) : citaHtml(c))).join("") : '<p class="muted">Sin citas este día.</p>'}
         ${pend.tareas.length ? `<h4>Tareas pendientes (${pend.tareas.length})</h4>${pend.tareas.map((t) => citaHtml(t, true)).join("")}` : ""}
       </div></div>`;
     cont.querySelectorAll("[data-dia]").forEach((b) => (b.onclick = () => { sel = b.dataset.dia; pintar(desde); }));
@@ -486,7 +522,14 @@ function agendaWidget(cont, grande = false, compacta = false) {
       cargar();
     }));
     cont.querySelector("[data-nueva]").onclick = () => editarCita(null, sel, cargar);
-    const todas = [...citas, ...pend.tareas, ...pend.nuevas];
+    cont.querySelectorAll("[data-cal]").forEach((b) => (b.onclick = async () => {
+      const c = citas.find((x) => x.comun && x.id === Number(b.dataset.id));
+      if (b.dataset.cal === "editar") return editarComun(c, cargar);
+      if (!confirm(`¿Cancelar «${c.titulo}»? Se avisa a gestión.`)) return;
+      await run(() => post(`/api/calendario/entradas/${c.id}/cancelar`), "Cita cancelada");
+      cargar();
+    }));
+    const todas = [...citas.filter((x) => !x.comun), ...pend.tareas, ...pend.nuevas];
     cont.querySelectorAll("[data-ag]").forEach((b) => (b.onclick = async () => {
       const id = Number(b.dataset.id), c = todas.find((x) => x.id === id), a = b.dataset.ag;
       if (c?.nuevo) post(`/api/agenda/${id}/visto`).catch(() => {});
@@ -4840,7 +4883,9 @@ V.perfil = async (el) => {
     <label class="check"><input type="checkbox" id="prefSonido" ${PREF.sonido() ? "checked" : ""}> Sonido al llegar un aviso o un mensaje</label>
     <label class="check"><input type="checkbox" id="prefEscritorio" ${PREF.escritorio() ? "checked" : ""}> Aviso de Windows / del móvil cuando el PMS está minimizado o en otra pestaña</label>
     <p><button type="button" class="btn sm" id="prSon1">Probar aviso</button> <button type="button" class="btn sm" id="prSon2">Probar urgente</button> <button type="button" class="btn sm" id="prSon3">Probar chat</button></p>
+    <h4>Calendario en Outlook</h4><div id="outlook"><p class="muted">Cargando…</p></div>
     <h4>Avisos por correo</h4><div id="avisos"><p class="muted">Cargando…</p></div></div>`;
+  calendarioOutlook($("#outlook", el));
   $("#prefSonido", el).onchange = (e) => { localStorage.setItem("pms_sonido", e.target.checked ? "1" : "0"); if (e.target.checked) Sonido.aviso(); };
   $("#prefEscritorio", el).onchange = async (e) => {
     if (!e.target.checked) return localStorage.setItem("pms_escritorio", "0");
@@ -4860,6 +4905,25 @@ V.perfil = async (el) => {
   $("#pw", el).onclick = () => form("Cambiar contraseña", [{ k: "actual", t: "Contraseña actual", type: "password", req: true }, { k: "nueva", t: "Nueva (mín. 10 caracteres)", type: "password", req: true }], {},
     async (d) => { const r = await post("/api/auth/password", d); nuevoToken(r); toast("Contraseña cambiada"); });
 };
+
+// Mi perfil → Calendario en Outlook: enlace privado de solo lectura con lo que el usuario ve en la Agenda
+async function calendarioOutlook(box, nuevo) {
+  const r = await get("/api/calendario/outlook");
+  box.innerHTML = `<p class="muted">Su agenda del PMS (y lo que le llega de gestión) en Outlook, el móvil o Google Calendar. Es un enlace privado de solo lectura: no lo comparta. Si cree que alguien lo tiene, pulse «Cambiar enlace» y el anterior deja de funcionar.</p>
+    ${nuevo ? `<div class="aviso-amarillo"><b>Copie el enlace ahora: no se vuelve a mostrar.</b><br><input id="olUrl" readonly value="${esc(nuevo.url)}" style="width:100%;margin:6px 0">
+      <button type="button" class="btn sm" id="olCopiar">Copiar</button> <a class="btn sm primary" href="${esc(nuevo.webcal)}">Abrir en Outlook</a>
+      <p class="muted peq">En Outlook web: Calendario › Agregar calendario › Suscribirse desde la web, y pegue el enlace.</p></div>` : ""}
+    <p>${r.existe ? `Enlace creado el ${fdt(r.creado)}${r.ultimo_acceso ? ` · último acceso ${fdt(r.ultimo_acceso)}` : " · aún sin usar"}` : "Aún no tiene enlace."}</p>
+    ${r.puede_importes && r.existe ? `<label class="check"><input type="checkbox" id="olImp" ${r.mostrar_importes ? "checked" : ""}> Mostrar importes (vencimientos y fiscal)</label>` : ""}
+    <p><button type="button" class="btn" id="olCrear">${r.existe ? "Cambiar enlace" : "Crear enlace"}</button>${r.existe ? ' <button type="button" class="btn danger" id="olQuitar">Quitar</button>' : ""}</p>`;
+  if ($("#olCopiar", box)) $("#olCopiar", box).onclick = () => { navigator.clipboard?.writeText(nuevo.url).then(() => toast("Enlace copiado"), () => { $("#olUrl", box).select(); }); };
+  $("#olCrear", box).onclick = async () => {
+    if (r.existe && !confirm("¿Cambiar el enlace? El anterior deja de funcionar y tendrá que suscribirse otra vez en Outlook.")) return;
+    calendarioOutlook(box, await run(() => post("/api/calendario/outlook")));
+  };
+  if ($("#olQuitar", box)) $("#olQuitar", box).onclick = async () => { if (!confirm("¿Quitar el enlace? Outlook dejará de recibir su agenda.")) return; await run(() => api("DELETE", "/api/calendario/outlook"), "Enlace quitado"); calendarioOutlook(box); };
+  if ($("#olImp", box)) $("#olImp", box).onchange = (e) => run(() => put("/api/calendario/outlook", { mostrar_importes: e.target.checked }), e.target.checked ? "Importes visibles en Outlook" : "Importes ocultos en Outlook");
+}
 
 // Mi perfil → Accesos rápidos: nombre y dirección https de cada botón de la barra superior
 async function editorAccesos(box) {
@@ -6165,7 +6229,7 @@ async function abrirGestion(destino, assetId, unitId) {
   } catch (e) { if (w) w.close(); toast(e.message); }
 }
 const CANAL_TXT = { directo: "Directo", booking: "Booking", airbnb: "Airbnb", expedia: "Expedia", web: "Web propia", agencia: "Agencia", otros: "Otros" };
-const EV_TXT = { "reserva.creada": "Reserva nueva", "reserva.modificada": "Reserva modificada", "reserva.cancelada": "Reserva cancelada", checkout: "Check-out", "incidencia.reportada": "Incidencia", "liquidacion.periodo": "Liquidación",
+const EV_TXT = { "calendario.creada": "Calendario: alta", "calendario.actualizada": "Calendario: cambio", "calendario.cancelada": "Calendario: cancelada", "reserva.creada": "Reserva nueva", "reserva.modificada": "Reserva modificada", "reserva.cancelada": "Reserva cancelada", checkout: "Check-out", "incidencia.reportada": "Incidencia", "liquidacion.periodo": "Liquidación",
   "reserva.ampliada": "Ampliación", "fianza.cobrada": "Fianza cobrada", "fianza.devolucion": "Fianza devuelta", "fianza.transferida": "Transferencia de fianza", "caja.cierre": "Cierre de caja", "incidencia.cerrada": "Incidencia cerrada", "kpi.diario": "Indicadores del día",
   "factura_recibida.creada": "Factura recibida", "factura_recibida.actualizada": "Factura recibida (cambio)", "factura_recibida.anulacion_pedida": "Anulación pedida", "factura_recibida.anulada": "Factura anulada",
   "factura_emitida.emitida": "Factura emitida", "factura_emitida.rectificada": "Factura rectificativa", "documento.adjuntado": "Documento adjunto", "pago.registrado": "Pago", "pago.anulado": "Pago anulado",
@@ -6205,8 +6269,10 @@ V.gestion = async (el) => {
       <div class="toolbar"><select id="gla">${d.activos.map((a) => `<option value="${a.id}">${esc(a.nombre)}</option>`).join("")}</select><input id="glp" type="month" value="${mesAnt}">
       <button class="btn" id="glv">Ver</button><button class="btn primary" id="gle">Mandar a gestión</button></div><div id="glr"></div></div>
     <div class="card" id="gfus"></div>
+    ${S.me.is_superadmin ? '<div class="card" id="gcal"></div>' : ""}
     <div class="card"><h3>Últimos avisos a gestión</h3><div class="toolbar"><button class="btn" id="grt">Reintentar ahora los pendientes</button></div><div id="gev"></div></div>`;
   tarjetaFusion($("#gfus", el));
+  if ($("#gcal", el)) tarjetaCalendario($("#gcal", el));
   $("#gcom", el).innerHTML = `<div style="overflow-x:auto"><table class="tabla"><thead><tr><th>Activo</th>${d.canales.map((k) => `<th class="num">${CANAL_TXT[k] || k}</th>`).join("")}<th>Mandar sola cada mes</th><th></th></tr></thead><tbody>${d.activos.map((a) => `<tr data-a="${a.id}"><td>${esc(a.nombre)}</td>${d.canales.map((k) => `<td class="num"><input type="number" step="0.1" min="0" max="50" style="width:70px" data-k="${k}" value="${a.comisiones[k] ?? ""}"></td>`).join("")}<td><input type="checkbox" data-auto ${a.comisiones._auto ? "checked" : ""}></td><td><button class="btn sm" data-g>Guardar</button></td></tr>`).join("")}</tbody></table></div>`;
   $("#gcom", el).querySelectorAll("[data-g]").forEach((b) => (b.onclick = () => { const tr = b.closest("tr"); const com = {};
     tr.querySelectorAll("input[data-k]").forEach((i) => { if (i.value !== "") com[i.dataset.k] = Number(i.value); });
@@ -6221,6 +6287,21 @@ V.gestion = async (el) => {
     { k: "estado", t: "Estado", f: (v, x) => `${badge(v === "enviado" ? "entregado" : v === "aviso" ? "sin entregar" : "pendiente")}${x.error && v !== "enviado" ? `<div class="peq" style="color:#a15c00">${esc(x.error)}</div>` : ""}` },
     { k: "intentos", t: "Intentos" }], d.eventos);
 };
+
+// Calendario común con gestión: casilla de la superadministración (apagada al desplegar)
+async function tarjetaCalendario(box) {
+  const c = await get("/api/calendario/config");
+  box.innerHTML = `<h3>Calendario común con gestión</h3>
+    <p class="muted">Una sola agenda para los dos programas: citas y tareas compartidas, mantenimiento, limpiezas y, solo para administración y dirección, vencimientos y fiscal. Las reservas no entran. Orden de encendido: primero esta casilla y después la de gestión (Calendario › PMS).</p>
+    <label class="check"><input type="checkbox" id="gcalOn" ${c.activo ? "checked" : ""}> <b>Sincronizar el calendario con gestión</b></label>
+    <p class="muted peq">${c.activo ? "Encendida" : "Apagada: lo que llega de gestión se guarda «sin tratar» y no se manda nada"}${c.cambiado ? ` · cambiada el ${fdt(c.cambiado)}` : ""} · ${c.entradas} entradas de gestión · ${c.en_cola} avisos en cola · ${c.sin_tratar} sin tratar</p>`;
+  $("#gcalOn", box).onchange = async (e) => {
+    if (!confirm(e.target.checked ? "¿Encender la sincronización del calendario? Se mandan a gestión las citas compartidas y las limpiezas de los últimos 60 días." : "¿Apagar la sincronización del calendario?")) { e.target.checked = !e.target.checked; return; }
+    const r = await run(() => put("/api/calendario/config", { activo: e.target.checked }), e.target.checked ? "Calendario sincronizado con gestión" : "Sincronización del calendario apagada").catch(() => null);
+    if (r?.carga_inicial) toast(`${r.carga_inicial} entradas preparadas para gestión`);
+    tarjetaCalendario(box);
+  };
+}
 
 // ---- caja de recepción: arqueo por turno y recepcionista
 V.caja = async (el) => {

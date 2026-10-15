@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import OperationalError
 
-from . import avisos, fusion, gestion, proteccion, vigilante
+from . import avisos, calendario_comun, fusion, gestion, proteccion, vigilante
 from .config import BASE_DIR
 from .database import SessionLocal
 from .migraciones import migrar
@@ -46,6 +46,8 @@ for r in (auth, estructura, alquiler, garajes, gastos, turistico, plano, factura
 app.include_router(gestion.router)
 app.include_router(fusion.router)  # fusión con gestión: facturas, pagos, proveedores y catálogo
 app.include_router(fusion.publico)
+app.include_router(calendario_comun.router)  # calendario común con gestión y enlace de Outlook
+app.include_router(calendario_comun.publico)
 app.include_router(colaborador.revision)
 app.include_router(facturas.router_servicios)
 app.include_router(facturas.publico)

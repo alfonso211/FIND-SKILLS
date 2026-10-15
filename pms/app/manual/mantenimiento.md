@@ -1,5 +1,8 @@
 # Mantenimiento
 
+## Agenda y Outlook
+- En la *Agenda* también aparecen las citas de gestión en las que usted está y el mantenimiento de su activo (etiqueta **gestión**). Puede verla en Outlook o el móvil: *Mi perfil → Calendario en Outlook* (ver *Primeros pasos*).
+
 ## Órdenes de trabajo (OT)
 - **Órdenes de trabajo**: todas las averías de su activo. Las **urgentes** le llegan además por **correo al momento** y **suenan** en la campana 🔔 (tres pitidos) si tiene el PMS abierto. Para coordinarse con recepción o con un compañero, use el **chat 💬**.
 - Recorrido de una OT:

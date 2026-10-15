@@ -21,6 +21,17 @@
 - **Privada**: solo la ve usted. **Compartida**: las personas que indique. **Pública**: todos.
 - Puede enviar una tarea a un compañero y pedir un **aviso por correo** antes de la cita.
 - Las tareas que le envían aparecen en su panel hasta que las marque como **hecha**.
+- **Lo que llega de gestión** sale en la misma Agenda con la etiqueta **gestión** y un color por tipo (cita, tarea, orden de trabajo, preventivo, bloqueo, limpieza…). Solo ve las citas en las que está y el mantenimiento de su activo.
+  - 🔒 **Solo lectura**: se cambia en gestión. Pulse **Abrir en gestión**.
+  - **Editar / Cancelar**: las que se pueden cambiar en los dos programas. El cambio llega a gestión; si allí la cambian a la vez, se queda la de gestión.
+- Sus citas y tareas **compartidas o públicas** pasan solas a la agenda de gestión. Las **privadas** no salen nunca del PMS.
+
+## Calendario en Outlook
+1. *Mi perfil → Calendario en Outlook → **Crear enlace***.
+2. Copie el enlace en ese momento: **solo se muestra una vez**. **Abrir en Outlook** lo añade directamente.
+3. En Outlook web: *Calendario → Agregar calendario → Suscribirse desde la web* y pegue el enlace.
+- Es de **solo lectura** y lleva lo mismo que ve en la Agenda. Outlook lo actualiza solo cada pocas horas.
+- Es **privado**: no lo comparta. Si cree que alguien lo tiene, pulse **Cambiar enlace** (el anterior deja de funcionar) o **Quitar**.
 
 ## Mi perfil
 - **Cambiar contraseña** cuando quiera.

@@ -879,3 +879,8 @@ details > summary { cursor: pointer; padding: 6px 0; }
   .chat-msg { max-width: 88%; }
   .avisos-panel { top: 56px; right: 8px; width: calc(100vw - 16px); }
 }
+
+/* ---------- calendario común con gestión (1.66) ---------- */
+.cita.comun { background: #f7f9fd; }
+.cita.cancelada .cita-tit { text-decoration: line-through; opacity: .6; }
+.cita.comun .toolbar a.btn { text-decoration: none; }

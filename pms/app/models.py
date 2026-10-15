@@ -450,6 +450,71 @@ class ChatMensaje(Base):
     borrado: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class Ajuste(Base):
+    """Interruptores de la configuración del PMS que cambia la superadministración desde la pantalla (no del .env)."""
+    __tablename__ = "ajustes"
+    clave: Mapped[str] = mapped_column(String(60), primary_key=True)
+    valor: Mapped[dict | None] = mapped_column(JSON)
+    cambiado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"))
+
+
+class CalendarioEntrada(Base):
+    """Calendario común PMS ↔ gestión (contrato «fusion1», tipos calendario.*). Una fila por uid: las que llegan de
+    gestión (INVG-…) y el espejo de las que manda el PMS (PMS-AG-<agenda>, PMS-LIM-<limpieza>) con su versión."""
+    __tablename__ = "calendario_comun"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    uid: Mapped[str] = mapped_column(String(120), unique=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    version_remota: Mapped[int] = mapped_column(Integer, default=0)  # última versión aceptada de gestión
+    tipo: Mapped[str] = mapped_column(String(20), index=True)
+    subtipo: Mapped[str | None] = mapped_column(String(40))
+    titulo: Mapped[str] = mapped_column(String(300))
+    descripcion: Mapped[str | None] = mapped_column(Text)
+    lugar: Mapped[str | None] = mapped_column(String(300))
+    inicio: Mapped[datetime] = mapped_column(DateTime, index=True)  # hora de Madrid
+    fin: Mapped[datetime | None] = mapped_column(DateTime)  # día completo: último día incluido
+    todo_el_dia: Mapped[bool] = mapped_column(Boolean, default=False)
+    activo: Mapped[str | None] = mapped_column(String(40))  # código de gestión (SFLORIDA…)
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("activos.id", ondelete="SET NULL"), index=True)
+    unidad: Mapped[str | None] = mapped_column(String(60))
+    sociedad: Mapped[str | None] = mapped_column(String(10))
+    responsables: Mapped[list | None] = mapped_column(JSON)
+    invitados: Mapped[list | None] = mapped_column(JSON)
+    estado: Mapped[str] = mapped_column(String(12), default="PENDIENTE")  # PENDIENTE | HECHA | CANCELADA
+    recordatorio: Mapped[int | None] = mapped_column(Integer)
+    repeticion: Mapped[str | None] = mapped_column(String(12))
+    repetir_hasta: Mapped[date | None] = mapped_column(Date)
+    importe: Mapped[float | None] = mapped_column(Numeric(14, 2))
+    prioridad: Mapped[str | None] = mapped_column(String(20))
+    origen: Mapped[str] = mapped_column(String(10), default="GESTION")  # GESTION | PMS
+    editable_en: Mapped[str] = mapped_column(String(10), default="GESTION")  # GESTION | PMS | AMBOS
+    solo_lectura: Mapped[bool] = mapped_column(Boolean, default=True)
+    roles: Mapped[list | None] = mapped_column(JSON)
+    url_gestion: Mapped[str | None] = mapped_column(String(500))
+    datos: Mapped[dict | None] = mapped_column(JSON)  # el último «datos» completo (lo que no tiene columna)
+    agenda_id: Mapped[int | None] = mapped_column(ForeignKey("agenda.id", ondelete="SET NULL"), index=True)
+    limpieza_id: Mapped[int | None] = mapped_column(ForeignKey("limpiezas.id", ondelete="SET NULL"), index=True)
+    ultimo_cambio: Mapped[str] = mapped_column(String(10), default="GESTION")  # quién hizo el último cambio
+    cambio_local: Mapped[bool] = mapped_column(Boolean, default=False)  # cambio del PMS aún sin entregar a gestión
+    historial: Mapped[list | None] = mapped_column(JSON)  # versiones anteriores descartadas («manda gestión»)
+    actualizado: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+
+
+class CalendarioEnlace(Base):
+    """Enlace privado de cada usuario para suscribirse en Outlook (/cal/<clave>.ics). Solo se guarda la sha256."""
+    __tablename__ = "calendario_enlaces"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"), unique=True)
+    clave_sha256: Mapped[str] = mapped_column(String(64), unique=True)
+    mostrar_importes: Mapped[bool] = mapped_column(Boolean, default=False)
+    creado: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    ultimo_acceso: Mapped[datetime | None] = mapped_column(DateTime)
+    ventana: Mapped[datetime | None] = mapped_column(DateTime)  # hora en curso para el límite de peticiones
+    peticiones: Mapped[int] = mapped_column(Integer, default=0)
+    avisado: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 class ContactDocument(Base):
     """Copia escaneada de un documento de identidad. El fichero se guarda cifrado fuera de la base de datos."""
     __tablename__ = "documentos_terceros"

@@ -1,5 +1,8 @@
 # Limpieza
 
+## Agenda y Outlook
+- En la *Agenda* también aparecen las citas de gestión en las que usted está y el mantenimiento de su activo (etiqueta **gestión**). Puede verla en Outlook o el móvil: *Mi perfil → Calendario en Outlook* (ver *Primeros pasos*).
+
 ## Avisos y chat
 - Con el PMS abierto (también en el móvil), la **campana 🔔** suena cuando hay algo que atender y el **chat 💬** le permite hablar con recepción y con el equipo. Ver *Primeros pasos*.
 
