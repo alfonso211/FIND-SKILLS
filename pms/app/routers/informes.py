@@ -15,14 +15,14 @@ from sqlalchemy.orm import Session, selectinload
 from ..database import get_db
 from ..facturacion import FORMAS_PAGO, bases_por_tipo, fin_de_mes, pendientes_cobro
 from ..models import (MODALIDADES_CONTRATO, MODALIDADES_RESERVA, Asset, Charge, Contact, Invoice, Lease,
-                      Reservation, Unit, User, WorkOrder)
+                      Reservation, StaffMember, Unit, User, WorkEntry, WorkOrder, WorkOrderVisit)
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request
 from . import historico
 
 router = APIRouter(prefix="/api/informes", tags=["informes"])
 
-EUR, PCT, FECHA, ENTERO = '#,##0.00 "€"', "0.0%", "DD/MM/YYYY", "#,##0"
+EUR, PCT, FECHA, ENTERO, HORAS = '#,##0.00 "€"', "0.0%", "DD/MM/YYYY", "#,##0", "#,##0.00"
 MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 CABECERA = PatternFill("solid", fgColor="13294B")
 TOTAL = PatternFill("solid", fgColor="E3EDF9")
@@ -311,19 +311,65 @@ def _mantenimiento(db, scope, wb, desde, hasta, asset_id):
     activos = _activos(db, scope, "mantenimiento.ver", asset_id)
     if not activos:
         raise HTTPException(403, "Sin permiso para ver el mantenimiento de ningún activo")
+    from ..empleados import director_tecnico
+    from .mantenimiento import minutos_visitas
+    # el coste/hora del personal (dato salarial) solo lo ven el Director Técnico y quien autoriza personal del grupo
+    ver_coste = director_tecnico(scope) or scope.is_group_level("personal.autorizar")
     nombres = {a.id: a.nombre for a in activos}
     ots = list(db.scalars(select(WorkOrder).where(WorkOrder.asset_id.in_(nombres), WorkOrder.fecha_apertura >= desde,
                                                   WorkOrder.fecha_apertura <= hasta).order_by(WorkOrder.id)))
-    codigos = dict(db.execute(select(Unit.id, Unit.codigo).where(Unit.id.in_({w.unit_id for w in ots if w.unit_id} or {-1}))).all())
+    entradas = list(db.scalars(select(WorkEntry).where(WorkEntry.asset_id.in_(nombres), WorkEntry.area == "mantenimiento",
+                                                       WorkEntry.fecha >= desde, WorkEntry.fecha <= hasta)))
+    codigos = dict(db.execute(select(Unit.id, Unit.codigo).where(Unit.id.in_(
+        {w.unit_id for w in ots if w.unit_id} | {e.unit_id for e in entradas if e.unit_id} or {-1}))).all())
+    visitas: dict[int, list] = defaultdict(list)
+    for v in db.scalars(select(WorkOrderVisit).where(WorkOrderVisit.work_order_id.in_([w.id for w in ots] or [-1]))):
+        visitas[v.work_order_id].append(v)
+    personal = list(db.scalars(select(StaffMember).order_by(StaffMember.activo, StaffMember.id)))  # activos al final
+    por_id = {p.id: p for p in personal}
+    por_usuario = {p.user_id: p for p in personal if p.user_id}
+    por_nombre = {p.nombre.strip().lower(): p for p in personal}
     coste = lambda w: float(w.coste_real if w.coste_real is not None else 0)  # noqa: E731
+    horas = {w.id: round(minutos_visitas(visitas[w.id]) / 60, 2) for w in ots}
+
+    def tecnico_ot(w):
+        """(clave, nombre, empresa, ficha) de quien hizo la OT: personal propio (su ficha) o la subcontrata."""
+        if w.asignacion == "subcontrata":
+            return ("sub", (w.proveedor or "Subcontrata").strip()), w.asignado_a or "", w.proveedor or "Subcontrata", None
+        p = por_id.get(w.personal_id) if w.personal_id else None
+        if p is None:
+            quien = next((v.tecnico for v in visitas[w.id] if v.tecnico), None) or w.asignado_a
+            p = por_nombre.get((quien or "").strip().lower())
+            if p is None:
+                return ("txt", quien or "(sin asignar)"), quien or "(sin asignar)", "Personal propio", None
+        return ("id", p.id), p.nombre, "Personal propio", p
+
+    def tecnico_entrada(e):
+        p = por_usuario.get(e.user_id) if e.user_id else None
+        p = p or por_nombre.get((e.persona or "").strip().lower())
+        if p:
+            return ("id", p.id), p.nombre, "Personal propio", p
+        return ("txt", e.persona or "(sin nombre)"), e.persona or "(sin nombre)", "Personal propio", None
+
+    def mano_obra(h, p):
+        return round(h * float(p.coste_hora), 2) if p is not None and p.coste_hora is not None else 0.0
+
+    mo_ot = {w.id: mano_obra(horas[w.id], tecnico_ot(w)[3]) for w in ots}
+    cab = ["OT", "Activo", "Unidad", "Título", "Tipo", "Instalación", "Prioridad", "Estado", "Apertura", "Cierre",
+           "Días resolución", "Proveedor", "Asignado", "Coste estimado", "Coste real", "Horas"]
+    fmt = {8: FECHA, 9: FECHA, 10: ENTERO, 13: EUR, 14: EUR, 15: HORAS}
     filas = [[f"OT-{w.id:05d}", nombres[w.asset_id], codigos.get(w.unit_id, "Zonas comunes"), w.titulo, w.tipo,
               w.categoria, w.prioridad, w.estado, w.fecha_apertura, w.fecha_cierre,
               (w.fecha_cierre - w.fecha_apertura).days if w.fecha_cierre else None, w.proveedor, w.asignado_a,
-              float(w.coste_estimado) if w.coste_estimado is not None else None, coste(w)] for w in ots]
-    _hoja(wb, "Órdenes de trabajo", ["OT", "Activo", "Unidad", "Título", "Tipo", "Instalación", "Prioridad", "Estado",
-                                     "Apertura", "Cierre", "Días resolución", "Proveedor", "Asignado", "Coste estimado",
-                                     "Coste real"], filas, {8: FECHA, 9: FECHA, 10: ENTERO, 13: EUR, 14: EUR},
-          totales=[13, 14], nota="OT abiertas en el periodo. Coste real: el indicado al confirmar el trabajo.")
+              float(w.coste_estimado) if w.coste_estimado is not None else None, coste(w), horas[w.id]]
+             + ([mo_ot[w.id], round(coste(w) + mo_ot[w.id], 2)] if ver_coste else []) for w in ots]
+    if ver_coste:
+        cab += ["Mano de obra propia", "Coste total"]
+        fmt.update({16: EUR, 17: EUR})
+    _hoja(wb, "Órdenes de trabajo", cab, filas, fmt, totales=[13, 14, 15] + ([16, 17] if ver_coste else []),
+          nota="OT abiertas en el periodo. Coste real: el indicado al confirmar el trabajo (materiales o factura de la "
+               "subcontrata). Horas: llegada → salida de las intervenciones."
+               + (" Mano de obra propia: horas × coste/hora de la ficha del empleado." if ver_coste else ""))
     for titulo, clave in (("Por instalación", lambda w: (nombres[w.asset_id], w.categoria)),
                           ("Por tipo", lambda w: (nombres[w.asset_id], w.tipo)),
                           ("Por proveedor", lambda w: (nombres[w.asset_id], w.proveedor or "(sin proveedor)"))):
@@ -335,6 +381,64 @@ def _mantenimiento(db, scope, wb, desde, hasta, asset_id):
                  for (a, k), ws in sorted(grupos.items(), key=lambda x: (x[0][0], -sum(coste(w) for w in x[1])))]
         _hoja(wb, titulo, ["Activo", titulo.split(" ", 1)[1].capitalize(), "Nº OT", "Abiertas", "Urgentes",
                            "Coste real"], filas, {2: ENTERO, 3: ENTERO, 4: ENTERO, 5: EUR}, totales=[2, 3, 4, 5])
+
+    # horas por técnico: OT (intervenciones) + actuaciones del parte diario de mantenimiento
+    tec: dict = {}
+    for w in ots:
+        k, nombre, empresa, p = tecnico_ot(w)
+        t = tec.setdefault(k, {"nombre": nombre, "empresa": empresa, "ficha": p, "ots": 0, "h_ot": 0.0, "h_parte": 0.0})
+        t["ots"] += 1
+        t["h_ot"] += horas[w.id]
+    for e in entradas:
+        k, nombre, empresa, p = tecnico_entrada(e)
+        t = tec.setdefault(k, {"nombre": nombre, "empresa": empresa, "ficha": p, "ots": 0, "h_ot": 0.0, "h_parte": 0.0})
+        t["h_parte"] += float(e.horas or 0)
+    filas = []
+    for t in sorted(tec.values(), key=lambda t: (t["empresa"] != "Personal propio", t["nombre"].lower())):
+        total_h = round(t["h_ot"] + t["h_parte"], 2)
+        fila = [t["nombre"], t["empresa"], t["ots"], round(t["h_ot"], 2), round(t["h_parte"], 2), total_h]
+        if ver_coste:
+            p = t["ficha"]
+            fila += [float(p.coste_hora) if p is not None and p.coste_hora is not None else None, mano_obra(total_h, p)]
+        filas.append(fila)
+    cab = ["Técnico", "Empresa", "Nº OT", "Horas OT", "Horas parte diario", "Horas totales"]
+    fmt = {2: ENTERO, 3: HORAS, 4: HORAS, 5: HORAS}
+    if ver_coste:
+        cab += ["Coste/hora", "Coste mano de obra"]
+        fmt.update({6: EUR, 7: EUR})
+    _hoja(wb, "Horas por técnico", cab, filas, fmt, totales=[2, 3, 4, 5] + ([7] if ver_coste else []),
+          nota="Horas de las OT abiertas en el periodo y de las actuaciones del parte diario de mantenimiento."
+               + (" Coste: solo personal propio con coste/hora en su ficha (Personal); las subcontratas, en el coste "
+                  "real de la OT." if ver_coste else ""))
+
+    # por apartamento (y zonas comunes): horas, mano de obra y coste real
+    apt: dict = {}
+    for w in ots:
+        a = apt.setdefault((nombres[w.asset_id], codigos.get(w.unit_id, "Zonas comunes")),
+                           {"ots": 0, "h_ot": 0.0, "h_parte": 0.0, "mo": 0.0, "coste": 0.0})
+        a["ots"] += 1
+        a["h_ot"] += horas[w.id]
+        a["mo"] += mo_ot[w.id]
+        a["coste"] += coste(w)
+    for e in entradas:
+        a = apt.setdefault((nombres[e.asset_id], codigos.get(e.unit_id, "Zonas comunes")),
+                           {"ots": 0, "h_ot": 0.0, "h_parte": 0.0, "mo": 0.0, "coste": 0.0})
+        h = float(e.horas or 0)
+        a["h_parte"] += h
+        a["mo"] += mano_obra(h, tecnico_entrada(e)[3])
+    filas = []
+    for (activo, unidad), a in sorted(apt.items(), key=lambda x: (x[0][0], x[0][1] == "Zonas comunes", x[0][1])):
+        fila = [activo, unidad, a["ots"], round(a["h_ot"], 2), round(a["h_parte"], 2), round(a["h_ot"] + a["h_parte"], 2)]
+        if ver_coste:
+            fila += [round(a["mo"], 2), round(a["coste"], 2), round(a["mo"] + a["coste"], 2)]
+        filas.append(fila)
+    cab = ["Activo", "Unidad", "Nº OT", "Horas OT", "Horas parte diario", "Horas totales"]
+    fmt = {2: ENTERO, 3: HORAS, 4: HORAS, 5: HORAS}
+    if ver_coste:
+        cab += ["Mano de obra propia", "Coste real OT", "Coste total"]
+        fmt.update({6: EUR, 7: EUR, 8: EUR})
+    _hoja(wb, "Por apartamento", cab, filas, fmt, totales=[2, 3, 4, 5] + ([6, 7, 8] if ver_coste else []),
+          nota="Horas y coste de mantenimiento de cada apartamento en el periodo (OT y parte diario).")
 
 
 def _cobros(db, scope, wb, desde, hasta, asset_id):

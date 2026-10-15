@@ -54,11 +54,12 @@ TIPOS = {
                          "(resumen diario)", "finanzas.ver"),
     "documentacion_legal": ("Documentación legal de los activos que falta o ha caducado (cada lunes): a Recepción 1 "
                             "la de su activo y a la dirección la de todos", "legal.ver"),
-    "partes_estado": ("Partes de estado de mantenimiento y limpieza: aviso al momento a recepción de su activo (los "
-                      "críticos, también a la dirección) y, en el resumen diario, los pendientes y abiertos hasta "
-                      "resolverlos", "mantenimiento.abrir"),
+    "partes_estado": ("Partes de estado de limpieza y peticiones de OT de mantenimiento: aviso al momento a recepción "
+                      "de su activo (los críticos y urgentes, también a la dirección) y, en el resumen diario, los "
+                      "partes pendientes y abiertos hasta resolverlos", "mantenimiento.abrir"),
     "ot_tecnico": ("Órdenes de trabajo: resultado del técnico al momento (resuelta, pendiente de material, otra visita, "
-                   "derivar a subcontrata…) y recordatorio diario de las que quedan en pausa hasta que se actúe",
+                   "derivar a subcontrata…), recordatorio diario de las que quedan en pausa hasta que se actúe y de las de "
+                   "subcontrata finalizadas hace más de 48 h sin cerrar",
                    "mantenimiento.cerrar"),
     "personal": ("Personal: documentos del empleado que vencen en 30 días o ya vencidos (contrato, PRL, "
                  "reconocimiento médico…) y fichajes sin salida (resumen diario)", "personal.autorizar"),
@@ -137,7 +138,7 @@ def _enviar_registrado(db, user: User | None, destino: str, clave: str, tipo: st
 
 
 # Avisos dentro del PMS (campana con sonido): pantalla a la que lleva cada tipo y cuáles suenan como urgentes
-VISTA_AVISO = {"ot_urgente": "ordenes", "ot_tecnico": "ordenes", "parte_estado": "estado", "partes_estado": "estado",
+VISTA_AVISO = {"ot_urgente": "ordenes", "ot_tecnico": "ordenes", "peticion_ot": "ordenes", "parte_estado": "estado", "partes_estado": "estado",
                "pagos_retenidos": "gastos", "agenda": "agenda", "bloqueo_gestion": "reservas",
                "informe_presidencia": "presidencia", "documentacion_legal": "legal", "preventivo": "preventivo",
                "pedidos_reposicion": "pedidos", "caja": "caja", "resumen": "panel"}
@@ -303,6 +304,20 @@ def parte_estado(pid: int) -> int:
         return enviados
 
 
+# --------------------------------------------------------------------------- petición de OT de mantenimiento
+def peticion_ot(db, autor: User, a: Asset, lugar: str, texto: str, urgente: bool) -> int:
+    """Mantenimiento pide una OT a recepción (la OT la abre recepción): aviso en la campana de recepción del activo;
+    si es urgente, también a la dirección. Lo guarda quien llama (commit)."""
+    titulo = f"{'URGENTE · ' if urgente else ''}Mantenimiento pide una OT · {a.nombre} · {lugar}"
+    n = 0
+    for user, ids in suscritos(db, "partes_estado"):
+        if user.id == autor.id or (ids is not None and a.id not in ids) or (ids is None and not urgente):
+            continue
+        notificar(db, user, None, "peticion_ot", titulo, f"{autor.nombre}: {texto}", urgente=urgente)
+        n += 1
+    return n
+
+
 # --------------------------------------------------------------------------- resultado del técnico (al momento)
 def _destinatarios_ot(db, w: WorkOrder) -> list[User]:
     """Recepción del activo y dirección (suscritos al aviso) y quien emitió la orden."""
@@ -341,7 +356,10 @@ def resultado_tecnico(visita_id: int) -> int:
             filas.append(("Justificación", v.justificacion))
         if v.observaciones:
             filas.append(("Observaciones", v.observaciones))
-        siguiente = ("Revise el trabajo y dé la conformidad de la propiedad para cerrarla." if v.resultado == "resuelta"
+        siguiente = (("Cerrada por el personal propio con su firma, la foto y el tiempo. Si no es conforme, puede "
+                      "reabrirla en los 7 días siguientes." if w.estado == "cerrada" else
+                      "Revise el trabajo, las fotos y el tiempo, y ciérrela (Director Técnico o recepción).")
+                     if v.resultado == "resuelta"
                      else "Asigne la orden a una subcontrata desde Órdenes de trabajo → Asignar." if v.resultado == "escalar"
                      else "Actúe sobre la orden: se recordará cada día hasta que se reprograme o se le dé un estado.")
         texto = f"{titulo}\n\n" + "\n".join(f"{k}: {x}" for k, x in filas) + f"\n\n{siguiente}" + (f"\n{settings.url}/#ordenes" if settings.url else "")
@@ -382,6 +400,47 @@ def recordatorio_ot_pausadas(db, dia: date) -> int:
                                        _html("Órdenes de trabajo en pausa", _tabla(cab, filas)
                                              + "<p>Reprograme, asigne o cambie su estado para dejar de recibir "
                                                "este aviso.</p>"))
+    db.commit()
+    return enviados
+
+
+HORAS_CIERRE = 48  # OT de subcontrata finalizadas que nadie ha cerrado en este tiempo: aviso diario
+
+
+def recordatorio_ot_sin_cerrar(db, dia: date) -> int:
+    """Cada día, a recepción y al Director Técnico (quien cierra OT en el activo): OT de subcontrata que el técnico dio
+    por finalizadas hace más de 48 h y siguen sin cerrar ni rechazar."""
+    if not configurado():
+        return 0
+    from .routers.personal import _lugar
+    limite = datetime.combine(dia, datetime.now().time()) - timedelta(hours=HORAS_CIERRE)
+    ots = list(db.scalars(select(WorkOrder).where(WorkOrder.estado == "pendiente_cierre",
+                                                  WorkOrder.asignacion == "subcontrata",
+                                                  WorkOrder.conf_mto_fecha <= limite)
+                          .order_by(WorkOrder.conf_mto_fecha)))
+    if not ots:
+        return 0
+    por_usuario: dict[int, tuple[User, list]] = {}
+    destinos = suscritos(db, "ot_tecnico")
+    for w in ots:
+        horas = int((datetime.combine(dia, datetime.now().time()) - w.conf_mto_fecha).total_seconds() // 3600)
+        fila = [db.get(Asset, w.asset_id).nombre, f"OT-{w.id:05d}", _lugar(db, w.asset_id, w.unit_id, w.zona),
+                w.titulo, w.proveedor or "", w.conf_mto_fecha.strftime("%d/%m/%Y %H:%M"), f"{horas} h"]
+        for u, ids in destinos:
+            if ids is None or w.asset_id in ids:
+                por_usuario.setdefault(u.id, (u, []))[1].append(fila)
+    enviados = 0
+    cab = ["Activo", "Orden", "Ubicación", "Trabajo", "Subcontrata", "Finalizada", "Sin cerrar"]
+    pie = "Revise el trabajo, las fotos y el tiempo, y ciérrela o recházela en Órdenes de trabajo."
+    for u, filas in por_usuario.values():
+        clave = f"ot_sin_cerrar:{dia.isoformat()}"
+        if db.scalar(select(EmailLog.id).where(EmailLog.clave == clave, EmailLog.user_id == u.id, EmailLog.ok)):
+            continue
+        texto = "\n".join(" · ".join(f) for f in filas) + f"\n\n{pie}"
+        enviados += _enviar_registrado(db, u, u.email, clave, "ot_tecnico",
+                                       f"PMS · {len(filas)} OT de subcontrata sin cerrar (más de {HORAS_CIERRE} h)",
+                                       texto, _html(f"OT de subcontrata pendientes de cierre más de {HORAS_CIERRE} h",
+                                                    _tabla(cab, filas) + f"<p>{escape(pie)}</p>"))
     db.commit()
     return enviados
 
@@ -596,6 +655,7 @@ def resumen_diario(db, dia: date | None = None, forzar: bool = False) -> dict:
     for nombre, tarea in (("informe mensual", lambda: informe_mensual(db, dia)),
                           ("documentación legal", lambda: recordatorio_semanal(db, dia)),
                           ("OT pausadas", lambda: recordatorio_ot_pausadas(db, dia)),
+                          ("OT sin cerrar", lambda: recordatorio_ot_sin_cerrar(db, dia)),
                           ("recibos de garaje", lambda: garajes_al_dia(db, hoy=dia))):  # aunque nadie entre en el PMS
         try:
             tarea()

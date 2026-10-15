@@ -3,12 +3,13 @@ recibe por WhatsApp o correo: sin usuario ni contraseña, con un enlace firmado 
 
 Registra la intervención (llegada y salida, trabajos o diagnóstico, materiales, observaciones, fotos), el estado al
 finalizar y la firma táctil del técnico. Según el estado:
-  A. resuelta            -> trabajo confirmado por mantenimiento («finalizada por el técnico»)
+  A. resuelta            -> exige el tiempo (llegada y salida) y al menos una foto de la reparación. Personal propio:
+                            la OT queda cerrada. Subcontrata: finalizada, la cierran el Director Técnico o recepción
   B. pendiente_material  -> en pausa, alerta en el panel
   C. otra_visita         -> sigue abierta con la fecha propuesta para la siguiente visita
   D. escalar             -> (solo personal propio) en pausa y aviso en rojo: derivar a una subcontrata
   E. otro                -> en revisión, con la justificación obligatoria
-Recepción o dirección reciben el aviso al momento y, al cerrar, dan la conformidad de la propiedad."""
+Recepción o dirección reciben el aviso al momento (y pueden reabrir en 7 días la que cerró el personal propio)."""
 import base64
 from datetime import date, datetime
 from pathlib import Path
@@ -27,7 +28,8 @@ from ..models import RESULTADOS_TECNICO, Asset, StaffMember, WorkOrder, WorkOrde
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request, get_or_404, scoped
 from . import personal
-from .mantenimiento import ABIERTAS, PAUSADAS, _subcontrata, acceso_texto, requiere_limpieza, token_valido
+from .mantenimiento import (ABIERTAS, FALTA_FOTO_ANTES, PAUSADAS, _subcontrata, acceso_texto, cerrar_ot,
+                            exigir_finalizacion, fotos_antes, fotos_trabajo, token_valido)
 
 publico = APIRouter(tags=["técnico (enlace)"])
 router = APIRouter(prefix="/api/mantenimiento", tags=["mantenimiento"])
@@ -94,7 +96,9 @@ def data(wid: int, c: int, f: str, db: Session = Depends(get_db)):
                      "empresa": abierta.empresa, "tecnico": abierta.tecnico} if abierta else None,
         "ultima": {"resultado": ultima.resultado, "resultado_nombre": RESULTADOS_TECNICO[ultima.resultado],
                    "enviado": ultima.enviado.isoformat(), "tecnico": ultima.tecnico} if ultima else None,
-        "fotos": fotos,
+        "fotos": fotos, "fotos_trabajo": fotos_trabajo(db, w), "fotos_antes": fotos_antes(db, w),
+        "exige_foto_antes": bool(w.exige_foto_antes),
+        "cierra": "tecnico" if w.asignacion != "subcontrata" else "recepcion",  # quién cierra al marcar «resuelta»
     }
 
 
@@ -137,10 +141,13 @@ def start(wid: int, c: int, f: str, body: InicioIn, request: Request, db: Sessio
 
 
 @publico.post("/api/publico/ot/{wid}/fotos", status_code=201)
-def upload_photos(wid: int, c: int, f: str, ficheros: list[UploadFile] = File(...), db: Session = Depends(get_db)):
-    """Fotos del trabajo terminado (o del material que falta)."""
+def upload_photos(wid: int, c: int, f: str, ficheros: list[UploadFile] = File(...), tipo: str = "trabajo",
+                  db: Session = Depends(get_db)):
+    """Fotos del trabajo terminado (o del material que falta) o, con tipo=averia, del «antes» (la avería al llegar)."""
     w = _orden(db, wid, c, f)
     _editable(w)
+    if tipo not in ("trabajo", "averia"):
+        bad_request("Tipo de foto no válido")
     if len(ficheros) > 6:
         bad_request("Máximo 6 fotos por envío")
     n = 0
@@ -149,7 +156,8 @@ def upload_photos(wid: int, c: int, f: str, ficheros: list[UploadFile] = File(..
             datos, mime, nombre = adjuntos.normalizar(x.file.read(adjuntos.TAM_MAX + 1), (x.filename or "foto")[-150:])
         except ValueError as e:
             bad_request(f"{x.filename}: {e}")
-        db.add(WorkOrderAttachment(work_order_id=w.id, tipo="trabajo", nombre=nombre, descripcion="Foto del técnico",
+        db.add(WorkOrderAttachment(work_order_id=w.id, tipo=tipo, nombre=nombre,
+                                   descripcion="Foto del antes (técnico)" if tipo == "averia" else "Foto del técnico",
                                    fichero=documentos.guardar(datos), mime=mime, tamano=len(datos),
                                    sha256=documentos.huella(datos)))
         n += 1
@@ -200,6 +208,14 @@ def finish(wid: int, c: int, f: str, body: FinIn, request: Request, tareas: Back
         bad_request("Proponga la fecha de la siguiente visita (hoy o posterior)")
     if body.resultado == "otro" and len((body.justificacion or "").strip()) < 5:
         bad_request("Describa el resultado o el motivo técnico del bloqueo")
+    if body.resultado == "resuelta":  # antes de guardar nada: fotos del antes y de la reparación, y tiempo
+        if w.exige_foto_antes and not fotos_antes(db, w):
+            bad_request(FALTA_FOTO_ANTES + ": hágala con «📷 Foto del antes»")
+        if not fotos_trabajo(db, w):
+            bad_request("Añada al menos una foto de la reparación antes de enviar el resultado")
+        previa = _abierta(db, w)
+        if not (body.llegada or (previa and previa.llegada)):
+            bad_request("Indique la hora de llegada: el tiempo de trabajo es obligatorio para finalizar")
     firma = _png_firma(body.firma)
     ahora = datetime.now().replace(microsecond=0)
     v = _abierta(db, w) or WorkOrderVisit(work_order_id=w.id)
@@ -216,10 +232,17 @@ def finish(wid: int, c: int, f: str, body: FinIn, request: Request, tareas: Back
     v.justificacion = (body.justificacion or "").strip() or None
     v.firma, v.enviado = documentos.guardar(firma), ahora
     v.ip = request.client.host if request.client else v.ip
-    if body.resultado == "resuelta":  # A. finalizada por el técnico: confirma el trabajo de mantenimiento
+    if body.resultado == "resuelta":  # A. trabajo terminado: hace falta el tiempo y al menos una foto
+        if not v.llegada:
+            bad_request("Indique la hora de llegada: el tiempo de trabajo es obligatorio para finalizar")
+        db.flush()
+        exigir_finalizacion(db, w)
         w.solucion = v.trabajos
         w.conf_mto_por, w.conf_mto_fecha = None, ahora
-        w.estado = "trabajo_realizado" if requiere_limpieza(w) else "pendiente_cierre"
+        if w.asignacion == "subcontrata":  # la cierran el Director Técnico o recepción
+            w.estado = "pendiente_cierre"
+        else:  # personal propio: queda cerrada con su firma, la fecha y la foto
+            cerrar_ot(db, w, None)
     else:
         w.estado = ESTADO_POR_RESULTADO[body.resultado]
         if body.resultado == "otra_visita":

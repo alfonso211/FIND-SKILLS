@@ -14,7 +14,7 @@ si la reserva se cancela o cambia de fechas, las pendientes que ya no correspond
 from datetime import date, datetime, timedelta
 from io import BytesIO
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from . import marca
@@ -215,14 +215,17 @@ def validar(db: Session, t: CleaningTask, user: User) -> None:
     u = t.unit
     otras = db.scalar(select(CleaningTask.id).where(CleaningTask.unit_id == u.id, CleaningTask.id != t.id,
                                                     CleaningTask.estado == "pendiente", CleaningTask.tipo == "salida"))
-    if t.tipo == "salida" and u.estado == "pendiente_limpieza" and not otras:
+    tras_ot = t.tipo == "extra" and (t.clave or "").startswith("ot:")  # limpieza tras una reparación (1.70)
+    if (t.tipo == "salida" or tras_ot) and u.estado == "pendiente_limpieza" and not otras:
         u.estado = "disponible"
 
 
 def limpieza_unidad_hecha(db: Session, u: Unit, user: User) -> None:
-    """La gobernanta marca el apartamento como limpio: se validan sus limpiezas de salida pendientes."""
+    """La gobernanta marca el apartamento como limpio: se validan sus limpiezas de salida (y las de tras una
+    reparación) pendientes."""
     for t in db.scalars(select(CleaningTask).where(CleaningTask.unit_id == u.id, CleaningTask.estado == "pendiente",
-                                                   CleaningTask.tipo == "salida", CleaningTask.fecha <= date.today())):
+                                                   or_(CleaningTask.tipo == "salida", CleaningTask.clave.like("ot:%")),
+                                                   CleaningTask.fecha <= date.today())):
         t.estado, t.hecha, t.validada_por = "hecha", datetime.now(), user.id
 
 

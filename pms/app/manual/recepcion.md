@@ -116,19 +116,22 @@
 - **El permiso vale para esa estancia**: si el cliente se va y entra otro con la OT abierta, en la lista de OT sale **⚠ Acceso anotado para otro cliente** y el botón **Acceso** para volver a pedirlo.
 - **Check-in con OT abierta** en el apartamento: al hacer el check-in sale una ventana para preguntar al cliente cómo se entra en cada OT. También se puede anotar después con el botón **Acceso** de la OT.
 - **Llega un cliente pronto** (7 días): al abrir la OT se avisa (🧳) y se propone como fecha prevista el día anterior a su llegada. En la lista de OT se ve «Llega un cliente el …».
-- **Órdenes de trabajo → Nueva OT** (o desde el plano): describa la avería y **adjunte fotos**. Si es urgente, márquelo: mantenimiento recibe un correo al momento.
-- **Partes de estado** (Mantenimiento → Partes de estado): mantenimiento y limpieza ya no abren OT; registran un parte y le llega un **correo al momento**. El parte sale en el **Panel de control** hasta que se resuelve.
+- **Órdenes de trabajo → Nueva OT** (o desde el plano): describa la avería y **haga la foto del «antes»** (obligatoria en las correctivas y de mejora; si la OT sale de un parte de estado, valen sus fotos). Si es urgente, márquelo: mantenimiento recibe un correo al momento.
+- **Las OT las abre siempre recepción.** Limpieza avisa con un **parte de estado** y mantenimiento con **«Pedir OT»** (le suena la campana 🔔: «Mantenimiento pide una OT…»); usted abre la orden.
+- **Partes de estado** (Mantenimiento → Partes de estado): solo los genera limpieza; le llega un **correo al momento**. El parte sale en el **Panel de control** hasta que se resuelve.
   - **Generar OT**: abre la orden con todo relleno (título, gremio, prioridad propuesta, descripción y fotos del parte). Asígnela y envíela a quien corresponda.
   - **Descartar**: indique el motivo. Si el parte crítico había dejado la vivienda fuera de servicio, vuelve a estar disponible.
   - Al **cerrar la OT**, el parte queda **resuelto**. Si la OT se cancela, el parte queda descartado.
   - **Códigos QR**: hoja con el QR de cada vivienda y zona común para pegar en la puerta o en el cuarto de instalaciones; al escanearlo con el móvil se abre el parte de esa ubicación.
 - **Asignar**: elija **personal propio** o **subcontrata** (y la fecha prevista). Después, **Enviar**: por WhatsApp o correo le llega al técnico un enlace para gestionarla desde el móvil, sin usuario (por correo, además, el parte en PDF).
 - Cuando el técnico envía el resultado suena un aviso en el PMS, le llega un correo y sale en el **Panel de control**:
-  - **Resuelta**: limpieza revisa la unidad y usted da la conformidad.
+  - **Resuelta**: siempre con **tiempo** (llegada y salida) y **al menos una foto de la reparación**. Si es **personal propio**, la orden queda **cerrada** con su firma. Si es **subcontrata**, queda **pendiente de cierre**: revísela y ciérrela usted (o el Director Técnico).
   - **Pendiente de material** / **Requiere otra visita** / **Otro**: la orden queda en pausa y se le recuerda **cada día por correo** hasta que la reprograme (Asignar → fecha prevista), la reasigne o cambie su estado.
   - **Derivar a subcontrata** (en rojo): el personal propio no puede hacerla. Pulse **Asignar**, elija la subcontrata y envíela.
 - **Intervenciones**: tiempos, trabajos, material, estado y firma del técnico.
-- **Conformidad y cierre**: cuando está **pendiente de cierre**, revise el trabajo, marque la conformidad de la propiedad y ciérrela. Queda registrada con su usuario, fecha y hora en el parte PDF.
+- **Cerrar** (OT de subcontrata **pendiente de cierre**): revise el trabajo, las fotos (📎) y el tiempo, marque la conformidad de la propiedad y ciérrela. Queda registrada con su usuario, fecha y hora en el parte PDF. Si no está bien, **Rechazar** la devuelve con el motivo. Si pasan **más de 48 h** sin cerrarla, le llega un aviso cada día y la OT sale con **«⏰ +48 h sin cerrar»**.
+- **Reabrir**: una OT cerrada que no está bien se reabre en los **7 días** siguientes, con el motivo. Pasado ese plazo, abra una OT nueva.
+- Al cerrarse una OT de un apartamento, este pasa a **pendiente de limpieza** y entra solo en el parte de limpieza del día. Al marcar esa limpieza **Hecha**, queda disponible.
 
 ## Documentos recibidos
 - Las facturas y cartas que lleguen: **Documentos recibidos → Subir documento** (foto o PDF), con la **fecha de la factura** y su **vencimiento**.
@@ -163,7 +166,7 @@
 
 ## Validar los partes de trabajo diarios
 - **Mantenimiento → Parte de trabajo diario**: elegir área (mantenimiento o limpieza) y día. Los botones de los últimos 15 días muestran ✔ si están validados o cuántos trabajos faltan por validar.
-- Revisar las líneas (OT, limpiezas y actuaciones anotadas), escribir las observaciones y pulsar **Validar**. Se archivan solos en **Documentos** el **PDF** y el **Excel** («Parte de trabajo»). Antes de validar no se pueden descargar.
+- Revisar las líneas (OT, limpiezas y actuaciones anotadas), escribir las observaciones y pulsar **Validar**. En mantenimiento **todas las líneas deben tener el tiempo**: si falta alguno, el aviso dice cuál y se corrige con **Editar**. Se archivan solos en **Documentos** el **PDF** y el **Excel** («Parte de trabajo»). Antes de validar no se pueden descargar.
 - **Reabrir** deshace la validación y borra los archivados, para corregir.
 - **Editar** en cada línea (con el parte abierto): hora, trabajo, lugar, quién y horas, con el motivo. Queda en la auditoría con lo que había antes.
 - **Informe quincenal** (1-15 y 16-fin de mes): totales por área, origen, tipo y persona, horas anotadas y días sin validar. **Archivar** lo guarda en Documentos en PDF y Excel.

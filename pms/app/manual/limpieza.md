@@ -20,13 +20,13 @@
 - **Imprimir PDF** o **Enviar** (WhatsApp o correo, al personal o a otro número): el Excel del día queda en **Documentos recibidos**.
 - Al terminar cada limpieza, avise a recepción: pulsa **Hecha** y sale del parte. Si es de salida, el apartamento queda **disponible**.
 
-## Revisar el trabajo de mantenimiento
-- Cuando mantenimiento termina un trabajo en un apartamento, la OT espera su revisión.
-- Si todo está bien y limpio, en **Órdenes de trabajo** pulse **Unidad OK**.
-- Si no está bien, **devuélvala a mantenimiento** indicando el motivo.
+## Después de una reparación
+- Limpieza ya **no confirma ni cierra** las órdenes de trabajo.
+- Cuando se cierra una OT de un apartamento, este pasa a **pendiente de limpieza** y aparece en su **parte de limpieza** del día («Tras la reparación OT-xxxxx»). Déjelo listo y avise a recepción: al marcarla **Hecha**, el apartamento queda disponible.
+- Si ve que la reparación no está bien, dígaselo a recepción: puede reabrir la OT en los 7 días siguientes.
 
 ## Parte de estado (al revisar una vivienda o zona común)
-- Ya **no se abren órdenes de trabajo**: se registra un **parte de estado** y recepción genera la OT y la encarga.
+- Los partes de estado los genera **solo limpieza**. No se abren órdenes de trabajo: recepción genera la OT a partir del parte y la encarga.
 - **Mantenimiento → Partes de estado → Nuevo parte** (o escanee el **código QR** de la puerta con el móvil; también desde el plano, botón **Parte de estado**):
   1. **Ubicación**: escriba el número de la vivienda o elija la zona común.
   2. **Estancia**: cocina, baño, dormitorio…
@@ -45,7 +45,7 @@
 ## Parte de trabajo diario
 - **Mantenimiento → Parte de trabajo diario**, área *Limpieza*, y el día.
 - Las **limpiezas marcadas como hechas** ese día entran solas (L-xxxxx).
-- Lo que no es un apartamento (zonas comunes según el programa de limpieza, cristales, garaje…) se añade con **Anotar actuación** (A-xxxxx).
+- Lo que no es un apartamento (zonas comunes según el programa de limpieza, cristales, garaje…) se añade con **Anotar actuación** (A-xxxxx), con el **tiempo dedicado** (obligatorio).
 - Recepción lo **valida**; después ya no se cambia.
 
 ## Vacaciones y ausencias

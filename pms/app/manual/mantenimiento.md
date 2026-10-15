@@ -5,12 +5,15 @@
 
 ## Órdenes de trabajo (OT)
 - **Órdenes de trabajo**: todas las averías de su activo. Las **urgentes** le llegan además por **correo al momento** y **suenan** en la campana 🔔 (tres pitidos) si tiene el PMS abierto. Para coordinarse con recepción o con un compañero, use el **chat 💬**.
+- **Las OT las abre siempre recepción** (a partir de un parte de estado de limpieza, de una petición suya o de un aviso). Mantenimiento no abre OT.
 - Recorrido de una OT:
-  1. **Abierta**: la abre recepción (o la dirección), normalmente a partir de un **parte de estado** suyo o de limpieza, con sus fotos.
-  2. **Asignada**: recepción o dirección la asignan a **personal propio** o a una **subcontrata** y la **envían**: llega un enlace por WhatsApp o correo.
-  3. El técnico la gestiona **desde el móvil** con ese enlace (ver abajo). También puede hacerlo desde el PMS con **Trabajo realizado**.
-  4. Si el trabajo fue en un apartamento, **limpieza lo revisa** («Unidad OK») o lo devuelve si no está bien.
-  5. **Pendiente de cierre**: recepción da la **conformidad de la propiedad** y la cierra.
+  1. **Abierta**: la abre recepción, con la **foto del «antes»** (obligatoria en las correctivas y de mejora). Si no la tiene, hágala usted al llegar con **«📷 Foto del antes»** del enlace: sin ella no se puede terminar.
+  2. **Asignada**: recepción la asigna a **personal propio** o a una **subcontrata** y la **envía**: llega un enlace por WhatsApp o correo.
+  3. El técnico la gestiona **desde el móvil** con ese enlace (ver abajo) o desde el PMS con **Trabajo realizado**.
+  4. **Para terminarla hacen falta siempre**: el **tiempo** (hora de llegada y de salida) y **al menos una foto de la reparación**.
+  5. **Personal propio**: la **cierra usted** al terminar, con su **firma**; la fecha y la hora quedan solas. Si no está bien, recepción puede **reabrirla** en los 7 días siguientes.
+  6. **Subcontrata**: la da por **finalizada** con todos los datos (empresa, técnico, trabajos, material, fotos y tiempo); la **cierran el Director Técnico o recepción**.
+  7. Al cerrarse, si el trabajo fue en un apartamento, este pasa a **pendiente de limpieza** y entra solo en el parte de limpieza del día.
 - **Asignado a**: elija **Personal propio** (la persona de Personal → Fichas del personal) o **Subcontrata** (escriba y elija de **Proveedores**). Al guardar, se ofrece **enviar la orden**:
   - Personal propio: por **WhatsApp** (y por correo si se marca).
   - Subcontrata: por **correo** con el parte en PDF y/o por **WhatsApp** con enlace al PDF, según los datos de su ficha de proveedor (marque uno o ambos).
@@ -26,24 +29,18 @@
 - **🧳 Llega un cliente el …**: el apartamento está libre pero llega un cliente pronto. Haga la orden antes de esa fecha.
 - Al enviarle una orden le llega por **WhatsApp** o **correo** un mensaje: «Tiene una nueva orden de trabajo OT-xxxxx en … Acceda aquí para gestionarla: enlace». Ábralo en el móvil: **no hace falta usuario ni contraseña**.
 - En esa pantalla:
-  1. **Iniciar trabajo** al llegar (anota la hora de llegada).
-  2. **Trabajos realizados / diagnóstico**, **material** (añada una línea por material, con cantidad), observaciones y fotos.
+  1. **Iniciar trabajo** al llegar (anota la hora de llegada). Si se le olvida, corrija las horas a mano: **sin hora de llegada no se puede dar por resuelta**.
+  2. **Trabajos realizados / diagnóstico**, **material** (añada una línea por material, con cantidad), observaciones y **fotos de la reparación** (para «Resuelta», al menos una).
   3. **Estado al finalizar** (obligatorio): **Resuelta**; **Pendiente de material**; **Requiere otra visita** (proponga la fecha); **Notificar a subcontrata** (solo personal propio, si la avería supera su capacidad: gas, certificaciones, maquinaria); **Otro** (explique el motivo).
-  4. **Firme** con el dedo y pulse **Enviar resultado**. La hora de salida se anota sola.
+  4. **Firme** con el dedo y pulse **Enviar resultado**. La hora de salida se anota sola. Si es personal propio y la marca **Resuelta**, la orden queda **cerrada**.
 - Recepción recibe el aviso al momento. Si vuelve otro día (material o segunda visita), use el mismo enlace.
 - Si la orden se **reasigna** a otra persona, o recepción pulsa **Revocar enlace**, el enlace anterior deja de funcionar. Pida que le envíen la orden otra vez.
 - **Plazo de respuesta**: urgente **4 horas**, alta **24 horas** desde que se abre. Si nadie ha empezado el trabajo en ese plazo, la orden sale marcada **⏰ fuera de plazo** y el director técnico recibe un aviso.
 
-## Parte de estado (al revisar una vivienda o zona común)
-- Ya **no se abren órdenes de trabajo**: se registra un **parte de estado** y recepción genera la OT y la encarga.
-- **Mantenimiento → Partes de estado → Nuevo parte** (o escanee el **código QR** de la puerta con el móvil; también desde el plano, botón **Parte de estado**):
-  1. **Ubicación**: escriba el número de la vivienda o elija la zona común.
-  2. **Estancia**: cocina, baño, dormitorio…
-  3. **Elemento**: abra la familia (arquitectura, instalaciones, electrodomésticos, mobiliario, operaciones) y pulse el elemento.
-  4. **Deficiencia** de la lista, **gravedad** (🟢 leve, 🟠 media: antes de la próxima entrada, 🔴 crítica) y **foto obligatoria**. Observaciones solo si hace falta.
-- Pulse **Generar parte**. Se avisa a recepción al momento. Las averías técnicas van a mantenimiento y las de limpieza a limpieza.
-- **Crítica**: la vivienda queda **fuera de servicio** (no se puede reservar) hasta que se cierre su orden de trabajo.
-- En **Partes** ve los suyos y en qué situación están (pendiente, con OT, resuelto o descartado).
+## En sus rondas y visitas: parte diario o «Pedir OT»
+- Todo trabajo que **no sea una OT** (rondas, visitas, revisiones, pequeños arreglos) se anota en el **Parte de trabajo diario** con el **tiempo dedicado**. Es obligatorio.
+- Si ve una avería que necesita una orden de trabajo: **Parte de trabajo diario → 🛠 Pedir OT a recepción**. Describa qué pasa y dónde (y si es urgente). Recepción recibe el aviso al momento y abre la OT.
+- Los **partes de estado** los genera solo **limpieza**.
 
 ## Plan preventivo
 - **Plan preventivo**: revisiones periódicas y normativas (PCI, ascensores, legionela, BT…).
@@ -73,7 +70,7 @@
 
 ## Consejos
 - Ponga siempre **fotos antes y después**: sirven a recepción, a limpieza y a Dirección.
-- Anote el **coste real**: sale en el informe de costes de mantenimiento.
+- Anote el **coste real**: sale en el informe de costes de mantenimiento, junto con sus **horas** (de las OT y del parte diario) y, para el personal propio, la mano de obra (horas × coste/hora de su ficha).
 
 ## Pedidos de material
 - **Mantenimiento → Pedidos de material → Nuevo pedido**: elija el activo y el proveedor. En «Productos» escriba parte de la referencia, el artículo, la marca o el proveedor: salen las sugerencias del catálogo; púlsela para añadirla. Indique la **cantidad** (el precio sale del catálogo y se puede cambiar).
@@ -84,7 +81,9 @@
 ## Parte de trabajo diario
 - **Mantenimiento → Parte de trabajo diario**, área *Mantenimiento*, y el día.
 - Las **OT terminadas** ese día entran solas en el parte (OT-xxxxx).
-- Lo que se hizo **sin OT** se añade con **Anotar actuación**: lugar, trabajo, quién, **hora a la que se hizo** y horas (A-xxxxx). Se puede quitar mientras el parte esté abierto.
+- El **tiempo** de cada OT (de la llegada a la salida) entra solo en el parte.
+- Lo que se hizo **sin OT** (rondas, visitas, pequeños arreglos) se añade con **Anotar actuación**: lugar, trabajo, quién, **hora a la que se hizo** y **tiempo dedicado (obligatorio)** (A-xxxxx). Se puede quitar mientras el parte esté abierto.
+- Sin el tiempo de todos los trabajos, recepción **no puede validar** el parte: el aviso dice cuáles faltan.
 - **Editar** (en cada línea, con el parte abierto): si se ha cometido un error, corrija la hora, el trabajo, el lugar, quién o las horas, y escriba el motivo. Las actuaciones las corrige quien las anotó o recepción. En una línea de OT se corrige la hora, quién, las horas y el detalle; la OT no cambia y la línea sale como «corregida».
 - Recepción 1 o Recepción 2 lo **valida**; desde ese momento no se cambia (si hace falta, recepción lo **reabre**).
 

@@ -163,8 +163,8 @@ def test_informes(client, admin, ids):
     # mantenimiento: costes por instalación
     w = client.post("/api/mantenimiento/ordenes", headers=admin, json={
         "asset_id": sae, "titulo": "Cambio bomba ACS", "categoria": "acs", "proveedor": "Bombas Ejemplo"}).json()
-    client.post(f"/api/mantenimiento/ordenes/{w['id']}/confirmar-mantenimiento", headers=admin,
-                json={"solucion": "Bomba sustituida", "coste_real": 850})
+    from conftest import trabajo_realizado
+    trabajo_realizado(client, admin, w["id"], "Bomba sustituida", coste_real=850)
     hoy = date.today()
     wb = _libro(client.get(f"/api/informes/mantenimiento?desde={hoy}&hasta={hoy}&asset_id={sae}", headers=admin))
     assert {"Órdenes de trabajo", "Por instalación", "Por tipo", "Por proveedor"} <= set(wb.sheetnames)
@@ -173,7 +173,7 @@ def test_informes(client, admin, ids):
     prov = [f for f in _filas(wb["Por proveedor"]) if f["Proveedor"] == "Bombas Ejemplo"][0]
     assert prov["Nº OT"] == 1 and prov["Coste real"] == 850
     ot = [f for f in _filas(wb["Órdenes de trabajo"]) if f["OT"] == f"OT-{w['id']:05d}"][0]
-    assert ot["Instalación"] == "acs" and ot["Estado"] == "trabajo_realizado"
+    assert ot["Instalación"] == "acs" and ot["Estado"] == "cerrada"
 
     # permisos y validaciones
     assert client.get("/api/informes/inventado", headers=admin).status_code == 404

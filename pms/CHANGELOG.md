@@ -2,6 +2,46 @@
 
 Registro técnico de versiones. El resumen para los usuarios está en `app/manual/novedades.md` (se muestra en el PMS).
 
+## 1.70 · 15/10/2026 · Órdenes de trabajo simplificadas
+- **Migración 0063** (sin tablas nuevas): `partes_estado.crear` sale de Recepción, Técnico Mantenimiento y Dirección
+  Sociedad (solo limpieza); `limpieza.confirmar_ot` desaparece de todos los roles y del catálogo; Dirección Técnica
+  recibe `mantenimiento.cerrar`; descripciones de roles al día; las OT en `trabajo_realizado` pasan a
+  `pendiente_cierre`.
+- `confirmar-mantenimiento` pide `llegada`, `salida` y, al personal propio, `firma` (PNG); exige al menos una foto
+  `trabajo` y guarda la intervención (`intervenciones_ot`). Personal propio (asignación distinta de subcontrata):
+  queda **cerrada** al momento (`cerrar_ot`). Subcontrata: `pendiente_cierre`.
+- Enlace del técnico, «Resuelta»: exige foto de la reparación y hora de llegada; personal propio → cerrada,
+  subcontrata → `pendiente_cierre`. `datos` devuelve `fotos_trabajo` y `cierra`.
+- `cerrar` (mantenimiento.cerrar: recepción y Director Técnico): exige trabajo finalizado, tiempo > 0 y foto; para OT
+  antiguas sin tiempo admite `llegada`/`salida`. Sin confirmación de limpieza (se quita `confirmar-limpieza`).
+  `rechazar` solo con `mantenimiento.cerrar`.
+- `POST /ordenes/{id}/reabrir` (motivo, 7 días desde el cierre): vuelve a `en_curso`, la unidad a mantenimiento y
+  anula la limpieza pendiente de después de la reparación.
+- Al cerrar o cancelar, un apartamento que quedaba libre pasa a `pendiente_limpieza` y se crea su limpieza extra del
+  día (`clave` «ot:<id>:…»); al validarla (o al marcar la unidad limpia) queda disponible. Viviendas, garajes,
+  trasteros y locales: disponibles.
+- OT: `minutos` (suma llegada → salida de sus intervenciones), `fotos_trabajo`, `reabrible`.
+- `POST /api/mantenimiento/peticiones` («Pedir OT», `mantenimiento.editar`): aviso `peticion_ot` en la campana de
+  recepción del activo (urgente: también dirección), con la suscripción `partes_estado`.
+- Parte diario: actuaciones con `horas` obligatorias (alta y corrección); las líneas de OT llevan sus horas (de las
+  intervenciones); no se valida el de mantenimiento con líneas sin tiempo.
+- Pantallas: «Trabajo realizado» con llegada, salida, fotos (obligatoria una) y firma táctil; «Cerrar», «Rechazar» y
+  «Reabrir»; columna Tiempo/fotos en lugar de Limpieza; parte diario con aviso a mantenimiento y «Pedir OT».
+- **Foto del «antes»** (migración 0063: `ordenes_trabajo.exige_foto_antes`, por defecto falso; las abiertas antes
+  quedan exentas): se marca al crear OT `correctivo` o `mejora`. `exigir_finalizacion`, `confirmar-mantenimiento` y
+  «Resuelta» del enlace exigen al menos una imagen `averia`. El enlace sube fotos con `?tipo=averia` (por defecto
+  `trabajo`); `datos` devuelve `fotos_antes` y `exige_foto_antes`. OT: `falta_foto_antes`. Nueva OT: foto
+  obligatoria en pantalla salvo si viene de un parte de estado (copia sus fotos como `averia`).
+- **Aviso 48 h** (`avisos.recordatorio_ot_sin_cerrar`, en el resumen diario): OT de subcontrata en `pendiente_cierre`
+  con `conf_mto_fecha` de hace más de 48 h, a los suscritos a `ot_tecnico` con `mantenimiento.cerrar` en el activo;
+  una vez al día (clave `ot_sin_cerrar:<día>`). OT: `sin_cerrar_48h`.
+- **Coste de mano de obra** (migración 0063: `personal_servicio.coste_hora`, campo de la ficha, solo para quien
+  gestiona al empleado): informe `mantenimiento` con columnas Horas, Mano de obra propia y Coste total por OT y hojas
+  nuevas «Horas por técnico» (OT + parte diario) y «Por apartamento». Las columnas de coste solo para el Director
+  Técnico o `personal.autorizar` de grupo.
+- Pruebas reescritas para el flujo nuevo (+1: personal propio cierra desde su enlace; +1: coste de mano de obra;
+  foto del antes y aviso 48 h en `test_tecnico_ot`).
+
 ## 1.69 · 15/10/2026 · Móviles plegables (Galaxy Fold cerrado y abierto)
 - Hasta 900 px de ancho (Fold cerrado ≈ 344-412 px, abierto ≈ 700-900 px) las tablas de lista se pintan como fichas
   (`table.t-tarjeta`): «nombre: valor» con `data-label`, botones de acción debajo y que pasan de línea; 1 columna

@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/personal", tags=["personal"])
 # permiso para dar de alta y editar el personal de cada área
 PERMISO_AREA = {"mantenimiento": "mantenimiento.editar", "limpieza": "limpieza.editar"}
 # quien puede consultar el personal (para enviarle trabajo)
-PERMISOS_VER = ("mantenimiento.ver", "limpieza.editar", "limpieza.confirmar_ot")
+PERMISOS_VER = ("mantenimiento.ver", "limpieza.editar")
 
 
 class StaffIn(BaseModel):
@@ -46,10 +46,11 @@ class StaffIn(BaseModel):
     jornada_semanal: float | None = Field(default=None, ge=0, le=60)
     vacaciones_dias: int | None = Field(default=None, ge=0, le=60)
     vacaciones_tipo: str | None = None
+    coste_hora: float | None = Field(default=None, ge=0, le=500)  # coste/hora de empresa (informe de mantenimiento)
 
 
 CAMPOS_FICHA = ("user_id", "dni", "puesto", "tipo_contrato", "fecha_alta", "fecha_baja", "jornada_semanal",
-                "vacaciones_dias", "vacaciones_tipo")
+                "vacaciones_dias", "vacaciones_tipo", "coste_hora")
 
 
 class SendIn(BaseModel):

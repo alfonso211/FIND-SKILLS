@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from conftest import domicilio_fiscal, login
 
@@ -199,15 +199,30 @@ def test_maintenance(client, admin, ids):
     assert client.post("/api/turistico/reservas", headers=admin, json={
         "unit_id": unit["id"], "guest": {"nombre": "X"}, "fecha_entrada": d(1), "fecha_salida": d(2)}).status_code == 400
     base = f"/api/mantenimiento/ordenes/{w['id']}"
-    # sin confirmaciones no se puede cerrar
+    from conftest import firma_png, foto_antes, foto_trabajo, trabajo_realizado
+    # sin trabajo finalizado no se cierra; sin foto de la reparación, ni tiempo, ni firma no se finaliza
     assert client.post(f"{base}/cerrar", headers=admin, json={}).status_code == 400
-    assert client.post(f"{base}/confirmar-mantenimiento", headers=admin,
-                       json={"solucion": "Sustitución válvula", "coste_real": 85.5}).json()["estado"] == "trabajo_realizado"
-    assert client.post(f"{base}/confirmar-limpieza", headers=admin).json()["estado"] == "pendiente_cierre"
-    c = client.post(f"{base}/cerrar", headers=admin, json={}).json()
-    assert c["estado"] == "cerrada" and c["coste_real"] == 85.5
-    # limpieza ya confirmó la unidad -> queda disponible
-    assert client.get(f"/api/unidades?asset_id={sae}&q={unit['codigo']}", headers=admin).json()[0]["estado"] == "disponible"
+    assert trabajo_realizado(client, admin, w["id"], "Sustitución válvula", foto=False).status_code == 400
+    assert client.post(f"{base}/confirmar-mantenimiento", headers=admin, json={"solucion": "Sustitución válvula"}).status_code == 422
+    foto_trabajo(client, admin, w["id"])
+    ahora = datetime.now().replace(microsecond=0)
+    sin_firma = {"solucion": "Sustitución válvula", "llegada": (ahora - timedelta(hours=1)).isoformat(),
+                 "salida": ahora.isoformat()}
+    # correctiva abierta desde la 1.70: sin la foto del «antes» no se finaliza
+    assert "antes" in client.post(f"{base}/confirmar-mantenimiento", headers=admin,
+                                  json={**sin_firma, "firma": firma_png()}).json()["detail"]
+    assert client.get(base, headers=admin).json()["falta_foto_antes"]
+    foto_antes(client, admin, w["id"])
+    assert not client.get(base, headers=admin).json()["falta_foto_antes"]
+    assert "Firme" in client.post(f"{base}/confirmar-mantenimiento", headers=admin, json=sin_firma).json()["detail"]
+    al_reves = {**sin_firma, "llegada": sin_firma["salida"], "salida": sin_firma["llegada"], "firma": firma_png()}
+    assert client.post(f"{base}/confirmar-mantenimiento", headers=admin, json=al_reves).status_code == 400
+    c = client.post(f"{base}/confirmar-mantenimiento", headers=admin,
+                    json={**sin_firma, "coste_real": 85.5, "firma": firma_png()}).json()
+    # personal propio: queda cerrada al momento, con el tiempo y la foto; la unidad, pendiente de limpieza
+    assert c["estado"] == "cerrada" and c["coste_real"] == 85.5 and c["minutos"] == 60 and c["fotos_trabajo"] == 1
+    assert c["reabrible"] and c["cerrada_por_nombre"]
+    assert client.get(f"/api/unidades?asset_id={sae}&q={unit['codigo']}", headers=admin).json()[0]["estado"] == "pendiente_limpieza"
     n = client.post("/api/mantenimiento/planes/plantilla", headers=admin,
                     json={"asset_id": sae, "primera_fecha": d(0)}).json()["creados"]
     assert n > 5
@@ -326,8 +341,10 @@ def test_login_lockout(client):
 
 
 def test_work_order_flow_by_role(client, admin, ids):
-    """Abre recepción (limpieza y mantenimiento avisan con un parte de estado); confirma mantenimiento, luego
-    limpieza; cierra solo recepción."""
+    """1.70: abre recepción (limpieza avisa con un parte de estado y mantenimiento pide la OT). El personal propio la
+    cierra él mismo (firma, foto y tiempo); la de subcontrata la da por finalizada y la cierran recepción o el Director
+    Técnico. Recepción reabre en 7 días. Limpieza ya no confirma: la unidad queda pendiente de limpieza."""
+    from conftest import trabajo_realizado
     sfl = ids["assets"]["SFL"]["id"]
     rol = ids["roles"]
     rec = _new_user(client, admin, "rec.ot@inversiete.es", [{"role_id": rol["Recepción"], "asset_id": sfl}])
@@ -348,58 +365,78 @@ def test_work_order_flow_by_role(client, admin, ids):
     assert client.get(f"/api/unidades?asset_id={sfl}&q=P4-2B", headers=admin).json()[0]["estado"] == "mantenimiento"
     base = f"/api/mantenimiento/ordenes/{ot['id']}"
 
-    # limpieza no puede confirmar antes que mantenimiento; recepción y limpieza no confirman trabajo
-    assert client.post(f"{base}/confirmar-limpieza", headers=lim).status_code == 400
-    assert client.post(f"{base}/confirmar-mantenimiento", headers=rec, json={"solucion": "xxx"}).status_code == 403
-    assert client.post(f"{base}/confirmar-mantenimiento", headers=lim, json={"solucion": "xxx"}).status_code == 403
-    # mantenimiento no puede cerrar
+    # recepción y limpieza no dan el trabajo por realizado; mantenimiento no cierra desde «Cerrar»
+    assert trabajo_realizado(client, rec, ot["id"], foto=False).status_code == 403
+    assert trabajo_realizado(client, lim, ot["id"], foto=False).status_code == 403
     assert client.post(f"{base}/cerrar", headers=mto, json={}).status_code == 403
+    assert client.post(f"{base}/confirmar-limpieza", headers=lim).status_code in (404, 405)  # ya no existe
 
-    assert client.post(f"{base}/confirmar-mantenimiento", headers=mto,
-                       json={"solucion": "Cambio de cinta", "coste_real": 25}).status_code == 200
-    # recepción no puede sustituir la confirmación de limpieza ni cerrar sin ella
-    assert client.post(f"{base}/confirmar-limpieza", headers=rec).status_code == 403
-    assert client.post(f"{base}/confirmar-limpieza", headers=mto).status_code == 403
-    assert "limpieza" in client.post(f"{base}/cerrar", headers=rec, json={}).json()["detail"]
-    # limpieza rechaza: vuelve a mantenimiento sin confirmaciones
-    r = client.post(f"{base}/rechazar", headers=lim, json={"motivo": "Sigue sin bajar"}).json()
+    # personal propio: la cierra el técnico con su firma, la foto y el tiempo
+    c = trabajo_realizado(client, mto, ot["id"], "Cambio de cinta", coste_real=25)
+    assert c.status_code == 200, c.text
+    c = c.json()
+    assert c["estado"] == "cerrada" and c["cerrada_por_nombre"] == "mto.ot" and c["conf_mto_por_nombre"] == "mto.ot"
+    assert c["minutos"] == 45
+    assert client.get(f"/api/unidades?asset_id={sfl}&q=P4-2B", headers=admin).json()[0]["estado"] == "pendiente_limpieza"
+    # entra en el parte de limpieza de hoy; al validarla, el apartamento queda disponible
+    from app.models import CleaningTask
+    from app.database import SessionLocal
+    with SessionLocal() as db:
+        t = db.query(CleaningTask).filter(CleaningTask.unit_id == unit["id"], CleaningTask.estado == "pendiente").one()
+        assert t.tipo == "extra" and t.clave.startswith(f"ot:{ot['id']}:") and f"OT-{ot['id']:05d}" in t.nota
+        tid = t.id
+    vis = client.get(f"{base}/intervenciones", headers=rec).json()
+    assert vis[-1]["minutos"] == 45 and vis[-1]["con_firma"] and vis[-1]["empresa"] == "Personal propio"
+
+    # recepción la reabre (no conforme): vuelve al técnico y la unidad, a mantenimiento; ni limpieza ni el técnico
+    assert client.post(f"{base}/reabrir", headers=mto, json={"motivo": "Sigue sin bajar"}).status_code == 403
+    assert client.post(f"{base}/reabrir", headers=lim, json={"motivo": "Sigue sin bajar"}).status_code == 403
+    r = client.post(f"{base}/reabrir", headers=rec, json={"motivo": "Sigue sin bajar"}).json()
     assert r["estado"] == "en_curso" and r["conf_mto_por"] is None and "Sigue sin bajar" in r["descripcion"]
-    client.post(f"{base}/confirmar-mantenimiento", headers=mto, json={"solucion": "Cambio de cinta y polea"})
-    assert client.post(f"{base}/confirmar-limpieza", headers=lim).json()["estado"] == "pendiente_cierre"
-    # limpieza y mantenimiento no cierran; recepción sí
-    assert client.post(f"{base}/cerrar", headers=lim, json={}).status_code == 403
-    c = client.post(f"{base}/cerrar", headers=rec, json={}).json()
+    assert client.get(f"/api/unidades?asset_id={sfl}&q=P4-2B", headers=admin).json()[0]["estado"] == "mantenimiento"
+    assert trabajo_realizado(client, mto, ot["id"], "Cambio de cinta y polea").json()["estado"] == "cerrada"
+    with SessionLocal() as db:  # al reabrir se anuló la limpieza pendiente; al cerrar de nuevo entra otra
+        assert db.get(CleaningTask, tid).estado == "anulada"
+        tid = db.query(CleaningTask).filter(CleaningTask.unit_id == unit["id"], CleaningTask.estado == "pendiente").one().id
+    assert client.post(f"/api/limpieza/{tid}/hecha", headers=rec).json()["unidad_estado"] == "disponible"
+    # pasados 7 días ya no se reabre: se abre una OT nueva
+    from app.models import WorkOrder
+    with SessionLocal() as db:
+        db.get(WorkOrder, ot["id"]).fecha_cierre = date.today() - timedelta(days=8)
+        db.commit()
+    assert client.post(f"{base}/reabrir", headers=rec, json={"motivo": "Tarde"}).status_code == 400
+
+    # subcontrata: la da por finalizada (datos, foto y tiempo) y la cierra recepción (o el Director Técnico)
+    sub = client.post("/api/mantenimiento/ordenes", headers=rec, json={
+        "asset_id": sfl, "titulo": "Bajante atascada", "asignacion": "subcontrata",
+        "proveedor": "Desatascos Pruebas SL"}).json()
+    sb = f"/api/mantenimiento/ordenes/{sub['id']}"
+    f = trabajo_realizado(client, mto, sub["id"], "Desatasco con máquina").json()
+    assert f["estado"] == "pendiente_cierre"
+    assert client.post(f"{sb}/cerrar", headers=mto, json={}).status_code == 403
+    assert client.post(f"{sb}/rechazar", headers=lim, json={"motivo": "Huele"}).status_code == 403
+    assert client.post(f"{sb}/rechazar", headers=rec, json={"motivo": "Sigue atascada"}).json()["estado"] == "en_curso"
+    trabajo_realizado(client, mto, sub["id"], "Desatasco y limpieza de arqueta")
+    c = client.post(f"{sb}/cerrar", headers=rec, json={}).json()
     assert c["estado"] == "cerrada" and c["cerrada_por_nombre"] == "rec.ot"
-    assert c["conf_mto_por_nombre"] == "mto.ot" and c["conf_limpieza_por_nombre"] == "lim.ot"
-    # la unidad bloqueada se libera solo cuando no quedan OT bloqueantes abiertas
-    assert client.get(f"/api/unidades?asset_id={sfl}&q=P4-2B", headers=admin).json()[0]["estado"] == "disponible"
+
+    # mantenimiento pide una OT a recepción (aviso en la campana); limpieza no
+    assert client.post("/api/mantenimiento/peticiones", headers=lim, json={
+        "asset_id": sfl, "descripcion": "Fuga en la sala de calderas"}).status_code == 403
+    p = client.post("/api/mantenimiento/peticiones", headers=mto, json={
+        "asset_id": sfl, "unit_id": unit["id"], "descripcion": "Humedad en el techo del baño", "urgente": True})
+    assert p.status_code == 200 and p.json()["avisados"] >= 1
+    assert any("pide una OT" in a["titulo"] and a["vista"] == "ordenes"
+               for a in client.get("/api/notificaciones", headers=rec).json())
 
 
 def test_preventive_common_areas_skip_cleaning(client, admin, ids):
+    """Preventiva de zonas comunes con personal propio: la cierra el técnico (sin unidad: nada que limpiar)."""
+    from conftest import trabajo_realizado
     sae = ids["assets"]["SAE"]["id"]
-    rol = ids["roles"]
-    rec = _new_user(client, admin, "rec.prev@inversiete.es", [{"role_id": rol["Recepción"], "asset_id": sae}])
-    lim = _new_user(client, admin, "lim.prev@inversiete.es", [{"role_id": rol["Gobernanta / Limpieza"], "asset_id": sae}])
-    mto = _new_user(client, admin, "mto.prev@inversiete.es", [{"role_id": rol["Técnico Mantenimiento"], "asset_id": sae}])
-    # preventiva de zonas comunes: mantenimiento confirma -> recepción cierra, sin limpieza
+    mto = _new_user(client, admin, "mto.prev@inversiete.es",
+                    [{"role_id": ids["roles"]["Técnico Mantenimiento"], "asset_id": sae}])
     w = client.post("/api/mantenimiento/ordenes", headers=admin, json={
         "asset_id": sae, "tipo": "preventivo", "categoria": "pci", "titulo": "Revisión trimestral extintores"}).json()
-    assert w["requiere_limpieza"] is False
-    base = f"/api/mantenimiento/ordenes/{w['id']}"
-    r = client.post(f"{base}/confirmar-mantenimiento", headers=mto, json={"solucion": "Revisados 24 extintores"}).json()
-    assert r["estado"] == "pendiente_cierre"
-    assert client.post(f"{base}/confirmar-limpieza", headers=lim).status_code == 400
-    assert client.post(f"{base}/rechazar", headers=lim, json={"motivo": "xxx"}).status_code == 403
-    assert client.post(f"{base}/cerrar", headers=mto, json={}).status_code == 403
-    assert client.post(f"{base}/cerrar", headers=rec, json={}).json()["estado"] == "cerrada"
-    # preventiva en una unidad y correctiva en zonas comunes sí requieren limpieza
-    unit = client.get(f"/api/unidades?asset_id={sae}&q=A-250", headers=admin).json()[0]
-    assert client.post("/api/mantenimiento/ordenes", headers=admin, json={
-        "asset_id": sae, "unit_id": unit["id"], "tipo": "preventivo", "titulo": "Limpieza filtros split"}).json()["requiere_limpieza"]
-    assert client.post("/api/mantenimiento/ordenes", headers=rec, json={
-        "asset_id": sae, "titulo": "Fuga en pasillo planta 2"}).json()["requiere_limpieza"]
-    # las OT generadas por los planes preventivos (zonas comunes) tampoco pasan por limpieza
-    client.post("/api/mantenimiento/planes/plantilla", headers=admin, json={"asset_id": sae})
-    client.post("/api/mantenimiento/planes/generar", headers=admin, json={"asset_id": sae, "dias_antelacion": 90})
-    gen = client.get(f"/api/mantenimiento/ordenes?asset_id={sae}&tipo=preventivo&abiertas=true", headers=admin).json()
-    assert any(not o["requiere_limpieza"] and o["plan_id"] for o in gen)
+    r = trabajo_realizado(client, mto, w["id"], "Revisados 24 extintores").json()
+    assert r["estado"] == "cerrada" and r["minutos"] == 45
