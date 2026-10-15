@@ -58,6 +58,8 @@ def me(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
         "borrar_usuarios": puede_borrar(u),
         "gestion": puede_ir(u),  # botón «Gestión» (INVERGESTION)
         "ambitos": ambitos,
+        # Recepción 1 de algún activo (consulta el registro de jornada de su personal)
+        "recepcion1": bool(db.scalar(select(Asset.id).where(Asset.recepcion1_id == u.id).limit(1))),
         "accesos": accesos_de(u),  # accesos rápidos de la barra superior
         # colaborador externo: solo su portal
         "colaborador": {"supplier_id": u.supplier_id, "proveedor": db.get(Supplier, u.supplier_id).nombre}

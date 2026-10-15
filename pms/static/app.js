@@ -275,9 +275,14 @@ function pickAsset(modalidad, perm) {
   const cur = pool.find((a) => String(a.id) === String(S.asset));
   if (cur) return Promise.resolve(cur.id);
   if (pool.length === 1) return Promise.resolve(pool[0].id);
-  if (!pool.length) { toast("No tiene activos de este tipo", true); return Promise.reject(); }
-  return new Promise((resolve) => form("Seleccione activo", [{ k: "asset_id", t: "Activo", type: "select", req: true, options: opts(pool) }],
-    {}, async (d) => resolve(Number(d.asset_id)), "Continuar"));
+  if (!pool.length) { toast("No tiene activos de este tipo", true); return Promise.reject(new Error("No tiene activos de este tipo en sus permisos")); }
+  // si se cierra la ventana sin elegir, la pantalla lo dice (antes se quedaba en «Cargando…» para siempre)
+  return new Promise((resolve, reject) => {
+    let elegido = false;
+    form("Seleccione activo", [{ k: "asset_id", t: "Activo", type: "select", req: true, options: opts(pool) }],
+      {}, async (d) => { elegido = true; resolve(Number(d.asset_id)); }, "Continuar");
+    $("#modal").addEventListener("close", () => { if (!elegido) reject(new Error("Elija un activo en el selector de arriba (o vuelva a entrar en la pantalla) para continuar")); }, { once: true });
+  });
 }
 
 // ------------------------------------------------------------------ vistas
@@ -6502,7 +6507,7 @@ const allowed = (p) => !p || (p === "admin" ? S.me.admin_grupo : p === "informes
   : p === "personal" ? ["mantenimiento.ver", "limpieza.editar"].some(can)
   : p === "proveedores" ? verProveedores() : p === "pedidos" ? verPedidos() : p === "partes" ? verPartes()
   : p === "partesestado" ? canParteEstado() || can("mantenimiento.abrir")
-  : p === "gestpersonal" ? can("personal.autorizar") || can("partes.validar")
+  : p === "gestpersonal" ? can("personal.autorizar") || !!S.me.recepcion1
   : p === "caja" ? can("reservas.editar") || can("finanzas.ver") : can(p));
 const TITLES = Object.fromEntries(MENU.flatMap(([, items]) => items.map(([id, t]) => [id, t])));
 const PERMISO_VISTA = Object.fromEntries(MENU.flatMap(([, items]) => items.map(([id, , p]) => [id, p])));
@@ -6571,7 +6576,7 @@ async function go(view) {
   $("#viewTitle").textContent = TITLES[view];
   // contenedor nuevo por navegación: una carga anterior aún en curso escribe en uno ya desmontado
   const el = document.createElement("div"); $("#view").replaceChildren(el); el.innerHTML = '<p class="muted">Cargando…</p>';
-  try { await V[view](el); } catch (e) { el.innerHTML = `<p class="error">${esc(e.message)}</p>`; }
+  try { await V[view](el); } catch (e) { el.innerHTML = `<p class="error">${esc(e?.message || "No se ha podido cargar la pantalla. Vuelva a intentarlo.")}</p>`; }
 }
 function setAsset(id) { S.plano = null; S.asset = id ? String(id) : ""; $("#assetFilter").value = S.asset; localStorage.setItem("pms_asset", S.asset); }
 function debounce(fn, ms = 300) { let h; return (...a) => { clearTimeout(h); h = setTimeout(() => fn(...a), ms); }; }
@@ -6761,6 +6766,7 @@ function focoBanner(box, texto, verTodo) {
 const contador = (el, n) => { el.textContent = n > 99 ? "99+" : n; el.hidden = !n; };
 
 function pararAvisos() {
+  S._avComprobar = null;
   clearInterval(S._avT); clearInterval(S._chatT); clearInterval(S._chatListaT);
   S._avDesde = null; S._chatUlt = null; S.chat = null;
   $("#avisosPanel").hidden = true; $("#chatPanel").hidden = true; $("#avisosBtn").hidden = true; $("#chatBtn").hidden = true;
@@ -6769,8 +6775,13 @@ function vigilarAvisos() {
   pararAvisos();
   $("#avisosBtn").hidden = false;
   $("#chatBtn").hidden = !!S.me.colaborador;  // los colaboradores externos no tienen chat
+  // una sola consulta a la vez (con la red lenta se solapaban y el mismo aviso sonaba dos veces)
   const comprobar = async () => {
-    if (!S.me) return;
+    if (!S.me || S._avOcupado) return;
+    S._avOcupado = true;
+    try { await comprobarUna(); } finally { S._avOcupado = false; }
+  };
+  const comprobarUna = async () => {
     let r;
     try { r = await get("/api/notificaciones/estado", { desde: S._avDesde }); } catch { return; }
     const primera = S._avDesde == null;
@@ -6798,16 +6809,20 @@ function vigilarAvisos() {
   };
   comprobar();
   S._avT = setInterval(comprobar, 12000);
+  // el navegador frena los temporizadores de las pestañas en segundo plano: al volver a ella se comprueba al momento
+  S._avVis = S._avVis || (document.addEventListener("visibilitychange", () => { if (!document.hidden && S.me && S._avComprobar) S._avComprobar(); }), true);
+  S._avComprobar = comprobar;
 }
 
 // ---- campana
 async function pintarAvisos() {
   const box = $("#avisosPanel");
-  const lista = await get("/api/notificaciones").catch(() => []);
+  let lista, fallo = false;
+  try { lista = await get("/api/notificaciones"); } catch { lista = []; fallo = true; }
   box.innerHTML = `<div class="avp-cab"><b>Avisos</b><span class="muted">Lo que tiene que atender</span><button type="button" class="btn sm ghost" id="avpCerrar" aria-label="Cerrar">✕</button></div>
     <div class="avp-lista">${lista.map((n) => `<button type="button" class="avp-item ${n.leida ? "" : "nuevo"} ${n.urgente ? "urgente" : ""}" data-v="${esc(n.vista || "panel")}">
       <span class="avp-tit">${n.urgente ? "⚠ " : ""}${esc(n.titulo)}</span>${n.texto ? `<span class="avp-txt">${esc(n.texto)}</span>` : ""}<span class="avp-fecha">${esc(fdt(n.creada))}</span></button>`).join("") ||
-      '<p class="muted" style="padding:14px">No tiene avisos.</p>'}</div>
+      (fallo ? '<p class="error" style="padding:14px">No se han podido cargar los avisos. Compruebe la conexión y vuelva a abrir la campana.</p>' : '<p class="muted" style="padding:14px">No tiene avisos.</p>')}</div>
     <div class="avp-pie"><a href="#perfil" id="avpPerfil">Elegir avisos y sonido en Mi perfil</a></div>`;
   $("#avpCerrar", box).onclick = () => (box.hidden = true);
   $("#avpPerfil", box).onclick = () => (box.hidden = true);
@@ -6819,7 +6834,7 @@ async function abrirAvisos() {
   box.hidden = false;
   $("#avisosBtn").classList.remove("pendiente");
   await pintarAvisos();
-  post("/api/notificaciones/leidas").then(() => contador($("#avisosN"), 0)).catch(() => {});
+  post("/api/notificaciones/leidas").then(() => { contador($("#avisosN"), 0); $("#avisosBtn").classList.remove("pendiente"); }).catch(() => {});
 }
 $("#avisosBtn").onclick = () => ($("#avisosPanel").hidden ? abrirAvisos() : ($("#avisosPanel").hidden = true));
 document.addEventListener("click", (e) => {

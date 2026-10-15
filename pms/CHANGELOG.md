@@ -2,6 +2,22 @@
 
 Registro técnico de versiones. El resumen para los usuarios está en `app/manual/novedades.md` (se muestra en el PMS).
 
+## 1.72 · 15/10/2026 · Campana y revisión general
+- Sin migración.
+- Avisos: `_enviar_registrado(..., vista=)`; los de un registro concreto llevan `ordenes?id=`, `estado?id=` y
+  `gastos?id=` (OT urgente, resultado del técnico, parte de estado, pago retenido). `VISTA_AVISO` completa: ot_plazo,
+  seguridad (usuarios), sistema (gestion), informe_direccion, personal. Prueba que cada tipo usado tiene una pantalla
+  del menú (`tests/test_campana_172.py`).
+- `GET /api/mantenimiento/ordenes`, `/api/partes-estado` y `/api/gastos` aceptan `id` (un solo registro, sin los demás
+  filtros). Pantallas con `?id=`: aviso «🔔 … del aviso» y «Ver todo».
+- Campana (app.js): `irAviso` dice si la pantalla no está en el menú del usuario; una sola consulta de avisos a la vez
+  (evita sonar dos veces); comprobación al volver a la pestaña (`visibilitychange`); error de carga visible.
+- `pickAsset`: si se cierra sin elegir, rechaza con mensaje (antes la pantalla quedaba en «Cargando…»); `go()` muestra
+  un mensaje aunque el error no lo traiga (Cobros de otro programa sin activos residenciales).
+- `/api/auth/me` devuelve `recepcion1`; el menú «Registro de jornada» sale a `personal.autorizar` o Recepción 1.
+- Revisión con Playwright de todas las pantallas del menú con superadministración, Recepción, Técnico, Limpieza,
+  Administración y Gestor residencial (1366 px y 412 px).
+
 ## 1.71 · 15/10/2026 · Activos y unidades sincronizados con gestión (maestros)
 - Instrucción: `docs/fusion/INSTRUCCION_PMS_MAESTROS_ACTIVOS.txt` (manda su punto 8). Código: `app/maestros.py`.
 - **Migración 0064**: `unidades.maestro_version` (entero, 1 para las existentes), `unidades.maestro_cambiado`,
