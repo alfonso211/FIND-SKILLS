@@ -2,6 +2,21 @@
 
 Registro técnico de versiones. El resumen para los usuarios está en `app/manual/novedades.md` (se muestra en el PMS).
 
+## 1.69 · 15/10/2026 · Móviles plegables (Galaxy Fold cerrado y abierto)
+- Hasta 900 px de ancho (Fold cerrado ≈ 344-412 px, abierto ≈ 700-900 px) las tablas de lista se pintan como fichas
+  (`table.t-tarjeta`): «nombre: valor» con `data-label`, botones de acción debajo y que pasan de línea; 1 columna
+  cerrado y 2 abierto. Antes la columna de botones (fija a la derecha y sin saltos de línea) tapaba los datos: en
+  *Órdenes de trabajo* no se veía ninguno.
+- `table()` pone `data-label`; el resto de tablas con cabecera se etiquetan solas (`etiquetarTablas`). Siguen como
+  tabla las que tienen casillas para rellenar, `colspan` o las clases `planning`, `inv`, `dot`, `check-rev`,
+  `tabla-inf` y `no-tarjeta`; si no están en una caja con desplazamiento se meten en `.desliza` (se deslizan de lado
+  sin ensanchar la página).
+- En modo fichas las listas no se encajan a la altura de la pantalla (se desplaza la página, mejor en táctil); al
+  abrir o cerrar el plegable se recalcula.
+- Barra superior hasta 1100 px: título en una línea con «…» y la fila de activo/avisos/chat/usuario debajo; hasta
+  600 px, «Volver» solo con la flecha, ventanas a todo el ancho y aviso inferior a lo ancho. Sin migración ni cambios
+  en el servidor.
+
 ## 1.68 · 15/10/2026 · Chat con fotos, PDF y @menciones · reinicio nocturno del servidor
 - **Migración 0062**: tabla `chat_adjuntos` (fichero cifrado fuera de la base de datos, como los de las OT) y columna
   `chat_mensajes.menciones`.

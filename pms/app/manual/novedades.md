@@ -1,5 +1,10 @@
 # Novedades
 
+## 2026-10-15 · Versión 1.69 · Móviles plegables (Galaxy Fold), cerrado y abierto
+- **Todos**: en el móvil, las listas (órdenes de trabajo, unidades, activos, proveedores…) se ven como **fichas**: cada dato con su nombre y los botones debajo. Con el Galaxy Fold **cerrado**, una ficha debajo de otra; **abierto**, dos por fila.
+- **Barra de arriba**: el título cabe en una línea y debajo quedan el activo, la campana, el chat, Gestión y Salir, sin salirse de la pantalla.
+- En el ordenador todo sigue igual.
+
 ## 2026-10-15 · Versión 1.68 · Chat: fotos, PDF y menciones con @
 - **Todos**: en el chat 💬, el botón **📎** envía fotos o PDF (hasta 5 a la vez). Lo escrito en el mensaje va como comentario. Las fotos se ven en pequeño; al pulsarlas se abren en grande.
 - **@menciones**: escriba **@** y elija a la persona de la lista. Le suena un aviso en la campana 🔔 y, al pulsarlo, se abre la conversación. Los mensajes en los que le mencionan aparecen remarcados.

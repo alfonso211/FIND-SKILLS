@@ -106,11 +106,38 @@ function table(el, cols, rows, actions) {
   if (!rows.length) { el.innerHTML = `<div class="table-wrap"><div class="empty">Sin resultados</div></div>`; return; }
   const head = cols.map((c) => `<th class="${c.num ? "num" : ""}">${esc(c.t)}</th>`).join("") + (actions ? '<th class="acc"></th>' : "");
   const acts = rows.map((r) => (actions ? actions(r).filter(Boolean) : []));
-  const body = rows.map((r, i) => "<tr>" + cols.map((c) => `<td class="${c.num ? "num" : ""}">${c.f ? c.f(r[c.k], r) : esc(r[c.k])}</td>`).join("") +
+  const body = rows.map((r, i) => "<tr>" + cols.map((c) => `<td class="${c.num ? "num" : ""}" data-label="${esc(c.t)}">${c.f ? c.f(r[c.k], r) : esc(r[c.k])}</td>`).join("") +
     (actions ? `<td class="acc">${acts[i].map(([l, , cls], j) => `<button class="btn sm ${cls || ""}" data-r="${i}" data-a="${j}">${esc(l)}</button>`).join(" ")}</td>` : "") + "</tr>").join("");
-  el.innerHTML = `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
+  el.innerHTML = `<div class="table-wrap"><table class="t-tarjeta" data-et="1"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
     <p class="muted">${rows.length} registro(s)</p>`;
   el.querySelectorAll("button[data-r]").forEach((b) => (b.onclick = () => acts[b.dataset.r][b.dataset.a][1](rows[b.dataset.r])));
+}
+
+// Móvil y plegables (Galaxy Fold cerrado o abierto): las listas se ven como fichas, una debajo de otra (o dos por
+// fila con el móvil abierto), cada dato con su nombre y los botones debajo, en vez de una tabla que no cabe.
+const PANTALLA_FICHAS = window.matchMedia("(max-width: 900px)");
+const SIN_FICHAS = "table.planning, table.inv, table.dot, table.check-rev, table.tabla-inf, table.no-tarjeta";
+function etiquetarTablas(raiz) {
+  raiz.querySelectorAll("table:not([data-et])").forEach((t) => {
+    t.dataset.et = "1";
+    const ths = [...t.querySelectorAll(":scope > thead > tr:first-child > th")];
+    const fichas = ths.length && !t.matches(SIN_FICHAS) && !t.querySelector("tbody input, tbody select, tbody textarea, [colspan]");
+    // la que sigue siendo tabla y no está en una caja con desplazamiento: se desliza de lado dentro de la suya
+    if (!fichas && !t.closest(".table-wrap, .desliza, [style*='overflow']")) {
+      const caja = document.createElement("div");
+      caja.className = "desliza";
+      t.replaceWith(caja); caja.appendChild(t);
+    }
+    if (!fichas) return;
+    const filas = [...t.querySelectorAll(":scope > tbody > tr")];
+    if (filas.some((tr) => tr.children.length !== ths.length)) return;
+    const nombres = ths.map((th) => th.textContent.trim());
+    filas.forEach((tr) => [...tr.children].forEach((td, i) => {
+      td.dataset.label = nombres[i];
+      if (!nombres[i] && td.querySelector("button, a.btn")) td.classList.add("acc");  // columna de botones
+    }));
+    t.classList.add("t-tarjeta");
+  });
 }
 
 // Pantallas de un vistazo: cada lista ocupa como mucho lo que queda de pantalla y se desplaza por dentro
@@ -118,8 +145,12 @@ function table(el, cols, rows, actions) {
 function encajarTablas() {
   const vista = document.getElementById("view");
   if (!vista) return;
+  etiquetarTablas(vista);
+  const modal = document.getElementById("modal");
+  if (modal?.open) etiquetarTablas(modal);
   vista.querySelectorAll(".table-wrap").forEach((w) => {
     if (w.closest("dialog") || w.closest(".no-encajar")) return;
+    if (PANTALLA_FICHAS.matches) { w.style.maxHeight = ""; return; }  // fichas: la página se desplaza entera
     const top = w.getBoundingClientRect().top + window.scrollY;
     const pie = w.nextElementSibling?.matches("p.muted") ? 30 : 12;
     w.style.maxHeight = `${Math.max(260, window.innerHeight - top - pie - 14)}px`;
@@ -128,6 +159,7 @@ function encajarTablas() {
 let _encajeT;
 const encajeDiferido = () => { clearTimeout(_encajeT); _encajeT = setTimeout(encajarTablas, 60); };
 window.addEventListener("resize", encajeDiferido);
+PANTALLA_FICHAS.addEventListener?.("change", encajeDiferido);  // al abrir o cerrar el plegable
 {
   const observar = () => { const v = document.getElementById("view"); if (v) new MutationObserver(encajeDiferido).observe(v, { childList: true, subtree: true }); };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", observar); else observar();
