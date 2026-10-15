@@ -251,9 +251,14 @@ def _open_order(db: Session, wid: int) -> WorkOrder:
 # --------------------------------------------------------------------------- órdenes de trabajo
 @router.get("/ordenes")
 def list_orders(asset_id: int | None = None, estado: str | None = None, abiertas: bool = False,
-                tipo: str | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+                tipo: str | None = None, id: int | None = None, scope: Scope = Depends(get_scope),
+                db: Session = Depends(get_db)):
     ids = scope.asset_ids("mantenimiento.ver")
     stmt = scoped(select(WorkOrder), WorkOrder.asset_id, ids)
+    if id:  # una sola orden (aviso de la campana): sin los demás filtros
+        stmt = stmt.where(WorkOrder.id == id)
+        asset_id = estado = tipo = None
+        abiertas = False
     if asset_id:
         stmt = stmt.where(WorkOrder.asset_id == asset_id)
     if estado:

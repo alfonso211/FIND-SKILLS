@@ -275,9 +275,14 @@ function pickAsset(modalidad, perm) {
   const cur = pool.find((a) => String(a.id) === String(S.asset));
   if (cur) return Promise.resolve(cur.id);
   if (pool.length === 1) return Promise.resolve(pool[0].id);
-  if (!pool.length) { toast("No tiene activos de este tipo", true); return Promise.reject(); }
-  return new Promise((resolve) => form("Seleccione activo", [{ k: "asset_id", t: "Activo", type: "select", req: true, options: opts(pool) }],
-    {}, async (d) => resolve(Number(d.asset_id)), "Continuar"));
+  if (!pool.length) { toast("No tiene activos de este tipo", true); return Promise.reject(new Error("No tiene activos de este tipo en sus permisos")); }
+  // si se cierra la ventana sin elegir, la pantalla lo dice (antes se quedaba en «Cargando…» para siempre)
+  return new Promise((resolve, reject) => {
+    let elegido = false;
+    form("Seleccione activo", [{ k: "asset_id", t: "Activo", type: "select", req: true, options: opts(pool) }],
+      {}, async (d) => { elegido = true; resolve(Number(d.asset_id)); }, "Continuar");
+    $("#modal").addEventListener("close", () => { if (!elegido) reject(new Error("Elija un activo en el selector de arriba (o vuelva a entrar en la pantalla) para continuar")); }, { once: true });
+  });
 }
 
 // ------------------------------------------------------------------ vistas
@@ -3685,12 +3690,14 @@ async function adjuntosOT(w, reload) {
 V.ordenes = async (el) => {
   el.innerHTML = `<div class="toolbar"><select id="e"><option value="abiertas">Abiertas</option><option value="">Todas</option>${S.cat.estados_ot.map((x) => `<option value="${x}">${label(x)}</option>`).join("")}</select>
     <select id="tp"><option value="">Todos los tipos</option>${["correctivo", "preventivo", "normativo", "mejora"].map((x) => `<option>${x}</option>`).join("")}</select>
-    <span class="spacer"></span>${canOpenOT() ? '<button class="btn primary" id="new">Nueva OT</button>' : ""}</div>
+    <span class="spacer"></span>${canOpenOT() ? '<button class="btn primary" id="new">Nueva OT</button>' : ""}</div><div id="foco"></div>
     <p class="muted">Flujo: recepción abre y asigna la OT (personal propio o subcontrata) → «Enviar» manda el enlace por WhatsApp o correo → el técnico la gestiona desde el móvil. Las correctivas se abren con la <b>foto del «antes»</b>. Para terminar hacen falta <b>el tiempo (llegada y salida)</b> y <b>al menos una foto de la reparación</b>. El <b>personal propio</b> la cierra él mismo con su firma; la de <b>subcontrata</b> la cierran el Director Técnico o recepción. Las de subcontrata finalizadas hace más de 48 h sin cerrar se avisan cada día. Recepción puede reabrir en 7 días la que no esté bien. Al cerrarla, el apartamento queda pendiente de limpieza.</p><div id="t"></div>`;
   const check = (who, when) => (who ? `<span title="${esc(fdt(when))}">✓ ${esc(who)}</span>` : '<span class="muted">pendiente</span>');
   const load = async () => {
     const e = $("#e", el).value;
-    const rows = await get("/api/mantenimiento/ordenes", { asset_id: S.asset, tipo: $("#tp", el).value, ...(e === "abiertas" ? { abiertas: true } : { estado: e }) });
+    const rows = focoId() ? await get("/api/mantenimiento/ordenes", { id: focoId() })
+      : await get("/api/mantenimiento/ordenes", { asset_id: S.asset, tipo: $("#tp", el).value, ...(e === "abiertas" ? { abiertas: true } : { estado: e }) });
+    focoBanner($("#foco", el), rows.length ? `Orden ${otNum(focoId())} del aviso` : "La orden del aviso ya no existe o no es de sus activos", load);
     table($("#t", el), [
       { k: "id", t: "Nº", f: otNum }, { k: "fecha_apertura", t: "Apertura", f: fdate }, { k: "asset_id", t: "Activo", f: (v) => esc(assetName(v)) },
       { k: "unidad", t: "Unidad", f: (v, w) => esc(v || w.zona_nombre || "Z. comunes") }, { k: "titulo", t: "Título", f: (v, w) => esc(v) + accesoBadge(w) },
@@ -4621,10 +4628,11 @@ V.gastos = async (el) => {
     <select id="p"><option value="">Pagados y pendientes</option><option value="false">Pendientes de pago</option><option value="true">Pagados</option></select>
     <input id="q" type="search" placeholder="Buscar: proveedor, nº de factura, concepto o importe" title="Sin distinguir tildes ni mayúsculas. Un importe: 121,00 o 1.210,50">
     <span class="spacer"></span><button class="btn" id="xls">Excel</button>${editar ? '<button class="btn" id="sin">Gasto sin documento</button><button class="btn primary" id="doc">Subir factura / ticket</button>' : ""}</div>
-    <div class="kpis" id="k"></div><div id="t"></div>`;
-  const filtros = () => ({ asset_id: S.asset, desde: $("#d", el).value, hasta: $("#h", el).value, categoria: $("#c", el).value, pagado: $("#p", el).value, q: $("#q", el).value.trim() });
+    <div id="foco"></div><div class="kpis" id="k"></div><div id="t"></div>`;
+  const filtros = () => focoId() ? { id: focoId() } : ({ asset_id: S.asset, desde: $("#d", el).value, hasta: $("#h", el).value, categoria: $("#c", el).value, pagado: $("#p", el).value, q: $("#q", el).value.trim() });
   const load = async () => {
     const r = await get("/api/gastos", filtros());
+    focoBanner($("#foco", el), r.gastos.length ? "Apunte del aviso" : "El apunte del aviso ya no existe o no es de sus activos", load);
     const t = r.totales;
     $("#k", el).innerHTML = [[eur(t.base), "Gasto (base sin IVA)"], [eur(t.cuota), "IVA soportado"], [eur(t.total), "Total con IVA"],
       [eur(t.pendiente_pago), "Pendiente de pago", t.pendiente_pago > 0 ? "mal" : ""], [t.sin_documento, "Apuntes sin documento", t.sin_documento ? "mal" : ""],
@@ -4802,11 +4810,13 @@ async function parteNuevo(cuerpo, params) {
 
 // Recepción: pendientes de decidir (generar OT o descartar) y abiertos hasta resolverse
 async function partesLista(cuerpo) {
-  cuerpo.innerHTML = `<div class="toolbar"><select data-estado><option value="abiertos">Sin resolver</option><option value="pendiente">Pendientes de recepción</option>
+  cuerpo.innerHTML = `<div data-foco></div><div class="toolbar"><select data-estado><option value="abiertos">Sin resolver</option><option value="pendiente">Pendientes de recepción</option>
     <option value="ot_generada">Con orden de trabajo</option><option value="resuelto">Resueltos</option><option value="descartado">Descartados</option><option value="">Todos</option></select></div><div data-t></div>`;
   const load = async () => {
     const v = cuerpo.querySelector("[data-estado]").value;
-    const filas = await get("/api/partes-estado", { asset_id: S.asset, ...(v === "abiertos" ? { abiertos: true } : { estado: v }) });
+    const filas = focoId() ? await get("/api/partes-estado", { id: focoId() })
+      : await get("/api/partes-estado", { asset_id: S.asset, ...(v === "abiertos" ? { abiertos: true } : { estado: v }) });
+    focoBanner(cuerpo.querySelector("[data-foco]"), filas.length ? `Parte ${filas[0].codigo} del aviso` : "El parte del aviso ya no existe o no es de sus activos", load);
     table(cuerpo.querySelector("[data-t]"), [
       { k: "codigo", t: "Parte", f: (v, p) => `<b>${esc(v)}</b><br><span class="muted peq">${fdt(p.creado)}</span>` },
       { k: "ubicacion", t: "Ubicación", f: (v, p) => `${esc(v)}<br><span class="muted peq">${esc(p.estancia_nombre)}</span>` },
@@ -6497,7 +6507,7 @@ const allowed = (p) => !p || (p === "admin" ? S.me.admin_grupo : p === "informes
   : p === "personal" ? ["mantenimiento.ver", "limpieza.editar"].some(can)
   : p === "proveedores" ? verProveedores() : p === "pedidos" ? verPedidos() : p === "partes" ? verPartes()
   : p === "partesestado" ? canParteEstado() || can("mantenimiento.abrir")
-  : p === "gestpersonal" ? can("personal.autorizar") || can("partes.validar")
+  : p === "gestpersonal" ? can("personal.autorizar") || !!S.me.recepcion1
   : p === "caja" ? can("reservas.editar") || can("finanzas.ver") : can(p));
 const TITLES = Object.fromEntries(MENU.flatMap(([, items]) => items.map(([id, t]) => [id, t])));
 const PERMISO_VISTA = Object.fromEntries(MENU.flatMap(([, items]) => items.map(([id, , p]) => [id, p])));
@@ -6566,7 +6576,7 @@ async function go(view) {
   $("#viewTitle").textContent = TITLES[view];
   // contenedor nuevo por navegación: una carga anterior aún en curso escribe en uno ya desmontado
   const el = document.createElement("div"); $("#view").replaceChildren(el); el.innerHTML = '<p class="muted">Cargando…</p>';
-  try { await V[view](el); } catch (e) { el.innerHTML = `<p class="error">${esc(e.message)}</p>`; }
+  try { await V[view](el); } catch (e) { el.innerHTML = `<p class="error">${esc(e?.message || "No se ha podido cargar la pantalla. Vuelva a intentarlo.")}</p>`; }
 }
 function setAsset(id) { S.plano = null; S.asset = id ? String(id) : ""; $("#assetFilter").value = S.asset; localStorage.setItem("pms_asset", S.asset); }
 function debounce(fn, ms = 300) { let h; return (...a) => { clearTimeout(h); h = setTimeout(() => fn(...a), ms); }; }
@@ -6744,9 +6754,19 @@ function escritorio(titulo, cuerpo, alPulsar) {
     n.onclick = () => { window.focus(); n.close(); alPulsar && alPulsar(); };
   } catch {}
 }
+// Pantalla abierta desde un aviso de la campana con un registro concreto (?id=): se muestra solo ese, con la opción
+// de ver la lista completa
+const focoId = () => Number(S.params?.get("id")) || 0;
+function focoBanner(box, texto, verTodo) {
+  if (!box) return;
+  box.innerHTML = focoId() ? `<div class="aviso-foco">🔔 ${esc(texto)} <button type="button" class="btn sm" data-todo>Ver todo</button></div>` : "";
+  const b = box.querySelector("[data-todo]");
+  if (b) b.onclick = () => { S.params.delete("id"); box.innerHTML = ""; verTodo(); };
+}
 const contador = (el, n) => { el.textContent = n > 99 ? "99+" : n; el.hidden = !n; };
 
 function pararAvisos() {
+  S._avComprobar = null;
   clearInterval(S._avT); clearInterval(S._chatT); clearInterval(S._chatListaT);
   S._avDesde = null; S._chatUlt = null; S.chat = null;
   $("#avisosPanel").hidden = true; $("#chatPanel").hidden = true; $("#avisosBtn").hidden = true; $("#chatBtn").hidden = true;
@@ -6755,8 +6775,13 @@ function vigilarAvisos() {
   pararAvisos();
   $("#avisosBtn").hidden = false;
   $("#chatBtn").hidden = !!S.me.colaborador;  // los colaboradores externos no tienen chat
+  // una sola consulta a la vez (con la red lenta se solapaban y el mismo aviso sonaba dos veces)
   const comprobar = async () => {
-    if (!S.me) return;
+    if (!S.me || S._avOcupado) return;
+    S._avOcupado = true;
+    try { await comprobarUna(); } finally { S._avOcupado = false; }
+  };
+  const comprobarUna = async () => {
     let r;
     try { r = await get("/api/notificaciones/estado", { desde: S._avDesde }); } catch { return; }
     const primera = S._avDesde == null;
@@ -6784,16 +6809,20 @@ function vigilarAvisos() {
   };
   comprobar();
   S._avT = setInterval(comprobar, 12000);
+  // el navegador frena los temporizadores de las pestañas en segundo plano: al volver a ella se comprueba al momento
+  S._avVis = S._avVis || (document.addEventListener("visibilitychange", () => { if (!document.hidden && S.me && S._avComprobar) S._avComprobar(); }), true);
+  S._avComprobar = comprobar;
 }
 
 // ---- campana
 async function pintarAvisos() {
   const box = $("#avisosPanel");
-  const lista = await get("/api/notificaciones").catch(() => []);
+  let lista, fallo = false;
+  try { lista = await get("/api/notificaciones"); } catch { lista = []; fallo = true; }
   box.innerHTML = `<div class="avp-cab"><b>Avisos</b><span class="muted">Lo que tiene que atender</span><button type="button" class="btn sm ghost" id="avpCerrar" aria-label="Cerrar">✕</button></div>
     <div class="avp-lista">${lista.map((n) => `<button type="button" class="avp-item ${n.leida ? "" : "nuevo"} ${n.urgente ? "urgente" : ""}" data-v="${esc(n.vista || "panel")}">
       <span class="avp-tit">${n.urgente ? "⚠ " : ""}${esc(n.titulo)}</span>${n.texto ? `<span class="avp-txt">${esc(n.texto)}</span>` : ""}<span class="avp-fecha">${esc(fdt(n.creada))}</span></button>`).join("") ||
-      '<p class="muted" style="padding:14px">No tiene avisos.</p>'}</div>
+      (fallo ? '<p class="error" style="padding:14px">No se han podido cargar los avisos. Compruebe la conexión y vuelva a abrir la campana.</p>' : '<p class="muted" style="padding:14px">No tiene avisos.</p>')}</div>
     <div class="avp-pie"><a href="#perfil" id="avpPerfil">Elegir avisos y sonido en Mi perfil</a></div>`;
   $("#avpCerrar", box).onclick = () => (box.hidden = true);
   $("#avpPerfil", box).onclick = () => (box.hidden = true);
@@ -6805,7 +6834,7 @@ async function abrirAvisos() {
   box.hidden = false;
   $("#avisosBtn").classList.remove("pendiente");
   await pintarAvisos();
-  post("/api/notificaciones/leidas").then(() => contador($("#avisosN"), 0)).catch(() => {});
+  post("/api/notificaciones/leidas").then(() => { contador($("#avisosN"), 0); $("#avisosBtn").classList.remove("pendiente"); }).catch(() => {});
 }
 $("#avisosBtn").onclick = () => ($("#avisosPanel").hidden ? abrirAvisos() : ($("#avisosPanel").hidden = true));
 document.addEventListener("click", (e) => {
@@ -6821,8 +6850,15 @@ const textoChat = (t, nombres = []) => {
   [...nombres].sort((a, b) => b.length - a.length).forEach((n) => { const e = esc("@" + n); h = h.split(e).join(`<b class="mencion">${e}</b>`); });
   return h.replace(/\n/g, "<br>");
 };
-// Aviso de la campana: su pantalla, o la conversación del chat si es una mención (vista «chat:<id>»)
-function irAviso(v) { const m = /^chat:(\d+)$/.exec(v || ""); return m ? abrirChat(Number(m[1])) : go(v || "panel"); }
+// Aviso de la campana: su pantalla (con el registro concreto: «ordenes?id=12»), o la conversación del chat si es una
+// mención (vista «chat:<id>»). Si la pantalla no está en su menú, se dice en vez de llevar al panel sin explicación.
+function irAviso(v) {
+  const m = /^chat:(\d+)$/.exec(v || "");
+  if (m) return abrirChat(Number(m[1]));
+  const vista = String(v || "panel").split("?")[0];
+  if (vista !== "panel" && !puedeIr(vista)) { toast(`Ese aviso es de «${tituloVista(vista)}», una pantalla a la que su usuario no tiene acceso`, true); return go("panel"); }
+  return go(v || "panel");
+}
 const tamTxt = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1).replace(".", ",")} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 function adjuntosHtml(m) {
   return (m.adjuntos || []).map((a) => a.mime.startsWith("image/")

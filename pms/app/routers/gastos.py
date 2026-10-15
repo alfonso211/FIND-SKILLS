@@ -505,8 +505,12 @@ def _gastos(db, scope, asset_id, desde, hasta, categoria, unit_id, pagado, q=Non
 @router.get("/gastos")
 def list_expenses(asset_id: int | None = None, desde: date | None = None, hasta: date | None = None,
                   categoria: str | None = None, unit_id: int | None = None, pagado: bool | None = None,
-                  q: str | None = None, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
-    filas = _gastos(db, scope, asset_id, desde, hasta, categoria, unit_id, pagado, q)
+                  q: str | None = None, id: int | None = None, scope: Scope = Depends(get_scope),
+                  db: Session = Depends(get_db)):
+    if id:  # un solo apunte (aviso de la campana): sin los demás filtros
+        filas = [g for g in _gastos(db, scope, None, None, None, None, None, None) if g["id"] == id]
+    else:
+        filas = _gastos(db, scope, asset_id, desde, hasta, categoria, unit_id, pagado, q)
     por_cat = defaultdict(float)
     for g in filas:
         por_cat[g["categoria_nombre"]] += g["base"]

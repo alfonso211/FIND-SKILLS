@@ -1,5 +1,12 @@
 # Novedades
 
+## 2026-10-15 · Versión 1.72 · La campana lleva al asunto
+- **Campana 🔔**: al pulsar un aviso de una orden de trabajo, un parte de estado o un pago retenido se abre **ese registro** (aunque la OT ya esté cerrada), con el aviso «🔔 … del aviso» y el botón **Ver todo** para volver a la lista completa.
+- Los avisos que antes llevaban al panel sin explicación (seguridad, fallos de la pasarela, OT fuera de plazo) llevan ahora a su pantalla. Si el aviso es de una pantalla a la que su usuario no tiene acceso, se dice.
+- La campana ya no suena dos veces el mismo aviso con la conexión lenta. Al volver a la pestaña del PMS se comprueban los avisos al momento. Si no se pueden cargar, lo dice en vez de mostrar «No tiene avisos».
+- **Pantallas que piden el activo** (Parte de viajeros, Garajes, Parte de trabajo, Cobros de otro programa): si se cierra la ventana sin elegir, la pantalla lo explica en vez de quedarse en «Cargando…».
+- **Registro de jornada**: solo aparece en el menú a Recepción 1 y a la dirección (Recepción 2 lo veía y le daba error).
+
 ## 2026-10-15 · Versión 1.71 · Activos y unidades iguales en el PMS y en gestión
 - **Unidades con gestión** (Suite Florida, Suite Aeropuerto y Babilonia 35): cada alta, cambio o baja de una unidad (apartamento, vivienda, plaza de garaje, local…) pasa sola a gestión. El PMS manda en lo operativo: código, uso, superficie, estado, rentas y tarifas.
 - **Catastro con candado 🔒**: la referencia catastral, la sociedad propietaria, los valores catastrales, el IBI y la TRUA llegan de gestión y se ven en la ficha de la unidad y del activo con el texto «Se edita en gestión». En el PMS no se cambian.
