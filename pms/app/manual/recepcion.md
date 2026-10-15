@@ -135,8 +135,9 @@
 - Indique siempre **cómo se paga**: **Transferencia** (la pagamos nosotros) o **Cargo en cuenta (domiciliación)** (el proveedor la carga en el banco). Es obligatorio.
 - **Retención de IRPF** (facturas de profesionales, alquileres…): elija el tipo en **Retención** y compruebe el **%** (15 % profesionales, 7 % inicio de actividad, 19 % arrendamientos, 1 % módulos, u «Otra» con su %). Ponga como total el **que figura en la factura** (ya con la retención descontada).
 - **Retener el pago** (una factura que no se debe pagar todavía): marque **«Retener el pago»**, escriba el **motivo** y la **fecha de revisión**. Dirección y administración reciben un aviso al momento y cada día en el resumen. También desde **Cuenta de gastos → Retener pago**.
+- **Buscar una factura**: en la *Cuenta de gastos*, escriba en el buscador parte del proveedor, el nº de factura, el concepto o el importe (por ejemplo `121,00`), con o sin tildes. El Excel descarga solo lo encontrado.
 - Si se equivocó: **Cuenta de gastos → Editar** y corrija la **Fecha de la factura** o la forma de pago.
-- **Gestionada en INVERGESTION** (activos sincronizados con gestión): la factura ya está en gestión y sus importes, fechas, nº y proveedor solo se cambian allí. Si hay un error, **Pedir corrección** (escriba qué está mal); si no se debe pagar o está duplicada, **Pedir anulación**. Puede seguir usando **Adjuntar documento** (albarán, otro PDF) y cambiar concepto, categoría, apartamento y notas.
+- **Gestionada en INVERGESTION** (activos sincronizados con gestión): la factura ya está en contabilidad y sus importes, fechas, nº y proveedor no se cambian en el PMS. Botón **Corregir / anular…**: si hay un error, **Pedir corrección** (escriba qué está mal); si no se debe pagar o está duplicada, **Pedir anulación**. Lo revisa administración; Recepción no entra en gestión. Puede seguir usando **Adjuntar** (albarán, otro PDF) y cambiar concepto, categoría, apartamento y notas.
 
 ## Informe mensual a la presidencia (Recepción 1)
 - El **primer día laborable de cada mes** le llega un correo (y un aviso en el panel) para preparar el informe del mes anterior.

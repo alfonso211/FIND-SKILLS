@@ -4339,7 +4339,8 @@ function accionesFusion(g, editar, load) {
   return [
     adj.length && [`Adjuntos (${adj.length})`, () => verAdjuntos(g, adj)],
     editar && ["Adjuntar", () => adjuntarAGasto(g, load)],
-    fu.gestionada && (editar || S.me.gestion) && ["Gestión…", () => menuGestion(g, editar, load)],
+    // la Dirección puede abrir gestión; el resto solo pide correcciones o anulaciones desde el PMS (no entra en gestión)
+    fu.gestionada && (editar || S.me.gestion) && [S.me.gestion ? "Gestión…" : "Corregir / anular…", () => menuGestion(g, editar, load)],
   ];
 }
 // Factura ya en gestión: abrirla allí, o pedir a administración que la corrija o la anule
@@ -4351,8 +4352,8 @@ function menuGestion(g, editar, load) {
     editar && ["anulacion", "Pedir anulación de la factura"],
     editar && fu.pago_gestionado && ["anulacion_pago", "Pedir anulación del pago"],
   ].filter(Boolean);
-  const f = form(`Gestionada en INVERGESTION · ${g.proveedor || g.concepto}`, [
-    { html: `<p class="muted">Sus datos contables solo se cambian en gestión. Elija qué hacer:</p><div class="toolbar">${ops.map(([k, t]) => `<button type="button" class="btn" data-op="${k}">${esc(t)}</button>`).join("")}</div>` }], {}, async () => {}, "Cerrar");
+  const f = form(`${S.me.gestion ? "Gestionada en INVERGESTION" : "Corregir o anular"} · ${g.proveedor || g.concepto}`, [
+    { html: `<p class="muted">${S.me.gestion ? "Sus datos contables solo se cambian en gestión." : "La factura ya está en contabilidad: no se cambia aquí. Pida la corrección o la anulación y administración la revisará."} Elija qué hacer:</p><div class="toolbar">${ops.map(([k, t]) => `<button type="button" class="btn" data-op="${k}">${esc(t)}</button>`).join("")}</div>` }], {}, async () => {}, "Cerrar");
   const motivo = (titulo, texto, url, ok) => form(titulo, [{ html: `<p class="muted">${texto}</p>` }, { k: "motivo", t: "Motivo", req: true, wide: true }], {},
     async (d) => { await post(url, d); toast(ok); load(); }, "Pedir anulación");
   f.querySelectorAll("[data-op]").forEach((b) => (b.onclick = () => ({
@@ -4466,9 +4467,10 @@ V.gastos = async (el) => {
   el.innerHTML = `<div class="toolbar"><label>Desde<input type="date" id="d" value="${ini}"></label><label>Hasta<input type="date" id="h" value="${today()}"></label>
     <select id="c"><option value="">Todas las categorías</option>${Object.entries(C.categorias).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select>
     <select id="p"><option value="">Pagados y pendientes</option><option value="false">Pendientes de pago</option><option value="true">Pagados</option></select>
+    <input id="q" type="search" placeholder="Buscar: proveedor, nº de factura, concepto o importe" title="Sin distinguir tildes ni mayúsculas. Un importe: 121,00 o 1.210,50">
     <span class="spacer"></span><button class="btn" id="xls">Excel</button>${editar ? '<button class="btn" id="sin">Gasto sin documento</button><button class="btn primary" id="doc">Subir factura / ticket</button>' : ""}</div>
     <div class="kpis" id="k"></div><div id="t"></div>`;
-  const filtros = () => ({ asset_id: S.asset, desde: $("#d", el).value, hasta: $("#h", el).value, categoria: $("#c", el).value, pagado: $("#p", el).value });
+  const filtros = () => ({ asset_id: S.asset, desde: $("#d", el).value, hasta: $("#h", el).value, categoria: $("#c", el).value, pagado: $("#p", el).value, q: $("#q", el).value.trim() });
   const load = async () => {
     const r = await get("/api/gastos", filtros());
     const t = r.totales;
@@ -4506,7 +4508,7 @@ V.gastos = async (el) => {
       editar && !g.fusion?.gestionada && ["Borrar", async () => { if (confirm(`¿Borrar el gasto «${g.concepto}»?`)) { await run(() => api("DELETE", `/api/gastos/${g.id}`), "Gasto borrado"); load(); } }, "danger"],
     ]);
   };
-  ["#d", "#h", "#c", "#p"].forEach((s) => ($(s, el).onchange = load));
+  ["#d", "#h", "#c", "#p"].forEach((s) => ($(s, el).onchange = load)); $("#q", el).oninput = debounce(load);
   $("#xls", el).onclick = () => run(() => download("GET", `/api/gastos/excel?${new URLSearchParams(Object.entries(filtros()).filter(([k, v]) => v && k !== "pagado"))}`));
   if ($("#sin", el)) { $("#sin", el).onclick = () => editarGasto(null, load); $("#doc", el).onclick = () => subirDocumento(load); }
   load();
