@@ -4835,7 +4835,22 @@ V.perfil = async (el) => {
     <h4>Accesos</h4>${S.me.is_superadmin ? "<p><b>Superadministrador</b> — acceso total</p>" : S.me.ambitos.map((a) => `<p>${esc(a.rol)} · <span class="muted">${esc(a.ambito)}</span></p>`).join("") || "<p class='muted'>Sin roles asignados</p>"}
     <button class="btn" id="pw">Cambiar contraseña</button>
     <h4>Accesos rápidos</h4><div id="accRap"><p class="muted">Cargando…</p></div>
+    <h4>Avisos en pantalla y sonido (este ordenador)</h4>
+    <p class="muted">Los avisos que elija abajo llegan también a la campana 🔔 de la barra de arriba y suenan mientras el PMS esté abierto (aunque esté en otra pestaña). Los mensajes del chat 💬 suenan con otro tono. Esta elección es de este ordenador o móvil.</p>
+    <label class="check"><input type="checkbox" id="prefSonido" ${PREF.sonido() ? "checked" : ""}> Sonido al llegar un aviso o un mensaje</label>
+    <label class="check"><input type="checkbox" id="prefEscritorio" ${PREF.escritorio() ? "checked" : ""}> Aviso de Windows / del móvil cuando el PMS está minimizado o en otra pestaña</label>
+    <p><button type="button" class="btn sm" id="prSon1">Probar aviso</button> <button type="button" class="btn sm" id="prSon2">Probar urgente</button> <button type="button" class="btn sm" id="prSon3">Probar chat</button></p>
     <h4>Avisos por correo</h4><div id="avisos"><p class="muted">Cargando…</p></div></div>`;
+  $("#prefSonido", el).onchange = (e) => { localStorage.setItem("pms_sonido", e.target.checked ? "1" : "0"); if (e.target.checked) Sonido.aviso(); };
+  $("#prefEscritorio", el).onchange = async (e) => {
+    if (!e.target.checked) return localStorage.setItem("pms_escritorio", "0");
+    if (!("Notification" in window)) { e.target.checked = false; return toast("Este navegador no permite avisos de escritorio", true); }
+    const p = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+    if (p !== "granted") { e.target.checked = false; localStorage.setItem("pms_escritorio", "0"); return toast("El navegador tiene bloqueados los avisos para el PMS: permítalos en el candado de la barra de direcciones.", true); }
+    localStorage.setItem("pms_escritorio", "1"); toast("Avisos de escritorio activados");
+  };
+  const prueba = (fn) => () => { const antes = localStorage.getItem("pms_sonido"); localStorage.setItem("pms_sonido", "1"); fn(); if (antes !== null) localStorage.setItem("pms_sonido", antes); else localStorage.removeItem("pms_sonido"); };
+  $("#prSon1", el).onclick = prueba(() => Sonido.aviso()); $("#prSon2", el).onclick = prueba(() => Sonido.urgente()); $("#prSon3", el).onclick = prueba(() => Sonido.chat());
   editorAccesos($("#accRap", el));
   const av = await get("/api/auth/avisos");
   $("#avisos", el).innerHTML = (av.correo_configurado ? "" : '<p class="muted">El envío de correos aún no está configurado en el servidor: puede dejar elegidos sus avisos y empezarán a llegar cuando se configure.</p>') +
@@ -6374,6 +6389,7 @@ async function start() {
   go(location.hash.slice(1) || "panel");
   avisoNovedades();
   vigilarResultadosOT();
+  vigilarAvisos();
   comprobarReloj();
 }
 // El reloj de este ordenador y el del programa (Madrid) deben coincidir: si no, las fechas y horas que propone el
@@ -6443,7 +6459,7 @@ function pintarUsuario() {
 function showLogin() { $("#app").classList.add("hidden"); $("#login").classList.remove("hidden"); }
 // al cambiar la contraseña se cierran las demás sesiones; esta sigue con el token nuevo
 function nuevoToken(r) { if (r && r.token) { S.token = r.token; localStorage.setItem("pms_token", S.token); } }
-function logout() { S.token = null; S.pila = []; localStorage.removeItem("pms_token"); showLogin(); }
+function logout() { pararAvisos(); S.token = null; S.pila = []; localStorage.removeItem("pms_token"); showLogin(); }
 
 $("#loginForm").onsubmit = async (e) => {
   e.preventDefault();
@@ -6465,4 +6481,285 @@ window.onhashchange = () => S.me && go(location.hash.slice(1));
   const vista = { recibida: "gastos", pago: "gastos", emitida: "facturas", proveedor: "proveedores" }[h.get("destino")] || "panel";
   history.replaceState(null, "", `/#${vista}`);
 })();
+// ------------------------------------------------------------------ avisos con sonido y chat del equipo (1.65)
+// Cada aviso que el PMS envía por correo al usuario queda también en la campana 🔔 y suena en el navegador; el chat 💬
+// suena con otro tono. Sonido y avisos de escritorio se eligen en Mi perfil para cada ordenador.
+const PREF = {
+  sonido: () => localStorage.getItem("pms_sonido") !== "0",
+  escritorio: () => localStorage.getItem("pms_escritorio") === "1",
+};
+const Sonido = {
+  ac: null,
+  // Los navegadores solo dejan sonar después de un clic o una tecla: se prepara con la primera pulsación
+  preparar() {
+    try {
+      if (!this.ac) this.ac = new (window.AudioContext || window.webkitAudioContext)();
+      if (this.ac.state === "suspended") this.ac.resume();
+    } catch {}
+  },
+  notas(lista, vol = 0.09, forma = "sine") {
+    if (!PREF.sonido()) return;
+    this.preparar();
+    const ac = this.ac;
+    if (!ac) return;
+    lista.forEach(([t, f, d]) => {
+      const o = ac.createOscillator(), g = ac.createGain(), t0 = ac.currentTime + t;
+      o.type = forma; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
+      o.connect(g); g.connect(ac.destination); o.start(t0); o.stop(t0 + d + 0.02);
+    });
+  },
+  aviso() { this.notas([[0, 660, 0.18], [0.2, 880, 0.28]]); },  // ding-dong
+  urgente() { this.notas([0, 0.22, 0.44, 0.9, 1.12, 1.34].map((t) => [t, 988, 0.16]), 0.11, "square"); },  // tres pitidos, dos veces
+  chat() { this.notas([[0, 784, 0.1], [0.11, 1047, 0.16]], 0.07); },  // «pop» corto
+};
+["pointerdown", "keydown"].forEach((ev) => document.addEventListener(ev, () => Sonido.preparar(), { once: true, capture: true }));
+
+function escritorio(titulo, cuerpo, alPulsar) {
+  if (!PREF.escritorio() || !document.hidden || !("Notification" in window) || Notification.permission !== "granted") return;
+  try {
+    const n = new Notification(titulo, { body: cuerpo || "", icon: "/static/marca/favicon.png", tag: `pms-${titulo}` });
+    n.onclick = () => { window.focus(); n.close(); alPulsar && alPulsar(); };
+  } catch {}
+}
+const contador = (el, n) => { el.textContent = n > 99 ? "99+" : n; el.hidden = !n; };
+
+function pararAvisos() {
+  clearInterval(S._avT); clearInterval(S._chatT); clearInterval(S._chatListaT);
+  S._avDesde = null; S._chatUlt = null; S.chat = null;
+  $("#avisosPanel").hidden = true; $("#chatPanel").hidden = true; $("#avisosBtn").hidden = true; $("#chatBtn").hidden = true;
+}
+function vigilarAvisos() {
+  pararAvisos();
+  $("#avisosBtn").hidden = false;
+  $("#chatBtn").hidden = !!S.me.colaborador;  // los colaboradores externos no tienen chat
+  const comprobar = async () => {
+    if (!S.me) return;
+    let r;
+    try { r = await get("/api/notificaciones/estado", { desde: S._avDesde }); } catch { return; }
+    const primera = S._avDesde == null;
+    if (!primera && r.nuevas.length) {
+      const urg = r.nuevas.some((n) => n.urgente), ult = r.nuevas[r.nuevas.length - 1];
+      urg ? Sonido.urgente() : Sonido.aviso();
+      toast(r.nuevas.length === 1 ? `🔔 ${ult.titulo}` : `🔔 ${r.nuevas.length} avisos nuevos (último: ${ult.titulo})`, urg);
+      escritorio(r.nuevas.length === 1 ? ult.titulo : `${r.nuevas.length} avisos nuevos en el PMS`, ult.texto, () => abrirAvisos());
+      if (!$("#avisosPanel").hidden) pintarAvisos();
+    }
+    S._avDesde = Math.max(r.ultima, S._avDesde || 0);
+    contador($("#avisosN"), r.sin_leer);
+    const c = r.chat;
+    contador($("#chatN"), c.no_leidos);
+    if (S._chatUlt != null && c.ultimo > S._chatUlt) {
+      const otras = c.nuevos.filter((x) => x.ultimo > S._chatUlt && !(S.chat?.cid === x.id && !$("#chatPanel").hidden && !document.hidden));
+      if (otras.length) {
+        Sonido.chat();
+        if ($("#chatPanel").hidden) toast(`💬 Mensaje nuevo: ${otras[0].titulo}`);
+        escritorio(`💬 ${otras[0].titulo}`, `${otras.reduce((s, x) => s + x.no_leidos, 0)} mensaje(s) sin leer`, () => abrirChat(otras[0].id));
+      }
+    }
+    S._chatUlt = Math.max(c.ultimo, S._chatUlt || 0);
+    if (primera && r.sin_leer && r.nuevas.length === 0) $("#avisosBtn").classList.add("pendiente");
+  };
+  comprobar();
+  S._avT = setInterval(comprobar, 12000);
+}
+
+// ---- campana
+async function pintarAvisos() {
+  const box = $("#avisosPanel");
+  const lista = await get("/api/notificaciones").catch(() => []);
+  box.innerHTML = `<div class="avp-cab"><b>Avisos</b><span class="muted">Lo que tiene que atender</span><button type="button" class="btn sm ghost" id="avpCerrar" aria-label="Cerrar">✕</button></div>
+    <div class="avp-lista">${lista.map((n) => `<button type="button" class="avp-item ${n.leida ? "" : "nuevo"} ${n.urgente ? "urgente" : ""}" data-v="${esc(n.vista || "panel")}">
+      <span class="avp-tit">${n.urgente ? "⚠ " : ""}${esc(n.titulo)}</span>${n.texto ? `<span class="avp-txt">${esc(n.texto)}</span>` : ""}<span class="avp-fecha">${esc(fdt(n.creada))}</span></button>`).join("") ||
+      '<p class="muted" style="padding:14px">No tiene avisos.</p>'}</div>
+    <div class="avp-pie"><a href="#perfil" id="avpPerfil">Elegir avisos y sonido en Mi perfil</a></div>`;
+  $("#avpCerrar", box).onclick = () => (box.hidden = true);
+  $("#avpPerfil", box).onclick = () => (box.hidden = true);
+  box.querySelectorAll(".avp-item").forEach((b) => (b.onclick = () => { box.hidden = true; go(b.dataset.v); }));
+}
+async function abrirAvisos() {
+  const box = $("#avisosPanel");
+  $("#chatPanel").hidden = true;
+  box.hidden = false;
+  $("#avisosBtn").classList.remove("pendiente");
+  await pintarAvisos();
+  post("/api/notificaciones/leidas").then(() => contador($("#avisosN"), 0)).catch(() => {});
+}
+$("#avisosBtn").onclick = () => ($("#avisosPanel").hidden ? abrirAvisos() : ($("#avisosPanel").hidden = true));
+document.addEventListener("click", (e) => {
+  const box = $("#avisosPanel");
+  if (!box.hidden && !box.contains(e.target) && !e.target.closest("#avisosBtn")) box.hidden = true;
+});
+
+// ---- chat
+const horaChat = (d) => { const x = new Date(d), h = new Date(); return x.toDateString() === h.toDateString() ? x.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : x.toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); };
+const icoChat = (c) => (c.tipo === "todos" ? "👥" : c.tipo === "grupo" ? "💬" : "");
+const textoChat = (t) => esc(t).replace(/(https:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>').replace(/\n/g, "<br>");
+
+function abrirChat(cid) {
+  $("#avisosPanel").hidden = true;
+  const p = $("#chatPanel");
+  if (p.hidden) {
+    p.hidden = false; p.classList.remove("con-conv");
+    S.chat = { cid: null, ultimo: 0 };
+    p.innerHTML = `<div class="chat-lista"><div class="chat-cab"><b>Chat del equipo</b><span class="spacer"></span>
+        <button type="button" class="btn sm primary" id="chNueva">Nueva</button><button type="button" class="btn sm ghost" id="chCerrar" aria-label="Cerrar">✕</button></div>
+        <div id="chConvs" class="chat-convs"><p class="muted" style="padding:12px">Cargando…</p></div></div>
+      <div class="chat-conv" id="chConv"><div class="chat-vacio muted">Elija una conversación o pulse «Nueva» para hablar con una persona o con un grupo.</div></div>`;
+    $("#chCerrar", p).onclick = cerrarChat;
+    $("#chNueva", p).onclick = nuevaConversacion;
+    clearInterval(S._chatListaT);
+    S._chatListaT = setInterval(() => !document.hidden && pintarConversaciones(), 8000);
+  }
+  pintarConversaciones();
+  if (cid) abrirConversacion(cid);
+}
+function cerrarChat() {
+  clearInterval(S._chatT); clearInterval(S._chatListaT);
+  $("#chatPanel").hidden = true; S.chat = null;
+}
+$("#chatBtn").onclick = () => ($("#chatPanel").hidden ? abrirChat() : cerrarChat());
+
+async function pintarConversaciones() {
+  const box = $("#chConvs");
+  if (!box) return;
+  const lista = await get("/api/chat/conversaciones").catch(() => null);
+  if (!lista || !$("#chConvs")) return;
+  S.chat && (S.chat.convs = lista);
+  box.innerHTML = lista.map((c) => `<button type="button" class="chat-item ${S.chat?.cid === c.id ? "activa" : ""}" data-c="${c.id}">
+      ${c.tipo === "directo" ? avatar(c.titulo, "sm") : `<span class="chat-ico">${icoChat(c)}</span>`}
+      <span class="chat-item-txt"><span class="chat-item-tit">${esc(c.titulo)}</span><span class="chat-item-prev">${esc(c.vista_previa || (c.tipo === "todos" ? "Mensajes para todo el personal" : ""))}</span></span>
+      ${c.no_leidos ? `<span class="contador">${c.no_leidos}</span>` : ""}</button>`).join("");
+  box.querySelectorAll(".chat-item").forEach((b) => (b.onclick = () => abrirConversacion(+b.dataset.c)));
+}
+
+async function abrirConversacion(cid) {
+  const p = $("#chatPanel");
+  clearInterval(S._chatT);
+  S.chat = { ...(S.chat || {}), cid, ultimo: 0 };
+  p.classList.add("con-conv");
+  const box = $("#chConv", p);
+  box.innerHTML = '<p class="muted" style="padding:14px">Cargando…</p>';
+  let r;
+  try { r = await get(`/api/chat/conversaciones/${cid}/mensajes`); } catch (e) { toast(e.message, true); return; }
+  if (S.chat?.cid !== cid) return;
+  const c = r.conversacion;
+  const miembrosTxt = c.tipo === "todos" ? `Todo el personal (${c.miembros.length})` : c.miembros.map((m) => m.nombre).join(", ");
+  box.innerHTML = `<div class="chat-cab"><button type="button" class="btn sm ghost chat-atras" id="chAtras" aria-label="Volver a la lista">←</button>
+      <div class="chat-tit"><b>${esc(c.titulo)}</b><small class="muted" title="${esc(miembrosTxt)}">${esc(miembrosTxt)}</small></div>
+      <button type="button" class="btn sm" id="chPersonas">${c.tipo === "todos" ? "Personas" : c.es_creador && c.tipo === "grupo" ? "Personas…" : "Personas"}</button>
+      ${c.tipo === "todos" ? "" : '<button type="button" class="btn sm ghost" id="chSalir">Salir</button>'}</div>
+    <div class="chat-msgs" id="chMsgs"></div>
+    <form class="chat-escribir" id="chForm"><textarea id="chTexto" rows="2" maxlength="4000" placeholder="Escriba un mensaje… (Intro envía, Mayús + Intro cambia de línea)"></textarea>
+      <button class="btn primary" type="submit">Enviar</button></form>`;
+  const msgs = $("#chMsgs", box);
+  const pinta = (lista) => {
+    const abajo = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 60;
+    msgs.insertAdjacentHTML("beforeend", lista.map((m) => m.sistema ? `<div class="chat-sis">${esc(m.texto)} · ${esc(horaChat(m.creado))}</div>` :
+      `<div class="chat-msg ${m.user_id === S.me.id ? "mio" : ""} ${m.borrado ? "borrado" : ""}" data-m="${m.id}">${m.user_id === S.me.id ? "" : `<span class="chat-autor">${esc(m.autor)}</span>`}
+        <div class="chat-burbuja">${m.borrado ? "<i>Mensaje eliminado</i>" : textoChat(m.texto)}</div><span class="chat-hora">${esc(horaChat(m.creado))}${m.user_id === S.me.id && !m.borrado ? ` · <a href="#" data-borra="${m.id}">borrar</a>` : ""}</span></div>`).join(""));
+    if (lista.length) S.chat.ultimo = lista[lista.length - 1].id;
+    if (abajo || !S.chat._pintado) msgs.scrollTop = msgs.scrollHeight;
+    S.chat._pintado = true;
+    msgs.querySelectorAll("[data-borra]").forEach((a) => (a.onclick = async (e) => {
+      e.preventDefault();
+      if (!confirm("¿Borrar este mensaje? Los demás verán «Mensaje eliminado».")) return;
+      await run(() => api("DELETE", `/api/chat/mensajes/${a.dataset.borra}`)).catch(() => {});
+      abrirConversacion(cid);
+    }));
+  };
+  S.chat._pintado = false;
+  pinta(r.mensajes);
+  if (!r.mensajes.length) msgs.innerHTML = '<div class="chat-sis">Aún no hay mensajes. Escriba el primero.</div>';
+  pintarConversaciones();
+  const ta = $("#chTexto", box);
+  ta.focus();
+  ta.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("#chForm", box).requestSubmit(); } };
+  $("#chForm", box).onsubmit = async (e) => {
+    e.preventDefault();
+    const texto = ta.value.trim();
+    if (!texto) return;
+    ta.disabled = true;
+    try {
+      await post(`/api/chat/conversaciones/${cid}/mensajes`, { texto });
+      ta.value = "";
+      await nuevos();
+    } catch (err) { toast(err.message, true); }
+    ta.disabled = false; ta.focus();
+  };
+  $("#chAtras", box).onclick = () => { clearInterval(S._chatT); S.chat.cid = null; p.classList.remove("con-conv"); pintarConversaciones(); };
+  $("#chPersonas", box).onclick = () => personasConversacion(c);
+  if ($("#chSalir", box)) $("#chSalir", box).onclick = async () => {
+    if (!confirm(`¿Salir de «${c.titulo}»? Dejará de ver sus mensajes.${c.tipo === "directo" ? " Si la otra persona le vuelve a escribir, volverá a aparecer." : ""}`)) return;
+    await run(() => api("DELETE", `/api/chat/conversaciones/${cid}/miembros/${S.me.id}`), "Ha salido de la conversación").catch(() => {});
+    $("#chAtras", box).click();
+    box.innerHTML = '<div class="chat-vacio muted">Elija una conversación o pulse «Nueva».</div>';
+  };
+  const nuevos = async () => {
+    if (S.chat?.cid !== cid || $("#chatPanel").hidden) return;
+    const n = await get(`/api/chat/conversaciones/${cid}/mensajes`, { despues: S.chat.ultimo }).catch(() => null);
+    if (n && S.chat?.cid === cid && n.mensajes.length) {
+      if (msgs.querySelector(".chat-sis:only-child")?.textContent.startsWith("Aún no")) msgs.innerHTML = "";
+      pinta(n.mensajes);
+    }
+  };
+  S._chatT = setInterval(() => !document.hidden && nuevos(), 3000);
+}
+
+async function elegirPersonas(titulo, excluir, extra, alAceptar, boton) {
+  const gente = (await get("/api/chat/usuarios")).filter((u) => !excluir.includes(u.id));
+  const f = form(titulo, [
+    ...extra,
+    { html: `<label>Personas *<input type="search" id="chBusca" placeholder="Buscar por nombre…" autocomplete="off"></label>
+      <div class="chat-gente" id="chGente">${gente.map((u) => `<label class="check" data-n="${esc(u.nombre.toLowerCase())}"><input type="checkbox" value="${u.id}"> ${avatar(u.nombre, "sm")} ${esc(u.nombre)}</label>`).join("") || '<p class="muted">No hay más personas para añadir.</p>'}</div>
+      <p class="muted" id="chSel">Ninguna persona elegida</p>` },
+  ], {}, async (d, fm) => {
+    const ids = [...fm.querySelectorAll("#chGente input:checked")].map((x) => +x.value);
+    if (!ids.length) throw new Error("Elija al menos una persona");
+    await alAceptar(ids, d);
+  }, boton);
+  const sel = () => { const n = f.querySelectorAll("#chGente input:checked").length; $("#chSel", f).textContent = n ? `${n} persona(s) elegida(s)` : "Ninguna persona elegida"; };
+  f.querySelectorAll("#chGente input").forEach((i) => (i.onchange = sel));
+  $("#chBusca", f).oninput = (e) => { const q = e.target.value.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""); f.querySelectorAll("#chGente label").forEach((l) => (l.hidden = !!q && !l.dataset.n.normalize("NFD").replace(/[̀-ͯ]/g, "").includes(q))); };
+  return f;
+}
+
+function nuevaConversacion() {
+  elegirPersonas("Nueva conversación", [], [
+    { html: '<p class="muted">Con una sola persona y sin nombre: conversación privada entre los dos. Con varias personas (o con nombre): grupo. Usted lo administra: podrá añadir o quitar personas más adelante. Para escribir a todos, use «Todo el equipo».</p>' },
+    { k: "titulo", t: "Nombre del grupo (opcional)", wide: true },
+    { k: "texto", t: "Primer mensaje (opcional)", type: "textarea", wide: true },
+  ], async (ids, d) => {
+    const c = await post("/api/chat/conversaciones", { miembros: ids, titulo: d.titulo, texto: d.texto });
+    setTimeout(() => abrirConversacion(c.id), 0);
+  }, "Crear conversación");
+}
+
+function personasConversacion(c) {
+  if (c.es_creador && c.tipo === "grupo") {
+    const f = elegirPersonas(`Personas de «${c.titulo}»`, c.miembros.map((m) => m.id), [
+      { html: `<p><b>En la conversación:</b></p><div class="chat-miembros">${c.miembros.map((m) => `<span class="chat-miembro">${avatar(m.nombre, "sm")} ${esc(m.nombre)}${m.id === S.me.id ? " (usted)" : ` <button type="button" class="btn sm ghost" data-quita="${m.id}" title="Quitar de la conversación">Quitar</button>`}</span>`).join("")}</div>
+        <p><button type="button" class="btn sm" id="chRenombra">Cambiar el nombre del grupo</button></p><p><b>Añadir personas:</b></p>` },
+    ], async (ids) => {
+      await post(`/api/chat/conversaciones/${c.id}/miembros`, { miembros: ids });
+      toast("Personas añadidas"); setTimeout(() => abrirConversacion(c.id), 0);
+    }, "Añadir");
+    f.then((fm) => {
+      fm.querySelectorAll("[data-quita]").forEach((b) => (b.onclick = async () => {
+        const m = c.miembros.find((x) => x.id === +b.dataset.quita);
+        if (!confirm(`¿Quitar a ${m.nombre} de la conversación?`)) return;
+        await run(() => api("DELETE", `/api/chat/conversaciones/${c.id}/miembros/${m.id}`), `${m.nombre} ya no está en la conversación`).catch(() => {});
+        $("#modal").close(); abrirConversacion(c.id);
+      }));
+      $("#chRenombra", fm).onclick = () => form("Nombre del grupo", [{ k: "titulo", t: "Nombre", req: true, wide: true }], { titulo: c.titulo }, async (d) => {
+        await put(`/api/chat/conversaciones/${c.id}`, d); toast("Nombre cambiado"); setTimeout(() => abrirConversacion(c.id), 0);
+      });
+    });
+    return;
+  }
+  form(`Personas de «${c.titulo}»`, [{ html: `<div class="chat-miembros">${c.miembros.map((m) => `<span class="chat-miembro">${avatar(m.nombre, "sm")} ${esc(m.nombre)}</span>`).join("")}</div>
+    <p class="muted">${c.tipo === "todos" ? "Todo el personal del grupo con acceso al PMS." : c.tipo === "directo" ? "Conversación privada entre dos personas. Para incluir a más gente, cree un grupo con «Nueva»." : "Solo quien creó el grupo puede añadir o quitar personas."}</p>` }], {}, async () => {}, "Cerrar");
+  $("#fCancel").hidden = true;
+}
+
 S.token ? start() : showLogin();

@@ -17,7 +17,7 @@ from email.utils import formataddr, make_msgid
 from html import escape
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 
 from . import hitos
 from .config import settings
@@ -132,7 +132,38 @@ def _enviar_registrado(db, user: User | None, destino: str, clave: str, tipo: st
         log.warning("Aviso %s a %s no enviado: %s", clave, destino, error)
     db.add(EmailLog(clave=clave, tipo=tipo, user_id=user.id if user else None, destinatario=destino,
                     asunto=asunto[:200], ok=ok, error=error))
+    notificar(db, user, destino, tipo, asunto, texto)
     return ok
+
+
+# Avisos dentro del PMS (campana con sonido): pantalla a la que lleva cada tipo y cuáles suenan como urgentes
+VISTA_AVISO = {"ot_urgente": "ordenes", "ot_tecnico": "ordenes", "parte_estado": "estado", "partes_estado": "estado",
+               "pagos_retenidos": "gastos", "agenda": "agenda", "bloqueo_gestion": "reservas",
+               "informe_presidencia": "presidencia", "documentacion_legal": "legal", "preventivo": "preventivo",
+               "pedidos_reposicion": "pedidos", "caja": "caja", "resumen": "panel"}
+AVISO_URGENTE = {"ot_urgente", "bloqueo_gestion", "seguridad", "caja"}
+SIN_CAMPANA = {"aviso_llegada"}  # correos a huéspedes y terceros
+
+
+def notificar(db, user: User | None, destino: str | None, tipo: str, titulo: str, texto: str = "",
+              vista: str | None = None, urgente: bool | None = None) -> None:
+    """Deja el aviso en la campana del usuario (suena en su navegador). Si no se conoce el usuario, se busca por
+    el correo de destino; los correos a personas que no son usuarios del PMS no dejan aviso."""
+    from .models import Notificacion
+    if tipo in SIN_CAMPANA:
+        return
+    try:
+        if user is None and destino:
+            user = db.scalar(select(User).where(func.lower(User.email) == destino.strip().lower()).limit(1))
+        if user is None or not user.activo:
+            return
+        cuerpo = " ".join((texto or "").split())
+        db.add(Notificacion(user_id=user.id, tipo=tipo[:40], titulo=(titulo or "Aviso")[:200],
+                            texto=(cuerpo[:597] + "…") if len(cuerpo) > 600 else cuerpo or None,
+                            vista=vista or VISTA_AVISO.get(tipo, "panel"),
+                            urgente=tipo in AVISO_URGENTE if urgente is None else urgente))
+    except Exception as e:  # noqa: BLE001 — la campana no debe parar el aviso por correo
+        log.warning("Aviso en la campana no guardado (%s): %s", tipo, e)
 
 
 def _html(titulo: str, cuerpo: str) -> str:

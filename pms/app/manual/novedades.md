@@ -1,5 +1,16 @@
 # Novedades
 
+## 2026-10-15 · Versión 1.65 · Avisos con sonido y chat del equipo
+- **Todos**: arriba a la derecha hay una **campana 🔔**. Cuando el PMS le necesita (OT urgente, resultado de un técnico, parte de estado, pago retenido, tarea de agenda…), **suena** y el número rojo indica los avisos sin ver. Pulse la campana para verlos; cada aviso lleva a su pantalla.
+- **Sonidos**: aviso normal «ding-dong»; **urgente** (OT urgente, bloqueo de gestión, descuadre de caja), tres pitidos dos veces; **chat**, un «pop» corto.
+- Suena aunque el PMS esté en otra pestaña. En *Mi perfil* puede quitar el sonido, probarlo y activar el **aviso de Windows o del móvil** cuando el PMS está minimizado.
+- **Chat del equipo 💬** (botón junto a la campana):
+  - **Todo el equipo**: un canal para todo el personal.
+  - **Nueva**: elija una persona para hablar en privado, o varias (y un nombre) para un grupo.
+  - **Grupos**: quien crea el grupo decide quién entra y puede **añadir o quitar personas** más adelante con **Personas…**; cualquiera puede **Salir**.
+  - Cada uno puede **borrar sus mensajes**. Nadie más ve una conversación de la que no forma parte (tampoco la Dirección).
+- Los avisos de la campana son los que cada uno tiene elegidos en *Mi perfil → Avisos por correo*.
+
 ## 2026-10-15 · Versión 1.64 · Buscador en la Cuenta de gastos
 - **Recepción y Dirección**: la *Cuenta de gastos* tiene un **buscador**. Escriba parte del proveedor, del nº de factura, del concepto o de las notas, o un importe (por ejemplo `121,00` o `1.210,50`), y la lista se filtra mientras escribe.
 - Funciona junto con los filtros de fechas, categoría y pagados, y los totales de arriba son los de lo encontrado.

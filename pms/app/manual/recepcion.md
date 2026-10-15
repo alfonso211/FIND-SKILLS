@@ -4,6 +4,7 @@
 1. **Panel de control**: revise los avisos (facturas pendientes de cobro, estancias vencidas) y su agenda.
 2. **Llegadas / salidas**: lista del día con quién llega y quién sale.
 3. Mire su correo: el **resumen diario de las 7:30** trae lo pendiente de su activo.
+4. Deje el PMS abierto: la **campana 🔔** suena cuando algo necesita su intervención (partes de estado, pagos retenidos, tareas…) y el **chat 💬** le avisa de los mensajes del equipo. Ver *Primeros pasos*.
 
 ## Nueva reserva
 1. **Reservas → Nueva reserva**: elija fechas y pulse **Buscar disponibilidad**.

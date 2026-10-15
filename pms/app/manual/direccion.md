@@ -1,5 +1,9 @@
 # Dirección y administración
 
+## Avisos con sonido y chat
+- La **campana 🔔** recoge al momento los avisos elegidos en *Mi perfil* (urgentes con tres pitidos: OT urgentes, bloqueos de gestión, descuadres de caja).
+- **Chat 💬**: *Todo el equipo* para comunicados generales; grupos por obra o activo con las personas que elija (usted los administra: añadir, quitar, renombrar). La Dirección no ve las conversaciones de las que no forma parte.
+
 ## Informe diario de dirección
 - Cada mañana, a la hora del resumen, llega un correo con los indicadores de cada activo turístico:
   - ocupación de hoy y de ayer;
