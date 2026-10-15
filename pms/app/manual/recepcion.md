@@ -1,5 +1,8 @@
 # Recepción
 
+## Agenda y Outlook
+- En la *Agenda* también aparecen las citas de gestión en las que usted está y el mantenimiento de su activo (etiqueta **gestión**). Puede verla en Outlook o el móvil: *Mi perfil → Calendario en Outlook* (ver *Primeros pasos*).
+
 ## Lo primero cada mañana
 1. **Panel de control**: revise los avisos (facturas pendientes de cobro, estancias vencidas) y su agenda.
 2. **Llegadas / salidas**: lista del día con quién llega y quién sale.

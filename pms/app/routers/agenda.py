@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import agenda, avisos
+from .. import agenda, avisos, calendario_comun
 from ..database import get_db
 from ..models import REPETICIONES, TIPOS_AGENDA, VISIBILIDADES, AgendaEvent, AgendaParticipant, Asset, User
 from ..security import Scope, audit, get_scope
@@ -99,9 +99,11 @@ def list_events(desde: date, hasta: date, scope: Scope = Depends(get_scope), db:
         hasta + timedelta(days=1), datetime.min.time()))
     nombres = _nombres(db)
     out = []
-    for e in db.scalars(stmt):
+    eventos = list(db.scalars(stmt))
+    canceladas = calendario_comun.cancelada_en_gestion(db, [e.id for e in eventos])
+    for e in eventos:
         for x in agenda.ocurrencias(e, desde, hasta):
-            out.append(_out(e, scope.user, nombres, x))
+            out.append({**_out(e, scope.user, nombres, x), "cancelada_en_gestion": e.id in canceladas})
     return sorted(out, key=lambda x: (x["ocurrencia"][:10], not x["todo_el_dia"], x["ocurrencia"]))
 
 
@@ -137,6 +139,7 @@ def create_event(data: EventIn, tareas: BackgroundTasks, scope: Scope = Depends(
     nuevos = _guardar(db, scope, e, data, ids)
     db.add(e)
     db.flush()
+    calendario_comun.desde_agenda(db, e)  # compartida o pública: también a gestión (si el calendario común está encendido)
     audit(db, scope.user, "crear", "agenda", e.id, {"tipo": e.tipo, "titulo": e.titulo, "participantes": ids})
     db.commit()
     if nuevos:
@@ -164,6 +167,8 @@ def update_event(eid: int, data: EventIn, tareas: BackgroundTasks, scope: Scope 
     e = _propio(db, scope, eid)
     ids = _validar(db, scope, data)
     nuevos = _guardar(db, scope, e, data, ids)
+    db.flush()
+    calendario_comun.desde_agenda(db, e)
     audit(db, scope.user, "editar", "agenda", e.id, {"titulo": e.titulo, "participantes": ids})
     db.commit()
     if nuevos:
@@ -175,6 +180,7 @@ def update_event(eid: int, data: EventIn, tareas: BackgroundTasks, scope: Scope 
 def delete_event(eid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     e = _propio(db, scope, eid)
     audit(db, scope.user, "borrar", "agenda", e.id, {"titulo": e.titulo})
+    calendario_comun.desde_agenda(db, e, borrada=True)
     db.delete(e)
     db.commit()
     return {"ok": True}
@@ -194,6 +200,7 @@ def mark_done(eid: int, data: HechaIn, scope: Scope = Depends(get_scope), db: Se
         raise HTTPException(403, "La tarea no es suya")
     e.hecha, e.hecha_por, e.hecha_en = data.hecha, scope.user.id if data.hecha else None, \
         datetime.now() if data.hecha else None
+    calendario_comun.desde_agenda(db, e)
     audit(db, scope.user, "hecha" if data.hecha else "reabrir", "agenda", e.id, {"titulo": e.titulo})
     db.commit()
     return _out(e, scope.user, _nombres(db))

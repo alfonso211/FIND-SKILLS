@@ -219,7 +219,12 @@ def procesar_cola(db: Session, ahora: datetime | None = None, limite: int = 50) 
     from . import fusion
     if not fusion.SYNC:  # fusión apagada (PMS_GESTION_SYNC_FACTURAS=0): sus avisos esperan
         q = q.where(GestionEvento.tipo.not_in(fusion.TIPOS))
+    from . import calendario_comun as calendario
+    if not calendario.activo(db):  # calendario común apagado: sus avisos esperan
+        q = q.where(GestionEvento.tipo.not_in(calendario.TIPOS_EVENTO))
     for ev in db.scalars(q.order_by(GestionEvento.id).limit(limite)):
+        if calendario.es_aviso(ev) and calendario.bloqueado(db, ev):
+            continue  # en orden por uid: espera a que salga el anterior de la misma entrada
         if ev.tipo in fusion.TIPOS and not fusion.materializar(db, ev):
             ev.estado, ev.ultimo_error = "descartado", "El registro ya no existe en el PMS"
             db.commit()
@@ -230,6 +235,8 @@ def procesar_cola(db: Session, ahora: datetime | None = None, limite: int = 50) 
             ev.estado, ev.enviado, ev.ultimo_error = "enviado", datetime.now(), None
             if ev.tipo in fusion.TIPOS:
                 fusion.entregado(db, ev, resp)
+            elif calendario.es_aviso(ev):
+                calendario.entregado(db, ev)
             env += 1
         else:
             fal += 1
@@ -523,6 +530,9 @@ def _resumen(e: GestionEvento) -> str:
     from . import fusion
     if e.tipo in fusion.TIPOS:
         return fusion.resumen(e)
+    if e.tipo.startswith("calendario."):
+        x = d.get("datos") or {}
+        return f"{x.get('uid')} v{x.get('version')} · {x.get('tipo')} · {x.get('inicio')} · {x.get('titulo')}"
     if e.tipo.startswith("reserva") or e.tipo == "checkout":
         return f"{d.get('activo_pms')} {d.get('unidad_codigo')} · {d.get('localizador') or 'R-' + str(d.get('reserva_id'))} · {d.get('entrada')} → {d.get('salida')}"
     if e.tipo == "incidencia.reportada":

@@ -336,3 +336,44 @@ Gestión solo simula hasta que Alfonso dice desde qué fecha se aplica.
 - Vale 60 segundos y una sola vez.
 - El PMS busca al usuario por email (activo) y le abre su sesión normal: los permisos son los suyos en el PMS.
 - Lleva a la pantalla del destino: Cuenta de gastos, Facturas o Proveedores.
+
+
+## Calendario común (15/10/2026 · versión 1.66 del PMS)
+
+Una sola agenda para los dos programas. Mismo transporte, firma, ventana de 5 minutos, idempotencia por `id_evento` y
+cabecera que la fusión (contrato «fusion1»). Código: `app/calendario_comun.py`. La parte de gestión está en su
+`app/calendario.py`.
+
+### Tipos
+`calendario.creada` · `calendario.actualizada` · `calendario.cancelada`. Respuesta 200 `{"ok": true}` al aceptarlo
+(también si se ignora por versión: `{"ok": true, "ignorado": "version"}`). 400 si faltan uid, versión o tipo.
+
+### Datos (`datos`)
+`uid` (estable: `INVG-…` nace en gestión, `PMS-AG-<id>` cita de la Agenda, `PMS-LIM-<id>` limpieza), `version` (≥ 1,
++1 en cada cambio), `tipo` (CITA, TAREA, OT, PREVENTIVO, BLOQUEO, LIMPIEZA, VENCIMIENTO_PAGO, VENCIMIENTO_COBRO,
+FISCAL, CONTRATO, SEGURO, AVAL), `subtipo`, `titulo`, `descripcion`, `lugar`, `inicio`/`fin` (hora de Madrid sin
+zona: `AAAA-MM-DD` o `AAAA-MM-DDTHH:MM`; en día completo `fin` es el último día incluido), `todo_el_dia`, `activo`,
+`unidad`, `sociedad`, `responsables`, `invitados` (correos; inversiete.es = inversiete.com), `estado` (PENDIENTE,
+HECHA, CANCELADA), `recordatorio`, `repeticion` (diaria, laborables, semanal, mensual, anual), `repetir_hasta`,
+`importe` (solo vencimientos y fiscal), `prioridad`, `origen`, `origen_col`, `origen_id`, `editable_en` (GESTION,
+PMS, AMBOS), `solo_lectura`, `roles`, `url_gestion`.
+
+### Reglas en el PMS
+- Gestión → PMS: se guarda por uid; versión ≤ la guardada se ignora. Gestión manda: si el PMS tenía un cambio, queda
+  en el historial de la entrada y su aviso pendiente se descarta. `cancelada` no borra (Outlook la quita).
+- PMS → gestión: citas y tareas compartidas o públicas (tarea → TAREA; reunión, evento y recordatorio → CITA con
+  subtipo), limpiezas programadas (LIMPIEZA, `editable_en` PMS) y cambios sobre citas de gestión con `editable_en`
+  AMBOS (versión + 1). Nunca vencimientos, fiscal ni entradas de solo lectura. Sin eco. Cola con los reintentos de la
+  fusión, en orden por uid (no sale un aviso mientras otro anterior de la misma entrada siga pendiente).
+- Casilla de la superadministración, apagada al desplegar: apagada, lo recibido queda «sin tratar» y no sale nada. Al
+  encenderla se preparan las citas compartidas y las limpiezas de los últimos 60 días.
+- Visibilidad: lo financiero y lo que gestión limita a `["superadmin","administracion","direccion"]` solo la
+  superadministración y los roles Dirección Grupo, Dirección Sociedad y Administración / Finanzas, cada uno solo lo de
+  sus sociedades (`sociedad`; si falta, el activo de la entrada). Citas y tareas: responsables, invitados y la
+  dirección de su ámbito. Mantenimiento: por el activo del usuario.
+
+### Outlook del PMS
+`GET /cal/<clave>.ics` (clave `token_urlsafe(32)`, en la base solo su sha256). RFC 5545; UID `uid@pms.inversiete.es`;
+SEQUENCE = versión; canceladas 60 días con STATUS:CANCELLED; VALARM el día antes a las 9:00 en vencimientos y fiscal
+(`-PT15H` en día completo) y el recordatorio en las citas. Importes ocultos salvo «Mostrar importes» (administración y
+dirección). Auditoría de cada acceso con la IP; más de 60 peticiones en una hora: 429 hasta la hora siguiente y aviso.

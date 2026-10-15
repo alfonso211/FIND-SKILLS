@@ -4,6 +4,13 @@
 - La **campana 🔔** recoge al momento los avisos elegidos en *Mi perfil* (urgentes con tres pitidos: OT urgentes, bloqueos de gestión, descuadres de caja).
 - **Chat 💬**: *Todo el equipo* para comunicados generales; grupos por obra o activo con las personas que elija (usted los administra: añadir, quitar, renombrar). La Dirección no ve las conversaciones de las que no forma parte.
 
+## Calendario común con gestión
+- **Encendido** (solo superadministración): *Administración → Pasarela con gestión → «Sincronizar el calendario con gestión»*. Primero esta casilla y después la de gestión (*Calendario › PMS*). Apagada, lo que llega de gestión se guarda «sin tratar» y no se manda nada.
+- **Qué viaja**: citas y tareas compartidas o públicas, limpiezas programadas y, desde gestión, mantenimiento, vencimientos de pagos y cobros, impuestos, contratos, seguros y avales. Las reservas no entran.
+- **Vencimientos y fiscal**: solo los ven la superadministración y los roles de dirección y administración (Dirección Grupo, Dirección Sociedad y Administración / Finanzas), cada uno **solo los de sus sociedades y activos**, con su importe. Son de solo lectura en el PMS: **Abrir en gestión**. Recepción y técnicos no los ven ni en pantalla ni en su Outlook.
+- **Outlook**: en *Mi perfil → Calendario en Outlook*, la casilla **Mostrar importes** añade el importe a los vencimientos; avisan el día antes a las 9:00.
+- **Conflictos**: si una cita se cambia a la vez en los dos programas, se queda la de gestión; el cambio del PMS queda guardado en el historial de la entrada.
+
 ## Informe diario de dirección
 - Cada mañana, a la hora del resumen, llega un correo con los indicadores de cada activo turístico:
   - ocupación de hoy y de ayer;
