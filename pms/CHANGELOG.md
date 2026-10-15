@@ -2,6 +2,32 @@
 
 Registro técnico de versiones. El resumen para los usuarios está en `app/manual/novedades.md` (se muestra en el PMS).
 
+## 1.71 · 15/10/2026 · Activos y unidades sincronizados con gestión (maestros)
+- Instrucción: `docs/fusion/INSTRUCCION_PMS_MAESTROS_ACTIVOS.txt` (manda su punto 8). Código: `app/maestros.py`.
+- **Migración 0064**: `unidades.maestro_version` (entero, 1 para las existentes), `unidades.maestro_cambiado`,
+  `unidades.baja` (fecha; la unidad no se borra) y `unidades.catastro` / `activos.catastro` (JSON de gestión). La
+  casilla es el ajuste `maestros_sync` (sin fila = apagada).
+- PMS → gestión (cola de la fusión, contrato «fusion1», origen PMS): `maestro.unidad` (`pms_id`, `accion` creada |
+  actualizada | baja, `version`, `activo_pms`, `cambiado` y los 13 operativos; uso en minúsculas) en cada alta, cambio
+  operativo o baja (la versión sube en `before_flush`, esté o no encendida la casilla); `maestro.activo` (`activo_pms`,
+  nombre, modalidad, dirección, municipio, provincia, cp, nº registro turístico); `maestro.cuadre` desde las 03:30
+  (Madrid) una vez al día, desde el hilo de la cola: por activo `por_uso` y `huella` sha256 de «pms_id|codigo|uso|
+  situacion» por pms_id, sin las bajas.
+- Gestión → PMS (`POST /api/gestion/eventos`): `maestro.catastro` (ámbito unidad o activo; guarda `ref_catastral` en su
+  campo y lo demás, con `ibi_AAAA`/`trua_AAAA` tal cual, en `catastro`; versión ≤ la guardada se ignora);
+  `maestro.pedir` (`pms_ids` «todos» o lista: vuelve a mandar esas unidades con `id_evento_causa`). `maestro.unidad` y
+  `maestro.activo` que lleguen de gestión se ignoran (lo operativo es del PMS). Campos que no manda el emisor: se
+  ignoran y quedan en auditoría (`campo_ignorado`). Sin eco.
+- Casilla «Sincronizar activos y unidades con gestión» (`GET/PUT /api/maestros/config`, solo superadministración),
+  apagada: no se encola nada, lo encolado espera y lo recibido queda «sin tratar». Al encender: se aplican los
+  catastros sin tratar y se encolan todas las unidades y activos.
+- `POST /api/maestros/unidades/{id}/baja` (motivo; no con reservas pendientes ni contrato vigente) y `/reactivar`.
+  `GET /api/unidades` oculta las bajas salvo `bajas=true`. La referencia catastral no se cambia en el PMS si hay
+  catastro de gestión (400 «Se edita en gestión»).
+- Pantallas: ficha de unidad y activo con el bloque «🔒 Catastro y propiedad · Se edita en gestión», columna Ref.
+  catastral con candado, «Dar de baja» / «Reactivar», filtro de bajas y tarjeta de la casilla en Pasarela con gestión.
+- Pruebas: `tests/test_maestros_171.py` (datos ZZ-PRUEBA-MAE, borrados al terminar).
+
 ## 1.70 · 15/10/2026 · Órdenes de trabajo simplificadas
 - **Migración 0063** (sin tablas nuevas): `partes_estado.crear` sale de Recepción, Técnico Mantenimiento y Dirección
   Sociedad (solo limpieza); `limpieza.confirmar_ot` desaparece de todos los roles y del catálogo; Dirección Técnica

@@ -380,3 +380,20 @@ PMS, AMBOS), `solo_lectura`, `roles`, `url_gestion`.
 SEQUENCE = versión; canceladas 60 días con STATUS:CANCELLED; VALARM el día antes a las 9:00 en vencimientos y fiscal
 (`-PT15H` en día completo) y el recordatorio en las citas. Importes ocultos salvo «Mostrar importes» (administración y
 dirección). Auditoría de cada acceso con la IP; más de 60 peticiones en una hora: 429 hasta la hora siguiente y aviso.
+
+
+## Activos y unidades: maestros (15/10/2026 · versión 1.71 del PMS)
+
+Activos y unidades iguales en los dos programas. Mismo transporte, firma, idempotencia por `id_evento` y cabecera
+«fusion1». Contrato exacto: punto 8 de `docs/fusion/INSTRUCCION_PMS_MAESTROS_ACTIVOS.txt`. Código: `app/maestros.py`.
+
+- **Reparto**: el PMS manda en lo operativo (alta y baja, código, bloque, uso, tipología, planta, superficie_m2,
+  dormitorios, capacidad, estado, situación, renta_base, tarifa_base_noche, anejos y los datos del activo). Gestión
+  manda en lo patrimonial y fiscal (propietaria, referencia y valores catastrales, uso catastral, IBI y TRUA).
+- **PMS → gestión**: `maestro.unidad` (accion creada | actualizada | baja, `version` que sube en cada cambio
+  operativo), `maestro.activo` y `maestro.cuadre` (03:30, por activo `por_uso` y `huella`).
+- **Gestión → PMS**: `maestro.catastro` (unidad por `pms_id`, activo por `activo_pms`; versión por ficha) y
+  `maestro.pedir` (`pms_ids`: «todos» o lista). Lo operativo que mande gestión se ignora y se anota en auditoría.
+- **Baja**: no borra; la unidad queda con fecha de baja, fuera de servicio y fuera de las listas, del `por_uso` y de la
+  huella. Gestión la marca BAJA.
+- **Casilla** de la superadministración, apagada al desplegar. Encendido: primero la del PMS y después la de gestión.

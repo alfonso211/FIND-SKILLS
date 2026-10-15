@@ -222,6 +222,9 @@ def procesar_cola(db: Session, ahora: datetime | None = None, limite: int = 50) 
     from . import calendario_comun as calendario
     if not calendario.activo(db):  # calendario común apagado: sus avisos esperan
         q = q.where(GestionEvento.tipo.not_in(calendario.TIPOS_EVENTO))
+    from . import maestros
+    if not maestros.activo(db):  # activos y unidades apagado: sus avisos esperan
+        q = q.where(GestionEvento.tipo.not_in(maestros.TIPOS_SALIDA))
     for ev in db.scalars(q.order_by(GestionEvento.id).limit(limite)):
         if calendario.es_aviso(ev) and calendario.bloqueado(db, ev):
             continue  # en orden por uid: espera a que salga el anterior de la misma entrada
@@ -338,6 +341,9 @@ def _bucle() -> None:
     time.sleep(20)
     while True:
         try:
+            from . import maestros
+            with SessionLocal() as db:
+                maestros.cuadre(db)  # 03:30 (Madrid), una vez al día, con la casilla encendida
             with SessionLocal() as db:
                 procesar_cola(db)
             if datetime.now().hour >= 6:
@@ -530,6 +536,13 @@ def _resumen(e: GestionEvento) -> str:
     from . import fusion
     if e.tipo in fusion.TIPOS:
         return fusion.resumen(e)
+    if e.tipo.startswith("maestro."):
+        x = d.get("datos") or {}
+        if e.tipo == "maestro.unidad":
+            return f"{x.get('activo_pms')} {x.get('codigo')} · {x.get('accion')} v{x.get('version')} · {x.get('uso')}"
+        if e.tipo == "maestro.activo":
+            return f"{x.get('activo_pms')} · {x.get('nombre')}"
+        return " · ".join(f"{a['activo_pms']} {sum(a['por_uso'].values())} unidades" for a in x.get("activos") or [])
     if e.tipo.startswith("calendario."):
         x = d.get("datos") or {}
         return f"{x.get('uid')} v{x.get('version')} · {x.get('tipo')} · {x.get('inicio')} · {x.get('titulo')}"

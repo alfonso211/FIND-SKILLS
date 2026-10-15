@@ -953,3 +953,9 @@ details > summary { cursor: pointer; padding: 6px 0; }
 }
 .desliza { overflow-x: auto; max-width: 100%; }
 .informe-pres .inf-cols > * { min-width: 0; }
+
+/* Catastro y propiedad que manda gestión (maestros, 1.71): solo lectura */
+fieldset.catastro { border: 1px dashed var(--borde, #d9d2c3); background: var(--fondo-suave, #faf7f0); }
+fieldset.catastro legend { font-weight: 600; }
+.catastro-datos { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px 16px; margin: 4px 0 8px; }
+.catastro-datos > div { display: flex; flex-direction: column; }
