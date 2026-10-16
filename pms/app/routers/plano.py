@@ -19,6 +19,7 @@ from ..models import (MODALIDADES_RESERVA, SITUACIONES, AccommodationContract, A
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request, get_or_404
 from .mantenimiento import ABIERTAS
+from .turistico import _res_out
 
 router = APIRouter(prefix="/api/plano", tags=["plano"])
 
@@ -69,6 +70,15 @@ def estados(db: Session, units: list[Unit], dia: date) -> dict[int, dict]:
         select(Lease, Contact).join(Contact, Contact.id == Lease.tenant_id).where(
             Lease.unit_id.in_(ids or [-1]), Lease.estado == "vigente", Lease.fecha_inicio <= dia,
             or_(Lease.fecha_fin.is_(None), Lease.fecha_fin >= dia))).all()}
+    # plazas de garaje unidas al contrato de una vivienda (Babilonia): cuentan como alquiladas con ese contrato
+    unida = {}
+    for x, t in db.execute(select(Lease, Contact).join(Contact, Contact.id == Lease.tenant_id).where(
+            Lease.plazas.is_not(None), Lease.estado.in_(("borrador", "vigente")), Lease.fecha_inicio <= dia,
+            or_(Lease.fecha_fin.is_(None), Lease.fecha_fin >= dia))).all():
+        for pid in x.plazas or []:
+            if pid in set(ids) and pid not in alq:
+                alq[pid] = (x, t)
+                unida[pid] = x.unit.codigo
     alq_futuro = set(db.scalars(select(Lease.unit_id).where(Lease.unit_id.in_(ids or [-1]), Lease.estado == "vigente",
                                                             Lease.fecha_inicio > dia)))
     out = {}
@@ -97,7 +107,8 @@ def estados(db: Session, units: list[Unit], dia: date) -> dict[int, dict]:
                      "alquiler": {"id": alq[u.id][0].id, "cliente": _nombre(alq[u.id][1]),
                                   "desde": alq[u.id][0].fecha_inicio.isoformat(),
                                   "hasta": alq[u.id][0].fecha_fin.isoformat() if alq[u.id][0].fecha_fin else None,
-                                  "matricula": alq[u.id][0].matricula} if u.id in alq else None}
+                                  "matricula": alq[u.id][0].matricula,
+                                  "unida_a": unida.get(u.id)} if u.id in alq else None}
     return out
 
 
@@ -316,7 +327,7 @@ def unit_sheet(uid: int, scope: Scope = Depends(get_scope), db: Session = Depend
                            .where(Reservation.unit_id == uid).order_by(Reservation.fecha_entrada.desc()).limit(300)).all()
         contratos = set(db.scalars(select(AccommodationContract.reservation_id).where(
             AccommodationContract.reservation_id.in_([r.id for r, _ in filas] or [-1]))))
-        out["reservas"] = [{"id": r.id, "localizador": r.localizador, "canal": r.canal, "estado": r.estado,
+        out["reservas"] = [{**_res_out(r), "id": r.id, "localizador": r.localizador, "canal": r.canal, "estado": r.estado,
                             "entrada": r.fecha_entrada.isoformat(), "salida": r.fecha_salida.isoformat(),
                             "noches": (r.fecha_salida - r.fecha_entrada).days, "adultos": r.adultos, "ninos": r.ninos,
                             "importe_total": float(r.importe_total), "importe_pagado": float(r.importe_pagado),

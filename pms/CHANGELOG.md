@@ -2,6 +2,15 @@
 
 Registro técnico de versiones. El resumen para los usuarios está en `app/manual/novedades.md` (se muestra en el PMS).
 
+## 1.76 · 16/10/2026 · Plazas unidas ocupadas y acciones iguales en todas las pantallas
+- Migración **0067** (solo datos): las plazas unidas a contratos en borrador o vigentes ya empezados pasan a `ocupada`.
+- `plazas.ocupar()` también con el contrato en borrador. `plano.estados()` cuenta las plazas unidas como alquiladas
+  (`alquiler.unida_a` con el código de la vivienda): carpeta del garaje y ficha de la plaza.
+- Ficha de la unidad: las reservas llevan `_res_out` completo; el frontend usa `resActions()` (las mismas acciones que
+  en Reservas, incluido «Cambiar de apartamento») y `leaseActions()` (nueva, compartida con *Contratos*). Estancias
+  vencidas: «Cambiar de apartamento».
+- Pruebas: `tests/test_plazas_estado_176.py`.
+
 ## 1.75 · 16/10/2026 · Plazas unidas a la vivienda y cambio de unidad sin anular
 - Migración **0066**: `contratos.plazas` (JSON, id de unidades de garaje unidas al alquiler de la vivienda).
 - `app/plazas.py`: `validar()` (mismo edificio, uso garaje, sin otro contrato ni unida a otro), `contrato_de_plaza()`,

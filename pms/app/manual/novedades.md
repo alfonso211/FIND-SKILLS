@@ -1,5 +1,11 @@
 # Novedades
 
+## 2026-10-16 · Versión 1.76 · Plazas unidas ocupadas y mismas acciones en todas partes
+- **Plazas unidas a la vivienda (Babilonia)**: ya salen **ocupadas**, con «Unida a» la vivienda y el inquilino, en la carpeta del garaje, en la ficha de la plaza y en *Unidades*. También con el contrato en borrador. Las que ya estaban unidas se corrigen solas al instalar.
+- **Ficha del apartamento → Reservas**: tiene **todos los botones** de la reserva, igual que en *Reservas*: cobro, contrato, check-in, ampliar, salida, **cambiar de apartamento**, anular…
+- **Ficha de la vivienda → Contratos**: tiene los botones de *Contratos*: plazas de garaje, **cambiar de vivienda**, editar, actualizar renta, anular…
+- **Estancias vencidas**: nuevo botón **Cambiar de apartamento**.
+
 ## 2026-10-16 · Versión 1.75 · Plazas unidas a la vivienda y cambio de apartamento
 - **Babilonia · plazas de garaje unidas a la vivienda**: al hacer el contrato de una vivienda (o con **Plazas de garaje** en el contrato) se marcan las plazas que van con ese alquiler. Quedan ocupadas mientras dure el contrato, sin bloquearlas ni hacerles contrato aparte, y se liberan solas al terminarlo. Salen en el contrato Word como anejos.
 - **Cambiar de vivienda** (contratos de alquiler) y **Cambiar de apartamento** (reservas): el cliente pasa a otra unidad **sin anular** ni repetir el contrato. Se conservan recibos, cobros y facturas; hay que escribir el **motivo**, que queda en las notas y en la auditoría.
