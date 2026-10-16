@@ -231,10 +231,16 @@ def carga_inicial(db: Session, asset: Asset | None = None, causa: str | None = N
     return n
 
 
+def linea_huella(d: dict) -> str:
+    """Línea de la huella a partir de los datos que viajan en maestro.unidad (mismos valores que recibe gestión)."""
+    return "|".join("" if d.get(c) is None else str(d[c]) for c in ("pms_id", "codigo", "uso", "situacion"))
+
+
 def huella(unidades) -> str:
     """Punto 8: una línea por unidad no dada de baja «pms_id|codigo|uso|situacion» (uso en minúsculas; vacío si no
-    hay dato), por pms_id ascendente, unidas con «\\n» sin salto final; sha256 hexadecimal de UTF-8."""
-    lineas = [f"{u.id}|{u.codigo or ''}|{(u.uso or '').lower()}|{u.situacion or ''}"
+    hay dato), por pms_id ascendente, unidas con «\\n» sin salto final; sha256 hexadecimal de UTF-8.
+    Se calcula con datos_unidad para que cada campo valga exactamente lo mismo que en maestro.unidad."""
+    lineas = [linea_huella(datos_unidad(u, "", "actualizada"))
               for u in sorted(unidades, key=lambda x: x.id) if not u.baja]
     return hashlib.sha256("\n".join(lineas).encode("utf-8")).hexdigest()
 

@@ -1,5 +1,8 @@
 # Novedades
 
+## 2026-10-16 · Versión 1.73 · Cuadre nocturno con gestión
+- **Cuadre de unidades con gestión**: el resumen de las 03:30 se calcula exactamente con los mismos datos que el PMS manda de cada unidad, para que los dos programas comparen lo mismo. Nada cambia en pantalla.
+
 ## 2026-10-15 · Versión 1.72 · La campana lleva al asunto
 - **Campana 🔔**: al pulsar un aviso de una orden de trabajo, un parte de estado o un pago retenido se abre **ese registro** (aunque la OT ya esté cerrada), con el aviso «🔔 … del aviso» y el botón **Ver todo** para volver a la lista completa.
 - Los avisos que antes llevaban al panel sin explicación (seguridad, fallos de la pasarela, OT fuera de plazo) llevan ahora a su pantalla. Si el aviso es de una pantalla a la que su usuario no tiene acceso, se dice.

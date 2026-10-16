@@ -2,6 +2,15 @@
 
 Registro técnico de versiones. El resumen para los usuarios está en `app/manual/novedades.md` (se muestra en el PMS).
 
+## 1.73 · 16/10/2026 · Huella del cuadre con lo enviado en maestro.unidad
+- Sin migración. No cambia el contrato «fusion1» ni el valor de la huella.
+- `maestros.huella()` arma cada línea con `datos_unidad()` (la misma función que construye maestro.unidad) mediante
+  `linea_huella()`: pms_id, codigo, uso y situacion valen siempre lo mismo en el cuadre y en lo enviado.
+- Aclaración para gestión: «ocupada / disponible / bloqueada» viaja en `estado`; `situacion` es la situación de la
+  vivienda (alquilada, vacia, reservada…) y va vacía si no se ha indicado. La huella usa `situacion`, como dice el punto 8.
+- Prueba `tests/test_maestros_huella.py`: gestión rehace la huella con lo recibido en maestro.pedir y coincide con la
+  del cuadre, también después de cambiar la situación (datos ZZ-PRUEBA-MAEH, se borran al terminar).
+
 ## 1.72 · 15/10/2026 · Campana y revisión general
 - Sin migración.
 - Avisos: `_enviar_registrado(..., vista=)`; los de un registro concreto llevan `ordenes?id=`, `estado?id=` y
