@@ -101,6 +101,8 @@ def test_flujo_parte_de_estado(client, admin, ids):
     assert w.status_code == 201, w.text
     w = w.json()
     assert w["bloquea_unidad"] and w["n_adjuntos"] == 1
+    # 1.74: desde un parte de estado sí exige la foto del «antes» (la del parte, ya copiada)
+    assert w["exige_foto_antes"] and not w["falta_foto_antes"]
     assert client.post("/api/mantenimiento/ordenes", headers=rec, json={
         "asset_id": sfl, "unit_id": u2["id"], "titulo": "Otra", "parte_estado_id": c["id"]}).status_code == 400
     lista = {x["id"]: x for x in client.get("/api/partes-estado", headers=rec).json()}

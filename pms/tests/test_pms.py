@@ -208,10 +208,8 @@ def test_maintenance(client, admin, ids):
     ahora = datetime.now().replace(microsecond=0)
     sin_firma = {"solucion": "Sustitución válvula", "llegada": (ahora - timedelta(hours=1)).isoformat(),
                  "salida": ahora.isoformat()}
-    # correctiva abierta desde la 1.70: sin la foto del «antes» no se finaliza
-    assert "antes" in client.post(f"{base}/confirmar-mantenimiento", headers=admin,
-                                  json={**sin_firma, "firma": firma_png()}).json()["detail"]
-    assert client.get(base, headers=admin).json()["falta_foto_antes"]
+    # 1.74: abierta por recepción (sin parte de estado), no exige la foto del «antes»
+    assert not client.get(base, headers=admin).json()["falta_foto_antes"]
     foto_antes(client, admin, w["id"])
     assert not client.get(base, headers=admin).json()["falta_foto_antes"]
     assert "Firme" in client.post(f"{base}/confirmar-mantenimiento", headers=admin, json=sin_firma).json()["detail"]

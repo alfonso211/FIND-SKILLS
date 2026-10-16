@@ -16,7 +16,8 @@ Registro técnico de versiones. El resumen para los usuarios está en `app/manua
   (reservas.ver, por los activos del usuario; queda en auditoría). Tarjeta en *Informes*.
 - Informe diario de dirección: `automatismos.donde_nos_conocio()` (contratos del mes, una vez por reserva, último
   contrato) en el correo. **No** se añade a `kpi.diario`: el contrato «fusion1» no cambia.
-- Pruebas: `tests/test_contrato_ot_174.py` (datos ZZ-PRUEBA-174).
+- Pruebas: `tests/test_contrato_ot_174.py` (datos ZZ-PRUEBA-174); ajustadas las de la foto del «antes» y el
+  cuadre de maestros (usaba la fecha de hoy). 272/272 en SQLite y PostgreSQL.
 
 ## 1.73 · 16/10/2026 · Huella del cuadre con lo enviado en maestro.unidad
 - Sin migración. No cambia el contrato «fusion1» ni el valor de la huella.
