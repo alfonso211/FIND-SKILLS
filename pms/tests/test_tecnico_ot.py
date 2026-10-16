@@ -118,8 +118,7 @@ def test_flujo_del_tecnico(client, admin, ids):
     assert client.post(_api(enlace, "/fotos") + "&tipo=averia", files=fotos).status_code == 201
     d = client.get(_api(enlace, "/datos")).json()
     assert d["fotos_antes"] == 1 and d["fotos_trabajo"] == 0
-    sin_foto = client.post(_api(enlace, "/finalizar"), json=_fin(resultado="resuelta"))
-    assert sin_foto.status_code == 400 and "reparación" in sin_foto.json()["detail"]
+    assert d["exige_foto_trabajo"] is False  # 1.74: abierta por recepción, la foto de la reparación es opcional
     assert client.post(_api(enlace, "/fotos"), files=fotos).status_code == 201
     sin_llegada = client.post(_api(enlace, "/finalizar"), json=_fin(resultado="resuelta"))
     assert sin_llegada.status_code == 400 and "llegada" in sin_llegada.json()["detail"]
