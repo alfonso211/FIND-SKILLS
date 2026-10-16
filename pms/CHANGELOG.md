@@ -2,6 +2,19 @@
 
 Registro técnico de versiones. El resumen para los usuarios está en `app/manual/novedades.md` (se muestra en el PMS).
 
+## 1.75 · 16/10/2026 · Plazas unidas a la vivienda y cambio de unidad sin anular
+- Migración **0066**: `contratos.plazas` (JSON, id de unidades de garaje unidas al alquiler de la vivienda).
+- `app/plazas.py`: `validar()` (mismo edificio, uso garaje, sin otro contrato ni unida a otro), `contrato_de_plaza()`,
+  `ocupar()`/`liberar()`. `_overlaps` de alquiler no deja alquilar aparte una plaza unida. `POST/PUT
+  /api/alquiler/contratos` aceptan `plazas`; anular, finalizar o rescindir las libera. `plazas_codigos` en el contrato;
+  el contrato Word las pone en «anejos» si no hay otro texto; `unida_a` en la ficha del plano.
+- `POST /api/alquiler/contratos/{id}/cambiar-unidad` (`LeaseUnitChange`: unidad del mismo edificio y uso, motivo):
+  mismo contrato, recibos, facturas y plazas; estados de las dos unidades; nota y auditoría.
+- `POST /api/turistico/reservas/{id}/cambiar-apartamento` (`ReservationUnitChange`): reutiliza la edición de la
+  reserva (conflictos, capacidad, misma sociedad) y añade nota y auditoría con el motivo. A gestión sale el
+  `reserva.modificada` de siempre (el contrato «fusion1» no cambia).
+- Pruebas: `tests/test_plazas_cambios_175.py`.
+
 ## 1.74 · 16/10/2026 · Contrato turístico, «¿Dónde nos conoció?», empadronados y OT
 - Migración **0065**: `ordenes_trabajo.exige_foto_antes = false` en las OT sin parte de estado (solo datos).
 - OT: `exige_foto_antes` solo si la OT se crea desde un parte de estado (`parte_estado_id`) y es correctiva o de

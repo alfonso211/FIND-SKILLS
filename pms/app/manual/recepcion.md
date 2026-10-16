@@ -72,6 +72,9 @@
 - **Parte de limpieza**: la limpieza de salida entra en el parte **al hacer el check-out**, no antes (el cliente puede ampliar la reserva). Haga el check-out en cuanto el cliente entregue las llaves. Cada mañana, **Imprimir PDF** o **Enviar** a limpieza (el Excel queda en Documentos recibidos). Antes de imprimir o enviar puede **ordenarlo** (↑ ↓), marcar algo como **urgente**, añadir una **nota** o **pasarlo a otro día** («Cambiar»). Añada las **limpiezas extra** del día. Para algo que no puede esperar: **⚡ Limpieza urgente** (va la primera y se imprime o envía al momento). Cuando limpieza avise, pulse **Hecha** en cada una; lo no validado pasa al día siguiente.
 - **Plano de apartamentos**: colores por estado. Pulse un apartamento para ver su ficha, reservar, bloquear o abrir una incidencia.
 
+## Cambiar de apartamento
+- En la reserva (confirmada o con el cliente alojado) pulse **Cambiar de apartamento**, elija el apartamento nuevo y escriba el **motivo**. No hay que anular la reserva ni repetir el contrato: se conservan los cobros y las facturas, y al reimprimir el contrato sale el apartamento nuevo. El cambio queda en las notas de la reserva y en la auditoría.
+
 ## Anular una reserva o un alquiler de garaje
 - En la reserva (o en el alquiler de la plaza) pulse **Anular**, o ábrala con **Editar** y pulse **Anular reserva** / **Anular alquiler**. Escriba el **motivo**: queda en el historial como anulada y el apartamento o la plaza quedan libres.
 - Si ya tiene **factura**, primero se emite la **rectificativa** (Facturas emitidas → Rectificar). Si el alquiler tiene **recibos cobrados**, no se anula: se da de **Baja** con su fecha.

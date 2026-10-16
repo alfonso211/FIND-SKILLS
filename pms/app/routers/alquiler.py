@@ -8,10 +8,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from .. import clientes, recibos
+from .. import clientes, plazas, recibos
 from ..database import get_db
 from ..models import MODALIDADES_CONTRATO, Asset, Charge, Lease, Unit
-from ..schemas import ChargeGenerate, LeaseIn, LeaseUpdate, Payment, RentUpdate
+from ..schemas import ChargeGenerate, LeaseIn, LeaseUnitChange, LeaseUpdate, Payment, RentUpdate
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
 from .documentos import adjuntar_pendientes
@@ -26,9 +26,10 @@ def _money(x) -> Decimal:
     return Decimal(str(x)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def _lease_out(l: Lease) -> dict:
+def _lease_out(l: Lease, db: Session | None = None) -> dict:
     d = l.to_dict()
     d["unidad"] = l.unit.codigo
+    d["plazas_codigos"] = plazas.codigos(db, l) if db is not None else []
     d["asset_id"] = l.unit.asset_id
     d["inquilino"] = f"{l.tenant.nombre} {l.tenant.apellidos or ''}".strip()
     return d
@@ -53,7 +54,7 @@ def list_leases(asset_id: int | None = None, estado: str | None = None,
         stmt = stmt.where(Unit.asset_id == asset_id)
     if estado:
         stmt = stmt.where(Lease.estado == estado)
-    return [_lease_out(l) for l in db.scalars(stmt)]
+    return [_lease_out(l, db) for l in db.scalars(stmt)]
 
 
 def _overlaps(db: Session, unit_id: int, start: date, end: date | None, exclude_id: int | None = None) -> bool:
@@ -64,7 +65,8 @@ def _overlaps(db: Session, unit_id: int, start: date, end: date | None, exclude_
         stmt = stmt.where(Lease.fecha_inicio <= end)
     if exclude_id:
         stmt = stmt.where(Lease.id != exclude_id)
-    return db.scalar(stmt) is not None
+    # una plaza de garaje unida al contrato de una vivienda tampoco se alquila aparte
+    return db.scalar(stmt) is not None or plazas.contrato_de_plaza(db, unit_id, start, end, exclude_id) is not None
 
 
 @router.post("/contratos", status_code=201)
@@ -90,17 +92,21 @@ def create_lease(data: LeaseIn, scope: Scope = Depends(get_scope), db: Session =
     else:
         bad_request("Indique tenant_id o los datos del inquilino")
 
+    unidas = plazas.validar(db, unit, data.plazas, data.fecha_inicio, data.fecha_fin)
     if data.documentos:
         adjuntar_pendientes(db, scope.user, data.documentos, tenant)
-    lease = Lease(**data.model_dump(exclude={"tenant", "tenant_id", "documentos"}), tenant_id=tenant.id)
+    lease = Lease(**data.model_dump(exclude={"tenant", "tenant_id", "documentos", "plazas"}), tenant_id=tenant.id,
+                  plazas=unidas or None)
     db.add(lease)
     if lease.estado == "vigente" and lease.fecha_inicio <= date.today():
         unit.estado = "ocupada"
+    plazas.ocupar(db, lease)
     db.flush()
-    audit(db, scope.user, "crear", "contrato", lease.id, {"unidad": unit.codigo, "renta": data.renta_mensual})
+    audit(db, scope.user, "crear", "contrato", lease.id, {"unidad": unit.codigo, "renta": data.renta_mensual,
+                                                         "plazas": plazas.codigos(db, lease)})
     db.commit()
     db.refresh(lease)
-    return _lease_out(lease)
+    return _lease_out(lease, db)
 
 
 @router.put("/contratos/{lid}")
@@ -116,15 +122,31 @@ def update_lease(lid: int, data: LeaseUpdate, scope: Scope = Depends(get_scope),
             bad_request("La fecha de fin debe ser posterior a la de inicio")
         if _overlaps(db, lease.unit_id, lease.fecha_inicio, data.fecha_fin, exclude_id=lid):
             bad_request("Las nuevas fechas solapan con otro contrato")
-    ch = apply(lease, data)
+    antes = list(lease.plazas or [])
+    if data.plazas is not None:
+        fin = data.fecha_fin if "fecha_fin" in data.model_fields_set else lease.fecha_fin
+        nuevas = plazas.validar(db, lease.unit, data.plazas, lease.fecha_inicio, fin, excluir=lid)
+    elif "fecha_fin" in data.model_fields_set and antes:  # las plazas unidas siguen libres en las nuevas fechas
+        nuevas = plazas.validar(db, lease.unit, antes, lease.fecha_inicio, data.fecha_fin, excluir=lid)
+    else:
+        nuevas = antes
+    ch = apply(lease, LeaseUpdate(**data.model_dump(exclude_unset=True, exclude={"plazas"})))
+    if nuevas != antes:
+        plazas.liberar(db, lease, [p for p in antes if p not in nuevas])
+        lease.plazas = nuevas or None
+        ch["plazas"] = [antes, nuevas]
     if "estado" in ch:
         if lease.estado in ("finalizado", "rescindido") and lease.unit.estado == "ocupada":
             lease.unit.estado = "disponible"
         elif lease.estado == "vigente" and lease.fecha_inicio <= date.today():
             lease.unit.estado = "ocupada"
+    if lease.estado in ("finalizado", "rescindido"):
+        plazas.liberar(db, lease)
+    else:
+        plazas.ocupar(db, lease)
     audit(db, scope.user, "editar", "contrato", lid, ch)
     db.commit()
-    return _lease_out(lease)
+    return _lease_out(lease, db)
 
 
 class AnularIn(BaseModel):
@@ -137,8 +159,46 @@ def void_lease(lid: int, data: AnularIn, scope: Scope = Depends(get_scope), db: 
     lease = get_or_404(db, Lease, lid)
     scope.require_asset("alquiler.editar", lease.unit.asset_id)
     recibos.anular_contrato(db, scope.user, lease, data.motivo)
+    plazas.liberar(db, lease)
     db.commit()
-    return _lease_out(lease)
+    return _lease_out(lease, db)
+
+
+@router.post("/contratos/{lid}/cambiar-unidad")
+def change_unit(lid: int, data: LeaseUnitChange, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Cambia al inquilino de vivienda sin anular el contrato: se conservan el contrato, los recibos, las facturas
+    emitidas (no se tocan) y las plazas unidas. Queda el motivo en las notas y en la auditoría. El contrato que se
+    imprima desde ahora sale con la vivienda nueva."""
+    lease = get_or_404(db, Lease, lid)
+    scope.require_asset("alquiler.editar", lease.unit.asset_id)
+    if lease.estado not in ESTADOS_ACTIVOS:
+        bad_request("Solo se cambia de vivienda un contrato en borrador o vigente")
+    nueva = get_or_404(db, Unit, data.unit_id)
+    scope.require_asset("alquiler.editar", nueva.asset_id)
+    vieja = lease.unit
+    if nueva.id == vieja.id:
+        bad_request("Elija una vivienda distinta de la actual")
+    if nueva.asset_id != vieja.asset_id:
+        bad_request("La vivienda nueva tiene que ser del mismo edificio")
+    if nueva.uso != vieja.uso:
+        bad_request(f"La unidad nueva tiene que ser del mismo uso ({vieja.uso})")
+    if nueva.baja or nueva.estado == "fuera_servicio":
+        bad_request("La vivienda nueva está fuera de servicio o dada de baja")
+    hoy = date.today()
+    if _overlaps(db, nueva.id, max(hoy, lease.fecha_inicio), lease.fecha_fin, exclude_id=lid):
+        bad_request(f"{nueva.codigo} tiene otro contrato en esas fechas")
+    lease.unit_id = nueva.id
+    if vieja.estado == "ocupada":
+        vieja.estado = "disponible"
+    if lease.estado == "vigente" and lease.fecha_inicio <= hoy:
+        nueva.estado = "ocupada"
+    lease.notas = (f"{lease.notas + chr(10) if lease.notas else ''}Cambio de vivienda el {hoy:%d/%m/%Y}: "
+                   f"{vieja.codigo} → {nueva.codigo} ({scope.user.nombre}). Motivo: {data.motivo.strip()}")
+    audit(db, scope.user, "cambiar_unidad", "contrato", lid, {"de": vieja.codigo, "a": nueva.codigo,
+                                                             "motivo": data.motivo.strip()})
+    db.commit()
+    db.refresh(lease)
+    return _lease_out(lease, db)
 
 
 @router.post("/contratos/{lid}/actualizar-renta")

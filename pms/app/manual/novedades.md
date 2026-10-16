@@ -1,5 +1,9 @@
 # Novedades
 
+## 2026-10-16 · Versión 1.75 · Plazas unidas a la vivienda y cambio de apartamento
+- **Babilonia · plazas de garaje unidas a la vivienda**: al hacer el contrato de una vivienda (o con **Plazas de garaje** en el contrato) se marcan las plazas que van con ese alquiler. Quedan ocupadas mientras dure el contrato, sin bloquearlas ni hacerles contrato aparte, y se liberan solas al terminarlo. Salen en el contrato Word como anejos.
+- **Cambiar de vivienda** (contratos de alquiler) y **Cambiar de apartamento** (reservas): el cliente pasa a otra unidad **sin anular** ni repetir el contrato. Se conservan recibos, cobros y facturas; hay que escribir el **motivo**, que queda en las notas y en la auditoría.
+
 ## 2026-10-16 · Versión 1.74 · Contrato turístico, «¿Dónde nos conoció?», empadronados y pausa de actuaciones
 - **Órdenes de trabajo**: las que abren recepción o la dirección ya **no piden foto**, ni al abrirlas ni al cerrarlas. Solo las que vienen de un parte de estado piden la foto del «antes» (se adjunta sola) y una de la reparación. Las OT que estaban esperando la foto del «antes» quedan liberadas.
 - **Pausar una actuación** (enlace del técnico): **⏸ Pausar** con el motivo (secando, vaciando termo, a la espera de repuesto u otro). El reloj se para, la OT queda **en pausa** y puede empezar otra orden mientras tanto. Para seguir: **Reanudar trabajo**.

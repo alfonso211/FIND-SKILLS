@@ -22,7 +22,7 @@ from ..facturacion import (EXENCION_INDEMNIZACION, IVA_ALOJAMIENTO, IVA_GENERAL,
 from ..models import (FORMAS_DEVOLUCION, MODALIDADES_RESERVA, AccommodationContract, Asset, Contact, DepositRefund,
                       DotacionArticulo, Invoice, Lease, Reservation, ReservationGuest, Unit, User, WorkOrder)
 from ..schemas import (AccommodationContractIn, CheckoutIn, DepositChargeIn, DepositRefundIn, ExtrasPaymentIn, LimpiezaPlanIn, OccupantIn, Payment, RenewalIn,
-                       ReservationIn, ReservationUpdate, SendContractIn, ServiceLine, SignatureIn, UnpaidInvoiceIn)
+                       ReservationIn, ReservationUnitChange, ReservationUpdate, SendContractIn, ServiceLine, SignatureIn, UnpaidInvoiceIn)
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
 from .documentos import adjuntar_pendientes
@@ -401,6 +401,31 @@ def update_reservation(rid: int, data: ReservationUpdate, scope: Scope = Depends
                 bad_request(f"La plaza de garaje {g.unit.codigo} está ocupada en las nuevas fechas")
             g.fecha_entrada, g.fecha_salida = r.fecha_entrada, r.fecha_salida
     audit(db, scope.user, "editar", "reserva", rid, ch)
+    db.commit()
+    db.refresh(r)
+    return _res_out(r)
+
+
+@router.post("/reservas/{rid}/cambiar-apartamento")
+def change_apartment(rid: int, data: ReservationUnitChange, scope: Scope = Depends(get_scope),
+                     db: Session = Depends(get_db)):
+    """Cambia al cliente de apartamento sin anular la reserva: se conservan el contrato (los datos tecleados; al
+    reimprimirlo sale el apartamento nuevo), los cobros y las facturas emitidas. El motivo queda en las notas de la
+    reserva y en la auditoría."""
+    r = get_or_404(db, Reservation, rid)
+    scope.require_asset("reservas.editar", r.unit.asset_id)
+    if r.estado not in ACTIVAS:
+        bad_request("Solo se cambia de apartamento una reserva confirmada o con el cliente alojado")
+    if data.unit_id == r.unit_id:
+        bad_request("Elija un apartamento distinto del actual")
+    antes = r.unit.codigo
+    update_reservation(rid, ReservationUpdate(unit_id=data.unit_id), scope, db)
+    r = db.get(Reservation, rid)
+    nota = (f"Cambio de apartamento el {date.today():%d/%m/%Y}: {antes} → {r.unit.codigo} ({scope.user.nombre}). "
+            f"Motivo: {data.motivo.strip()}")
+    r.notas = f"{r.notas}\n{nota}" if r.notas else nota
+    audit(db, scope.user, "cambiar_apartamento", "reserva", rid, {"de": antes, "a": r.unit.codigo,
+                                                                 "motivo": data.motivo.strip()})
     db.commit()
     db.refresh(r)
     return _res_out(r)

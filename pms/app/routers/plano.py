@@ -286,6 +286,13 @@ def _ots(db: Session, cond) -> list[dict]:
     return [_ot_out(w, n) for w, n in filas]
 
 
+def _unida_a(db: Session, u: Unit, hoy: date) -> dict | None:
+    """Plaza de garaje unida al contrato de alquiler de una vivienda (no se alquila ni se bloquea aparte)."""
+    from .. import plazas
+    l = plazas.contrato_de_plaza(db, u.id, hoy, None)
+    return {"lease_id": l.id, "vivienda": l.unit.codigo, "estado": l.estado} if l else None
+
+
 @router.get("/unidades/{uid}/ficha")
 def unit_sheet(uid: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     """Todo lo registrado de un apartamento: estado, reservas y clientes, incidencias, bloqueos y facturas.
@@ -295,6 +302,7 @@ def unit_sheet(uid: int, scope: Scope = Depends(get_scope), db: Session = Depend
     hoy = date.today()
     e = estados(db, [u], hoy)[u.id]
     out = {"unidad": {**u.to_dict(), "tipo": _tipo_corto(u)}, "estado": e["estado"], "limpieza": e["limpieza"],
+           "unida_a": _unida_a(db, u, hoy),
            "puede": {"reservar": u.asset.modalidad in MODALIDADES_RESERVA
                      and scope.can_asset("reservas.editar", u.asset_id),
                      "alquilar": u.uso == "garaje" and u.asset.modalidad in MODALIDADES_RESERVA
@@ -332,7 +340,7 @@ def unit_sheet(uid: int, scope: Scope = Depends(get_scope), db: Session = Depend
         out["puede"]["contrato"] = scope.can_asset("alquiler.editar", u.asset_id)
         if scope.can_asset("alquiler.ver", u.asset_id):
             from .alquiler import _lease_out  # import local: alquiler importa módulos que importan este
-            out["contratos"] = [_lease_out(x) for x in db.scalars(
+            out["contratos"] = [_lease_out(x, db) for x in db.scalars(
                 select(Lease).where(Lease.unit_id == uid).order_by(Lease.fecha_inicio.desc()))]
         out["puede"]["gasto"] = scope.can_asset("documentos.editar", u.asset_id)
     if scope.can_asset("mantenimiento.ver", u.asset_id):

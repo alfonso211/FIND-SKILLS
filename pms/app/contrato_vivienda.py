@@ -230,6 +230,14 @@ def _persona(c) -> dict:
             "telefono": c.telefono, "email": c.email}
 
 
+
+def _anejos_plazas(db, lease) -> str | None:
+    """Plazas de garaje unidas al alquiler (si no se ha escrito otro texto de anejos)."""
+    from . import plazas
+    cods = plazas.codigos(db, lease)
+    return ("plaza de garaje nº " if len(cods) == 1 else "plazas de garaje nº ") + ", ".join(cods) if cods else None
+
+
 def valores(db, lease) -> dict:
     """Todos los datos para rellenar el contrato, tomados de la sociedad, el activo, la vivienda, el inquilino y el
     expediente. Las claves coinciden con los campos de CAMPOS."""
@@ -262,7 +270,7 @@ def valores(db, lease) -> dict:
         "sup_construida": _num(u.superficie_m2), "sup_util": _num(f.get("superficie_util")),
         "distribucion": f.get("distribucion"), "ref_catastral": u.ref_catastral,
         "registro_num": re.sub(r"^n[ºo°]\.?\s*|\s+de Madrid$", "", str(f.get("registro_propiedad") or "")) or None, "finca": f.get("finca"),
-        "anejos": d.get("anejos") or u.anejos or "ninguno",
+        "anejos": d.get("anejos") or _anejos_plazas(db, lease) or u.anejos or "ninguno",
         "cee_letra": f.get("cee_letra"), "cee_registro": f.get("cee_registro"),
         "cee_vigencia": _fecha(f.get("cee_vigencia")),
         "convivientes": d.get("convivientes") or "ninguna otra persona",
