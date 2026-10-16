@@ -125,7 +125,7 @@
 - **Llega un cliente pronto** (7 días): al abrir la OT se avisa (🧳) y se propone como fecha prevista el día anterior a su llegada. En la lista de OT se ve «Llega un cliente el …».
 - **Órdenes de trabajo → Nueva OT** (o desde el plano): describa la avería. Las fotos son **opcionales** cuando la abre recepción o la dirección; si la OT sale de un parte de estado, sus fotos se adjuntan solas. Si es urgente, márquelo: mantenimiento recibe un correo al momento.
 - Tipo **«apto. en revisión»**: para revisar un apartamento cuando no es una avería (correctivo) ni otro de los tipos.
-- **Las OT las abre siempre recepción.** Limpieza avisa con un **parte de estado** y mantenimiento con **«Pedir OT»** (le suena la campana 🔔: «Mantenimiento pide una OT…»); usted abre la orden.
+- **Las OT las abre recepción**, salvo una excepción: mantenimiento abre desde su parte diario las **OT a subcontrata** de instalaciones y averías graves (electrodomésticos, termos, aire acondicionado…) con el motivo y la subcontrata. Le suena la campana 🔔 «OT a subcontrata…» y la tiene en Órdenes de trabajo; cuando la subcontrata termine, **usted la cierra**. Para lo demás, limpieza avisa con un **parte de estado** y mantenimiento con **«Pedir OT»** (campana: «Mantenimiento pide una OT…»); usted abre la orden.
 - **Partes de estado** (Mantenimiento → Partes de estado): solo los genera limpieza; le llega un **correo al momento**. El parte sale en el **Panel de control** hasta que se resuelve.
   - **Generar OT**: abre la orden con todo relleno (título, gremio, prioridad propuesta, descripción y fotos del parte). Asígnela y envíela a quien corresponda.
   - **Descartar**: indique el motivo. Si el parte crítico había dejado la vivienda fuera de servicio, vuelve a estar disponible.

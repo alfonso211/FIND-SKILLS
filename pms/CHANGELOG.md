@@ -2,6 +2,17 @@
 
 Registro técnico de versiones. El resumen para los usuarios está en `app/manual/novedades.md` (se muestra en el PMS).
 
+## 1.78 · 16/10/2026 · OT a subcontrata desde el parte diario de mantenimiento
+- Migración **0068**: `ordenes_trabajo.motivo_subcontrata` (String 30).
+- `MOTIVOS_SUBCONTRATA` (models): checklist motivo → (texto, categoría de OT, grupo). `GET
+  /api/mantenimiento/motivos-subcontrata` y `POST /api/mantenimiento/ordenes-subcontrata` (permiso
+  `mantenimiento.editar`, sin `mantenimiento.abrir`): OT correctiva asignada a la subcontrata (Proveedores, activa y con
+  CAE al día), estado «asignada», prioridad alta/urgente, sin foto del «antes», opcionalmente bloquea la unidad. Aviso
+  `avisos.ot_subcontrata_mto` a la campana de recepción (enlace a la OT) y `ot_urgente` si es urgente. El cierre sigue
+  el flujo de subcontrata (finalizada → la cierra recepción o el DT).
+- Parte diario: botón «🔧 OT a subcontrata» (`otSubcontrata()`), con envío a la subcontrata y parte PDF al abrirla.
+- Pruebas: `tests/test_ot_subcontrata_178.py`.
+
 ## 1.77 · 16/10/2026 · Fichas compactas y visor de fotos
 - Ficha de la unidad: `accionesRes()` pone los botones bajo el texto (`.res` a 2 columnas) con los 3 primeros visibles y
   «Más ▾» (`.res-acc.abierto`). En ≤ 640 px las acciones (`.accion-ap`) son compactas, sin la explicación.

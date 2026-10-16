@@ -321,6 +321,22 @@ def peticion_ot(db, autor: User, a: Asset, lugar: str, texto: str, urgente: bool
     return n
 
 
+def ot_subcontrata_mto(db, autor: User, w: WorkOrder, lugar: str) -> int:
+    """Mantenimiento ha abierto desde su parte diario una OT para una subcontrata: aviso en la campana de recepción
+    del activo (la cierra recepción cuando la subcontrata termine); si es urgente, también a la dirección."""
+    a = db.get(Asset, w.asset_id)
+    urgente = w.prioridad == "urgente"
+    titulo = f"{'URGENTE · ' if urgente else ''}OT a subcontrata · {a.nombre} · {lugar}"
+    texto = f"{autor.nombre} ha abierto la OT-{w.id:05d} «{w.titulo}» para {w.proveedor or 'la subcontrata'}."
+    n = 0
+    for user, ids in suscritos(db, "partes_estado"):
+        if user.id == autor.id or (ids is not None and a.id not in ids) or (ids is None and not urgente):
+            continue
+        notificar(db, user, None, "peticion_ot", titulo, texto, vista=f"ordenes?id={w.id}", urgente=urgente)
+        n += 1
+    return n
+
+
 # --------------------------------------------------------------------------- resultado del técnico (al momento)
 def _destinatarios_ot(db, w: WorkOrder) -> list[User]:
     """Recepción del activo y dirección (suscritos al aviso) y quien emitió la orden."""

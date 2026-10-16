@@ -41,6 +41,14 @@
 ## En sus rondas y visitas: parte diario o «Pedir OT»
 - Todo trabajo que **no sea una OT** (rondas, visitas, revisiones, pequeños arreglos) se anota en el **Parte de trabajo diario** con el **tiempo dedicado**. Es obligatorio.
 - Si ve una avería que necesita una orden de trabajo: **Parte de trabajo diario → 🛠 Pedir OT a recepción**. Describa qué pasa y dónde (y si es urgente). Recepción recibe el aviso al momento y abre la OT.
+- **Instalaciones y averías graves para una subcontrata** (electrodomésticos, termo, aire acondicionado, calefacción, cuadro eléctrico, fugas, ascensor, PCI, portero, puerta de garaje…): **Parte de trabajo diario → 🔧 OT a subcontrata**.
+  1. Marque el **motivo** en la lista (si es «Otra», escriba cuál).
+  2. Elija el **apartamento** o escriba la **ubicación**.
+  3. Elija la **subcontrata** de Proveedores. Si tiene la documentación CAE/PRL vencida, no deja asignarla.
+  4. Si hace falta, marque **Urgente** o **El apartamento no se puede ocupar**.
+  5. **No hace falta foto.** Pulse **Abrir OT** y después **Enviar a la subcontrata** (correo o WhatsApp con el parte) o **Parte PDF**.
+  - Recepción recibe el aviso. La subcontrata hace el trabajo y lo deja finalizado; **la cierra recepción**.
+  - Las averías pequeñas que resuelve usted en la ronda **no son OT**: se anotan en el parte con su tiempo.
 - Los **partes de estado** los genera solo **limpieza**.
 
 ## Plan preventivo
