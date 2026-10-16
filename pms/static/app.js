@@ -86,6 +86,32 @@ async function abrirFichero(path) {  // abre una foto o PDF en otra pestaña
   const w = window.open("", "_blank");
   try { w.location = await blobUrl(path); } catch (e) { w && w.close(); toast(e.message, true); }
 }
+// Visor de fotos ampliadas encima de la ficha (sin abrir otra pestaña): flechas o deslizar para pasar, Esc para cerrar
+async function verFotos(rutas, i = 0) {
+  const dlg = document.createElement("dialog");
+  dlg.className = "visor";
+  dlg.innerHTML = `<button type="button" class="visor-x" title="Cerrar (Esc)">✕</button>${rutas.length > 1 ? '<button type="button" class="visor-ant" title="Anterior">‹</button><button type="button" class="visor-sig" title="Siguiente">›</button>' : ""}
+    <img alt="Foto"><div class="visor-pie"><span data-n></span> · <a href="#" data-pest>Abrir en otra pestaña</a></div>`;
+  document.body.appendChild(dlg);
+  const urls = {};
+  const pinta = async () => {
+    $("[data-n]", dlg).textContent = `${i + 1} de ${rutas.length}`;
+    try { urls[i] = urls[i] || await blobUrl(rutas[i]); $("img", dlg).src = urls[i]; } catch (e) { toast(e.message, true); }
+  };
+  const mueve = (n) => { i = (i + n + rutas.length) % rutas.length; pinta(); };
+  const cierra = () => { dlg.close(); dlg.remove(); Object.values(urls).forEach((u) => URL.revokeObjectURL(u)); };
+  $(".visor-x", dlg).onclick = cierra;
+  if (rutas.length > 1) { $(".visor-ant", dlg).onclick = () => mueve(-1); $(".visor-sig", dlg).onclick = () => mueve(1); }
+  $("[data-pest]", dlg).onclick = (e) => { e.preventDefault(); abrirFichero(rutas[i]); };
+  dlg.onclick = (e) => { if (e.target === dlg) cierra(); };
+  dlg.onkeydown = (e) => { if (e.key === "ArrowLeft") mueve(-1); if (e.key === "ArrowRight") mueve(1); };
+  dlg.addEventListener("cancel", (e) => { e.preventDefault(); cierra(); });
+  let x0 = null;
+  dlg.addEventListener("touchstart", (e) => (x0 = e.touches[0].clientX), { passive: true });
+  dlg.addEventListener("touchend", (e) => { if (x0 != null && Math.abs(e.changedTouches[0].clientX - x0) > 50) mueve(e.changedTouches[0].clientX < x0 ? 1 : -1); x0 = null; });
+  dlg.showModal();
+  await pinta();
+}
 const get = (p, q) => api("GET", q ? `${p}?${new URLSearchParams(Object.entries(q).filter(([, v]) => v !== "" && v != null))}` : p);
 const post = (p, b = {}) => api("POST", p, b);
 const put = (p, b) => api("PUT", p, b);
@@ -826,6 +852,14 @@ V.plano = async (el) => {
 // Ficha del apartamento: estado, acciones y buscador sobre todo lo registrado
 const normaliza = (t) => String(t ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 function cerrarSolo(f) { const b = $("button[type=submit]", f); if (b) b.remove(); $("#fCancel", f).textContent = "Cerrar"; return f; }
+// Botones de cada resultado de la ficha: debajo del texto (no lo estrechan); si hay muchos, los primeros y «Más ▾»
+const VISIBLES_FICHA = 3;
+function accionesRes(acc = [], i) {
+  if (!acc.length) return "";
+  const btn = ([l, , cls], j) => `<button type="button" class="btn sm ${cls || ""}${j >= VISIBLES_FICHA && acc.length > VISIBLES_FICHA + 1 ? " extra" : ""}" data-i="${i}" data-j="${j}">${esc(l)}</button>`;
+  const mas = acc.length > VISIBLES_FICHA + 1 ? `<button type="button" class="btn sm mas" data-mas="Más ▾ (${acc.length - VISIBLES_FICHA})">Más ▾ (${acc.length - VISIBLES_FICHA})</button>` : "";
+  return `<div class="res-acc">${acc.map(btn).join("")}${mas}</div>`;
+}
 async function fichaApartamento(uid, recarga, cargada = null) {
   const d = cargada || await run(() => get(`/api/plano/unidades/${uid}/ficha`));
   const u = d.unidad;
@@ -836,7 +870,7 @@ async function fichaApartamento(uid, recarga, cargada = null) {
     html: `<b>Contrato de alquiler · ${esc(l.inquilino)}</b> · ${fdate(l.fecha_inicio)}${l.fecha_fin ? " → " + fdate(l.fecha_fin) : ""} · ${badge(l.estado)}<br><span class="muted">${eur(l.renta_mensual)}/mes${l.fianza ? " · fianza " + eur(l.fianza) : ""}</span>`,
     acc: leaseActions(recarga || (() => {}))(l).filter(Boolean) }));
   if (d.unida_a) items.push({ tipo: "contrato", fecha: "9999-12-31", texto: `unida vivienda ${d.unida_a.vivienda}`,
-    html: `<b>🚗 Plaza unida al contrato de la vivienda ${esc(d.unida_a.vivienda)}</b> · ${badge(d.unida_a.estado)}<br><span class="muted">Va con ese alquiler: no se alquila ni se bloquea aparte.</span>` });
+    html: `<b>🚗 Plaza unida al contrato de la vivienda ${esc(d.unida_a.vivienda)}</b> · ${badge(d.unida_a.estado)}<br><span class="muted">Va con ese alquiler: no se alquila ni se bloquea aparte.</span>`, acc: [] });
   (d.gastos || []).forEach((g) => items.push({ tipo: "gasto", fecha: g.fecha, texto: [g.proveedor, g.numero_factura, g.concepto, g.naturaleza].join(" "),
     html: `<b>Factura recibida · ${esc(g.proveedor || "sin proveedor")}</b>${g.numero_factura ? " · " + esc(g.numero_factura) : ""} · ${eur(g.total)} · ${g.pagado ? badge("pagado") : badge("pendiente")}<br><span class="muted">${fdate(g.fecha)} · ${esc(g.concepto)}${g.naturaleza ? " · " + esc(g.naturaleza) : ""}</span>`,
     acc: g.documento_id ? [["Ver", () => abrirFichero(`/api/documentos-recibidos/${g.documento_id}/fichero`)]] : [] }));
@@ -879,15 +913,15 @@ async function fichaApartamento(uid, recarga, cargada = null) {
   ].filter(Boolean) : [
     d.puede.reservar && ["reserva", "Reserva", garaje ? "Por días o semanas (huésped o cliente)" : "Nueva reserva en este apartamento"],
     d.puede.alquilar && !d.alquiler && ["alquiler", "Alquiler mensual", "Cliente externo: recibo cada mes y factura al 21 %"],
-    d.puede.bloquear && (d.estado === "bloqueado" ? ["desbloquear", "Bloqueado", bloqueoVigente ? `Motivo: ${bloqueoVigente.motivo}. Pulse para desbloquear` : "Pulse para desbloquear"] : ["bloqueo", "Bloqueado", "Sacarlo de venta indicando el motivo"]),
+    d.puede.bloquear && !d.unida_a && (d.estado === "bloqueado" ? ["desbloquear", "Bloqueado", bloqueoVigente ? `Motivo: ${bloqueoVigente.motivo}. Pulse para desbloquear` : "Pulse para desbloquear"] : ["bloqueo", "Bloqueado", "Sacarlo de venta indicando el motivo"]),
     d.puede.incidencia && ["incidencia", "Incidencia", "Abrir una incidencia (avería) con fotos"],
     d.puede.parte_estado && ["estado", "Parte de estado", "Señalar una deficiencia al revisar el apartamento"],
     !garaje && S.me.gestion && ["gestion", "Gestión", "Abrir este apartamento en INVERGESTION (órdenes de trabajo, costes)"],
   ].filter(Boolean);
-  const f = cerrarSolo(form(garaje ? `Plaza de garaje ${u.codigo} · ${u.bloque || ""}` : vivienda ? `Vivienda ${u.codigo} · ${assetName(u.asset_id)}` : `Apartamento ${u.codigo} · ${u.tipologia || ""}`, [
+  const f = cerrarSolo(form(garaje ? `Plaza de garaje ${u.codigo}${u.bloque ? " · " + u.bloque : ""}` : vivienda ? `Vivienda ${u.codigo} · ${assetName(u.asset_id)}` : `Apartamento ${u.codigo} · ${u.tipologia || ""}`, [
     { html: `${vivienda ? cabVivienda : `<p><span class="estado-ap pc-${d.estado}">${ESTADO_TXT[d.estado]}</span> ${u.bloque ? esc(u.bloque) + " · " : ""}planta ${esc(u.planta || "")}${u.capacidad ? ` · ${u.capacidad} plazas` : ""}${d.limpieza ? ' · <span class="badge b-pendiente_limpieza">pendiente de limpieza</span>' : ""}</p>${actual}`}
       <div class="acciones-ap">${acciones.map(([k, t, ayuda]) => `<button type="button" class="accion-ap ${k === "desbloquear" ? "marcada" : ""}" data-acc="${k}"><span class="caja">${k === "desbloquear" ? "☑" : "☐"}</span><b>${t}</b><small>${esc(ayuda)}</small></button>`).join("")}</div>
-      <div class="buscador"><input type="search" placeholder="Buscar en ${vivienda ? "esta vivienda: contrato, inquilino, factura, proveedor, incidencia…" : "este apartamento: cliente, reserva, documento, incidencia, bloqueo, factura…"}" data-q>
+      <div class="buscador"><input type="search" placeholder="Buscar en ${vivienda ? "esta vivienda: contrato, inquilino, factura, proveedor, incidencia…" : garaje ? "esta plaza: cliente, reserva, alquiler, incidencia…" : "este apartamento: cliente, reserva, documento, incidencia, bloqueo, factura…"}" data-q>
       <div class="chips">${TIPOS.map(([t, n]) => `<button type="button" class="chip ${t ? "" : "on"}" data-t="${t}">${n}</button>`).join("")}</div></div>
       <div class="resultados" data-res></div>` },
   ], {}, async () => {}));
@@ -896,9 +930,10 @@ async function fichaApartamento(uid, recarga, cargada = null) {
   const pintaRes = () => {
     const q = normaliza($("[data-q]", f).value).split(/\s+/).filter(Boolean);
     const vis = items.filter((i) => (!filtroTipo || i.tipo === filtroTipo) && q.every((w) => normaliza(i.texto + " " + i.tipo).includes(w)));
-    $("[data-res]", f).innerHTML = vis.length ? vis.slice(0, 200).map((i, n) => `<div class="res"><span class="tipo t-${i.tipo}">${i.tipo}</span><div>${i.html}</div><div class="res-acc">${i.acc.map(([l, , cls], j) => `<button type="button" class="btn sm ${cls || ""}" data-i="${items.indexOf(i)}" data-j="${j}">${esc(l)}</button>`).join("")}</div></div>`).join("")
+    $("[data-res]", f).innerHTML = vis.length ? vis.slice(0, 200).map((i, n) => `<div class="res"><span class="tipo t-${i.tipo}">${i.tipo}</span><div>${i.html}</div>${accionesRes(i.acc, items.indexOf(i))}</div>`).join("")
       : `<p class="muted">${items.length ? "Sin resultados para esa búsqueda." : `${vivienda ? "Esta vivienda" : garaje ? "Esta plaza" : "Este apartamento"} aún no tiene nada registrado.`}</p>`;
     $("[data-res]", f).querySelectorAll("button[data-i]").forEach((b) => (b.onclick = () => items[b.dataset.i].acc[b.dataset.j][1]()));
+    $("[data-res]", f).querySelectorAll("[data-mas]").forEach((b) => (b.onclick = () => { const c = b.closest(".res-acc"); c.classList.toggle("abierto"); b.textContent = c.classList.contains("abierto") ? "Menos ▴" : b.dataset.mas; }));
   };
   $("[data-q]", f).oninput = pintaRes;
   f.querySelectorAll(".chip").forEach((c) => (c.onclick = () => { filtroTipo = c.dataset.t; f.querySelectorAll(".chip").forEach((x) => x.classList.toggle("on", x === c)); pintaRes(); }));
@@ -3725,8 +3760,9 @@ async function adjuntosOT(w, reload) {
       <br><a href="#" data-ver>Abrir</a>${editar || a.user_id === S.me.id ? ' · <a href="#" class="danger" data-borrar>Borrar</a>' : ""}</figcaption></figure>`).join("");
   for (const a of lista) {
     const fig = cont.querySelector(`[data-a="${a.id}"]`);
-    $("[data-ver]", fig).onclick = (e) => { e.preventDefault(); abrirFichero(`/api/mantenimiento/adjuntos/${a.id}`); };
-    $(".thumb", fig).onclick = () => abrirFichero(`/api/mantenimiento/adjuntos/${a.id}`);
+    $("[data-ver]", fig).onclick = (e) => { e.preventDefault(); $(".thumb", fig).onclick(); };
+    const fotos = lista.filter((x) => x.mime.startsWith("image/"));
+    $(".thumb", fig).onclick = () => (a.mime.startsWith("image/") ? verFotos(fotos.map((x) => `/api/mantenimiento/adjuntos/${x.id}`), fotos.indexOf(a)) : abrirFichero(`/api/mantenimiento/adjuntos/${a.id}`));
     const del = $("[data-borrar]", fig);
     if (del) del.onclick = async (e) => {
       e.preventDefault();
@@ -4877,7 +4913,7 @@ async function partesLista(cuerpo) {
       { k: "estado_nombre", t: "Situación", f: (v, p) => `${esc(v)}${p.ot ? `<br>${otNum(p.ot.id)} ${badge(p.ot.estado)}` : ""}${p.motivo_descarte ? `<br><span class="muted peq">${esc(p.motivo_descarte)}</span>` : ""}` },
       { k: "usuario", t: "Registró" },
     ], filas, (p) => [
-      ["Fotos", () => p.fotos.forEach((f) => abrirFichero(`/api/partes-estado/fotos/${f.id}`))],
+      ["Fotos", () => verFotos(p.fotos.map((f) => `/api/partes-estado/fotos/${f.id}`))],
       p.lat != null && ["GPS", () => window.open(`https://www.openstreetmap.org/?mlat=${p.lat}&mlon=${p.lon}#map=19/${p.lat}/${p.lon}`, "_blank")],
       p.puede_gestionar && p.estado === "pendiente" && ["Generar OT", () => newWorkOrder(p.asset_id, p.unit_id, p.zona ? { zona: p.zona, nombre: p.ubicacion } : null, p).then(load), "primary"],
       p.puede_gestionar && p.estado === "pendiente" && ["Descartar", () => form(`Descartar ${p.codigo}`, [{ k: "motivo", t: "Motivo", req: true, wide: true }], {},
@@ -6987,7 +7023,11 @@ async function abrirConversacion(cid) {
     if (abajo || !S.chat._pintado) msgs.scrollTop = msgs.scrollHeight;
     S.chat._pintado = true;
     msgs.querySelectorAll("img[data-mini]:not([src])").forEach((img) => blobUrl(`/api/chat/adjuntos/${img.dataset.mini}`).then((u) => { img.src = u; if (abajo || msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 400) msgs.scrollTop = msgs.scrollHeight; }).catch(() => (img.alt = "Foto no disponible")));
-    msgs.querySelectorAll("[data-adj]").forEach((b) => (b.onclick = () => abrirFichero(`/api/chat/adjuntos/${b.dataset.adj}`)));
+    msgs.querySelectorAll("[data-adj]").forEach((b) => (b.onclick = () => {
+      if (!b.classList.contains("chat-foto")) return abrirFichero(`/api/chat/adjuntos/${b.dataset.adj}`);
+      const fotos = [...msgs.querySelectorAll(".chat-foto[data-adj]")].map((x) => x.dataset.adj);
+      verFotos(fotos.map((id) => `/api/chat/adjuntos/${id}`), fotos.indexOf(b.dataset.adj));
+    }));
     msgs.querySelectorAll("[data-borra]").forEach((a) => (a.onclick = async (e) => {
       e.preventDefault();
       if (!confirm("¿Borrar este mensaje? Los demás verán «Mensaje eliminado».")) return;
