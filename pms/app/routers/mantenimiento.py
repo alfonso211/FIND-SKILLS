@@ -19,7 +19,7 @@ from ..acceso_ot import texto as acceso_texto_ot
 from . import personal
 from ..config import settings
 from ..database import get_db
-from ..models import (NOMBRE_RESULTADO, RESULTADOS_TECNICO, Asset, EmailLog, PreventivePlan, Reservation,
+from ..models import (MOTIVOS_SUBCONTRATA, NOMBRE_RESULTADO, RESULTADOS_TECNICO, Asset, EmailLog, PreventivePlan, Reservation,
                       StaffMember, StatusReport, Supplier, Unit, User, WorkOrder, WorkOrderAttachment, WorkOrderVisit)
 from ..schemas import AccesoIn, PlanIn, PlanUpdate, WorkOrderIn, WorkOrderUpdate
 from ..security import Scope, audit, get_scope
@@ -997,6 +997,72 @@ def request_order(data: PeticionOT, scope: Scope = Depends(get_scope), db: Sessi
     audit(db, scope.user, "pedir_ot", "activo", a.id, data.model_dump())
     db.commit()
     return {"ok": True, "avisados": n}
+
+
+class OTSubcontrataIn(BaseModel):
+    asset_id: int
+    unit_id: int | None = None
+    ubicacion: str | None = Field(default=None, max_length=160)
+    motivo: str = Field(max_length=30)
+    detalle: str | None = Field(default=None, max_length=1000)
+    proveedor_id: int
+    urgente: bool = False
+    bloquea_unidad: bool = False  # el apartamento no se puede ocupar hasta la reparación
+
+
+@router.get("/motivos-subcontrata")
+def subcontract_reasons(scope: Scope = Depends(get_scope)):
+    """Checklist de motivos por los que mantenimiento abre una OT a una subcontrata (instalaciones y averías graves)."""
+    if not scope.has_any("mantenimiento.editar"):
+        raise HTTPException(403, "Sin permiso")
+    return [{"clave": k, "nombre": n, "categoria": c, "grupo": g} for k, (n, c, g) in MOTIVOS_SUBCONTRATA.items()]
+
+
+@router.post("/ordenes-subcontrata", status_code=201)
+def open_subcontract_order(data: OTSubcontrataIn, tareas: BackgroundTasks, scope: Scope = Depends(get_scope),
+                           db: Session = Depends(get_db)):
+    """Desde el parte diario, mantenimiento abre una OT para una subcontrata: solo instalaciones y averías graves
+    (electrodomésticos, termos, aire acondicionado…), con el motivo del checklist y la subcontrata elegida. No necesita
+    foto. La subcontrata la hace y la deja «finalizada»; la cierra recepción (o el Director Técnico)."""
+    scope.require_asset("mantenimiento.editar", data.asset_id)
+    if data.motivo not in MOTIVOS_SUBCONTRATA:
+        bad_request("Elija el motivo en la lista: solo instalaciones y averías graves")
+    nombre, categoria, _ = MOTIVOS_SUBCONTRATA[data.motivo]
+    detalle = (data.detalle or "").strip()
+    if data.motivo == "otra" and len(detalle) < 5:
+        bad_request("«Otra instalación o avería grave»: indique cuál y qué le pasa")
+    a = get_or_404(db, Asset, data.asset_id)
+    u = get_or_404(db, Unit, data.unit_id) if data.unit_id else None
+    if u and u.asset_id != a.id:
+        bad_request("La unidad no es de este activo")
+    ubicacion = (data.ubicacion or "").strip()
+    if not u and not ubicacion:
+        bad_request("Indique el apartamento o la ubicación (zona común, sala de máquinas…)")
+    s = db.get(Supplier, data.proveedor_id)
+    if s is None or not s.activo:
+        bad_request("Elija una subcontrata de Proveedores (dada de alta y activa)")
+    lugar = " · ".join(x for x in (f"{u.uso} {u.codigo}" if u else "", ubicacion) if x)
+    texto = "\n".join(x for x in (detalle, f"Ubicación: {ubicacion}" if ubicacion else "",
+                                    f"[Abierta desde el parte diario de mantenimiento por {scope.user.nombre} para la "
+                                    "subcontrata. La cierra recepción cuando la subcontrata termine.]") if x)
+    w = WorkOrder(asset_id=a.id, unit_id=u.id if u else None, tipo="correctivo", categoria=categoria,
+                  prioridad="urgente" if data.urgente else "alta", titulo=nombre[:200], descripcion=texto,
+                  asignacion="subcontrata", proveedor_id=s.id, estado="asignada", exige_foto_antes=False,
+                  bloquea_unidad=bool(u and data.bloquea_unidad), abierta_por=scope.user.id,
+                  motivo_subcontrata=data.motivo)
+    _asignar(db, w)
+    _comprobar_cae(db, w)
+    db.add(w)
+    if u and w.bloquea_unidad and u.estado in ("disponible", "pendiente_limpieza"):
+        u.estado = "mantenimiento"
+    db.flush()
+    avisos.ot_subcontrata_mto(db, scope.user, w, lugar)
+    audit(db, scope.user, "crear", "orden_trabajo", w.id, {"titulo": w.titulo, "origen": "parte_diario",
+                                                           "motivo": data.motivo, "subcontrata": s.nombre})
+    db.commit()
+    if w.prioridad == "urgente":
+        tareas.add_task(avisos.ot_urgente, w.id, scope.user.id)
+    return _wo_out(w, db)
 
 
 @router.get("/planes")

@@ -984,3 +984,9 @@ dialog.visor img { max-width: 94vw; max-height: 84vh; object-fit: contain; borde
 .visor-ant { left: 14px; top: 50%; transform: translateY(-50%); font-size: 32px; }
 .visor-sig { right: 14px; top: 50%; transform: translateY(-50%); font-size: 32px; }
 .visor-x:hover, .visor-ant:hover, .visor-sig:hover { background: rgba(255,255,255,.3); }
+
+/* checklist de motivos de la OT a subcontrata */
+.motivos-ot { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; margin-top: 6px; }
+.motivos-ot fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; margin: 0; }
+.motivos-ot legend { font-size: 12px; font-weight: 700; color: var(--muted); padding: 0 4px; }
+.motivos-ot label { display: flex; gap: 6px; align-items: flex-start; font-size: 13px; padding: 3px 0; cursor: pointer; }

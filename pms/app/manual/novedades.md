@@ -1,5 +1,10 @@
 # Novedades
 
+## 2026-10-16 · Versión 1.78 · Mantenimiento abre OT a subcontratas
+- **Parte de trabajo diario → 🔧 OT a subcontrata** (mantenimiento): para **instalaciones y averías graves** que no resuelve el personal propio. Se marca el **motivo** en una lista: electrodomésticos (lavadora, secadora, frigorífico, lavavajillas, horno, placa, microondas, campana), termo o caldera, aire acondicionado, calefacción, cuadro eléctrico, fugas, saneamiento, grupo de presión, ascensor, PCI, portero, antena, puerta de garaje, cerradura u «otra» (con detalle).
+- Se elige la **subcontrata** y el apartamento o la ubicación. **No hace falta foto.** La OT queda asignada y se puede **enviar a la subcontrata** o sacar el **parte en PDF** al momento.
+- **Recepción** recibe el aviso en la campana. Cuando la subcontrata termina, **la cierra recepción** (o el Director Técnico). Mantenimiento no la cierra.
+
 ## 2026-10-16 · Versión 1.77 · Fichas más compactas y fotos ampliadas
 - **Ficha del apartamento, vivienda o plaza**: los botones de cada reserva, contrato o incidencia van **debajo** del texto, en una sola línea. Salen los tres primeros y **Más ▾** para ver el resto; la reserva ya no ocupa media pantalla.
 - **En el móvil**, las acciones de la ficha (Reserva, Bloqueado, Incidencia…) son botones pequeños, en dos columnas, y lo registrado se ve antes.

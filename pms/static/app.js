@@ -5537,6 +5537,41 @@ async function editarLineaParte(x, p, aid, load) {
     toast("Línea corregida"); load();
   }, "Guardar corrección");
 }
+// Mantenimiento abre desde el parte diario una OT para una subcontrata: solo instalaciones y averías graves (checklist),
+// sin foto. La subcontrata la hace y la deja finalizada; la cierra recepción.
+async function otSubcontrata(aid, load) {
+  const [motivos, uds, provs] = await Promise.all([get("/api/mantenimiento/motivos-subcontrata"), get("/api/unidades", { asset_id: aid }).catch(() => []),
+    get("/api/proveedores", { solo_activos: true }).catch(() => [])]);
+  if (!provs.length) return toast("No hay subcontratas en Proveedores: pida a recepción o a la dirección que la den de alta", true);
+  const grupos = [...new Set(motivos.map((m) => m.grupo))];
+  const checklist = `<div class="wide"><b>Motivo (marque uno)</b><div class="motivos-ot">${grupos.map((g) => `<fieldset><legend>${esc(g)}</legend>
+    ${motivos.filter((m) => m.grupo === g).map((m) => `<label><input type="radio" name="motivo" value="${m.clave}"> ${esc(m.nombre)}</label>`).join("")}</fieldset>`).join("")}</div></div>`;
+  form(`OT a subcontrata · ${assetName(aid)}`, [
+    { html: '<p class="muted">Solo para <b>instalaciones y averías graves</b> que no resuelve el personal propio (electrodomésticos, termos, aire acondicionado…). No hace falta foto. La subcontrata hace el trabajo y lo deja finalizado; <b>la cierra recepción</b>. Las averías pequeñas se resuelven en la ronda y se anotan en el parte.</p>' },
+    { html: checklist },
+    { k: "detalle", t: "Qué le pasa (obligatorio si marca «Otra»)", type: "textarea", wide: true },
+    { k: "unit_id", t: "Apartamento / unidad", type: "select", options: [["", "— zona común —"], ...uds.map((u) => [u.id, `${u.codigo}${u.uso === "garaje" ? " (garaje)" : ""}`])] },
+    { k: "ubicacion", t: "Ubicación (zona común, sala de máquinas…)" },
+    { k: "proveedor_id", t: "Subcontrata", type: "select", req: true, options: provs.map((x) => [x.id, `${x.nombre}${x.actividad ? " · " + x.actividad : ""}`]) },
+    { k: "urgente", t: "Urgente (avisa también a la dirección)", type: "checkbox" },
+    { k: "bloquea_unidad", t: "El apartamento no se puede ocupar hasta la reparación", type: "checkbox" },
+  ], {}, async (d, fr) => {
+    const motivo = fr.querySelector('input[name="motivo"]:checked')?.value;
+    if (!motivo) throw new Error("Marque el motivo en la lista");
+    const w = await post("/api/mantenimiento/ordenes-subcontrata", clean({ asset_id: aid, motivo, detalle: d.detalle || null, unit_id: d.unit_id ? Number(d.unit_id) : null,
+      ubicacion: d.ubicacion || null, proveedor_id: Number(d.proveedor_id), urgente: !!d.urgente, bloquea_unidad: !!d.bloquea_unidad }));
+    toast(`OT-${String(w.id).padStart(5, "0")} abierta para ${w.proveedor}`);
+    load && load();
+    setTimeout(() => {
+      const g = cerrarSolo(form(`OT-${String(w.id).padStart(5, "0")} · ${w.titulo}`, [
+        { html: `<p>Abierta y asignada a <b>${esc(w.proveedor)}</b>. Recepción ya tiene el aviso; la cerrará cuando la subcontrata termine.</p>
+          <div class="toolbar"><button type="button" class="btn primary" data-env>Enviar a la subcontrata</button><button type="button" class="btn" data-pdf>Parte PDF</button></div>` },
+      ], {}, async () => {}));
+      $("[data-env]", g).onclick = () => enviarAsignado(w, load);
+      $("[data-pdf]", g).onclick = () => run(() => download("GET", `/api/mantenimiento/ordenes/${w.id}/parte`));
+    }, 0);
+  }, "Abrir OT");
+}
 V.partestrabajo = async (el) => {
   const aid = await pickAsset();
   const areaDef = can("mantenimiento.editar") || !can("limpieza.editar") ? "mantenimiento" : "limpieza";
@@ -5557,7 +5592,7 @@ V.partestrabajo = async (el) => {
       ${val ? `validado por ${esc(p.validado_por)} (${fdt(p.validado_en)})` : "pendiente de validar por recepción (hasta entonces no se imprime)"} · ${p.lineas.length} trabajo(s)
       ${p.observaciones ? `<br>Observaciones: ${esc(p.observaciones)}` : ""}
       <div class="toolbar">${p.puede_anotar ? '<button class="btn sm" data-x="anotar">＋ Anotar actuación (sin parte)</button>' : ""}
-      ${p.area === "mantenimiento" && can("mantenimiento.editar") ? '<button class="btn sm" data-x="pedir">🛠 Pedir OT a recepción</button>' : ""}
+      ${p.area === "mantenimiento" && can("mantenimiento.editar") ? '<button class="btn sm" data-x="pedir">🛠 Pedir OT a recepción</button><button class="btn sm" data-x="subcontrata">🔧 OT a subcontrata</button>' : ""}
       ${!val && p.puede_validar ? '<button class="btn sm primary" data-x="validar">Validar parte</button>' : ""}
       ${val && p.puede_validar ? '<button class="btn sm" data-x="reabrir">Reabrir</button>' : ""}
       ${val ? '<button class="btn sm" data-x="pdf">PDF</button><button class="btn sm" data-x="xlsx">Excel</button>' : ""}</div></div>`;
@@ -5591,6 +5626,7 @@ V.partestrabajo = async (el) => {
           toast(r.avisados ? `Petición enviada a recepción (${r.avisados} aviso(s))` : "Petición registrada: no hay nadie de recepción con avisos en este activo");
         }, "Enviar a recepción");
       },
+      subcontrata: () => otSubcontrata(aid, load),
       validar: () => form(`Validar el parte de ${p.area_nombre.toLowerCase()} · ${fdate(p.fecha)}`, [
         { html: `<p>Se validan <b>${p.lineas.length} trabajo(s)</b>. El parte queda cerrado, se puede imprimir y su PDF y Excel se archivan en los documentos del activo.</p>` },
         { k: "observaciones", t: "Observaciones (opcional)", type: "textarea", wide: true },

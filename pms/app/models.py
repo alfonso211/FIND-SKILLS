@@ -668,6 +668,7 @@ class WorkOrder(Base):
     bloquea_unidad: Mapped[bool] = mapped_column(Boolean, default=False)
     # correctivas y de mejora abiertas desde la 1.70: no se finalizan sin la foto del «antes» (adjunto «averia»)
     exige_foto_antes: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false())
+    motivo_subcontrata: Mapped[str | None] = mapped_column(String(30))  # abierta por mantenimiento (MOTIVOS_SUBCONTRATA)
     fecha_apertura: Mapped[date] = mapped_column(Date, default=date.today)
     fecha_prevista: Mapped[date | None] = mapped_column(Date)
     fecha_cierre: Mapped[date | None] = mapped_column(Date)
@@ -1379,6 +1380,33 @@ RESULTADOS_TECNICO = {"resuelta": "Resuelta", "pendiente_material": "Pendiente d
 # Pausa de la actuación (1.74): el técnico para el reloj sin terminar y puede empezar otra mientras tanto
 MOTIVOS_PAUSA = {"secando": "Secando", "vaciando_termo": "Vaciando termo", "repuesto": "A la espera de repuesto",
                  "otro": "Otro"}
+# OT que mantenimiento abre directamente para una subcontrata desde el parte diario: solo instalaciones y averías
+# graves que no resuelve el personal propio. motivo → (texto del checklist, categoría de la OT, grupo)
+MOTIVOS_SUBCONTRATA = {
+    "lavadora": ("Lavadora", "electrodomesticos", "Electrodomésticos"),
+    "secadora": ("Secadora", "electrodomesticos", "Electrodomésticos"),
+    "frigorifico": ("Frigorífico / congelador", "electrodomesticos", "Electrodomésticos"),
+    "lavavajillas": ("Lavavajillas", "electrodomesticos", "Electrodomésticos"),
+    "horno": ("Horno", "electrodomesticos", "Electrodomésticos"),
+    "placa": ("Placa / vitrocerámica / inducción", "electrodomesticos", "Electrodomésticos"),
+    "microondas": ("Microondas", "electrodomesticos", "Electrodomésticos"),
+    "campana": ("Campana extractora", "electrodomesticos", "Electrodomésticos"),
+    "termo": ("Termo eléctrico: avería o cambio", "acs", "Agua caliente"),
+    "caldera": ("Caldera / calentador de gas", "acs", "Agua caliente"),
+    "aire": ("Aire acondicionado / bomba de calor", "climatizacion", "Climatización"),
+    "calefaccion": ("Calefacción / radiadores", "climatizacion", "Climatización"),
+    "electricidad": ("Cuadro eléctrico / sin suministro / cortocircuito", "electricidad", "Electricidad"),
+    "fuga": ("Fuga o rotura de tubería, bajante o depósito", "fontaneria", "Fontanería"),
+    "saneamiento": ("Atasco general de saneamiento / arqueta", "fontaneria", "Fontanería"),
+    "grupo_presion": ("Grupo de presión / bombas", "fontaneria", "Fontanería"),
+    "ascensor": ("Ascensor parado o averiado", "ascensores", "Instalaciones del edificio"),
+    "pci": ("Protección contra incendios (alarma, extintores, BIE)", "pci", "Instalaciones del edificio"),
+    "portero": ("Portero / videoportero / control de accesos", "telecom", "Instalaciones del edificio"),
+    "antena": ("Antena / TV / telecomunicaciones", "telecom", "Instalaciones del edificio"),
+    "puerta_garaje": ("Puerta de garaje / puerta automática", "cerrajeria", "Instalaciones del edificio"),
+    "cerradura": ("Cerradura o puerta de acceso que no cierra", "cerrajeria", "Instalaciones del edificio"),
+    "otra": ("Otra instalación o avería grave (indique cuál)", "general", "Otras"),
+}
 NOMBRE_RESULTADO = {**RESULTADOS_TECNICO, "pausa": "En pausa"}  # para mostrar intervenciones (incluida la pausa)
 
 
