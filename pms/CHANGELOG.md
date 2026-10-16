@@ -2,6 +2,29 @@
 
 Registro técnico de versiones. El resumen para los usuarios está en `app/manual/novedades.md` (se muestra en el PMS).
 
+## 1.74 · 16/10/2026 · Contrato turístico, «¿Dónde nos conoció?», empadronados y OT
+- Migración **0065**: `ordenes_trabajo.exige_foto_antes = false` en las OT sin parte de estado (solo datos).
+- OT: `exige_foto_antes` solo si la OT se crea desde un parte de estado (`parte_estado_id`) y es correctiva o de
+  mejora; recepción y dirección la abren sin foto. Tipo nuevo `revision` («apto. en revisión»).
+- OT: la foto de la reparación solo se exige al terminar si la OT viene de un parte de estado (`de_parte()`, en
+  `exigir_finalizacion`, `confirmar-mantenimiento` y el enlace del técnico); `exige_foto_trabajo` en la OT y en el enlace.
+- Pausa de la actuación: `POST /api/publico/ot/{id}/pausar` (`MOTIVOS_PAUSA`: secando, vaciando_termo, repuesto, otro
+  con detalle). Cierra la intervención en curso con su salida (`resultado = "pausa"`, sin firma), la OT pasa a
+  `en_pausa` (nuevo estado de trabajo) y «Iniciar trabajo» la reanuda con otra intervención. La pausa no suena como
+  resultado en recepción ni entra en el recordatorio de OT pausadas. `NOMBRE_RESULTADO` = resultados + «En pausa».
+- Contrato de alojamiento (`AccommodationContractIn`): `conocio` (claves de `contratos.CONOCIO`), `conocio_otro`,
+  `cliente_antiguo`, `cliente_antiguo_desde` (en el JSON `datos`; sin migración). `bloqueos_contrato()` impide imprimir
+  o firmar aunque se pida «permitir huecos»: sin motivo (o «otro» sin detalle), sin «¿Dónde nos conoció?» (o «Otro»
+  sin detalle), domicilio en la calle de un activo turístico sin cliente antiguo con fecha (no futura). «Solo
+  guardar» guarda y devuelve lo que falta. Los cuatro campos pasan a la siguiente reserva del mismo cliente.
+- `app/empadronados.py`: `calle()` (sin tipo de vía, número, piso ni puerta), `misma_calle()` (y mismo municipio si
+  consta), `datos()` (alojados ahora: titular y ocupantes) y `excel()`. `GET /api/turistico/empadronados.xlsx`
+  (reservas.ver, por los activos del usuario; queda en auditoría). Tarjeta en *Informes*.
+- Informe diario de dirección: `automatismos.donde_nos_conocio()` (contratos del mes, una vez por reserva, último
+  contrato) en el correo. **No** se añade a `kpi.diario`: el contrato «fusion1» no cambia.
+- Pruebas: `tests/test_contrato_ot_174.py` (datos ZZ-PRUEBA-174); ajustadas las de la foto del «antes» y el
+  cuadre de maestros (usaba la fecha de hoy). 272/272 en SQLite y PostgreSQL.
+
 ## 1.73 · 16/10/2026 · Huella del cuadre con lo enviado en maestro.unidad
 - Sin migración. No cambia el contrato «fusion1» ni el valor de la huella.
 - `maestros.huella()` arma cada línea con `datos_unidad()` (la misma función que construye maestro.unidad) mediante

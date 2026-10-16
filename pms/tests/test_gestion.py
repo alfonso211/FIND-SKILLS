@@ -220,7 +220,7 @@ def test_ot_por_roturas_al_dar_la_salida_llega_a_gestion(client, admin, ids):
         db.get(Reservation, r["id"]).estado = "checkin"
         db.commit()
     client.post(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin, json={
-        "fecha_firma": HOY.isoformat(), "fianza": 100, "motivo": ["turismo"], "acreditacion": ["dni"], "solo_guardar": True})
+        "fecha_firma": HOY.isoformat(), "fianza": 100, "motivo": ["turismo"], "acreditacion": ["dni"], "conocio": "booking", "solo_guardar": True})
     x = client.post(f"/api/turistico/reservas/{r['id']}/checkout", headers=admin, json={"fianza": {"forma": "efectivo", "cargos": [
         {"codigo": "SAL01", "articulo": "Smart TV", "precio": 450, "ot": True},
         {"codigo": "MEN04", "articulo": "Vasos de agua / refresco", "cantidad": 2, "precio": 2.5, "pedido": True}]}})

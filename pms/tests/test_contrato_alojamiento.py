@@ -42,7 +42,7 @@ def test_contrato_suite_florida(client, admin, ids):
 
     datos = {**info["datos"], "cliente_domicilio": "C/ Mayor 1", "cliente_cp": "41001", "cliente_municipio": "Sevilla",
              "cliente_pais": "España", "fianza": 300, "tarjeta_titular": "Lucía Martín", "tarjeta_terminacion": "4242",
-             "tarjeta_caducidad": "08/28", "motivo": ["laboral", "transito"], "acreditacion": "dni",
+             "tarjeta_caducidad": "08/28", "motivo": ["laboral", "transito"], "acreditacion": "dni", "conocio": "booking",
              "garaje_sotano": "1", "garaje_plaza": "15"}
     # faltan correo y móvil: no se imprime y se dice qué falta (capacidad y dormitorios: de la unidad)
     res = client.post(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin, json=datos)
@@ -97,7 +97,7 @@ def test_contrato_suite_aeropuerto_y_seguridad(client, admin, ids):
     assert g.status_code == 200 and g.json()["guardado"] and "Fianza" in g.json()["faltan"]
     res = client.post(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin,
                       json={**base, "permitir_huecos": True, "sin_garaje": True, "motivo": ["otro"],
-                            "motivo_otro": "congreso médico"})
+                            "motivo_otro": "congreso médico", "conocio": "web"})
     assert res.status_code == 200, res.text
     t = _texto(res.content)
     assert "Garaje: No incluido" in t and "☒ otro: congreso médico" in t

@@ -33,6 +33,8 @@
 ## Ocupantes y contrato
 - Registre a **todos los ocupantes** (botón **Ocupantes**). Los **menores de 16 años no cuentan como plaza**.
 - **Contrato**: rellene y fírmelo en la **tablet**, o imprímalo. Queda guardado en la reserva.
+  - **Motivo de la estancia** y **¿Dónde nos conoció?** son obligatorios: sin ellos el contrato no continúa, ni con «Imprimir aunque falten datos». Si elige «otro» / «Otro», escriba cuál.
+  - Si el **domicilio habitual** del cliente está en la **calle de los apartamentos**, el contrato no continúa. Solo si es un **cliente antiguo**: marque **«Cliente antiguo»** e indique la **fecha de su primera estancia**.
 - **Dotación habitual**: marque la casilla en el contrato y se imprime (o se envía) con el **Anexo I · Inventario y dotación del apartamento**, con una casilla para revisar cada artículo.
 
 ## Dotación de los apartamentos
@@ -116,7 +118,8 @@
 - **El permiso vale para esa estancia**: si el cliente se va y entra otro con la OT abierta, en la lista de OT sale **⚠ Acceso anotado para otro cliente** y el botón **Acceso** para volver a pedirlo.
 - **Check-in con OT abierta** en el apartamento: al hacer el check-in sale una ventana para preguntar al cliente cómo se entra en cada OT. También se puede anotar después con el botón **Acceso** de la OT.
 - **Llega un cliente pronto** (7 días): al abrir la OT se avisa (🧳) y se propone como fecha prevista el día anterior a su llegada. En la lista de OT se ve «Llega un cliente el …».
-- **Órdenes de trabajo → Nueva OT** (o desde el plano): describa la avería y **haga la foto del «antes»** (obligatoria en las correctivas y de mejora; si la OT sale de un parte de estado, valen sus fotos). Si es urgente, márquelo: mantenimiento recibe un correo al momento.
+- **Órdenes de trabajo → Nueva OT** (o desde el plano): describa la avería. Las fotos son **opcionales** cuando la abre recepción o la dirección; si la OT sale de un parte de estado, sus fotos se adjuntan solas. Si es urgente, márquelo: mantenimiento recibe un correo al momento.
+- Tipo **«apto. en revisión»**: para revisar un apartamento cuando no es una avería (correctivo) ni otro de los tipos.
 - **Las OT las abre siempre recepción.** Limpieza avisa con un **parte de estado** y mantenimiento con **«Pedir OT»** (le suena la campana 🔔: «Mantenimiento pide una OT…»); usted abre la orden.
 - **Partes de estado** (Mantenimiento → Partes de estado): solo los genera limpieza; le llega un **correo al momento**. El parte sale en el **Panel de control** hasta que se resuelve.
   - **Generar OT**: abre la orden con todo relleno (título, gremio, prioridad propuesta, descripción y fotos del parte). Asígnela y envíela a quien corresponda.

@@ -33,7 +33,7 @@ def test_devolucion_fianza_transferencia(client, admin, ids):
     r = _reserva(client, admin, sfl, {"guest": COMPLETO}, "FZ-1")
     client.put(f"/api/turistico/reservas/{r['id']}", headers=admin, json={"estado": "checkin"})
     client.post(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin, json={
-        "fecha_firma": HOY.isoformat(), "fianza": 400, "motivo": ["laboral"], "acreditacion": ["dni"],
+        "fecha_firma": HOY.isoformat(), "fianza": 400, "motivo": ["laboral"], "acreditacion": ["dni"], "conocio": "booking",
         "solo_guardar": True})
     info = client.get(f"/api/turistico/reservas/{r['id']}/fianza", headers=admin).json()
     assert info["fianza"] == 400 and info["procede"] and info["titular"] == "Fausto Fianza Prueba"
@@ -84,7 +84,7 @@ def test_salida_efectivo_y_sin_fianza(client, admin, ids):
     a = _reserva(client, admin, sae, {"guest": {**COMPLETO, "documento_num": "11111111H", "nombre": "Efe"}}, "FZ-2")
     client.put(f"/api/turistico/reservas/{a['id']}", headers=admin, json={"estado": "checkin"})
     client.post(f"/api/turistico/reservas/{a['id']}/contrato", headers=admin, json={
-        "fecha_firma": HOY.isoformat(), "fianza": 200, "motivo": ["turismo"], "acreditacion": ["dni"],
+        "fecha_firma": HOY.isoformat(), "fianza": 200, "motivo": ["turismo"], "acreditacion": ["dni"], "conocio": "booking",
         "solo_guardar": True})
     avisos.BANDEJA.clear()
     x = client.post(f"/api/turistico/reservas/{a['id']}/checkout", headers=admin,
@@ -158,7 +158,7 @@ def test_dotacion_habitual_especial_y_anexo(client, admin, ids):
     assert d["especial"] and primero not in cods and cods["CUNA"]["especial"]
     # contrato con «Dotación habitual»: Anexo I con la lista
     c = client.post(f"/api/turistico/reservas/{rid}/contrato", headers=admin, json={
-        "fecha_firma": HOY.isoformat(), "motivo": ["turismo"], "acreditacion": ["dni"], "permitir_huecos": True,
+        "fecha_firma": HOY.isoformat(), "motivo": ["turismo"], "acreditacion": ["dni"], "conocio": "booking", "permitir_huecos": True,
         "dotacion": True})
     assert c.status_code == 200, c.text
     texto = "\n".join(p.text for p in docx.Document(io.BytesIO(c.content)).paragraphs)
@@ -196,7 +196,7 @@ def test_precios_reposicion_cargos_y_hojas(client, admin, ids):
     assert h.status_code == 200 and h.content.startswith(b"%PDF")
     client.put(f"/api/turistico/reservas/{r['id']}", headers=admin, json={"estado": "checkin"})
     client.post(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin, json={
-        "fecha_firma": HOY.isoformat(), "fianza": 100, "motivo": ["turismo"], "acreditacion": ["dni"],
+        "fecha_firma": HOY.isoformat(), "fianza": 100, "motivo": ["turismo"], "acreditacion": ["dni"], "conocio": "booking",
         "solo_guardar": True})
     # salida con roturas: se descuentan de la fianza a su precio y el detalle va en el motivo
     x = client.post(f"/api/turistico/reservas/{r['id']}/checkout", headers=admin, json={"fianza": {
@@ -218,7 +218,7 @@ def test_revision_movil_ot_factura_exceso_e_informe(client, admin, ids):
                  "EX-1", dias=(-4, 0))
     client.put(f"/api/turistico/reservas/{r['id']}", headers=admin, json={"estado": "checkin"})
     client.post(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin, json={
-        "fecha_firma": HOY.isoformat(), "fianza": 50, "motivo": ["turismo"], "acreditacion": ["dni"],
+        "fecha_firma": HOY.isoformat(), "fianza": 50, "motivo": ["turismo"], "acreditacion": ["dni"], "conocio": "booking",
         "solo_guardar": True})
     # enlace al móvil de limpieza (firmado, sin usuario): marca lo roto y lo que falta
     e = client.get(f"/api/revision/reserva/{r['id']}/enlace", headers=admin).json()
@@ -272,7 +272,7 @@ def test_pedido_reposicion_y_recordatorio_cobro(client, admin, ids):
                                                      "email": f"{loc.lower()}@example.com"}}, loc)
         client.put(f"/api/turistico/reservas/{r['id']}", headers=admin, json={"estado": "checkin"})
         client.post(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin, json={
-            "fecha_firma": HOY.isoformat(), "fianza": fianza, "motivo": ["turismo"], "acreditacion": ["dni"],
+            "fecha_firma": HOY.isoformat(), "fianza": fianza, "motivo": ["turismo"], "acreditacion": ["dni"], "conocio": "booking",
             "solo_guardar": True})
         x = client.post(f"/api/turistico/reservas/{r['id']}/checkout", headers=admin, json={"fianza": {
             "forma": "efectivo", "facturar_exceso": True, "cargos": cargos}})

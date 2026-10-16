@@ -226,9 +226,9 @@ def test_maestros_en_los_dos_sentidos(client, admin, ids, monkeypatch):
 
     # cuadre nocturno: por uso y huella del punto 8; una vez al día a partir de las 03:30
     with SessionLocal() as db:
-        assert maestros.cuadre(db, datetime(2026, 10, 16, 3, 0)) is None
-        assert maestros.cuadre(db, datetime(2026, 10, 16, 3, 31)) is not None
-        assert maestros.cuadre(db, datetime(2026, 10, 16, 4, 0)) is None  # ya salió hoy
+        assert maestros.cuadre(db, datetime(2020, 1, 15, 3, 0)) is None
+        assert maestros.cuadre(db, datetime(2020, 1, 15, 3, 31)) is not None
+        assert maestros.cuadre(db, datetime(2020, 1, 15, 4, 0)) is None  # ya salió hoy
         c = next(x for x in maestros.datos_cuadre(db)["activos"] if x["activo_pms"] == "SFL")
         vivas = sorted((u for u in db.scalars(select(Unit).where(Unit.asset_id == sfl)) if not u.baja), key=lambda u: u.id)
         texto = "\n".join(f"{u.id}|{u.codigo}|{u.uso.lower()}|{u.situacion or ''}" for u in vivas)

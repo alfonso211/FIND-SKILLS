@@ -15,7 +15,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from ..config import settings
 from ..database import get_db
-from .. import (avisos, clientes, contratos, documentos, dotacion, encuesta_ine, fianzas, firma_contrato, importacion,
+from .. import (avisos, clientes, contratos, documentos, dotacion, empadronados, encuesta_ine, fianzas, firma_contrato, importacion,
                importacion_ocupacion, libro_fianzas, limpiezas, nif, planos, recibos, registro_viajeros, tarifas)
 from ..facturacion import (EXENCION_INDEMNIZACION, IVA_ALOJAMIENTO, IVA_GENERAL, datos_cliente, dinero, emitir,
                            estancia_facturada, linea, lineas_servicios, serie_activo)
@@ -998,6 +998,19 @@ def _ine(asset_id: int, anio: int, mes: int, scope: Scope, db: Session) -> dict:
     return encuesta_ine.calcular(db, a, anio, mes)
 
 
+@router.get("/empadronados.xlsx")
+def empadronados_excel(scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
+    """Documento «empadronados»: personas alojadas ahora cuyo domicilio habitual está en la calle de los
+    apartamentos, con el número de personas y de apartamentos por activo."""
+    scope.require_any("reservas.ver")
+    d = empadronados.datos(db, activos=scope.asset_ids("reservas.ver"))
+    audit(db, scope.user, "descargar", "empadronados", None, {"personas": d["total_personas"],
+                                                             "apartamentos": d["total_apartamentos"]})
+    db.commit()
+    return Response(empadronados.excel(d), media_type=XLSX, headers={
+        "Content-Disposition": f'attachment; filename="empadronados_{d["fecha"]:%Y%m%d}.xlsx"'})
+
+
 @router.get("/ine")
 def ine_survey(asset_id: int, anio: int, mes: int, scope: Scope = Depends(get_scope), db: Session = Depends(get_db)):
     """Datos del cuestionario mensual de la Encuesta de Ocupación en Apartamentos Turísticos del INE."""
@@ -1264,7 +1277,8 @@ def import_occupancy(fichero: UploadFile = File(...), asset_id: int = Form(...),
 DATOS_CLIENTE_CONTRATO = ("cliente_nombre", "cliente_nacionalidad", "cliente_documento", "cliente_domicilio",
                           "cliente_cp", "cliente_municipio", "cliente_pais", "cliente_email", "cliente_movil",
                           "motivo", "motivo_otro", "acreditacion", "acreditacion_otro", "tarjeta_titular",
-                          "tarjeta_terminacion", "tarjeta_caducidad")
+                          "tarjeta_terminacion", "tarjeta_caducidad", "conocio", "conocio_otro", "cliente_antiguo",
+                          "cliente_antiguo_desde")
 DATOS_RENOVACION = DATOS_CLIENTE_CONTRATO + ("fianza", "sin_garaje", "garaje_sotano", "garaje_plaza", "capacidad",
                                             "dormitorios")
 
@@ -1534,6 +1548,26 @@ def _descarga(contenido: bytes, r: Reservation) -> Response:
     return Response(contenido, media_type=DOCX, headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
 
 
+def bloqueos_contrato(db: Session, data: AccommodationContractIn) -> list[str]:
+    """Lo que impide continuar con el contrato (ni con «Imprimir aunque falten datos»)."""
+    out = []
+    if not data.motivo:
+        out.append("Motivo de la estancia: marque al menos una casilla")
+    elif "otro" in data.motivo and not (data.motivo_otro or "").strip():
+        out.append("Motivo de la estancia «otro»: indique cuál")
+    if data.conocio not in contratos.CONOCIO:
+        out.append("¿Dónde nos conoció?: elija una opción")
+    elif data.conocio == "otro" and not (data.conocio_otro or "").strip():
+        out.append("¿Dónde nos conoció? «Otro»: indique cuál")
+    a = empadronados.coincide(db, data.cliente_domicilio, data.cliente_municipio)
+    if data.cliente_antiguo and data.cliente_antiguo_desde and data.cliente_antiguo_desde > date.today():
+        out.append("Cliente antiguo: la fecha de su primera estancia no puede ser futura")
+    elif a and not (data.cliente_antiguo and data.cliente_antiguo_desde):
+        out.append(f"El domicilio habitual del cliente está en la calle de los apartamentos ({a.nombre}): solo se "
+                   "puede continuar si es un cliente antiguo (márquelo e indique la fecha de su primera estancia)")
+    return out
+
+
 def _guardar_datos_contrato(r: Reservation, data: AccommodationContractIn) -> None:
     """Guarda lo tecleado en la reserva y, si se pide, completa la ficha del cliente y de la unidad."""
     r.datos_contrato = data.model_dump(mode="json", exclude={"permitir_huecos", "solo_guardar"})
@@ -1562,6 +1596,7 @@ def contract_form(rid: int, scope: Scope = Depends(get_scope), db: Session = Dep
                            .where(AccommodationContract.reservation_id == rid)
                            .order_by(AccommodationContract.id.desc())).all()
     return {"datos": _prefill(r, db), "motivos": contratos.MOTIVOS, "acreditaciones": contratos.ACREDITACIONES,
+            "conocio": contratos.CONOCIO,
             "historial": [{"id": c.id, "creado": c.creado.isoformat(), "usuario": n,
                            "firmado": c.firmado.isoformat() if c.firmado else None, "envios": c.envios or []}
                           for c, n in historial if c.firmado or c.fichero is None],
@@ -1577,17 +1612,19 @@ def contract_print(rid: int, data: AccommodationContractIn, scope: Scope = Depen
     _con_dotacion(db, r, data)
     contenido, pendientes = _rellenar(ruta, r, data)
     faltan = contratos.faltan(pendientes)
-    if not data.motivo:
-        faltan.append("Motivo de la estancia (marque al menos una casilla)")
     if not data.acreditacion:
         faltan.append("Acreditación del domicilio (marque al menos una casilla)")
+    bloqueos = bloqueos_contrato(db, data)
 
     _guardar_datos_contrato(r, data)
 
     if data.solo_guardar:
-        audit(db, scope.user, "guardar_contrato", "reserva", r.id, {"faltan": faltan})
+        audit(db, scope.user, "guardar_contrato", "reserva", r.id, {"faltan": bloqueos + faltan})
         db.commit()
-        return {"guardado": True, "faltan": faltan}
+        return {"guardado": True, "faltan": bloqueos + faltan}
+    if bloqueos:
+        db.commit()  # los datos tecleados no se pierden
+        bad_request("No se puede continuar con el contrato: " + "; ".join(bloqueos))
     if faltan and not data.permitir_huecos:
         db.commit()  # los datos tecleados no se pierden
         bad_request("Faltan datos para que el cliente solo tenga que firmar: " + "; ".join(faltan))
@@ -1615,10 +1652,8 @@ def contract_reprint(rid: int, cid: int, scope: Scope = Depends(get_scope), db: 
 
 
 # --------------------------------------------------------------------------- firma en tablet y envío al cliente
-def _faltan_contrato(r: Reservation, data: AccommodationContractIn, pendientes: list[str]) -> list[str]:
-    faltan = contratos.faltan(pendientes)
-    if not data.motivo:
-        faltan.append("Motivo de la estancia (marque al menos una casilla)")
+def _faltan_contrato(db: Session, data: AccommodationContractIn, pendientes: list[str]) -> list[str]:
+    faltan = bloqueos_contrato(db, data) + contratos.faltan(pendientes)
     if not data.acreditacion:
         faltan.append("Acreditación del domicilio (marque al menos una casilla)")
     return faltan
@@ -1704,7 +1739,7 @@ def contract_sign_prepare(rid: int, data: AccommodationContractIn, scope: Scope 
         bad_request("El servidor no tiene instalado el conversor a PDF (LibreOffice): imprima el contrato")
     _con_dotacion(db, r, data)
     _guardar_datos_contrato(r, data)
-    faltan = _faltan_contrato(r, data, contratos.rellenar(ruta, _datos_plantilla(r, data))[1])
+    faltan = _faltan_contrato(db, data, contratos.rellenar(ruta, _datos_plantilla(r, data))[1])
     faltan += _registro_incompleto(r)
     db.commit()
     if faltan:

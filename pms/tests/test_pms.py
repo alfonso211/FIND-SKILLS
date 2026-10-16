@@ -199,19 +199,18 @@ def test_maintenance(client, admin, ids):
     assert client.post("/api/turistico/reservas", headers=admin, json={
         "unit_id": unit["id"], "guest": {"nombre": "X"}, "fecha_entrada": d(1), "fecha_salida": d(2)}).status_code == 400
     base = f"/api/mantenimiento/ordenes/{w['id']}"
-    from conftest import firma_png, foto_antes, foto_trabajo, trabajo_realizado
-    # sin trabajo finalizado no se cierra; sin foto de la reparación, ni tiempo, ni firma no se finaliza
+    from conftest import firma_png, foto_antes, foto_trabajo
+    # sin trabajo finalizado no se cierra; sin tiempo ni firma no se finaliza (1.74: abierta por recepción, la foto
+    # de la reparación es opcional)
     assert client.post(f"{base}/cerrar", headers=admin, json={}).status_code == 400
-    assert trabajo_realizado(client, admin, w["id"], "Sustitución válvula", foto=False).status_code == 400
+    assert client.get(base, headers=admin).json()["exige_foto_trabajo"] is False
     assert client.post(f"{base}/confirmar-mantenimiento", headers=admin, json={"solucion": "Sustitución válvula"}).status_code == 422
     foto_trabajo(client, admin, w["id"])
     ahora = datetime.now().replace(microsecond=0)
     sin_firma = {"solucion": "Sustitución válvula", "llegada": (ahora - timedelta(hours=1)).isoformat(),
                  "salida": ahora.isoformat()}
-    # correctiva abierta desde la 1.70: sin la foto del «antes» no se finaliza
-    assert "antes" in client.post(f"{base}/confirmar-mantenimiento", headers=admin,
-                                  json={**sin_firma, "firma": firma_png()}).json()["detail"]
-    assert client.get(base, headers=admin).json()["falta_foto_antes"]
+    # 1.74: abierta por recepción (sin parte de estado), no exige la foto del «antes»
+    assert not client.get(base, headers=admin).json()["falta_foto_antes"]
     foto_antes(client, admin, w["id"])
     assert not client.get(base, headers=admin).json()["falta_foto_antes"]
     assert "Firme" in client.post(f"{base}/confirmar-mantenimiento", headers=admin, json=sin_firma).json()["detail"]

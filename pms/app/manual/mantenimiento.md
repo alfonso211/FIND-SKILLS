@@ -7,10 +7,10 @@
 - **Órdenes de trabajo**: todas las averías de su activo. Las **urgentes** le llegan además por **correo al momento** y **suenan** en la campana 🔔 (tres pitidos) si tiene el PMS abierto. Para coordinarse con recepción o con un compañero, use el **chat 💬**.
 - **Las OT las abre siempre recepción** (a partir de un parte de estado de limpieza, de una petición suya o de un aviso). Mantenimiento no abre OT.
 - Recorrido de una OT:
-  1. **Abierta**: la abre recepción, con la **foto del «antes»** (obligatoria en las correctivas y de mejora). Si no la tiene, hágala usted al llegar con **«📷 Foto del antes»** del enlace: sin ella no se puede terminar.
+  1. **Abierta**: la abre recepción o la dirección (las fotos de la avería son opcionales). Si sale de un **parte de estado**, sus fotos son la foto del «antes» y se adjuntan solas.
   2. **Asignada**: recepción la asigna a **personal propio** o a una **subcontrata** y la **envía**: llega un enlace por WhatsApp o correo.
   3. El técnico la gestiona **desde el móvil** con ese enlace (ver abajo) o desde el PMS con **Trabajo realizado**.
-  4. **Para terminarla hacen falta siempre**: el **tiempo** (hora de llegada y de salida) y **al menos una foto de la reparación**.
+  4. **Para terminarla hace falta siempre el tiempo** (hora de llegada y de salida). Si la OT viene de un **parte de estado**, además **al menos una foto de la reparación**; si la abrieron recepción o la dirección, la foto es opcional.
   5. **Personal propio**: la **cierra usted** al terminar, con su **firma**; la fecha y la hora quedan solas. Si no está bien, recepción puede **reabrirla** en los 7 días siguientes.
   6. **Subcontrata**: la da por **finalizada** con todos los datos (empresa, técnico, trabajos, material, fotos y tiempo); la **cierran el Director Técnico o recepción**.
   7. Al cerrarse, si el trabajo fue en un apartamento, este pasa a **pendiente de limpieza** y entra solo en el parte de limpieza del día.
@@ -30,7 +30,8 @@
 - Al enviarle una orden le llega por **WhatsApp** o **correo** un mensaje: «Tiene una nueva orden de trabajo OT-xxxxx en … Acceda aquí para gestionarla: enlace». Ábralo en el móvil: **no hace falta usuario ni contraseña**.
 - En esa pantalla:
   1. **Iniciar trabajo** al llegar (anota la hora de llegada). Si se le olvida, corrija las horas a mano: **sin hora de llegada no se puede dar por resuelta**.
-  2. **Trabajos realizados / diagnóstico**, **material** (añada una línea por material, con cantidad), observaciones y **fotos de la reparación** (para «Resuelta», al menos una).
+     - **⏸ Pausar** (secando, vaciando termo, a la espera de repuesto u otro motivo): elija el motivo y pulse **Pausar**. El reloj se para (el tiempo de pausa no cuenta) y la orden queda **en pausa**. Mientras tanto puede abrir el enlace de **otra orden** y empezarla. Para seguir, vuelva a este enlace y pulse **Reanudar trabajo**.
+  2. **Trabajos realizados / diagnóstico**, **material** (añada una línea por material, con cantidad), observaciones y **fotos de la reparación** (para «Resuelta», al menos una si la orden viene de un parte de estado; si no, son opcionales).
   3. **Estado al finalizar** (obligatorio): **Resuelta**; **Pendiente de material**; **Requiere otra visita** (proponga la fecha); **Notificar a subcontrata** (solo personal propio, si la avería supera su capacidad: gas, certificaciones, maquinaria); **Otro** (explique el motivo).
   4. **Firme** con el dedo y pulse **Enviar resultado**. La hora de salida se anota sola. Si es personal propio y la marca **Resuelta**, la orden queda **cerrada**.
 - Recepción recibe el aviso al momento. Si vuelve otro día (material o segunda visita), use el mismo enlace.

@@ -19,8 +19,8 @@ from ..acceso_ot import texto as acceso_texto_ot
 from . import personal
 from ..config import settings
 from ..database import get_db
-from ..models import (RESULTADOS_TECNICO, Asset, EmailLog, PreventivePlan, Reservation, StaffMember, Supplier, Unit,
-                      User, WorkOrder, WorkOrderAttachment, WorkOrderVisit)
+from ..models import (NOMBRE_RESULTADO, RESULTADOS_TECNICO, Asset, EmailLog, PreventivePlan, Reservation,
+                      StaffMember, StatusReport, Supplier, Unit, User, WorkOrder, WorkOrderAttachment, WorkOrderVisit)
 from ..schemas import AccesoIn, PlanIn, PlanUpdate, WorkOrderIn, WorkOrderUpdate
 from ..security import Scope, audit, get_scope
 from ..utils import apply, bad_request, get_or_404, scoped
@@ -28,7 +28,8 @@ from ..utils import apply, bad_request, get_or_404, scoped
 router = APIRouter(prefix="/api/mantenimiento", tags=["mantenimiento"])
 
 # Estados editables a mano por mantenimiento (los tres últimos los fija también el técnico desde su enlace)
-ESTADOS_TRABAJO = ("abierta", "asignada", "en_curso", "pendiente_material", "pendiente_visita", "escalada", "revisar")
+ESTADOS_TRABAJO = ("abierta", "asignada", "en_curso", "en_pausa", "pendiente_material", "pendiente_visita", "escalada",
+                   "revisar")
 # Resultados del técnico que dejan la OT en pausa: se recuerdan cada día hasta que alguien actúa
 PAUSADAS = ("pendiente_material", "otra_visita", "escalar", "otro")
 # Estados que fija el flujo de confirmaciones
@@ -114,18 +115,23 @@ def fotos_antes(db: Session, w: WorkOrder) -> int:
         WorkOrderAttachment.mime.like("image/%"))) or 0
 
 
+def de_parte(db: Session, w: WorkOrder) -> bool:
+    """OT generada desde un parte de estado: solo estas exigen fotos (las que abren recepción o dirección, no)."""
+    return db.scalar(select(StatusReport.id).where(StatusReport.work_order_id == w.id).limit(1)) is not None
+
+
 TIPOS_FOTO_ANTES = ("correctivo", "mejora")  # OT con foto del «antes» obligatoria (no preventivo ni normativo)
 FALTA_FOTO_ANTES = "Falta la foto del «antes»: cómo estaba la avería antes de la reparación"
 
 
 def exigir_finalizacion(db: Session, w: WorkOrder) -> None:
-    """Para dar por finalizada o cerrar una OT: tiempo de trabajo, al menos una foto de la reparación y, en las
-    correctivas y de mejora abiertas desde la 1.70, la foto del «antes»."""
+    """Para dar por finalizada o cerrar una OT: tiempo de trabajo y, si viene de un parte de estado, al menos una foto
+    de la reparación y (correctivas y de mejora) la foto del «antes»."""
     if w.exige_foto_antes and not fotos_antes(db, w):
         bad_request(FALTA_FOTO_ANTES)
     if minutos_ot(db, w) <= 0:
         bad_request("Falta el tiempo de trabajo: indique la hora de llegada y la de salida")
-    if not fotos_trabajo(db, w):
+    if de_parte(db, w) and not fotos_trabajo(db, w):
         bad_request("Falta al menos una foto de la reparación")
 
 
@@ -165,6 +171,7 @@ class _Lote:
         self.fotos = dict(db.execute(select(WorkOrderAttachment.work_order_id, func.count()).where(
             WorkOrderAttachment.work_order_id.in_(ids), WorkOrderAttachment.tipo == "trabajo",
             WorkOrderAttachment.mime.like("image/%")).group_by(WorkOrderAttachment.work_order_id)).all())
+        self.de_parte = set(db.scalars(select(StatusReport.work_order_id).where(StatusReport.work_order_id.in_(ids))))
         self.fotos_antes = dict(db.execute(select(WorkOrderAttachment.work_order_id, func.count()).where(
             WorkOrderAttachment.work_order_id.in_(ids), WorkOrderAttachment.tipo == "averia",
             WorkOrderAttachment.mime.like("image/%")).group_by(WorkOrderAttachment.work_order_id)).all())
@@ -196,6 +203,7 @@ def _wo_out(w: WorkOrder, db: Session, n_adjuntos: int | None = None, lote: _Lot
         select(func.count()).select_from(WorkOrderAttachment).where(WorkOrderAttachment.work_order_id == w.id))
     d["minutos"] = lote.minutos.get(w.id, 0) if lote else minutos_ot(db, w)
     d["fotos_trabajo"] = lote.fotos.get(w.id, 0) if lote else fotos_trabajo(db, w)
+    d["exige_foto_trabajo"] = (w.id in lote.de_parte) if lote else de_parte(db, w)
     d["reabrible"] = bool(w.estado == "cerrada" and w.fecha_cierre
                           and w.fecha_cierre >= date.today() - timedelta(days=REABRIR_DIAS))
     d["sin_cerrar_48h"] = bool(w.estado == "pendiente_cierre" and w.conf_mto_fecha
@@ -223,7 +231,7 @@ def _wo_out(w: WorkOrder, db: Session, n_adjuntos: int | None = None, lote: _Lot
         select(WorkOrderVisit).where(WorkOrderVisit.work_order_id == w.id, WorkOrderVisit.enviado.is_not(None))
         .order_by(WorkOrderVisit.enviado.desc()).limit(1))
     d["tecnico"] = {"nombre": ultima.tecnico, "empresa": ultima.empresa, "resultado": ultima.resultado,
-                    "resultado_nombre": RESULTADOS_TECNICO.get(ultima.resultado), "enviado": ultima.enviado.isoformat(),
+                    "resultado_nombre": NOMBRE_RESULTADO.get(ultima.resultado), "enviado": ultima.enviado.isoformat(),
                     "fecha_propuesta": ultima.fecha_propuesta.isoformat() if ultima.fecha_propuesta else None} \
         if ultima else None
     if w.conf_mto_fecha and not w.conf_mto_por and ultima:  # confirmado por el técnico desde su enlace
@@ -350,7 +358,9 @@ def create_order(data: WorkOrderIn, tareas: BackgroundTasks, scope: Scope = Depe
         if not gestiona and (campo in ("coste_estimado", "tipo") or not asigna):
             valores.pop(campo, None)
     w = WorkOrder(**valores, abierta_por=scope.user.id)
-    w.exige_foto_antes = (w.tipo or "correctivo") in TIPOS_FOTO_ANTES
+    # Recepción y dirección abren la OT sin foto obligatoria; si viene de un parte de estado (mantenimiento,
+    # limpieza…), sus fotos se copian y son la foto del «antes»
+    w.exige_foto_antes = bool(data.parte_estado_id) and (w.tipo or "correctivo") in TIPOS_FOTO_ANTES
     _asignar(db, w)
     _comprobar_cae(db, w)
     try:
@@ -566,7 +576,7 @@ def parte(db: Session, w: WorkOrder) -> bytes:
     if v:
         intervencion = {"empresa": v.empresa, "tecnico": v.tecnico, "llegada": v.llegada, "salida": v.salida,
                         "trabajos": v.trabajos, "materiales": v.materiales or [], "observaciones": v.observaciones,
-                        "resultado": RESULTADOS_TECNICO.get(v.resultado), "firma": documentos.leer(v.firma) if v.firma else None}
+                        "resultado": NOMBRE_RESULTADO.get(v.resultado), "firma": documentos.leer(v.firma) if v.firma else None}
     conformidad = (f"{db.get(User, w.cerrada_por).nombre} · {w.conformidad_en:%d/%m/%Y %H:%M} (usuario del PMS)"
                    if w.conformidad_en and w.cerrada_por else None)
     pdf = parte_pdf.generar(w, asset, asset.company, db.get(Unit, w.unit_id) if w.unit_id else None, abierta, fotos,
@@ -822,7 +832,7 @@ def confirm_work(wid: int, data: ConfirmWork, scope: Scope = Depends(get_scope),
     propio = w.asignacion != "subcontrata"
     if w.exige_foto_antes and not fotos_antes(db, w):
         bad_request(FALTA_FOTO_ANTES)
-    if not fotos_trabajo(db, w):
+    if de_parte(db, w) and not fotos_trabajo(db, w):
         bad_request("Añada al menos una foto de la reparación")
     firma_png = None
     if propio:

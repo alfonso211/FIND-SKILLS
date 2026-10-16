@@ -110,18 +110,15 @@ def test_flujo_del_tecnico(client, admin, ids):
 
     # resuelta (subcontrata): hace falta al menos una foto de la reparación y el tiempo (hora de llegada); queda
     # finalizada para que la cierre recepción o el Director Técnico; el enlace queda en solo lectura
-    # correctiva: primero la foto del «antes» (el técnico la hace al llegar desde su enlace)
+    # 1.74: la foto del «antes» es opcional si la OT la abre recepción (sin parte de estado)
     fotos = {"ficheros": ("trabajo.png", io.BytesIO(base64.b64decode(_firma().split(",")[1])).getvalue(), "image/png")}
-    sin_antes = client.post(_api(enlace, "/finalizar"), json=_fin(resultado="resuelta"))
-    assert sin_antes.status_code == 400 and "antes" in sin_antes.json()["detail"]
-    d = client.get(_api(enlace, "/datos")).json()
-    assert d["exige_foto_antes"] and d["fotos_antes"] == 0
+    d = client.get(_api(enlace, "/datos")).json()  # 1.74: abierta por recepción, la foto del «antes» es opcional
+    assert not d["exige_foto_antes"] and d["fotos_antes"] == 0
     assert client.post(_api(enlace, "/fotos") + "&tipo=otro", files=fotos).status_code == 400
     assert client.post(_api(enlace, "/fotos") + "&tipo=averia", files=fotos).status_code == 201
     d = client.get(_api(enlace, "/datos")).json()
     assert d["fotos_antes"] == 1 and d["fotos_trabajo"] == 0
-    sin_foto = client.post(_api(enlace, "/finalizar"), json=_fin(resultado="resuelta"))
-    assert sin_foto.status_code == 400 and "reparación" in sin_foto.json()["detail"]
+    assert d["exige_foto_trabajo"] is False  # 1.74: abierta por recepción, la foto de la reparación es opcional
     assert client.post(_api(enlace, "/fotos"), files=fotos).status_code == 201
     sin_llegada = client.post(_api(enlace, "/finalizar"), json=_fin(resultado="resuelta"))
     assert sin_llegada.status_code == 400 and "llegada" in sin_llegada.json()["detail"]

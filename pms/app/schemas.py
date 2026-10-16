@@ -522,6 +522,13 @@ class AccommodationContractIn(BaseModel):
     motivo_otro: str | None = None
     acreditacion: list[Literal["empadronamiento", "dni", "alquiler", "suministro", "residencia_fiscal", "otro"]] = []
     acreditacion_otro: str | None = None
+    # ¿Dónde nos conoció? (claves de contratos.CONOCIO) y su detalle si es «otro»
+    conocio: str | None = Field(default=None, max_length=20)
+    conocio_otro: str | None = Field(default=None, max_length=120)
+    # Domicilio habitual en la calle de los apartamentos: solo continúa si es un cliente antiguo (fecha de su primera
+    # estancia)
+    cliente_antiguo: bool = False
+    cliente_antiguo_desde: date | None = None
     actualizar_huesped: bool = True
     # Por defecto no se imprime si falta algo: el cliente solo debe firmar
     permitir_huecos: bool = False

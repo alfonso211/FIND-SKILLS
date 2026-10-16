@@ -269,6 +269,8 @@ const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !=
 const opts = (arr, v = "id", l = "nombre") => arr.map((x) => [x[v], typeof l === "function" ? l(x) : x[l]]);
 const kv = (obj) => Object.entries(obj).map(([k, v]) => [k, v]);
 const list = (arr) => arr.map((x) => [x, label(x)]);
+// tipos de orden de trabajo («revision»: apartamento en revisión, cuando no es una avería ni otro motivo)
+const TIPOS_OT = [["correctivo", "correctivo"], ["preventivo", "preventivo"], ["normativo", "normativo"], ["mejora", "mejora"], ["revision", "apto. en revisión"]];
 
 function pickAsset(modalidad, perm) {
   const pool = assetsOf(modalidad);
@@ -1326,10 +1328,15 @@ async function accommodationContract(r) {
     { html: `<p class="muted">Para cambiar la dotación de esta reserva (quitar, añadir u «Otra dotación») use el botón «Dotación» de la reserva.</p>` },
     { html: `<fieldset><legend>Ocupantes autorizados (los registrados en la reserva; son los mismos del parte a SES.HOSPEDAJE)</legend>
       <pre class="ocupantes-txt">${esc(info.datos.ocupantes || "")}</pre><button type="button" class="btn sm" id="gOcup">Gestionar ocupantes</button></fieldset>` },
-    { k: "motivo", t: "Motivo de la estancia (marque las que correspondan)", type: "checks", options: sel(info.motivos) },
+    { k: "motivo", t: "Motivo de la estancia (obligatorio: marque las que correspondan)", type: "checks", options: sel(info.motivos) },
     { k: "motivo_otro", t: "Motivo «otro»: detalle", wide: true },
     { k: "acreditacion", t: "Acreditación del domicilio habitual (se une copia)", type: "checks", options: sel(info.acreditaciones) },
     { k: "acreditacion_otro", t: "Acreditación «otro»: detalle", wide: true },
+    { k: "cliente_antiguo", t: "Cliente antiguo (su domicilio está en la calle de los apartamentos)", type: "checkbox", wide: true },
+    { k: "cliente_antiguo_desde", t: "Fecha de su primera estancia", type: "date" },
+    { html: "<h4>¿Dónde nos conoció? *</h4>" },
+    { k: "conocio", t: "¿Dónde nos conoció?", type: "select", options: Object.entries(info.conocio || {}) },
+    { k: "conocio_otro", t: "Si es «Otro»: ¿cuál?" },
     { html: "<h4>Empresa</h4>" },
     { k: "representante", t: "Representante" }, { k: "representante_dni", t: "DNI representante" }, { k: "email_empresa", t: "Correo notificaciones", type: "email" },
     { html: "<h4>Opciones</h4>" },
@@ -3128,6 +3135,8 @@ V.informes = async (el) => {
   if (can("reservas.ver") && assetsOf("apartamentos_turisticos").length) {
     $(".cards", el).insertAdjacentHTML("beforeend", '<div class="card"><h3>Encuesta del INE</h3><p class="sub">Cuestionario mensual de ocupación en apartamentos turísticos: viajeros y pernoctaciones por día y residencia, ocupación y precios.</p><button class="btn primary" id="ine">Preparar encuesta</button></div>');
     $("#ine", el).onclick = encuestaIne;
+    $(".cards", el).insertAdjacentHTML("beforeend", '<div class="card"><h3>Empadronados</h3><p class="sub">Personas alojadas ahora cuyo domicilio habitual está en la calle de los apartamentos: número de personas y de apartamentos por activo, con el detalle.</p><button class="btn primary" id="empad">Descargar Excel</button></div>');
+    $("#empad", el).onclick = () => run(() => download("GET", "/api/turistico/empadronados.xlsx"));
   }
 };
 
@@ -3478,17 +3487,15 @@ async function newWorkOrder(assetId, unitId, zona, parte) {  // zona: {zona, nom
   return new Promise((resolve) => sugerirProveedores((puedeAsignarOT() ? bindAsignacion : (x) => x)(bindFotos(bindAccesoOT(form(titulo, [
     { k: "titulo", t: "Título", req: true, wide: true },
     ...(zona ? [] : [{ k: "unit_id", t: "Unidad (vacío = zonas comunes)", type: "select", options: units.map((u) => [u.id, u.codigo]) }, { html: "<div data-acceso></div>", wide: true }]),
-    ...(can("mantenimiento.editar") ? [{ k: "tipo", t: "Tipo", type: "select", req: true, options: list(["correctivo", "preventivo", "normativo", "mejora"]), def: "correctivo" }] : []),
+    ...(can("mantenimiento.editar") ? [{ k: "tipo", t: "Tipo", type: "select", req: true, options: TIPOS_OT, def: "correctivo" }] : []),
     { k: "categoria", t: "Instalación / gremio", type: "select", req: true, options: list(S.cat.categorias_mto), def: "general" },
     { k: "prioridad", t: "Prioridad", type: "select", req: true, options: list(S.cat.prioridades), def: "media" },
     ...(puedeAsignarOT() ? [...camposAsignacion(gente), { k: "fecha_prevista", t: "Fecha prevista", type: "date" }] : []),
     ...(can("mantenimiento.editar") ? [{ k: "coste_estimado", t: "Coste estimado €", type: "number" }] : []),
     ...(zona ? [] : [{ k: "bloquea_unidad", t: "Bloquear unidad (fuera de venta hasta cierre)", type: "checkbox", wide: true }]),
     { k: "descripcion", t: "Descripción de la avería", type: "textarea", wide: true },
-    { html: parte ? `<p class="muted">Se genera desde el parte de estado <b>${esc(parte.codigo)}</b>: sus fotos se adjuntan solas (son la foto del «antes»).</p>` : fotosHtml("Foto del «antes»: cómo está la avería (obligatoria en correctivas y mejoras) *") },
+    { html: parte ? `<p class="muted">Se genera desde el parte de estado <b>${esc(parte.codigo)}</b>: sus fotos se adjuntan solas (son la foto del «antes»).</p>` : fotosHtml("Fotos de la avería (opcional)") },
   ], { unit_id: unitId, ...(parte ? parte.ot_propuesta : {}) }, async (d, f) => {
-    if (!parte && ["correctivo", "mejora"].includes(d.tipo || "correctivo") && !ficherosElegidos(f).length)
-      throw new Error("Haga o elija la foto del «antes» (cómo está la avería): es obligatoria para poder cerrar la orden");
     const acc = f._acceso ? f._acceso() : null;
     const acceso = acc ? { acceso: acc.acceso, acceso_autoriza: acc.autoriza, acceso_medio: acc.medio } : {};
     const w = await post("/api/mantenimiento/ordenes", clean({ ...(puedeAsignarOT() ? datosAsignacion(d) : d), asset_id: aid, unit_id: d.unit_id ? Number(d.unit_id) : null, zona: zona?.zona, parte_estado_id: parte?.id, ...acceso }));
@@ -3631,11 +3638,11 @@ function trabajoRealizadoOT(w, reload) {
     { k: "llegada", t: "Llegada", type: "datetime-local", req: true }, { k: "salida", t: "Salida", type: "datetime-local", req: true },
     { k: "coste_real", t: "Coste real €", type: "number" },
     ...(w.falta_foto_antes ? [{ html: '<p class="error">Falta la foto del «antes» (cómo estaba la avería): añádala con el botón 📎, tipo «Foto de la avería», antes de terminar.</p>' }] : []),
-    { html: fotosHtml(`Fotos de la reparación (obligatoria al menos una${w.fotos_trabajo ? `; ya hay ${w.fotos_trabajo}` : ""})`) },
+    { html: fotosHtml(`Fotos de la reparación (${w.exige_foto_trabajo ? "obligatoria al menos una: viene de un parte de estado" : "opcional"}${w.fotos_trabajo ? `; ya hay ${w.fotos_trabajo}` : ""})`) },
     ...(propio ? [{ html: `<fieldset><legend>Firma de quien hizo el trabajo (${esc(S.me.nombre)}) *</legend>${FIRMA_HTML}</fieldset>` }] : []),
   ], { salida: horaLocal() }, async (d, fm) => {
     if (new Date(d.salida) <= new Date(d.llegada)) throw new Error("La salida tiene que ser posterior a la llegada");
-    if (!w.fotos_trabajo && !ficherosElegidos(fm).length) throw new Error("Añada al menos una foto de la reparación");
+    if (w.exige_foto_trabajo && !w.fotos_trabajo && !ficherosElegidos(fm).length) throw new Error("Añada al menos una foto de la reparación (la OT viene de un parte de estado)");
     const png = firma();
     if (propio && !png) throw new Error("Firme el trabajo realizado");
     const n = await subirFotos(fm, w.id, "trabajo");
@@ -3689,9 +3696,9 @@ async function adjuntosOT(w, reload) {
 
 V.ordenes = async (el) => {
   el.innerHTML = `<div class="toolbar"><select id="e"><option value="abiertas">Abiertas</option><option value="">Todas</option>${S.cat.estados_ot.map((x) => `<option value="${x}">${label(x)}</option>`).join("")}</select>
-    <select id="tp"><option value="">Todos los tipos</option>${["correctivo", "preventivo", "normativo", "mejora"].map((x) => `<option>${x}</option>`).join("")}</select>
+    <select id="tp"><option value="">Todos los tipos</option>${TIPOS_OT.map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select>
     <span class="spacer"></span>${canOpenOT() ? '<button class="btn primary" id="new">Nueva OT</button>' : ""}</div><div id="foco"></div>
-    <p class="muted">Flujo: recepción abre y asigna la OT (personal propio o subcontrata) → «Enviar» manda el enlace por WhatsApp o correo → el técnico la gestiona desde el móvil. Las correctivas se abren con la <b>foto del «antes»</b>. Para terminar hacen falta <b>el tiempo (llegada y salida)</b> y <b>al menos una foto de la reparación</b>. El <b>personal propio</b> la cierra él mismo con su firma; la de <b>subcontrata</b> la cierran el Director Técnico o recepción. Las de subcontrata finalizadas hace más de 48 h sin cerrar se avisan cada día. Recepción puede reabrir en 7 días la que no esté bien. Al cerrarla, el apartamento queda pendiente de limpieza.</p><div id="t"></div>`;
+    <p class="muted">Flujo: recepción abre y asigna la OT (personal propio o subcontrata) → «Enviar» manda el enlace por WhatsApp o correo → el técnico la gestiona desde el móvil. Las que abren recepción o la dirección no piden fotos; las que salen de un <b>parte de estado</b> piden la foto del «antes» (del parte) y al menos una de la reparación. Para terminar hace falta siempre <b>el tiempo (llegada y salida)</b>. El técnico puede <b>pausar</b> una actuación (secando, vaciando termo, a la espera de repuesto…) y empezar otra mientras tanto. El <b>personal propio</b> la cierra él mismo con su firma; la de <b>subcontrata</b> la cierran el Director Técnico o recepción. Las de subcontrata finalizadas hace más de 48 h sin cerrar se avisan cada día. Recepción puede reabrir en 7 días la que no esté bien. Al cerrarla, el apartamento queda pendiente de limpieza.</p><div id="t"></div>`;
   const check = (who, when) => (who ? `<span title="${esc(fdt(when))}">✓ ${esc(who)}</span>` : '<span class="muted">pendiente</span>');
   const load = async () => {
     const e = $("#e", el).value;
@@ -3724,9 +3731,9 @@ V.ordenes = async (el) => {
         puedeEnviarOT() && enTrabajo && w.asignacion && ["Enviar a otros", () => enviarOT(w, load)],
         puedeEnviarOT() && w.envios?.length && ["Revocar enlace", () => confirm(`¿Anular el enlace del técnico de la ${otNum(w.id)}? El enviado deja de funcionar; para seguir, envíe la orden de nuevo.`) && run(() => post(`/api/mantenimiento/ordenes/${w.id}/revocar-enlace`), "Enlace revocado").then(load), "danger"],
         can("mantenimiento.editar") && enTrabajo && ["Editar", async () => { const gente = await personalMto(w.asset_id); sugerirProveedores(bindAsignacion(form(`OT ${w.id}: ${w.titulo}`, [
-          { k: "titulo", t: "Título", req: true, wide: true }, { k: "estado", t: "Estado", type: "select", options: list(["abierta", "asignada", "en_curso", "pendiente_material", "pendiente_visita", "escalada", "revisar"]) },
+          { k: "titulo", t: "Título", req: true, wide: true }, { k: "estado", t: "Estado", type: "select", options: list(["abierta", "asignada", "en_curso", "en_pausa", "pendiente_material", "pendiente_visita", "escalada", "revisar"]) },
           { k: "prioridad", t: "Prioridad", type: "select", options: list(S.cat.prioridades) }, { k: "categoria", t: "Instalación", type: "select", options: list(S.cat.categorias_mto) },
-          { k: "tipo", t: "Tipo", type: "select", options: list(["correctivo", "preventivo", "normativo", "mejora"]) },
+          { k: "tipo", t: "Tipo", type: "select", options: TIPOS_OT },
           ...camposAsignacion(gente), { k: "coste_estimado", t: "Coste estimado €", type: "number" },
           { k: "fecha_prevista", t: "Fecha prevista", type: "date" }, { k: "descripcion", t: "Descripción", type: "textarea", wide: true },
         ], w, async (d) => {
