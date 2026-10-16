@@ -62,7 +62,7 @@ def validar(db: Session, vivienda: Unit, plazas: list[int], inicio: date, fin: d
 
 
 def ocupar(db: Session, l: Lease) -> None:
-    if l.estado == "vigente" and l.fecha_inicio <= date.today():
+    if l.estado in ACTIVOS and l.fecha_inicio <= date.today():
         for u in db.scalars(select(Unit).where(Unit.id.in_(l.plazas or [-1]))):
             if u.estado in ("disponible", "bloqueada"):
                 u.estado = "ocupada"

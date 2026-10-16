@@ -73,7 +73,8 @@
 - **Plano de apartamentos**: colores por estado. Pulse un apartamento para ver su ficha, reservar, bloquear o abrir una incidencia.
 
 ## Cambiar de apartamento
-- En la reserva (confirmada o con el cliente alojado) pulse **Cambiar de apartamento**, elija el apartamento nuevo y escriba el **motivo**. No hay que anular la reserva ni repetir el contrato: se conservan los cobros y las facturas, y al reimprimir el contrato sale el apartamento nuevo. El cambio queda en las notas de la reserva y en la auditoría.
+- **Los mismos botones en todas partes**: las acciones de una reserva (cobro, contrato, check-in, ampliar, salida, cambiar de apartamento, anular…) son las mismas desde cualquier pantalla donde aparezca la reserva.
+- En la reserva (confirmada o con el cliente alojado) pulse **Cambiar de apartamento**: está en *Reservas*, en el panel de llegadas, salidas y alojados, en el buscador, en el expediente del cliente, en las estancias vencidas y en la **ficha del apartamento** (plano → apartamento → Reservas). Elija el apartamento nuevo y escriba el **motivo**. No hay que anular la reserva ni repetir el contrato: se conservan los cobros y las facturas, y al reimprimir el contrato sale el apartamento nuevo. El cambio queda en las notas de la reserva y en la auditoría.
 
 ## Anular una reserva o un alquiler de garaje
 - En la reserva (o en el alquiler de la plaza) pulse **Anular**, o ábrala con **Editar** y pulse **Anular reserva** / **Anular alquiler**. Escriba el **motivo**: queda en el historial como anulada y el apartamento o la plaza quedan libres.

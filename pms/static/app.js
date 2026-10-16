@@ -701,7 +701,7 @@ function carpetaHtml(pl, x) {
 function viviendaHtml(u) {
   const garaje = u.uso === "garaje";
   const sit = garaje ? (u.alquiler ? "alquilada" : "vacia") : u.situacion || "sin";
-  const txt = garaje ? (u.alquiler ? `Alquilada · ${u.alquiler.cliente}` : "Libre") : u.situacion ? (u.situacion === "otra" && u.situacion_texto ? u.situacion_texto : u.situacion_nombre) : "Situación sin indicar";
+  const txt = garaje ? (u.alquiler ? (u.alquiler.unida_a ? `Unida a ${u.alquiler.unida_a} · ${u.alquiler.cliente}` : `Alquilada · ${u.alquiler.cliente}`) : "Libre") : u.situacion ? (u.situacion === "otra" && u.situacion_texto ? u.situacion_texto : u.situacion_nombre) : "Situación sin indicar";
   return `<button type="button" class="vivienda sit-${sit}${u.pendiente_situacion || u.pendiente_contrato ? " pendiente" : ""}" data-u="${u.unit_id}" title="Abrir ${esc(u.codigo)}">
     <span class="viv-icono">${garaje ? "🚗" : SIT_ICONO[u.situacion] || "🏠"}</span>
     <b>${esc(u.codigo)}</b><small>${esc([u.tipologia, u.superficie_m2 ? `${u.superficie_m2} m²` : ""].filter(Boolean).join(" · "))}</small>
@@ -834,7 +834,7 @@ async function fichaApartamento(uid, recarga, cargada = null) {
   const items = [];
   (d.contratos || []).forEach((l) => items.push({ tipo: "contrato", fecha: l.fecha_inicio, texto: [l.inquilino, l.referencia, l.estado].join(" "),
     html: `<b>Contrato de alquiler · ${esc(l.inquilino)}</b> · ${fdate(l.fecha_inicio)}${l.fecha_fin ? " → " + fdate(l.fecha_fin) : ""} · ${badge(l.estado)}<br><span class="muted">${eur(l.renta_mensual)}/mes${l.fianza ? " · fianza " + eur(l.fianza) : ""}</span>`,
-    acc: [["Expediente", () => expediente(l)]] }));
+    acc: leaseActions(recarga || (() => {}))(l).filter(Boolean) }));
   if (d.unida_a) items.push({ tipo: "contrato", fecha: "9999-12-31", texto: `unida vivienda ${d.unida_a.vivienda}`,
     html: `<b>🚗 Plaza unida al contrato de la vivienda ${esc(d.unida_a.vivienda)}</b> · ${badge(d.unida_a.estado)}<br><span class="muted">Va con ese alquiler: no se alquila ni se bloquea aparte.</span>` });
   (d.gastos || []).forEach((g) => items.push({ tipo: "gasto", fecha: g.fecha, texto: [g.proveedor, g.numero_factura, g.concepto, g.naturaleza].join(" "),
@@ -842,9 +842,7 @@ async function fichaApartamento(uid, recarga, cargada = null) {
     acc: g.documento_id ? [["Ver", () => abrirFichero(`/api/documentos-recibidos/${g.documento_id}/fichero`)]] : [] }));
   (d.reservas || []).forEach((r) => items.push({ tipo: "reserva", fecha: r.entrada, texto: [r.localizador, r.huesped, r.documento, r.canal, r.estado, r.notas].join(" "),
     html: `<b>Reserva ${esc(r.localizador || "R-" + r.id)}</b> · ${fdate(r.entrada)} → ${fdate(r.salida)} (${r.noches} noches) · ${esc(r.huesped)} · ${badge(r.estado)}${r.proxima ? ' <span class="badge b-pendiente">próxima</span>' : ""}<br><span class="muted">${esc(r.canal)} · ${r.adultos + r.ninos} pax · ${eur(r.importe_total)} (cobrado ${eur(r.importe_pagado)})${r.contrato ? " · contrato impreso" : ""}</span>`,
-    acc: can("reservas.editar") ? [...(garaje ? [] : [["Contrato", () => accommodationContract({ id: r.id, unidad: u.codigo, huesped: r.huesped })]]),
-      ...(!garaje && ["confirmada", "checkin"].includes(r.estado) ? [["Ampliar reserva", () => renovarEstancia({ id: r.id, unidad: u.codigo, huesped: r.huesped }, recarga)]] : []),
-      ["Huésped", () => editGuest(r.guest_id)]] : [] }));
+    acc: resActions(recarga || (() => {}))(r).filter(Boolean) }));  // las mismas acciones que en Reservas
   const clientes = new Map();
   (d.reservas || []).forEach((r) => { const c = clientes.get(r.guest_id) || { ...r, estancias: 0 }; c.estancias += 1; clientes.set(r.guest_id, c); });
   clientes.forEach((c) => items.push({ tipo: "cliente", fecha: c.entrada, texto: [c.huesped, c.documento, c.telefono, c.email, c.nacionalidad].join(" "),
@@ -863,7 +861,8 @@ async function fichaApartamento(uid, recarga, cargada = null) {
   items.sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
   const TIPOS = [["", "Todo"], ["contrato", "Contratos"], ["gasto", "Facturas recibidas"], ["alquiler", "Alquileres"], ["reserva", "Reservas"], ["cliente", "Clientes"], ["incidencia", "Incidencias"], ["bloqueo", "Bloqueos"], ["factura", "Facturas"]].filter(([t]) => !t || items.some((i) => i.tipo === t));
   const bloqueoVigente = (d.bloqueos || []).find((b) => !b.levantado);
-  const actual = d.alquiler ? `<p><b>Alquilada por meses a:</b> ${esc(d.alquiler.cliente)} · desde ${fdate(d.alquiler.desde)}${d.alquiler.hasta ? " hasta " + fdate(d.alquiler.hasta) : ""}${d.alquiler.matricula ? " · " + esc(d.alquiler.matricula) : ""}</p>`
+  const actual = d.alquiler?.unida_a ? `<p><b>Unida al alquiler de la vivienda ${esc(d.alquiler.unida_a)}:</b> ${esc(d.alquiler.cliente)} · desde ${fdate(d.alquiler.desde)}${d.alquiler.hasta ? " hasta " + fdate(d.alquiler.hasta) : ""}</p>`
+    : d.alquiler ? `<p><b>Alquilada por meses a:</b> ${esc(d.alquiler.cliente)} · desde ${fdate(d.alquiler.desde)}${d.alquiler.hasta ? " hasta " + fdate(d.alquiler.hasta) : ""}${d.alquiler.matricula ? " · " + esc(d.alquiler.matricula) : ""}</p>`
     : d.actual ? `<p><b>${d.estado === "alquilado" ? "Alojado" : d.actual.proxima ? "Próxima llegada" : "Llega hoy"}:</b> ${esc(d.actual.huesped)} · ${fdate(d.actual.entrada)} → ${fdate(d.actual.salida)}</p>` : "";
   const sit = d.situacion || {};
   const pc = d.pendientes?.contrato;
@@ -897,7 +896,7 @@ async function fichaApartamento(uid, recarga, cargada = null) {
   const pintaRes = () => {
     const q = normaliza($("[data-q]", f).value).split(/\s+/).filter(Boolean);
     const vis = items.filter((i) => (!filtroTipo || i.tipo === filtroTipo) && q.every((w) => normaliza(i.texto + " " + i.tipo).includes(w)));
-    $("[data-res]", f).innerHTML = vis.length ? vis.slice(0, 200).map((i, n) => `<div class="res"><span class="tipo t-${i.tipo}">${i.tipo}</span><div>${i.html}</div><div class="res-acc">${i.acc.map(([l], j) => `<button type="button" class="btn sm" data-i="${items.indexOf(i)}" data-j="${j}">${esc(l)}</button>`).join("")}</div></div>`).join("")
+    $("[data-res]", f).innerHTML = vis.length ? vis.slice(0, 200).map((i, n) => `<div class="res"><span class="tipo t-${i.tipo}">${i.tipo}</span><div>${i.html}</div><div class="res-acc">${i.acc.map(([l, , cls], j) => `<button type="button" class="btn sm ${cls || ""}" data-i="${items.indexOf(i)}" data-j="${j}">${esc(l)}</button>`).join("")}</div></div>`).join("")
       : `<p class="muted">${items.length ? "Sin resultados para esa búsqueda." : `${vivienda ? "Esta vivienda" : garaje ? "Esta plaza" : "Este apartamento"} aún no tiene nada registrado.`}</p>`;
     $("[data-res]", f).querySelectorAll("button[data-i]").forEach((b) => (b.onclick = () => items[b.dataset.i].acc[b.dataset.j][1]()));
   };
@@ -2527,6 +2526,7 @@ async function estanciasVencidas(cont, reload) {
     can("reservas.editar") && ["Ampliar reserva", () => renovarEstancia(r, reload)],
     can("reservas.editar") && ["Corregir salida", () => editReservation(r, reload)],
     can("reservas.editar") && ["Check-out", () => salidaReserva(r, reload, true)],
+    can("reservas.editar") && ["Cambiar de apartamento", () => cambiarApartamento(r, reload)],
     ["Cliente", () => editGuest(r.guest_id, "huesped", reload)],
   ];
   const cols = [{ k: "unidad", t: "Apartamento" }, { k: "huesped", t: "Cliente" }, { k: "telefono", t: "Teléfono", f: (x) => esc(x || "—") },
@@ -2721,7 +2721,14 @@ V.contratos = async (el) => {
     { k: "inquilino", t: "Inquilino" }, { k: "fecha_inicio", t: "Inicio", f: fdate }, { k: "fecha_fin", t: "Fin", f: fdate },
     { k: "renta_mensual", t: "Renta (sin IVA)", num: true, f: eur }, { k: "fianza", t: "Fianza", num: true, f: eur },
     { k: "indice_actualizacion", t: "Índice" }, { k: "estado", t: "Estado", f: badge },
-  ], await get("/api/alquiler/contratos", { asset_id: S.asset, estado: $("#e", el).value }), (l) => can("alquiler.editar") ? [
+  ], await get("/api/alquiler/contratos", { asset_id: S.asset, estado: $("#e", el).value }), leaseActions(load));
+  $("#e", el).onchange = load;
+  if ($("#new", el)) $("#new", el).onclick = async () => nuevoContrato(await pickAsset("alquiler_residencial"), null, () => load());
+  load();
+};
+// Acciones de un contrato de alquiler: las mismas en la lista de contratos y en la ficha de la vivienda
+function leaseActions(load) {
+  return (l) => can("alquiler.editar") ? [
     ["Expediente", () => expediente(l), "primary"],
     ["Inquilino", () => editGuest(l.tenant_id, "inquilino")],
     ["borrador", "vigente"].includes(l.estado) && ["Plazas de garaje", () => plazasContrato(l, load)],
@@ -2739,11 +2746,8 @@ V.contratos = async (el) => {
     l.estado === "vigente" && ["Actualizar renta", () => form(`Actualizar renta (${eur(l.renta_mensual)}) · índice ${l.indice_actualizacion}`, [
       { k: "porcentaje", t: "Variación %", type: "number", req: true }, { k: "motivo", t: "Motivo / referencia índice", wide: true }], {},
       async (d) => { const r = await post(`/api/alquiler/contratos/${l.id}/actualizar-renta`, d); toast(`Nueva renta ${eur(r.renta_mensual)}`); load(); })],
-  ] : [["Expediente", () => expediente(l)]]);
-  $("#e", el).onchange = load;
-  if ($("#new", el)) $("#new", el).onclick = async () => nuevoContrato(await pickAsset("alquiler_residencial"), null, () => load());
-  load();
-};
+  ] : [["Expediente", () => expediente(l)]];
+}
 // Plazas de garaje unidas al alquiler de la vivienda: quedan ocupadas con el contrato (sin contrato aparte ni bloqueo)
 async function plazasDisponibles(aid, actuales = []) {
   const us = (await get("/api/unidades", { asset_id: aid })).filter((u) => u.uso === "garaje");
