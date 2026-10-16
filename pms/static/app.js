@@ -835,6 +835,8 @@ async function fichaApartamento(uid, recarga, cargada = null) {
   (d.contratos || []).forEach((l) => items.push({ tipo: "contrato", fecha: l.fecha_inicio, texto: [l.inquilino, l.referencia, l.estado].join(" "),
     html: `<b>Contrato de alquiler · ${esc(l.inquilino)}</b> · ${fdate(l.fecha_inicio)}${l.fecha_fin ? " → " + fdate(l.fecha_fin) : ""} · ${badge(l.estado)}<br><span class="muted">${eur(l.renta_mensual)}/mes${l.fianza ? " · fianza " + eur(l.fianza) : ""}</span>`,
     acc: [["Expediente", () => expediente(l)]] }));
+  if (d.unida_a) items.push({ tipo: "contrato", fecha: "9999-12-31", texto: `unida vivienda ${d.unida_a.vivienda}`,
+    html: `<b>🚗 Plaza unida al contrato de la vivienda ${esc(d.unida_a.vivienda)}</b> · ${badge(d.unida_a.estado)}<br><span class="muted">Va con ese alquiler: no se alquila ni se bloquea aparte.</span>` });
   (d.gastos || []).forEach((g) => items.push({ tipo: "gasto", fecha: g.fecha, texto: [g.proveedor, g.numero_factura, g.concepto, g.naturaleza].join(" "),
     html: `<b>Factura recibida · ${esc(g.proveedor || "sin proveedor")}</b>${g.numero_factura ? " · " + esc(g.numero_factura) : ""} · ${eur(g.total)} · ${g.pagado ? badge("pagado") : badge("pendiente")}<br><span class="muted">${fdate(g.fecha)} · ${esc(g.concepto)}${g.naturaleza ? " · " + esc(g.naturaleza) : ""}</span>`,
     acc: g.documento_id ? [["Ver", () => abrirFichero(`/api/documentos-recibidos/${g.documento_id}/fichero`)]] : [] }));
@@ -1295,6 +1297,7 @@ function resActions(reload) {
     r.uso !== "garaje" && ["confirmada", "checkin"].includes(r.estado) && ["Dotación", () => dotacionReserva(r)],
     ["Huésped", () => editGuest(r.guest_id)],
     ["Editar", () => editReservation(r, reload)],
+    ["confirmada", "checkin"].includes(r.estado) && ["Cambiar de apartamento", () => cambiarApartamento(r, reload)],
     ["confirmada", "checkin"].includes(r.estado) && ["Anular", () => anular("la reserva", "anulada", `/api/turistico/reservas/${r.id}/anular`, reload), "danger"],
   ] : [];
 }
@@ -2066,6 +2069,15 @@ function anular(que, hecho, url, reload) {
   ], {}, async (d) => { await post(url, d); toast(`${que[0].toUpperCase()}${que.slice(1)}: ${hecho}`); reload && reload(); }, "Anular");
 }
 const botonAnular = (texto) => ({ html: `<div class="toolbar"><span class="spacer"></span><button type="button" class="btn sm danger" data-anular>${texto}</button></div>`, wide: true });
+// Cambia al cliente de apartamento sin anular la reserva: se conservan contrato, cobros y facturas (motivo obligatorio)
+async function cambiarApartamento(r, reload) {
+  const units = (await get("/api/unidades", { asset_id: r.asset_id })).filter((u) => u.id !== r.unit_id && (u.uso === "garaje") === (r.uso === "garaje") && u.estado !== "fuera_servicio");
+  form(`Cambiar de apartamento · reserva ${r.localizador || r.id} · ${r.unidad}`, [
+    { html: '<p class="muted">El cliente pasa al apartamento elegido con la misma reserva: no hay que anularla ni repetir el contrato. Se conservan los cobros y las facturas emitidas; al reimprimir el contrato sale el apartamento nuevo.</p>' },
+    { k: "unit_id", t: "Apartamento nuevo", type: "select", req: true, options: units.map((u) => [u.id, `${u.codigo}${u.tipologia ? " · " + u.tipologia : ""}${u.capacidad ? " · " + u.capacidad + " plazas" : ""}`]) },
+    { k: "motivo", t: "Motivo del cambio", type: "textarea", req: true, wide: true },
+  ], {}, async (d) => { await post(`/api/turistico/reservas/${r.id}/cambiar-apartamento`, { unit_id: Number(d.unit_id), motivo: d.motivo }); toast("Apartamento cambiado"); reload && reload(); }, "Cambiar");
+}
 function editReservation(r, reload) {
   form(`Reserva ${r.localizador || r.id} · ${r.unidad}`, [
     { k: "localizador", t: "Localizador" }, { k: "canal", t: "Canal", type: "select", options: list(S.cat.canales) },
@@ -2704,13 +2716,16 @@ V.contratos = async (el) => {
   el.innerHTML = `<div class="toolbar"><select id="e"><option value="">Todos</option>${["borrador", "vigente", "finalizado", "rescindido"].map((x) => `<option ${x === "vigente" ? "selected" : ""}>${x}</option>`).join("")}</select>
     <span class="spacer"></span>${can("alquiler.editar") ? '<button class="btn primary" id="new">Nuevo contrato</button>' : ""}</div><div id="t"></div>`;
   const load = async () => table($("#t", el), [
-    { k: "referencia", t: "Ref." }, { k: "asset_id", t: "Activo", f: (v) => esc(assetName(v)) }, { k: "unidad", t: "Unidad" },
+    { k: "referencia", t: "Ref." }, { k: "asset_id", t: "Activo", f: (v) => esc(assetName(v)) },
+    { k: "unidad", t: "Unidad", f: (v, l) => esc(v) + (l.plazas_codigos?.length ? `<br><span class="muted peq">🚗 ${esc(l.plazas_codigos.join(", "))}</span>` : "") },
     { k: "inquilino", t: "Inquilino" }, { k: "fecha_inicio", t: "Inicio", f: fdate }, { k: "fecha_fin", t: "Fin", f: fdate },
     { k: "renta_mensual", t: "Renta (sin IVA)", num: true, f: eur }, { k: "fianza", t: "Fianza", num: true, f: eur },
     { k: "indice_actualizacion", t: "Índice" }, { k: "estado", t: "Estado", f: badge },
   ], await get("/api/alquiler/contratos", { asset_id: S.asset, estado: $("#e", el).value }), (l) => can("alquiler.editar") ? [
     ["Expediente", () => expediente(l), "primary"],
     ["Inquilino", () => editGuest(l.tenant_id, "inquilino")],
+    ["borrador", "vigente"].includes(l.estado) && ["Plazas de garaje", () => plazasContrato(l, load)],
+    ["borrador", "vigente"].includes(l.estado) && ["Cambiar de vivienda", () => cambiarVivienda(l, load)],
     l.estado !== "anulado" && ["Editar", () => form(`Contrato ${l.unidad}`, [
       { k: "referencia", t: "Referencia" }, { k: "fecha_fin", t: "Fecha fin", type: "date" }, { k: "fianza", t: "Fianza €", type: "number" },
       { k: "garantia_adicional", t: "Garantía adicional €", type: "number" }, { k: "dia_pago", t: "Día de pago", type: "number" },
@@ -2729,6 +2744,29 @@ V.contratos = async (el) => {
   if ($("#new", el)) $("#new", el).onclick = async () => nuevoContrato(await pickAsset("alquiler_residencial"), null, () => load());
   load();
 };
+// Plazas de garaje unidas al alquiler de la vivienda: quedan ocupadas con el contrato (sin contrato aparte ni bloqueo)
+async function plazasDisponibles(aid, actuales = []) {
+  const us = (await get("/api/unidades", { asset_id: aid })).filter((u) => u.uso === "garaje");
+  return us.filter((u) => actuales.includes(u.id) || u.estado !== "ocupada").map((u) => [u.id, u.codigo]);
+}
+async function plazasContrato(l, load) {
+  const opts = await plazasDisponibles(l.asset_id, l.plazas || []);
+  if (!opts.length) return toast("Este edificio no tiene plazas de garaje libres", true);
+  form(`Plazas de garaje unidas · contrato ${l.unidad}`, [
+    { html: '<p class="muted">Las plazas marcadas van con el alquiler de la vivienda: quedan ocupadas mientras dure el contrato, no se alquilan aparte y se liberan solas al terminarlo. Su renta va incluida en la del contrato.</p>' },
+    { k: "plazas", t: "Plazas", type: "checks", options: opts },
+  ], { plazas: l.plazas || [] }, async (d) => { await put(`/api/alquiler/contratos/${l.id}`, { plazas: (d.plazas || []).map(Number) }); toast("Plazas actualizadas"); load(); });
+}
+async function cambiarVivienda(l, load) {
+  const actual = (await get("/api/unidades", { asset_id: l.asset_id })).find((u) => u.id === l.unit_id);
+  const units = (await get("/api/unidades", { asset_id: l.asset_id })).filter((u) => u.id !== l.unit_id && u.uso === actual?.uso && u.estado !== "ocupada" && u.estado !== "fuera_servicio");
+  if (!units.length) return toast("No hay otra unidad libre del mismo uso en este edificio", true);
+  form(`Cambiar de vivienda · contrato ${l.referencia || l.unidad} · ${l.inquilino}`, [
+    { html: '<p class="muted">El inquilino pasa a la vivienda elegida con el mismo contrato: no hay que anularlo ni repetirlo. Se conservan los recibos, las facturas emitidas y las plazas de garaje unidas. El contrato que se imprima desde ahora sale con la vivienda nueva.</p>' },
+    { k: "unit_id", t: "Vivienda nueva", type: "select", req: true, options: units.map((u) => [u.id, `${u.codigo} · ${label(u.estado)}`]) },
+    { k: "motivo", t: "Motivo del cambio", type: "textarea", req: true, wide: true },
+  ], {}, async (d) => { await post(`/api/alquiler/contratos/${l.id}/cambiar-unidad`, { unit_id: Number(d.unit_id), motivo: d.motivo }); toast("Vivienda cambiada"); load(); }, "Cambiar");
+}
 const LEASE_FIELDS = [
   { k: "referencia", t: "Referencia" }, { k: "fecha_inicio", t: "Fecha inicio", type: "date", req: true }, { k: "fecha_fin", t: "Fecha fin", type: "date" },
   { k: "renta_mensual", t: "Renta mensual € (sin IVA)", type: "number", req: true }, { k: "fianza", t: "Fianza €", type: "number" },
@@ -2740,16 +2778,18 @@ const LEASE_FIELDS = [
 // Alta de un contrato de alquiler. fija = {id, codigo}: la vivienda ya elegida (desde su carpeta). despues(lease).
 async function nuevoContrato(aid, fija, despues) {
   const units = fija ? [] : (await get("/api/unidades", { asset_id: aid })).filter((u) => u.estado !== "fuera_servicio");
+  const plazasOpts = await plazasDisponibles(aid);
   if (!fija && !units.length) return toast("El activo no tiene unidades. Dé de alta las viviendas primero.", true);
   conEscaner(form(fija ? `Nuevo contrato · vivienda ${fija.codigo} · ${assetName(aid)}` : `Nuevo contrato · ${assetName(aid)}`, [
     { html: scanHtml("1. Escanee el documento del inquilino (DNI, NIE/TIE, pasaporte)") },
     { html: "<h4>Inquilino</h4>" }, ...guestFields,
     { html: "<h4>Contrato</h4>" },
     ...(fija ? [] : [{ k: "unit_id", t: "Unidad", type: "select", req: true, options: units.map((u) => [u.id, `${u.codigo} · ${label(u.uso)} · ${label(u.estado)}`]) }]), ...LEASE_FIELDS,
+    ...(plazasOpts.length ? [{ k: "plazas", t: "Plazas de garaje unidas a la vivienda (van con este alquiler)", type: "checks", options: plazasOpts }] : []),
     { k: "notas", t: "Notas contrato", type: "textarea", wide: true },
   ], {}, async (d, fr) => {
     const t = {}; guestFields.filter((f) => f.k).forEach((f) => { t[f.k] = d[f.k]; delete d[f.k]; });
-    const lease = await post("/api/alquiler/contratos", { ...clean(d), unit_id: fija ? fija.id : Number(d.unit_id), tenant: clean(t), documentos: fr._docs.map((x) => x.id) });
+    const lease = await post("/api/alquiler/contratos", { ...clean(d), unit_id: fija ? fija.id : Number(d.unit_id), plazas: (d.plazas || []).map(Number), tenant: clean(t), documentos: fr._docs.map((x) => x.id) });
     toast("Contrato creado"); despues && setTimeout(() => despues(lease), 0);
   }));
 }

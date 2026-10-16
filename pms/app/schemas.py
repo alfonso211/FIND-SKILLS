@@ -193,6 +193,7 @@ class LeaseIn(BaseModel):
     estado: str = "vigente"
     notas: str | None = None
     documentos: list[int] = []  # copias del documento del cliente escaneadas en el alta
+    plazas: list[int] = []  # plazas de garaje unidas al alquiler de la vivienda
 
 
 class LeaseUpdate(BaseModel):
@@ -205,6 +206,13 @@ class LeaseUpdate(BaseModel):
     tipo_iva: float | None = Field(default=None, ge=0, le=21)
     estado: str | None = None
     notas: str | None = None
+    plazas: list[int] | None = None  # plazas de garaje unidas (sustituye la lista)
+
+
+class LeaseUnitChange(BaseModel):
+    """Cambio de vivienda del inquilino sin anular el contrato (se conservan contrato, recibos y facturas)."""
+    unit_id: int
+    motivo: str = Field(min_length=3, max_length=300)
 
 
 class GarageLeaseIn(BaseModel):
@@ -465,6 +473,12 @@ class ReservationUpdate(BaseModel):
     extras: list[ServiceLine] | None = None  # sustituye los extras aún sin facturar
     limpieza: LimpiezaPlanIn | None = None
     quitar_limpieza: bool = False
+
+
+class ReservationUnitChange(BaseModel):
+    """Cambio de apartamento de una reserva sin anularla (contrato, cobros y facturas se conservan)."""
+    unit_id: int
+    motivo: str = Field(min_length=3, max_length=300)
 
 
 class OccupantIn(BaseModel):

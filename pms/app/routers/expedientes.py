@@ -67,7 +67,7 @@ def _salida(db: Session, lease: Lease) -> dict:
               for k, eid in (exp.get("agenda") or {}).items() if eid in eventos]
     inventario = exp.get("inventario")
     return {
-        "contrato": _lease_out(lease), "referencia": cv.referencia(lease), "vivienda": cv.vivienda_texto(lease),
+        "contrato": _lease_out(lease, db), "referencia": cv.referencia(lease), "vivienda": cv.vivienda_texto(lease),
         "datos": d,
         "arrendatario2": _nombre(db.get(Contact, d["arrendatario2_id"])) if d.get("arrendatario2_id") else None,
         "fiador": _nombre(db.get(Contact, d["fiador_id"])) if d.get("fiador_id") else None,

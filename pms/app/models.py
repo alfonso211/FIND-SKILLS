@@ -248,6 +248,9 @@ class Lease(Base):
     # Expediente del contrato de vivienda: datos del contrato, checklist, inventario entregado, entregas de dinero
     # y citas de la agenda generadas
     expediente: Mapped[dict | None] = mapped_column(JSON)
+    # Plazas de garaje unidas al alquiler de la vivienda (id de unidades de garaje del mismo activo): quedan
+    # ocupadas con el contrato, sin contrato aparte ni bloqueo. Ver app/plazas.py
+    plazas: Mapped[list | None] = mapped_column(JSON)
     unit: Mapped[Unit] = relationship()
     tenant: Mapped[Contact] = relationship()
 
