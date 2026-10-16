@@ -24,11 +24,12 @@ from sqlalchemy.orm import Session
 from .. import adjuntos, avisos, documentos
 from ..config import BASE_DIR
 from ..database import get_db
-from ..models import RESULTADOS_TECNICO, Asset, StaffMember, WorkOrder, WorkOrderAttachment, WorkOrderVisit
+from ..models import (MOTIVOS_PAUSA, NOMBRE_RESULTADO, RESULTADOS_TECNICO, Asset, StaffMember, WorkOrder,
+                      WorkOrderAttachment, WorkOrderVisit)
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request, get_or_404, scoped
 from . import personal
-from .mantenimiento import (ABIERTAS, FALTA_FOTO_ANTES, PAUSADAS, _subcontrata, acceso_texto, cerrar_ot,
+from .mantenimiento import (ABIERTAS, FALTA_FOTO_ANTES, PAUSADAS, _subcontrata, acceso_texto, cerrar_ot, de_parte,
                             exigir_finalizacion, fotos_antes, fotos_trabajo, token_valido)
 
 publico = APIRouter(tags=["técnico (enlace)"])
@@ -94,10 +95,12 @@ def data(wid: int, c: int, f: str, db: Session = Depends(get_db)):
         "finalizada": w.estado in FINALIZADAS, "resultados": RESULTADOS_TECNICO,
         "en_curso": {"id": abierta.id, "llegada": abierta.llegada.isoformat() if abierta.llegada else None,
                      "empresa": abierta.empresa, "tecnico": abierta.tecnico} if abierta else None,
-        "ultima": {"resultado": ultima.resultado, "resultado_nombre": RESULTADOS_TECNICO[ultima.resultado],
-                   "enviado": ultima.enviado.isoformat(), "tecnico": ultima.tecnico} if ultima else None,
+        "ultima": {"resultado": ultima.resultado, "resultado_nombre": NOMBRE_RESULTADO.get(ultima.resultado, ultima.resultado),
+                   "enviado": ultima.enviado.isoformat(), "tecnico": ultima.tecnico,
+                   "justificacion": ultima.justificacion} if ultima else None,
         "fotos": fotos, "fotos_trabajo": fotos_trabajo(db, w), "fotos_antes": fotos_antes(db, w),
-        "exige_foto_antes": bool(w.exige_foto_antes),
+        "exige_foto_antes": bool(w.exige_foto_antes), "exige_foto_trabajo": de_parte(db, w),
+        "motivos_pausa": MOTIVOS_PAUSA, "en_pausa": w.estado == "en_pausa",
         "cierra": "tecnico" if w.asignacion != "subcontrata" else "recepcion",  # quién cierra al marcar «resuelta»
     }
 
@@ -133,7 +136,7 @@ def start(wid: int, c: int, f: str, body: InicioIn, request: Request, db: Sessio
     if not v.llegada:
         v.llegada = datetime.now().replace(microsecond=0)
     v.empresa, v.tecnico = (body.empresa or v.empresa), (body.tecnico or v.tecnico)
-    if w.estado in ("abierta", "asignada", "pendiente_visita"):
+    if w.estado in ("abierta", "asignada", "pendiente_visita", "en_pausa"):  # también «Reanudar» tras una pausa
         w.estado = "en_curso"
     audit(db, None, "iniciar_trabajo", "orden_trabajo", w.id, {"tecnico": v.tecnico, "empresa": v.empresa})
     db.commit()
@@ -211,7 +214,7 @@ def finish(wid: int, c: int, f: str, body: FinIn, request: Request, tareas: Back
     if body.resultado == "resuelta":  # antes de guardar nada: fotos del antes y de la reparación, y tiempo
         if w.exige_foto_antes and not fotos_antes(db, w):
             bad_request(FALTA_FOTO_ANTES + ": hágala con «📷 Foto del antes»")
-        if not fotos_trabajo(db, w):
+        if de_parte(db, w) and not fotos_trabajo(db, w):
             bad_request("Añada al menos una foto de la reparación antes de enviar el resultado")
         previa = _abierta(db, w)
         if not (body.llegada or (previa and previa.llegada)):
@@ -253,13 +256,45 @@ def finish(wid: int, c: int, f: str, body: FinIn, request: Request, tareas: Back
                                                             "empresa": v.empresa, "resultado": v.resultado})
     db.commit()
     tareas.add_task(avisos.resultado_tecnico, v.id)
-    return {"ok": True, "resultado": RESULTADOS_TECNICO[v.resultado], "estado": w.estado}
+    return {"ok": True, "resultado": NOMBRE_RESULTADO[v.resultado], "estado": w.estado}
+
+
+class PausaIn(BaseModel):
+    motivo: str
+    nota: str | None = Field(default=None, max_length=300)
+    empresa: str | None = Field(default=None, max_length=160)
+    tecnico: str | None = Field(default=None, max_length=120)
+
+
+@publico.post("/api/publico/ot/{wid}/pausar")
+def pause(wid: int, c: int, f: str, body: PausaIn, request: Request, db: Session = Depends(get_db)):
+    """«Pausar» (secando, vaciando termo, a la espera de repuesto…): la actuación en curso se cierra con su hora de
+    salida (el tiempo de pausa no cuenta) sin terminar la OT ni firmar. Mientras tanto se puede empezar otra; para
+    seguir, «Reanudar» (es «Iniciar trabajo» de nuevo: abre otra actuación con su hora de llegada)."""
+    w = _orden(db, wid, c, f)
+    _editable(w)
+    if body.motivo not in MOTIVOS_PAUSA:
+        bad_request("Elija el motivo de la pausa")
+    if body.motivo == "otro" and len((body.nota or "").strip()) < 3:
+        bad_request("Escriba el motivo de la pausa")
+    v = _abierta(db, w)
+    if v is None or not v.llegada:
+        bad_request("No hay ninguna actuación en curso: pulse «Iniciar trabajo»")
+    ahora = datetime.now().replace(microsecond=0)
+    v.salida, v.enviado, v.resultado = ahora, ahora, "pausa"
+    v.empresa, v.tecnico = (body.empresa or v.empresa), (body.tecnico or v.tecnico)
+    v.justificacion = MOTIVOS_PAUSA[body.motivo] + (f": {body.nota.strip()}" if (body.nota or "").strip() else "")
+    v.ip = request.client.host if request.client else v.ip
+    w.estado = "en_pausa"
+    audit(db, None, "pausar_trabajo", "orden_trabajo", w.id, {"intervencion": v.id, "motivo": v.justificacion})
+    db.commit()
+    return {"estado": w.estado, "motivo": v.justificacion, "salida": v.salida.isoformat()}
 
 
 # --------------------------------------------------------------------------- consulta en el PMS
 def _visita_out(v: WorkOrderVisit) -> dict:
     d = v.to_dict(exclude=("firma", "ip"))
-    d["resultado_nombre"] = RESULTADOS_TECNICO.get(v.resultado)
+    d["resultado_nombre"] = NOMBRE_RESULTADO.get(v.resultado)
     d["minutos"] = round((v.salida - v.llegada).total_seconds() / 60) if v.llegada and v.salida else None
     d["con_firma"] = bool(v.firma)
     return d
@@ -290,10 +325,11 @@ def recent_results(desde: datetime, scope: Scope = Depends(get_scope), db: Sessi
     if ids is not None and not ids:
         return []
     filas = db.execute(scoped(select(WorkOrderVisit, WorkOrder).join(WorkOrder, WorkOrder.id == WorkOrderVisit.work_order_id),
-                              WorkOrder.asset_id, ids).where(WorkOrderVisit.enviado > desde)
+                              WorkOrder.asset_id, ids).where(WorkOrderVisit.enviado > desde,
+                                                              WorkOrderVisit.resultado != "pausa")
                        .order_by(WorkOrderVisit.enviado)).all()
     return [{"ot": w.id, "asset_id": w.asset_id, "titulo": w.titulo, "tecnico": v.tecnico, "resultado": v.resultado,
-             "resultado_nombre": RESULTADOS_TECNICO[v.resultado], "enviado": v.enviado.isoformat()} for v, w in filas]
+             "resultado_nombre": NOMBRE_RESULTADO.get(v.resultado, v.resultado), "enviado": v.enviado.isoformat()} for v, w in filas]
 
 
 def ot_panel(db: Session, scope: Scope) -> list[dict]:

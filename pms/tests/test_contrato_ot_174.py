@@ -2,7 +2,7 @@
 «¿Dónde nos conoció?» y domicilio en la calle de los apartamentos (cliente antiguo), documento «empadronados» e
 informe de dirección. Datos ZZ-PRUEBA."""
 import io
-from datetime import date
+from datetime import date, datetime, timedelta
 
 from openpyxl import load_workbook
 from sqlalchemy import select
@@ -126,3 +126,54 @@ def test_documento_empadronados(client, admin, ids):
     assert wb["Resumen"]["A3"].value == "Activo"
     with SessionLocal() as db:
         assert db.scalar(select(Asset.id).where(Asset.codigo == "SAE")) == sae
+
+
+def test_pausa_de_la_actuacion_y_cierre_sin_foto(client, admin, ids):
+    """El técnico pausa una actuación (secando…), empieza otra OT mientras tanto, reanuda y la cierra sin foto: la
+    abrió recepción (sin parte de estado). El tiempo de pausa no cuenta."""
+    from test_tecnico_ot import _api, _enlace, _fin
+    from app.models import WorkOrderVisit
+    sfl = ids["assets"]["SFL"]["id"]
+    propio = client.post("/api/personal", headers=admin, json={
+        "asset_id": sfl, "area": "mantenimiento", "nombre": f"{Z} Técnico", "telefono": "600999888"}).json()
+    ots = []
+    for t in ("termo", "grifo"):
+        w = client.post("/api/mantenimiento/ordenes", headers=admin, json={"asset_id": sfl, "titulo": f"{Z} {t}"}).json()
+        assert client.post(f"/api/mantenimiento/ordenes/{w['id']}/asignar", headers=admin,
+                           json={"asignacion": "propio", "personal_id": propio["id"]}).status_code == 200
+        ots.append((w, _enlace(client, admin, w["id"])))
+    (w1, e1), (w2, e2) = ots
+    quien = {"empresa": "INVERSIETE", "tecnico": f"{Z} Técnico"}
+
+    # sin actuación en curso no se puede pausar
+    assert client.post(_api(e1, "/pausar"), json={"motivo": "secando"}).status_code == 400
+    assert client.post(_api(e1, "/iniciar"), json=quien).status_code == 200
+    assert client.post(_api(e1, "/pausar"), json={"motivo": "nada"}).status_code == 400
+    assert client.post(_api(e1, "/pausar"), json={"motivo": "otro"}).status_code == 400  # «Otro» con detalle
+    p = client.post(_api(e1, "/pausar"), json={"motivo": "vaciando_termo", "nota": "30 min"})
+    assert p.status_code == 200 and p.json()["estado"] == "en_pausa" and p.json()["motivo"] == "Vaciando termo: 30 min"
+    d1 = client.get(_api(e1, "/datos")).json()
+    assert d1["en_pausa"] and d1["en_curso"] is None and d1["ultima"]["resultado_nombre"] == "En pausa"
+    assert not d1["exige_foto_trabajo"] and "secando" in d1["motivos_pausa"]
+    # la pausa no avisa a recepción como un resultado
+    assert not any(x["ot"] == w1["id"] for x in client.get("/api/mantenimiento/resultados",
+                                                           headers=admin, params={"desde": "2020-01-01T00:00:00"}).json())
+
+    # mientras tanto, otra actuación: se resuelve y se cierra sin foto (la abrió recepción)
+    assert client.post(_api(e2, "/iniciar"), json=quien).status_code == 200
+    hace = (datetime.now() - timedelta(minutes=40)).replace(microsecond=0).isoformat()
+    r2 = client.post(_api(e2, "/finalizar"), json=_fin(resultado="resuelta", llegada=hace))
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["estado"] == "cerrada"
+
+    # reanudar la primera: nueva actuación; al terminar cuenta solo el tiempo trabajado
+    assert client.post(_api(e1, "/iniciar"), json=quien).status_code == 200
+    assert client.get(_api(e1, "/datos")).json()["en_curso"] is not None
+    r1 = client.post(_api(e1, "/finalizar"), json=_fin(resultado="resuelta", llegada=hace))
+    assert r1.status_code == 200 and r1.json()["estado"] == "cerrada", r1.text
+    with SessionLocal() as db:
+        vs = list(db.scalars(select(WorkOrderVisit).where(WorkOrderVisit.work_order_id == w1["id"])
+                             .order_by(WorkOrderVisit.id)))
+        assert [v.resultado for v in vs] == ["pausa", "resuelta"]
+    lista = client.get(f"/api/mantenimiento/ordenes/{w1['id']}/intervenciones", headers=admin).json()
+    assert lista[0]["resultado_nombre"] == "En pausa" and lista[0]["justificacion"] == "Vaciando termo: 30 min"

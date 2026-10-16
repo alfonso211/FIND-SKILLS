@@ -1373,6 +1373,10 @@ class StatusReportPhoto(Base):
 
 RESULTADOS_TECNICO = {"resuelta": "Resuelta", "pendiente_material": "Pendiente de material",
                       "otra_visita": "Requiere otra visita", "escalar": "Derivar a subcontrata", "otro": "Otro"}
+# Pausa de la actuación (1.74): el técnico para el reloj sin terminar y puede empezar otra mientras tanto
+MOTIVOS_PAUSA = {"secando": "Secando", "vaciando_termo": "Vaciando termo", "repuesto": "A la espera de repuesto",
+                 "otro": "Otro"}
+NOMBRE_RESULTADO = {**RESULTADOS_TECNICO, "pausa": "En pausa"}  # para mostrar intervenciones (incluida la pausa)
 
 
 class WorkOrderVisit(Base):

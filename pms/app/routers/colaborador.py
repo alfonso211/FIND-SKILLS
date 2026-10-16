@@ -15,8 +15,8 @@ from sqlalchemy.orm import Session
 
 from .. import ausencias, avisos, documentos
 from ..database import get_db
-from ..models import (AREAS_PERSONAL, RESULTADOS_TECNICO, TIPOS_DOCUMENTO, Asset, ReceivedDocument, StaffDispatch,
-                      StaffMember, Supplier, WorkOrder, WorkOrderVisit, WorkReport)
+from ..models import (AREAS_PERSONAL, NOMBRE_RESULTADO, RESULTADOS_TECNICO, TIPOS_DOCUMENTO, Asset, ReceivedDocument,
+                      StaffDispatch, StaffMember, Supplier, WorkOrder, WorkOrderVisit, WorkReport)
 from ..security import Scope, audit, get_scope
 from ..utils import bad_request, get_or_404
 from .gastos import _fichero
@@ -104,7 +104,7 @@ def orders(abiertas: bool = False, c: Ctx = Depends(ctx), db: Session = Depends(
                     "fecha_apertura": w.fecha_apertura.isoformat(), "fecha_prevista": w.fecha_prevista.isoformat()
                     if w.fecha_prevista else None, "terminada": w.conf_mto_fecha.isoformat()
                     if w.conf_mto_fecha else None, "solucion": w.solucion, "persona": nombres.get(w.personal_id),
-                    "ultimo": {"resultado": RESULTADOS_TECNICO[v.resultado], "enviado": v.enviado.isoformat(),
+                    "ultimo": {"resultado": NOMBRE_RESULTADO.get(v.resultado, v.resultado), "enviado": v.enviado.isoformat(),
                                "tecnico": v.tecnico, "fecha_propuesta": v.fecha_propuesta.isoformat()
                                if v.fecha_propuesta else None} if v else None,
                     "gestionar": None if w.estado in FINALIZADAS else f"/tecnico/{w.id}?{_token(w)}"})

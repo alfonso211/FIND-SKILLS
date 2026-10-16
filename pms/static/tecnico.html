@@ -41,6 +41,7 @@
   .fotos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
   .fotos img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
   .hidden { display: none !important; }
+  .aviso { background: #fff6e0; border: 1px solid #e8c77a; border-radius: 8px; padding: 8px 10px; }
   .tiempos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .hecho { text-align: center; padding: 30px 16px; } .hecho h2 { color: var(--ok); font-size: 22px; text-transform: none; }
 </style>
@@ -95,9 +96,15 @@ async function carga() {
   <section><h2>1. Datos de la intervención</h2>
     <label>Empresa<input name="empresa" required maxlength="160" value="${esc(b.empresa || p.empresa || "")}"></label>
     <label>Nombre del técnico<input name="tecnico" required maxlength="120" value="${esc(b.tecnico || p.tecnico || "")}"></label>
+    ${D.en_pausa ? `<p class="aviso">⏸ Actuación <b>en pausa</b>${D.ultima ? `: ${esc((D.ultima.justificacion || D.ultima.resultado_nombre))}` : ""}. Pulse «Reanudar» cuando vuelva.</p>` : ""}
     <div class="tiempos" style="margin-top:12px">
-      <button type="button" class="btn" id="ini">▶ Iniciar trabajo</button>
+      <button type="button" class="btn" id="ini">${D.en_pausa ? "▶ Reanudar trabajo" : "▶ Iniciar trabajo"}</button>
       <div><span class="muted">Llegada</span><br><b id="hl">${hora(llegada)}</b></div></div>
+    <div id="pausa" class="${llegada ? "" : "hidden"}" style="margin-top:10px">
+      <label>Pausar la actuación (el tiempo de pausa no cuenta; mientras tanto puede empezar otra)
+        <select id="pMotivo"><option value="">Motivo de la pausa…</option>${Object.entries(D.motivos_pausa || {}).map(([k, t]) => `<option value="${k}">${esc(t)}</option>`).join("")}</select></label>
+      <input id="pNota" maxlength="300" placeholder="Detalle (obligatorio si es «Otro»)">
+      <button type="button" class="btn ancho" id="pBtn">⏸ Pausar</button></div>
     <details style="margin-top:8px"><summary class="muted">Corregir horas a mano</summary>
       <div class="fila"><label>Llegada<input type="datetime-local" name="llegada"></label><label>Salida<input type="datetime-local" name="salida"></label></div>
       <p class="muted">Si no las corrige, la salida es la hora a la que pulse «Enviar resultado».</p></details>
@@ -110,13 +117,13 @@ async function carga() {
     <button type="button" class="btn ancho" id="addMat">+ Añadir material</button>
     <label>Observaciones<textarea name="observaciones" maxlength="2000">${esc(b.observaciones || "")}</textarea></label>
     <label class="btn ancho" style="margin-top:10px">📷 Añadir fotos de la reparación<input type="file" id="fotos" accept="image/*" capture="environment" multiple hidden></label>
-    <p class="muted" id="fmsg">${D.fotos_trabajo ? `Ya hay ${D.fotos_trabajo} foto(s) enviada(s).` : "Para dar el trabajo por resuelto hace falta al menos una foto de la reparación."}</p>
+    <p class="muted" id="fmsg">${D.fotos_trabajo ? `Ya hay ${D.fotos_trabajo} foto(s) enviada(s).` : D.exige_foto_trabajo ? "Para dar el trabajo por resuelto hace falta al menos una foto de la reparación." : "Recomendable: una foto de la reparación."}</p>
   </section>
   <section><h2>3. Estado al finalizar</h2>
     <div class="estados">${Object.entries(D.resultados).filter(([k]) => k !== "escalar" || D.permite_escalar).map(([k, t]) => `<label class="estado${k === "escalar" ? " rojo" : ""}"><input type="radio" name="resultado" value="${k}"${b.resultado === k ? " checked" : ""}> ${esc(k === "escalar" ? "Notificar a subcontrata (supera nuestra capacidad)" : t)}</label>`).join("")}</div>
     <div id="cVisita" class="hidden"><label>Fecha propuesta para la siguiente visita<input type="date" name="fecha_propuesta"></label></div>
     <div id="cOtro" class="hidden"><label>Describa el resultado o el motivo técnico del bloqueo<textarea name="justificacion" maxlength="2000"></textarea></label></div>
-    <p id="cResuelta" class="muted hidden">${D.cierra === "tecnico" ? "Al enviar <b>Resuelta</b> la orden queda <b>cerrada</b> con su firma, la fecha y la hora." : "Al enviar <b>Resuelta</b> la orden queda finalizada; la cierran el Director Técnico o recepción."} Hacen falta la hora de llegada (botón «Iniciar trabajo» o «Corregir horas a mano»)${D.exige_foto_antes ? ", la foto del antes" : ""} y al menos una foto de la reparación.</p>
+    <p id="cResuelta" class="muted hidden">${D.cierra === "tecnico" ? "Al enviar <b>Resuelta</b> la orden queda <b>cerrada</b> con su firma, la fecha y la hora." : "Al enviar <b>Resuelta</b> la orden queda finalizada; la cierran el Director Técnico o recepción."} Hace falta la hora de llegada (botón «Iniciar trabajo» o «Corregir horas a mano»)${D.exige_foto_antes ? ", la foto del antes" : ""}${D.exige_foto_trabajo ? " y al menos una foto de la reparación" : ""}.</p>
   </section>
   <section><h2>4. Firma del técnico</h2>
     <canvas id="firma" aria-label="Firme aquí con el dedo"></canvas>
@@ -147,10 +154,20 @@ async function carga() {
   $("#ini").onclick = async () => {
     try {
       const r = await pide("/iniciar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ empresa: f.empresa.value, tecnico: f.tecnico.value }) });
-      llegada = r.llegada; $("#hl").textContent = hora(llegada); $("#ini").textContent = "✔ Trabajo iniciado"; $("#ini").disabled = true; guardaBorrador();
+      llegada = r.llegada; $("#hl").textContent = hora(llegada); $("#ini").textContent = "✔ Trabajo iniciado"; $("#ini").disabled = true; $("#pausa").classList.remove("hidden"); guardaBorrador();
     } catch (e) { $("#err").textContent = e.message; }
   };
   if (llegada) { $("#ini").textContent = "✔ Trabajo iniciado"; $("#ini").disabled = true; }
+  $("#pBtn").onclick = async () => {
+    const motivo = $("#pMotivo").value, nota = $("#pNota").value.trim();
+    if (!motivo) { $("#err").textContent = "Elija el motivo de la pausa"; return; }
+    try {
+      await pide("/pausar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ motivo, nota: nota || null, empresa: f.empresa.value, tecnico: f.tecnico.value }) });
+      llegada = null; guardaBorrador();
+      $("#app").innerHTML = `<section class="hecho"><h2>⏸ Actuación en pausa</h2><p>El tiempo de pausa no cuenta. Ya puede empezar otra orden desde su enlace.</p><p class="muted">Para seguir con esta, vuelva a abrir este enlace y pulse «Reanudar trabajo».</p></section>`;
+      window.scrollTo(0, 0);
+    } catch (e) { $("#err").textContent = e.message; }
+  };
   $("#antes").onchange = async (e) => {
     const sel = [...e.target.files].slice(0, 6);
     if (!sel.length) return;
@@ -184,7 +201,7 @@ async function carga() {
       : d.resultado === "otro" && (d.justificacion || "").length < 5 ? "Describa el resultado o el motivo del bloqueo"
       : d.resultado === "resuelta" && !d.llegada ? "Indique la hora de llegada: pulse «Iniciar trabajo» o corrija las horas a mano"
       : d.resultado === "resuelta" && D.exige_foto_antes && !D.fotos_antes ? "Falta la foto del antes: pulse «📷 Foto del antes»"
-      : d.resultado === "resuelta" && !fotosPend.length && !D.fotos_trabajo ? "Añada al menos una foto de la reparación"
+      : d.resultado === "resuelta" && D.exige_foto_trabajo && !fotosPend.length && !D.fotos_trabajo ? "Añada al menos una foto de la reparación"
       : trazos < 5 ? "Firme en el recuadro" : "";
     if (falta) { err.textContent = falta; return; }
     const boton = $("#env"); boton.disabled = true; boton.textContent = "Enviando…";

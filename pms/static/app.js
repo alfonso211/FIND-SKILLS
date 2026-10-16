@@ -3638,11 +3638,11 @@ function trabajoRealizadoOT(w, reload) {
     { k: "llegada", t: "Llegada", type: "datetime-local", req: true }, { k: "salida", t: "Salida", type: "datetime-local", req: true },
     { k: "coste_real", t: "Coste real €", type: "number" },
     ...(w.falta_foto_antes ? [{ html: '<p class="error">Falta la foto del «antes» (cómo estaba la avería): añádala con el botón 📎, tipo «Foto de la avería», antes de terminar.</p>' }] : []),
-    { html: fotosHtml(`Fotos de la reparación (obligatoria al menos una${w.fotos_trabajo ? `; ya hay ${w.fotos_trabajo}` : ""})`) },
+    { html: fotosHtml(`Fotos de la reparación (${w.exige_foto_trabajo ? "obligatoria al menos una: viene de un parte de estado" : "opcional"}${w.fotos_trabajo ? `; ya hay ${w.fotos_trabajo}` : ""})`) },
     ...(propio ? [{ html: `<fieldset><legend>Firma de quien hizo el trabajo (${esc(S.me.nombre)}) *</legend>${FIRMA_HTML}</fieldset>` }] : []),
   ], { salida: horaLocal() }, async (d, fm) => {
     if (new Date(d.salida) <= new Date(d.llegada)) throw new Error("La salida tiene que ser posterior a la llegada");
-    if (!w.fotos_trabajo && !ficherosElegidos(fm).length) throw new Error("Añada al menos una foto de la reparación");
+    if (w.exige_foto_trabajo && !w.fotos_trabajo && !ficherosElegidos(fm).length) throw new Error("Añada al menos una foto de la reparación (la OT viene de un parte de estado)");
     const png = firma();
     if (propio && !png) throw new Error("Firme el trabajo realizado");
     const n = await subirFotos(fm, w.id, "trabajo");
@@ -3698,7 +3698,7 @@ V.ordenes = async (el) => {
   el.innerHTML = `<div class="toolbar"><select id="e"><option value="abiertas">Abiertas</option><option value="">Todas</option>${S.cat.estados_ot.map((x) => `<option value="${x}">${label(x)}</option>`).join("")}</select>
     <select id="tp"><option value="">Todos los tipos</option>${TIPOS_OT.map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select>
     <span class="spacer"></span>${canOpenOT() ? '<button class="btn primary" id="new">Nueva OT</button>' : ""}</div><div id="foco"></div>
-    <p class="muted">Flujo: recepción abre y asigna la OT (personal propio o subcontrata) → «Enviar» manda el enlace por WhatsApp o correo → el técnico la gestiona desde el móvil. Las correctivas se abren con la <b>foto del «antes»</b>. Para terminar hacen falta <b>el tiempo (llegada y salida)</b> y <b>al menos una foto de la reparación</b>. El <b>personal propio</b> la cierra él mismo con su firma; la de <b>subcontrata</b> la cierran el Director Técnico o recepción. Las de subcontrata finalizadas hace más de 48 h sin cerrar se avisan cada día. Recepción puede reabrir en 7 días la que no esté bien. Al cerrarla, el apartamento queda pendiente de limpieza.</p><div id="t"></div>`;
+    <p class="muted">Flujo: recepción abre y asigna la OT (personal propio o subcontrata) → «Enviar» manda el enlace por WhatsApp o correo → el técnico la gestiona desde el móvil. Las que abren recepción o la dirección no piden fotos; las que salen de un <b>parte de estado</b> piden la foto del «antes» (del parte) y al menos una de la reparación. Para terminar hace falta siempre <b>el tiempo (llegada y salida)</b>. El técnico puede <b>pausar</b> una actuación (secando, vaciando termo, a la espera de repuesto…) y empezar otra mientras tanto. El <b>personal propio</b> la cierra él mismo con su firma; la de <b>subcontrata</b> la cierran el Director Técnico o recepción. Las de subcontrata finalizadas hace más de 48 h sin cerrar se avisan cada día. Recepción puede reabrir en 7 días la que no esté bien. Al cerrarla, el apartamento queda pendiente de limpieza.</p><div id="t"></div>`;
   const check = (who, when) => (who ? `<span title="${esc(fdt(when))}">✓ ${esc(who)}</span>` : '<span class="muted">pendiente</span>');
   const load = async () => {
     const e = $("#e", el).value;
@@ -3731,7 +3731,7 @@ V.ordenes = async (el) => {
         puedeEnviarOT() && enTrabajo && w.asignacion && ["Enviar a otros", () => enviarOT(w, load)],
         puedeEnviarOT() && w.envios?.length && ["Revocar enlace", () => confirm(`¿Anular el enlace del técnico de la ${otNum(w.id)}? El enviado deja de funcionar; para seguir, envíe la orden de nuevo.`) && run(() => post(`/api/mantenimiento/ordenes/${w.id}/revocar-enlace`), "Enlace revocado").then(load), "danger"],
         can("mantenimiento.editar") && enTrabajo && ["Editar", async () => { const gente = await personalMto(w.asset_id); sugerirProveedores(bindAsignacion(form(`OT ${w.id}: ${w.titulo}`, [
-          { k: "titulo", t: "Título", req: true, wide: true }, { k: "estado", t: "Estado", type: "select", options: list(["abierta", "asignada", "en_curso", "pendiente_material", "pendiente_visita", "escalada", "revisar"]) },
+          { k: "titulo", t: "Título", req: true, wide: true }, { k: "estado", t: "Estado", type: "select", options: list(["abierta", "asignada", "en_curso", "en_pausa", "pendiente_material", "pendiente_visita", "escalada", "revisar"]) },
           { k: "prioridad", t: "Prioridad", type: "select", options: list(S.cat.prioridades) }, { k: "categoria", t: "Instalación", type: "select", options: list(S.cat.categorias_mto) },
           { k: "tipo", t: "Tipo", type: "select", options: TIPOS_OT },
           ...camposAsignacion(gente), { k: "coste_estimado", t: "Coste estimado €", type: "number" },

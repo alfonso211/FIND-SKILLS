@@ -6,6 +6,12 @@ Registro técnico de versiones. El resumen para los usuarios está en `app/manua
 - Migración **0065**: `ordenes_trabajo.exige_foto_antes = false` en las OT sin parte de estado (solo datos).
 - OT: `exige_foto_antes` solo si la OT se crea desde un parte de estado (`parte_estado_id`) y es correctiva o de
   mejora; recepción y dirección la abren sin foto. Tipo nuevo `revision` («apto. en revisión»).
+- OT: la foto de la reparación solo se exige al terminar si la OT viene de un parte de estado (`de_parte()`, en
+  `exigir_finalizacion`, `confirmar-mantenimiento` y el enlace del técnico); `exige_foto_trabajo` en la OT y en el enlace.
+- Pausa de la actuación: `POST /api/publico/ot/{id}/pausar` (`MOTIVOS_PAUSA`: secando, vaciando_termo, repuesto, otro
+  con detalle). Cierra la intervención en curso con su salida (`resultado = "pausa"`, sin firma), la OT pasa a
+  `en_pausa` (nuevo estado de trabajo) y «Iniciar trabajo» la reanuda con otra intervención. La pausa no suena como
+  resultado en recepción ni entra en el recordatorio de OT pausadas. `NOMBRE_RESULTADO` = resultados + «En pausa».
 - Contrato de alojamiento (`AccommodationContractIn`): `conocio` (claves de `contratos.CONOCIO`), `conocio_otro`,
   `cliente_antiguo`, `cliente_antiguo_desde` (en el JSON `datos`; sin migración). `bloqueos_contrato()` impide imprimir
   o firmar aunque se pida «permitir huecos»: sin motivo (o «otro» sin detalle), sin «¿Dónde nos conoció?» (o «Otro»

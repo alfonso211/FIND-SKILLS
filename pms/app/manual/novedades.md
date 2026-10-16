@@ -1,7 +1,8 @@
 # Novedades
 
-## 2026-10-16 · Versión 1.74 · Contrato turístico, «¿Dónde nos conoció?» y empadronados
-- **Órdenes de trabajo**: las que abren recepción o la dirección ya **no piden foto**. Solo las que vienen de un parte de estado llevan la foto del «antes», que se adjunta sola. Las OT que estaban esperando esa foto quedan liberadas.
+## 2026-10-16 · Versión 1.74 · Contrato turístico, «¿Dónde nos conoció?», empadronados y pausa de actuaciones
+- **Órdenes de trabajo**: las que abren recepción o la dirección ya **no piden foto**, ni al abrirlas ni al cerrarlas. Solo las que vienen de un parte de estado piden la foto del «antes» (se adjunta sola) y una de la reparación. Las OT que estaban esperando la foto del «antes» quedan liberadas.
+- **Pausar una actuación** (enlace del técnico): **⏸ Pausar** con el motivo (secando, vaciando termo, a la espera de repuesto u otro). El reloj se para, la OT queda **en pausa** y puede empezar otra orden mientras tanto. Para seguir: **Reanudar trabajo**.
 - **Nuevo tipo de OT «apto. en revisión»**: para revisar un apartamento cuando no es una avería ni otro motivo.
 - **Contrato de apartamentos turísticos**:
   - Sin **motivo de la estancia** el contrato no continúa (tampoco con «Imprimir aunque falten datos»). Si marca «otro», escriba cuál.
