@@ -2,6 +2,15 @@
 
 Registro técnico de versiones. El resumen para los usuarios está en `app/manual/novedades.md` (se muestra en el PMS).
 
+## 1.77 · 16/10/2026 · Fichas compactas y visor de fotos
+- Ficha de la unidad: `accionesRes()` pone los botones bajo el texto (`.res` a 2 columnas) con los 3 primeros visibles y
+  «Más ▾» (`.res-acc.abierto`). En ≤ 640 px las acciones (`.accion-ap`) son compactas, sin la explicación.
+- Corrige la ficha de una plaza unida (el elemento «Plaza unida…» no tenía `acc` y fallaba `pintaRes`); sin «Bloqueado»
+  si `unida_a`; título sin « · » colgando.
+- `verFotos(rutas, i)`: visor en `<dialog>` (flechas, deslizar, Esc, «Abrir en otra pestaña») para adjuntos de OT,
+  fotos de partes de estado (antes abría una pestaña por foto) y fotos del chat.
+- Sin migración (sigue en **0067**). Solo frontend.
+
 ## 1.76 · 16/10/2026 · Plazas unidas ocupadas y acciones iguales en todas las pantallas
 - Migración **0067** (solo datos): las plazas unidas a contratos en borrador o vigentes ya empezados pasan a `ocupada`.
 - `plazas.ocupar()` también con el contrato en borrador. `plano.estados()` cuenta las plazas unidas como alquiladas

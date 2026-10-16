@@ -1,5 +1,11 @@
 # Novedades
 
+## 2026-10-16 · Versión 1.77 · Fichas más compactas y fotos ampliadas
+- **Ficha del apartamento, vivienda o plaza**: los botones de cada reserva, contrato o incidencia van **debajo** del texto, en una sola línea. Salen los tres primeros y **Más ▾** para ver el resto; la reserva ya no ocupa media pantalla.
+- **En el móvil**, las acciones de la ficha (Reserva, Bloqueado, Incidencia…) son botones pequeños, en dos columnas, y lo registrado se ve antes.
+- **Fotos ampliadas sin salir de la ficha**: al pulsar una foto de una incidencia, de un parte de estado o del chat, se abre en grande encima de la pantalla. Con **‹ ›** (o deslizando el dedo) se pasa a la siguiente; **✕** o Esc para cerrar.
+- **Plaza unida a una vivienda**: su ficha ya se abre bien y no ofrece «Bloqueado» (va con el alquiler de la vivienda).
+
 ## 2026-10-16 · Versión 1.76 · Plazas unidas ocupadas y mismas acciones en todas partes
 - **Plazas unidas a la vivienda (Babilonia)**: ya salen **ocupadas**, con «Unida a» la vivienda y el inquilino, en la carpeta del garaje, en la ficha de la plaza y en *Unidades*. También con el contrato en borrador. Las que ya estaban unidas se corrigen solas al instalar.
 - **Ficha del apartamento → Reservas**: tiene **todos los botones** de la reserva, igual que en *Reservas*: cobro, contrato, check-in, ampliar, salida, **cambiar de apartamento**, anular…
