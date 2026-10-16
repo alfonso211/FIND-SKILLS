@@ -392,6 +392,9 @@ Activos y unidades iguales en los dos programas. Mismo transporte, firma, idempo
   manda en lo patrimonial y fiscal (propietaria, referencia y valores catastrales, uso catastral, IBI y TRUA).
 - **PMS → gestión**: `maestro.unidad` (accion creada | actualizada | baja, `version` que sube en cada cambio
   operativo), `maestro.activo` y `maestro.cuadre` (03:30, por activo `por_uso` y `huella`).
+- **Huella** (1.73): cada línea «pms_id|codigo|uso|situacion» sale de los mismos datos que viajan en
+  `maestro.unidad`; gestión debe rehacerla con su campo `situacion` (situación de la vivienda: alquilada, vacia…),
+  no con `estado` (ocupada, disponible, bloqueada). Si no hay situación, el hueco va vacío.
 - **Gestión → PMS**: `maestro.catastro` (unidad por `pms_id`, activo por `activo_pms`; versión por ficha) y
   `maestro.pedir` (`pms_ids`: «todos» o lista). Lo operativo que mande gestión se ignora y se anota en auditoría.
 - **Activos**: solo SFL, SAE y BAB35 (los que gestión conoce); los demás no salen.
