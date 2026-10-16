@@ -19,7 +19,8 @@
   - facturas pendientes de cobro y lo que deben los alojados;
   - fianzas por transferir;
   - OT urgentes y fuera de plazo;
-  - descuadres de caja.
+  - descuadres de caja;
+  - **¿Dónde nos conoció?**: contratos del mes (del día 1 a hoy) de cada activo, por origen (Booking, Airbnb, web, recomendación…). Cada reserva cuenta una vez.
 - Destinatarios: PMS_INFORME_DIRECCION (por defecto Bárbara y Alfonso). Los mismos datos van a gestión.
 - **Caja y cierres de turno**: la Dirección ve los cierres de todos los recepcionistas de sus activos. Un descuadre llega por correo al momento.
 
@@ -30,6 +31,7 @@
 ## Informes Excel
 - **Ocupación**, **Producción**, **Morosidad**, **Costes de mantenimiento** y **Facturas pendientes de cobro** (con días pendientes y quién comprobó cada cobro).
 - **Encuesta del INE** de apartamentos turísticos.
+- **Empadronados**: personas alojadas ahora cuyo domicilio habitual está en la calle de los apartamentos. Hoja «Resumen» con el número de personas y de apartamentos por activo, y hoja «Detalle» (reserva, persona, domicilio, cliente antiguo y fecha de su primera estancia).
 - **Programa anterior (SYADE)**: importar los listados de facturación y ver el resumen mensual. Las facturas se enlazan solas con los clientes que ya están en el PMS: por **DNI/NIF** y, si el cliente no lo tiene, por **nombre y apellidos** (solo si hay una única ficha con ese nombre; con dos fichas iguales no se enlaza), y sus importes (producción, total y fianzas) aparecen en la **ficha del cliente**. Es solo control de producción: la facturación válida para Hacienda empieza el 1 de enero de 2027.
 - **Exportar a INVERGESTION**: facturas emitidas y recibidas en **un solo ZIP** (CSV, manifest.json y los PDF en pdf/emitidas y pdf/recibidas). **Envío semanal** con «Semana pasada»; pulse **Comprobar** antes de descargar. Si a alguna factura le falta su PDF, el paquete **no se genera** y se indica cuál (vuelva a subir ese documento).
   - **Comprobar** avisa de las facturas recibidas cuya fecha coincide con el día en que se registraron: revise que sea la de la factura.
@@ -73,7 +75,7 @@
 - Recepción o dirección asignan la OT (personal propio o subcontrata) y la envían: el técnico recibe un **enlace firmado** (caduca a los 30 días) para gestionarla desde el móvil sin usuario, con llegada y salida, trabajos, material, estado al finalizar y **firma**.
 - Los resultados llegan al momento (aviso sonoro en el PMS y correo); **derivar a subcontrata** va en rojo. Las OT en pausa (material, otra visita, otro) se recuerdan cada día hasta que alguien actúa.
 - **Quién cierra**: el **personal propio** cierra sus OT al terminar (firma, fecha, foto de la reparación y tiempo); las de **subcontrata** quedan finalizadas y las cierra el **Director Técnico o recepción** con la conformidad de la propiedad. Recepción o el Director Técnico pueden **reabrir** una OT cerrada en los 7 días siguientes.
-- Sin **tiempo** (llegada y salida) y **al menos una foto de la reparación** ninguna OT se puede dar por terminada ni cerrar. Las correctivas y de mejora necesitan además la **foto del «antes»**.
+- Sin **tiempo** (llegada y salida) y **al menos una foto de la reparación** ninguna OT se puede dar por terminada ni cerrar. Las correctivas y de mejora que vienen de un **parte de estado** necesitan además la **foto del «antes»** (se adjunta sola desde el parte); las que abren recepción o la dirección, no.
 - Las OT de **subcontrata** finalizadas hace **más de 48 h** sin cerrar le llegan cada día (campana y correo) y salen con **«⏰ +48 h sin cerrar»**.
 - **Coste de la mano de obra**: en *Personal*, ficha de cada empleado propio, indique el **coste/hora para la empresa** (salario + Seguridad Social). El informe **Costes de mantenimiento** (Excel) añade **Horas**, **Mano de obra propia** y **Coste total** por OT, y las hojas **Horas por técnico** (OT + parte diario) y **Por apartamento**. El coste/hora solo lo ven el Director Técnico y dirección.
 

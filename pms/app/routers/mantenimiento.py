@@ -350,7 +350,9 @@ def create_order(data: WorkOrderIn, tareas: BackgroundTasks, scope: Scope = Depe
         if not gestiona and (campo in ("coste_estimado", "tipo") or not asigna):
             valores.pop(campo, None)
     w = WorkOrder(**valores, abierta_por=scope.user.id)
-    w.exige_foto_antes = (w.tipo or "correctivo") in TIPOS_FOTO_ANTES
+    # Recepción y dirección abren la OT sin foto obligatoria; si viene de un parte de estado (mantenimiento,
+    # limpieza…), sus fotos se copian y son la foto del «antes»
+    w.exige_foto_antes = bool(data.parte_estado_id) and (w.tipo or "correctivo") in TIPOS_FOTO_ANTES
     _asignar(db, w)
     _comprobar_cae(db, w)
     try:

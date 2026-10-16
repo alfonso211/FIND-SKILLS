@@ -1,5 +1,15 @@
 # Novedades
 
+## 2026-10-16 · Versión 1.74 · Contrato turístico, «¿Dónde nos conoció?» y empadronados
+- **Órdenes de trabajo**: las que abren recepción o la dirección ya **no piden foto**. Solo las que vienen de un parte de estado llevan la foto del «antes», que se adjunta sola. Las OT que estaban esperando esa foto quedan liberadas.
+- **Nuevo tipo de OT «apto. en revisión»**: para revisar un apartamento cuando no es una avería ni otro motivo.
+- **Contrato de apartamentos turísticos**:
+  - Sin **motivo de la estancia** el contrato no continúa (tampoco con «Imprimir aunque falten datos»). Si marca «otro», escriba cuál.
+  - Nuevo apartado **«¿Dónde nos conoció?»** con un desplegable (Booking, Airbnb, nuestra web, Google, redes sociales, recomendación, su empresa, ya se alojó antes…). Es obligatorio; si elige «Otro», escriba cuál.
+  - Si el **domicilio habitual** del cliente está en la **calle de los apartamentos**, el contrato no continúa, salvo que marque **«Cliente antiguo»** con la **fecha de su primera estancia**.
+- **Informe diario de dirección**: nuevo apartado **«¿Dónde nos conoció?»** con los contratos del mes por origen y activo.
+- **Informes → Empadronados** (Excel): número de **personas** y de **apartamentos** con el domicilio habitual en la calle de los apartamentos, con el detalle.
+
 ## 2026-10-16 · Versión 1.73 · Cuadre nocturno con gestión
 - **Cuadre de unidades con gestión**: el resumen de las 03:30 se calcula exactamente con los mismos datos que el PMS manda de cada unidad, para que los dos programas comparen lo mismo. Nada cambia en pantalla.
 

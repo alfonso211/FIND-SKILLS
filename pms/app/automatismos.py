@@ -214,6 +214,27 @@ def kpis(db: Session, a: Asset, hoy: date) -> dict:
             "descuadres_caja_ayer": [{"diferencia": float(c.diferencia), "nota": c.nota} for c in descuadres]}
 
 
+def donde_nos_conocio(db: Session, a: Asset, hoy: date) -> dict:
+    """Contratos de alojamiento hechos en el mes (del día 1 a hoy) por «¿Dónde nos conoció?». Una reserva cuenta una
+    vez, con su último contrato (las reimpresiones y la firma en tablet no suman)."""
+    from .contratos import CONOCIO
+    from .models import AccommodationContract, Reservation, Unit
+    inicio = datetime.combine(hoy.replace(day=1), time.min)
+    fin = datetime.combine(hoy + timedelta(days=1), time.min)
+    ultimo: dict[int, dict] = {}
+    for c in db.scalars(select(AccommodationContract).join(Reservation).join(Unit).where(
+            Unit.asset_id == a.id, AccommodationContract.creado >= inicio, AccommodationContract.creado < fin)
+            .order_by(AccommodationContract.id)):
+        ultimo[c.reservation_id] = c.datos or {}
+    cuenta: dict[str, int] = {}
+    for d in ultimo.values():
+        k = d.get("conocio")
+        clave = (f"Otro: {d.get('conocio_otro')}" if k == "otro" and d.get("conocio_otro")
+                 else CONOCIO.get(k, "Sin indicar"))
+        cuenta[clave] = cuenta.get(clave, 0) + 1
+    return {"contratos": len(ultimo), "por_origen": dict(sorted(cuenta.items(), key=lambda x: (-x[1], x[0])))}
+
+
 def informe_direccion(db: Session, hoy: date, forzar: bool = False) -> int:
     """Correo a la Dirección con los indicadores del día de cada activo turístico (una vez al día) y aviso a gestión."""
     clave, marca = f"informe_direccion:{hoy.isoformat()}", f"informe_direccion_hecho:{hoy.isoformat()}"
@@ -245,10 +266,19 @@ def informe_direccion(db: Session, hoy: date, forzar: bool = False) -> int:
              ["Descuadres de caja ayer", *[", ".join(f"{d['diferencia']:+.2f} €" for d in k["descuadres_caja_ayer"]) or "—"
                                            for k in datos]]]
     cab = ["Indicador", *[k["nombre"] for k in datos]]
+    # ¿Dónde nos conoció? (solo en el correo: no viaja en kpi.diario, el contrato «fusion1» no cambia)
+    origen = [donde_nos_conocio(db, a, hoy) for a in activos]
+    claves = sorted({k for o in origen for k in o["por_origen"]}, key=lambda k: -sum(o["por_origen"].get(k, 0) for o in origen))
+    filas_or = [["Contratos del mes", *[str(o["contratos"]) for o in origen]],
+                *[[k, *[str(o["por_origen"].get(k, 0)) for o in origen]] for k in claves]]
     asunto = f"PMS · Informe diario de dirección {hoy:%d/%m/%Y}"
-    texto = asunto + "\n\n" + "\n".join(f"{f[0]}: " + " | ".join(f"{c}: {v}" for c, v in zip(cab[1:], f[1:]))
-                                        for f in filas) + (f"\n\n{settings.url}" if settings.url else "")
-    html = avisos._html(f"Informe diario de dirección · {hoy:%d/%m/%Y}", avisos._tabla(cab, filas))
+    lineas = lambda fs: "\n".join(f"{f[0]}: " + " | ".join(f"{c}: {v}" for c, v in zip(cab[1:], f[1:])) for f in fs)  # noqa: E731
+    texto = (asunto + "\n\n" + lineas(filas) + f"\n\n¿Dónde nos conoció? · contratos de {hoy:%m/%Y}\n" + lineas(filas_or)
+             + (f"\n\n{settings.url}" if settings.url else ""))
+    html = avisos._html(f"Informe diario de dirección · {hoy:%d/%m/%Y}", avisos._tabla(cab, filas)
+                        + f'<h3 style="margin:18px 0 6px;font-size:15px">¿Dónde nos conoció? · contratos de '
+                          f'{hoy:%m/%Y} (del día 1 a hoy)</h3>'
+                        + avisos._tabla(["Origen", *[k["nombre"] for k in datos]], filas_or))
     n = 0
     if avisos.configurado():
         for e in settings.informe_direccion:

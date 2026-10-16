@@ -125,7 +125,7 @@ def test_firma_en_tablet_y_envio(client, admin, ids):
     datos = client.get(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin).json()["datos"]
     assert datos["cliente_domicilio"] == "C/ Mayor 5, 2º A" and datos["cliente_municipio"] == "Las Rozas de Madrid"
     datos.update(capacidad=2, dormitorios=1, sin_garaje=True, fianza=200, tarjeta_titular="Lucía de la Fuente",
-                 tarjeta_terminacion="4242", tarjeta_caducidad="08/29", motivo=["turismo"], acreditacion=["dni"])
+                 tarjeta_terminacion="4242", tarjeta_caducidad="08/29", motivo=["turismo"], acreditacion=["dni"], conocio="google")
     prep = client.post(f"/api/turistico/reservas/{r['id']}/contrato/firma", headers=admin, json=datos)
     assert prep.status_code == 200, prep.text
     p = prep.json()

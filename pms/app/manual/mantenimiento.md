@@ -7,7 +7,7 @@
 - **Órdenes de trabajo**: todas las averías de su activo. Las **urgentes** le llegan además por **correo al momento** y **suenan** en la campana 🔔 (tres pitidos) si tiene el PMS abierto. Para coordinarse con recepción o con un compañero, use el **chat 💬**.
 - **Las OT las abre siempre recepción** (a partir de un parte de estado de limpieza, de una petición suya o de un aviso). Mantenimiento no abre OT.
 - Recorrido de una OT:
-  1. **Abierta**: la abre recepción, con la **foto del «antes»** (obligatoria en las correctivas y de mejora). Si no la tiene, hágala usted al llegar con **«📷 Foto del antes»** del enlace: sin ella no se puede terminar.
+  1. **Abierta**: la abre recepción o la dirección (las fotos de la avería son opcionales). Si sale de un **parte de estado**, sus fotos son la foto del «antes» y se adjuntan solas.
   2. **Asignada**: recepción la asigna a **personal propio** o a una **subcontrata** y la **envía**: llega un enlace por WhatsApp o correo.
   3. El técnico la gestiona **desde el móvil** con ese enlace (ver abajo) o desde el PMS con **Trabajo realizado**.
   4. **Para terminarla hacen falta siempre**: el **tiempo** (hora de llegada y de salida) y **al menos una foto de la reparación**.

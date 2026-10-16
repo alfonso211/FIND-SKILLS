@@ -25,6 +25,21 @@ MOTIVOS = {
     "transito": "tránsito aeroportuario",
     "otro": "otro:",
 }
+# ¿Dónde nos conoció? (contrato de alojamiento turístico; obligatorio, «otro» con su detalle)
+CONOCIO = {
+    "booking": "Booking",
+    "airbnb": "Airbnb",
+    "expedia": "Expedia u otra agencia en línea",
+    "web": "Nuestra página web",
+    "google": "Google / buscador",
+    "redes": "Redes sociales",
+    "recomendacion": "Recomendación de un conocido",
+    "empresa": "Su empresa o un convenio",
+    "repite": "Ya se alojó antes con nosotros",
+    "agencia": "Agencia de viajes",
+    "zona": "Pasó por la zona / cartel",
+    "otro": "Otro",
+}
 ACREDITACIONES = {
     "empadronamiento": "empadronamiento",
     "dni": "DNI o equivalente",

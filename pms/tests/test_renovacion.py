@@ -41,7 +41,7 @@ def test_renovar_estancia(client, admin, ids):
     client.put(f"/api/terceros/{guest['id']}", headers=admin, json={**COMPLETO, "company_id": guest["company_id"],
                                                                      "tipo": "huesped"})
     client.post(f"/api/turistico/reservas/{r['id']}/contrato", headers=admin, json={
-        "fecha_firma": HOY.isoformat(), "fianza": 300, "motivo": ["laboral"], "acreditacion": ["dni"],
+        "fecha_firma": HOY.isoformat(), "fianza": 300, "motivo": ["laboral"], "acreditacion": ["dni"], "conocio": "booking",
         "solo_guardar": True})
     ren = client.post(f"/api/turistico/reservas/{r['id']}/renovar", headers=admin,
                       json={"fecha_salida": nueva_salida, "importe_total": 900})
@@ -81,7 +81,7 @@ def test_cliente_que_vuelve(client, admin, ids):
         "fecha_salida": (HOY + timedelta(days=103)).isoformat(), "guest": {**COMPLETO, "documento_num": "52345678W",
                                                                           "nombre": "Vuelve"}}).json()
     client.post(f"/api/turistico/reservas/{primera['id']}/contrato", headers=admin, json={
-        "fecha_firma": HOY.isoformat(), "motivo": ["turismo"], "acreditacion": ["dni"], "fianza": 150,
+        "fecha_firma": HOY.isoformat(), "motivo": ["turismo"], "acreditacion": ["dni"], "conocio": "booking", "fianza": 150,
         "solo_guardar": True})
     otra = client.post("/api/turistico/reservas", headers=admin, json={
         "unit_id": u["id"], "fecha_entrada": (HOY + timedelta(days=200)).isoformat(),
